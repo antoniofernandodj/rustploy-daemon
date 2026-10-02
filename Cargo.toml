@@ -1,9 +1,7 @@
 [workspace]
 members = [
     "crates/daemon",
-    "crates/shared",
     "crates/importer",
-    "crates/rustploy-gui",
     "tools/indexer",
 ]
 resolver = "2"
@@ -28,6 +26,3 @@ codegen-units = 1
 [profile.dev.package."*"]
 opt-level = 2
 
-# Recorte do text_editor no renderer de software (ver vendor/README.md).
-[patch.crates-io]
-iced_tiny_skia = { path = "vendor/iced_tiny_skia" }
