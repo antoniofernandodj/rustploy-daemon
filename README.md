@@ -35,10 +35,10 @@ Um único binário (`rustployd`) substitui o PaaS inteiro. O cliente **`rustploy
 
 ## Cliente
 
-**`rustploy-gui`** (binário `rustploy-gui`, crate `crates/rustploy-gui`) é o único cliente —
+**`rustploy-gui`** (binário `rustploy-gui`, repositório `rustploy-gui`) é o único cliente —
 construído com o framework próprio `glacier-ui` (UI declarativa em XML → iced). Conecta ao
 daemon via **HTTP/JSON + SSE**, não precisa rodar na mesma máquina do daemon.
-`cargo run -p rustploy-gui` a partir da raiz do workspace.
+`cargo run` a partir da raiz do repositório `rustploy-gui`.
 
 Houve um cliente TUI (Ratatui, `crates/client`) — removido.
 
@@ -53,7 +53,7 @@ Houve um cliente TUI (Ratatui, `crates/client`) — removido.
 
 - Linux com Docker Engine (`dockerd`) acessível em `/var/run/docker.sock`
 - Rust toolchain (edição 2024 — `rustup update stable`)
-- (Opcional, só para mexer na camada Luau do `rustploy-gui` em `crates/rustploy-gui/views/scripts/`) `luau-lsp`, para type-check dos `.luau`:
+- (Opcional, só para mexer na camada Luau do `rustploy-gui` em `rustploy-gui/views/scripts/`) `luau-lsp`, para type-check dos `.luau`:
   ```bash
   curl -L https://github.com/JohnnyMorganz/luau-lsp/releases/latest/download/luau-lsp-linux-x86_64.zip -o /tmp/luau-lsp.zip
   unzip -o /tmp/luau-lsp.zip -d ~/.local/bin/
@@ -71,7 +71,7 @@ cargo build --release
 
 Gera:
 - `target/release/rustployd` — o daemon
-- `target/release/rustploy-gui` — o cliente desktop (ver [Cliente](#cliente)); em modo dev, `cargo run -p rustploy-gui` a partir da raiz basta — os assets (templates XML, scripts Luau, estilos) são lidos com caminho relativo ao CWD.
+- `target/release/rustploy-gui` — o cliente desktop (ver [Cliente](#cliente)); em modo dev, `cargo run` a partir da raiz do `rustploy-gui` basta — os assets (templates XML, scripts Luau, estilos) são lidos com caminho relativo ao CWD.
 
 Para empacotar o `rustploy-gui` distribuível (binário + assets no mesmo pacote, sem depender do checkout do repo) use os alvos do `Makefile`:
 
@@ -80,7 +80,7 @@ make deb-gui                    # .deb para Linux (cargo-deb) — dist/*.deb
 make rustploy-gui-windows-dist   # .zip portável para Windows (cross via cargo-xwin) — dist/rustploy-gui-windows.zip
 ```
 
-Os dois embarcam a árvore `views/` inteira (templates + a camada Luau em `views/scripts/`, pacotes `fmt/`/`handlers/`/`net/` — ver `docs/luau-modularizacao-pacotes.md`), `styles/`, ícones e os blueprints de template (`crates/shared/templates/blueprints/`). O release automático (`.github/workflows/release.yml`, disparado por tag `v*`) gera os pacotes (daemon Linux, `.deb` do GUI, `.zip` Windows do GUI).
+Os dois embarcam a árvore `views/` inteira (templates + a camada Luau em `views/scripts/`, pacotes `fmt/`/`handlers/`/`net/` — ver `docs/luau-modularizacao-pacotes.md`), `styles/`, ícones e os blueprints de template (`assets/blueprint-logos/` (logos dos blueprints)). O release automático (`.github/workflows/release.yml` **do agregador**, disparado por tag `v*`, com checkout dos submodules) gera os pacotes (daemon Linux, `.deb` do GUI, `.zip` Windows do GUI).
 
 ## Execução
 
@@ -162,11 +162,14 @@ Cada transição é persistida no SQLite. Ao reiniciar, deploys interrompidos s�
 
 ## Arquitetura
 
+Três repositórios, reunidos pelo agregador `rustploy` via git submodules
+(`git clone --recurse-submodules`):
+
 ```tree
-crates/
-├── shared/     # Command, Event, Response, modelos de domínio, RustployConfig
-├── daemon/     # rustployd — API HTTP, SQLite (sqlx), Docker, ingress, deploy engine
-└── rustploy-gui/  # rustploy-gui — único cliente (glacier-ui/XML→iced), fala HTTP
+rustploy/                # agregador: .gitmodules + docs/
+├── rustploy-shared/     # crates.io — Command, Event, Response, modelos de domínio, RustployConfig, templates
+├── rustploy-daemon/     # este repo: rustployd — API HTTP, SQLite (sqlx), Docker, ingress, deploy engine (crates/daemon), importer
+└── rustploy-gui/        # rustploy-gui — único cliente (glacier-ui/XML→iced), fala HTTP
 ```
 
 `rustploy-gui` fala **HTTP/JSON + SSE** com o daemon (`crates/daemon/src/api/http_api.rs`), porque sua lógica roda em Luau (`fetch`/`sse`): `POST /api/rpc` (um `Command` por requisição), `GET /api/events` (snapshot completo a cada 2s + eventos do bus, como Server-Sent Events), `GET /api/health`.

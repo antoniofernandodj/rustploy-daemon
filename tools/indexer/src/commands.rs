@@ -17,11 +17,11 @@ use std::fs;
 use std::path::Path;
 use syn::visit::Visit;
 
-const PROTOCOL: &str = "crates/shared/src/protocol.rs";
-const ROUTES: &str = "crates/daemon/src/api/routes.rs";
-const GUI_SCRIPTS: &str = "crates/rustploy-gui/views/scripts/";
-const WEBUI: &str = "crates/daemon/webui/";
-const AGENT: &str = "crates/rustploy-gui/src/agent/";
+const PROTOCOL: &str = "rustploy-shared/src/protocol.rs";
+const ROUTES: &str = "rustploy-daemon/crates/daemon/src/api/routes.rs";
+const GUI_SCRIPTS: &str = "rustploy-gui/views/scripts/";
+const WEBUI: &str = "rustploy-daemon/crates/daemon/webui/";
+const AGENT: &str = "rustploy-gui/src/agent/";
 
 struct Variant {
     name: String,
@@ -58,7 +58,7 @@ pub fn render(root: &Path, files: &[String]) -> Result<String, String> {
         s,
         "> Gerado por `cargo run -p indexer`; não editar à mão. Uma linha por variante do\n\
          > `enum Command` (`{PROTOCOL}`), agrupada pelos comentários do enum.\n\
-         > `daemon:` = `crates/daemon/src/api/handlers/<arquivo>.rs` (`::fn` quando não é `handle`);\n\
+         > `daemon:` = `rustploy-daemon/crates/daemon/src/api/handlers/<arquivo>.rs` (`::fn` quando não é `handle`);\n\
          > `gui:` = arquivos sob `{GUI_SCRIPTS}`; `web:` = sob `{WEBUI}`; `—` = ninguém;\n\
          > `agente:` (só quando há) = sob `{AGENT}` (API de agente da GUI; `catalog` = só documentado)."
     );

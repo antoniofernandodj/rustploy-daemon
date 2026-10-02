@@ -28,81 +28,81 @@ const COMMANDS_MD: &str = "comandos.md";
 const AREAS: &[(&str, &str, &[&str])] = &[
     (
         "shared.md",
-        "crates/shared — modelos, protocolo, manifest, templates",
-        &["crates/shared/"],
+        "rustploy-shared — modelos, protocolo, manifest, templates",
+        &["rustploy-shared/"],
     ),
     (
         "daemon-api.md",
         "daemon: API HTTP e handlers de Command",
-        &["crates/daemon/src/api/"],
+        &["rustploy-daemon/crates/daemon/src/api/"],
     ),
     (
         "daemon-deploy.md",
         "daemon: deploy, jobs e manutenção",
         &[
-            "crates/daemon/src/deploy/",
-            "crates/daemon/src/jobs/",
-            "crates/daemon/src/maintenance/",
+            "rustploy-daemon/crates/daemon/src/deploy/",
+            "rustploy-daemon/crates/daemon/src/jobs/",
+            "rustploy-daemon/crates/daemon/src/maintenance/",
         ],
     ),
     (
         "daemon-db.md",
         "daemon: persistência (db/)",
-        &["crates/daemon/src/db/"],
+        &["rustploy-daemon/crates/daemon/src/db/"],
     ),
     (
         "daemon-docker.md",
         "daemon: Docker/Compose e ingress (proxy, TLS)",
-        &["crates/daemon/src/docker/", "crates/daemon/src/ingress/"],
+        &["rustploy-daemon/crates/daemon/src/docker/", "rustploy-daemon/crates/daemon/src/ingress/"],
     ),
     (
         "daemon-registry.md",
         "daemon: registry embutido e provedores git",
         &[
-            "crates/daemon/src/registry/",
-            "crates/daemon/src/git_providers/",
+            "rustploy-daemon/crates/daemon/src/registry/",
+            "rustploy-daemon/crates/daemon/src/git_providers/",
         ],
     ),
     (
         "webui.md",
         "webui (HTML + Alpine.js) servida pelo daemon",
-        &["crates/daemon/webui/"],
+        &["rustploy-daemon/crates/daemon/webui/"],
     ),
     (
         "daemon-core.md",
         "daemon: main, bins, event bus, secrets, métricas e o resto",
-        &["crates/daemon/"],
+        &["rustploy-daemon/crates/daemon/"],
     ),
     (
         "gui-handlers.md",
         "rustploy-gui: handlers Luau (as ações que os .gv disparam)",
-        &["crates/rustploy-gui/views/scripts/handlers/"],
+        &["rustploy-gui/views/scripts/handlers/"],
     ),
     (
         "gui-scripts.md",
         "rustploy-gui: demais scripts Luau (estado, rede, formatação, janelas)",
-        &["crates/rustploy-gui/views/scripts/"],
+        &["rustploy-gui/views/scripts/"],
     ),
     (
         "gui-views.md",
         "rustploy-gui: telas e componentes .gv, estilos",
-        &["crates/rustploy-gui/views/"],
+        &["rustploy-gui/views/"],
     ),
-    ("gui.md", "rustploy-gui (Rust)", &["crates/rustploy-gui/"]),
-    ("importer.md", "importer", &["crates/importer/"]),
-    ("tools.md", "ferramentas do repositório", &["tools/"]),
+    ("gui.md", "rustploy-gui (Rust)", &["rustploy-gui/"]),
+    ("importer.md", "importer", &["rustploy-daemon/crates/importer/"]),
+    ("tools.md", "ferramentas do repositório", &["rustploy-daemon/tools/"]),
 ];
 
 /// Diretórios de dados que viram uma linha só no INDEX.md.
 const COLLAPSE: &[(&str, &str)] = &[(
-    "crates/shared/templates/blueprints/",
+    "rustploy-shared/templates/blueprints/",
     "catálogo de templates de app (formato Dokploy), compilado pelo build.rs do shared",
 )];
 
 /// Diretórios que o INDEX.md lista só por nome, numa linha: a descrição de
 /// cada arquivo repetiria um índice que já cobre o diretório melhor.
 const NAMES_ONLY: &[(&str, &str)] = &[(
-    "crates/daemon/src/api/handlers/",
+    "rustploy-daemon/crates/daemon/src/api/handlers/",
     "um arquivo por `Command` (exceto `mod.rs`); o que cada um faz está em `comandos.md` e `daemon-api.md`",
 )];
 
@@ -231,35 +231,85 @@ fn run() -> Result<(), Vec<String>> {
     Ok(())
 }
 
+/// Raiz do **agregador** (onde moram `docs/` e os submodules). Ordem:
+/// 1. `$RUSTPLOY_SUITE` — explícito;
+/// 2. o superprojeto git, quando este repo roda como submodule;
+/// 3. o toplevel atual, se ele já for o agregador (tem `.gitmodules`).
 fn repo_root() -> Result<PathBuf, String> {
-    let out = Command::new("git")
-        .args(["rev-parse", "--show-toplevel"])
-        .output()
-        .map_err(|e| format!("git não rodou: {e}"))?;
-    if !out.status.success() {
-        return Err("não é um repositório git".into());
+    if let Ok(dir) = std::env::var("RUSTPLOY_SUITE") {
+        return Ok(PathBuf::from(dir));
     }
-    Ok(PathBuf::from(String::from_utf8_lossy(&out.stdout).trim()))
+    let git = |args: &[&str]| -> Option<String> {
+        let out = Command::new("git").args(args).output().ok()?;
+        let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        (out.status.success() && !s.is_empty()).then_some(s)
+    };
+    if let Some(sup) = git(&["rev-parse", "--show-superproject-working-tree"]) {
+        return Ok(PathBuf::from(sup));
+    }
+    let top = git(&["rev-parse", "--show-toplevel"]).ok_or("não é um repositório git")?;
+    let top = PathBuf::from(top);
+    if top.join(".gitmodules").is_file() {
+        return Ok(top);
+    }
+    Err("este repo está fora do agregador: clone o rustploy-suite com --recurse-submodules \
+         (ou defina RUSTPLOY_SUITE) — o índice cobre os três repos e grava em docs/indice/"
+        .into())
 }
 
-/// Arquivos versionados + novos não ignorados, para indexar antes do commit.
-fn tracked_files(root: &Path) -> Result<Vec<String>, String> {
-    let out = Command::new("git")
+/// Diretórios dos submodules, lidos do `.gitmodules` do agregador.
+fn submodule_dirs(root: &Path) -> Vec<String> {
+    let Ok(out) = Command::new("git")
         .current_dir(root)
+        .args(["config", "-f", ".gitmodules", "--get-regexp", r"^submodule\..*\.path$"])
+        .output()
+    else {
+        return Vec::new();
+    };
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|l| l.split_whitespace().nth(1).map(str::to_owned))
+        .collect()
+}
+
+/// `git ls-files` (versionados + novos não ignorados) de um repo, com `prefix/`.
+fn ls_files(dir: &Path, prefix: &str) -> Result<Vec<String>, String> {
+    let out = Command::new("git")
+        .current_dir(dir)
         .args(["ls-files", "--cached", "--others", "--exclude-standard"])
         .output()
         .map_err(|e| format!("git ls-files não rodou: {e}"))?;
     if !out.status.success() {
         return Err(format!(
-            "git ls-files falhou: {}",
+            "git ls-files falhou em {}: {}",
+            dir.display(),
             String::from_utf8_lossy(&out.stderr).trim()
         ));
     }
-    let mut files: Vec<String> = String::from_utf8_lossy(&out.stdout)
+    Ok(String::from_utf8_lossy(&out.stdout)
         .lines()
-        .filter(|p| root.join(p).is_file())
-        .map(str::to_owned)
-        .collect();
+        .filter(|p| dir.join(p).is_file())
+        .map(|p| format!("{prefix}{p}"))
+        .collect())
+}
+
+/// Arquivos do agregador **e** dos submodules (com o diretório do submodule como
+/// prefixo), para indexar antes do commit. Um submodule não clonado é erro: o
+/// índice dele sumiria em silêncio.
+fn tracked_files(root: &Path) -> Result<Vec<String>, String> {
+    let subs = submodule_dirs(root);
+    let mut files = ls_files(root, "")?;
+    // Os gitlinks aparecem no ls-files do agregador como "arquivo" do submodule.
+    files.retain(|p| !subs.iter().any(|s| p == s));
+    for sub in &subs {
+        let dir = root.join(sub);
+        if !dir.join(".git").exists() {
+            return Err(format!(
+                "submodule `{sub}` não está clonado (git submodule update --init)"
+            ));
+        }
+        files.extend(ls_files(&dir, &format!("{sub}/"))?);
+    }
     files.sort();
     files.dedup();
     Ok(files)

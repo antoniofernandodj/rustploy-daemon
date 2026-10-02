@@ -17,7 +17,7 @@ There used to be a fourth crate, `client` — a Ratatui TUI — which has since 
 
 ## Key Architecture Components
 
-- **Templates/Blueprints:** Located in `crates/shared/templates/blueprints/` (Dokploy-compatible format), compiled in via `build.rs`. Each app catalog entry defines its Docker Compose structure, generators, and required env vars.
+- **Templates/Blueprints:** Located in `rustploy-shared/templates/blueprints/` (separate repo; the logo images live in `rustploy-gui/assets/blueprint-logos/`) (Dokploy-compatible format), compiled in via `build.rs`. Each app catalog entry defines its Docker Compose structure, generators, and required env vars.
 - **Ingress & Proxy:** Managed by the daemon (`crates/daemon/src/ingress/`), handling TLS/ACME, domain routing (`arc-swap` route table), and reverse proxying to containers.
 - **Deployment Engine:** `crates/daemon/src/deploy/executor.rs` drives the deploy state machine (clone/pull → build → stage → healthcheck → swap → drain → promote).
 - **Embedded Registry:** `crates/daemon/src/registry/` implements OCI Distribution Spec v2 directly in Rust (no `registry:2` container) — push/pull, GC, Basic auth by token, optional public exposure via ingress/ACME.
@@ -27,11 +27,11 @@ There used to be a fourth crate, `client` — a Ratatui TUI — which has since 
 ### Building and Running
 
 - **Build Workspace:** `make build` (builds daemon and gui in release mode).
-- **Check Compilation:** `make check` (fast workspace check).
+- **Check Compilation:** `make check` (fast check of the daemon, gui and shared repos).
 - **Development Mode:**
-  - Run Daemon: `make dev-daemon` (or `cargo run -p daemon`)
-  - Run GUI: `cargo run -p rustploy-gui`
-- **Testing:** `make test` (runs all tests in the workspace).
+  - Run Daemon: `make dev-rustploy` (or `cargo run -p rustploy`)
+  - Run GUI: `cd ../rustploy-gui && cargo run`
+- **Testing:** `make test` (runs the tests of the daemon, gui and shared repos).
 - **Formatting:** `make fmt` (enforces project-wide Rust styling).
 
 ### Packaging and Installation
@@ -43,10 +43,10 @@ There used to be a fourth crate, `client` — a Ratatui TUI — which has since 
 ## Development Conventions
 
 - **`glacier-ui` dependency:** `rustploy-gui` consumes `glacier-ui` from crates.io (pinned version), never a local `path`/`[patch]` — changes to `glacier-ui` require publishing a new version there first.
-- **Luau logic:** The reactive network/business layer lives in `crates/rustploy-gui/views/scripts/*.luau` (packages `fmt/`, `handlers/`, `net/`). Type-check with `luau-lsp analyze` before considering a change done.
+- **Luau logic:** The reactive network/business layer lives in `rustploy-gui/views/scripts/*.luau` (separate repo) (packages `fmt/`, `handlers/`, `net/`). Type-check with `luau-lsp analyze` before considering a change done.
 - **Postcard wire safety:** `Command`/`Response`/`Event` enum variants (protocol.rs) are positional on the wire — always append new fields/variants at the end, never insert in the middle, never use `skip_serializing_if`/serde defaults.
 - **Surgical Edits:** Use precise, minimal edits when modifying templates or UI components to maintain structural integrity.
-- **Testing:** New features or bug fixes should be accompanied by verification via `make test` and, for GUI changes, manual testing in a running window (`cargo run -p rustploy-gui`) — a green test suite doesn't confirm a UI feature actually renders/behaves correctly.
+- **Testing:** New features or bug fixes should be accompanied by verification via `make test` and, for GUI changes, manual testing in a running window (`cargo run` in `../rustploy-gui`) — a green test suite doesn't confirm a UI feature actually renders/behaves correctly.
 
 ## Documentation Reference
 

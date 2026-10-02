@@ -23,7 +23,7 @@ Como este guia está organizado:
 
 > A API de agente foi implementada em 2026-08-28. As decisões de desenho por
 > trás dela estão em `docs/api-agente-no-gui.md`; a implementação, em
-> `crates/rustploy-gui/src/agent/`.
+> `rustploy-gui/src/agent/` (repo da gui).
 
 ## O modelo mental
 
@@ -262,7 +262,7 @@ para virarem a única porta.
 Codificação serde **externally-tagged**: variante com campos é objeto de uma
 chave (`{"ProjectCreate":{…}}`), variante sem campos é a string nua
 (`"ProjectList"`). Vale para `Command` **e** para `Response`. Fonte da verdade:
-`crates/shared/src/protocol.rs` e `models.rs`.
+`rustploy-shared/src/protocol.rs` e `models.rs`.
 
 ## Armadilhas
 
@@ -308,7 +308,7 @@ Relevante quando algo não responde como esperado:
 
 - O servidor é **hyper** (não axum), numa thread com runtime tokio próprio — o
   loop do iced é dono da thread principal. Vive em
-  `crates/rustploy-gui/src/agent/`.
+  `rustploy-gui/src/agent/` (repo da gui).
 - A sessão é **observada**, não notificada: o gancho `on_message` do
   `GlacierDaemon` roda depois de cada dispatch da janela principal, e a ponte
   relê o contexto ali. Cobre login, logout e troca de servidor sem conhecer
@@ -322,14 +322,49 @@ Relevante quando algo não responde como esperado:
 
 # Parte 2 — Trabalhando no código
 
-## Achar código: comece por `docs/indice/`
+## Os três repos (agregador `rustploy-suite`)
+
+O projeto são **três repositórios**, reunidos por um agregador via git submodules
+(a mesma ideia do `DocumentServer` do Euro Office):
+
+```
+rustploy/                     ← agregador: .gitmodules + docs/ (planos e índice)
+├── docs/                     planos, relatórios e docs/indice/ (gerado)
+├── rustploy-daemon/          ESTE repo: daemon, importer, indexer, webui, Makefile, AGENTS.md
+├── rustploy-gui/             cliente glacier-ui (views/, src/, assets/, packaging/)
+└── rustploy-shared/          crate publicado no crates.io: modelos, protocolo, templates
+```
+
+- Clone com `git clone --recurse-submodules <agregador>`; sem a flag os três
+  diretórios ficam vazios. Os irmãos são achados por caminho relativo (`../…`),
+  então o `Makefile` daqui assume esse layout (`GUI_DIR`/`SHARED_DIR` mudam isso).
+- **`rustploy-shared` não é `path`.** O daemon e a gui o consomem **do
+  crates.io** (`version = "0.1.0"`), como o `glacier-ui`. Mudou o shared? Bump da
+  versão → commit → `git push` → `cargo publish` (`--dry-run` antes) → subir a
+  versão no `Cargo.toml` do daemon e da gui → `cargo update -p rustploy-shared`.
+  Para **experimentar** sem publicar, use só na linha de comando (nunca commite):
+  `cargo check --config 'patch.crates-io.rustploy-shared.path="../rustploy-shared"'`.
+- Cada repo tem o seu `Cargo.lock`, o seu `[profile]` e o seu `target/`. O
+  `[patch.crates-io]` do `iced_tiny_skia` mora no `Cargo.toml` da **gui**.
+- O catálogo de templates (`templates/blueprints/`) é do shared, mas as imagens
+  dos logos moram na gui (`assets/blueprint-logos/<id>/<arquivo>`); o shared só
+  guarda o nome de cada uma em `templates/logos.txt` (o pacote estourava o limite
+  de 10 MB do crates.io com elas).
+- Todo `docs/…` citado neste arquivo (planos, relatórios, `docs/indice/`) é o
+  `docs/` do **agregador**, ou seja `../docs/…` a partir daqui.
+- Os caminhos que o resto deste arquivo cita sem repo (`crates/daemon/…`,
+  `crates/importer/…`, `tools/…`) são **deste** repo. `views/…`, `assets/…` e
+  `src/…` da GUI são do `rustploy-gui`; `src/…` do shared, do `rustploy-shared`.
+
+## Achar código: comece por `docs/indice/` (no agregador)
 
 Antes de abrir arquivo ou sair dando `grep` por palavra-chave, leia o índice.
 Ele foi feito para gastar pouco token: arquivos como `deploy/executor.rs` passam
 de 20 mil tokens lidos inteiros, e o índice responde "onde está X" por uma
 fração disso.
 
-1. **`docs/indice/INDEX.md`**: a árvore do repositório, com uma linha de
+1. **`../docs/indice/INDEX.md`** (o `docs/` mora no agregador; os caminhos do
+   índice já vêm com o repo na frente, ex. `rustploy-gui/views/…`): a árvore dos três repositórios, com uma linha de
    responsabilidade por arquivo, e qual índice de área cobre cada diretório.
 2. **O índice da área** (`daemon-deploy.md`, `gui-handlers.md`, `webui.md`…):
    structs com campos, enums com variantes, métodos sob `impl Tipo`, funções
@@ -343,14 +378,15 @@ fração disso.
 O índice **não tem número de linha, de propósito**: ele mudaria a cada edição.
 Tudo é endereçado por caminho + nome, então o índice só envelhece quando um
 símbolo é criado, renomeado ou apagado. Nesse caso, rode **`make index`** (ou
-`cargo run -p indexer`) e commite `docs/indice/` junto. Ele gera e checa tudo
+`cargo run -p indexer`) e commite `docs/indice/` **no agregador** junto com o
+ponteiro novo dos submodules. O indexador acha o agregador sozinho (superprojeto git ou `$RUSTPLOY_SUITE`) e falha se este repo estiver fora dele. Ele gera e checa tudo
 em memória antes de gravar: se um arquivo não parseia, se o `enum Command` some
 ou se uma área fica vazia (diretório movido), ele sai com erro dizendo o quê e
 **não altera nada**, para o índice nunca ficar pela metade. Os arquivos são gerados:
 não edite à mão. A descrição de cada item vem do `//!`/`///` (ou do comentário
 de cabeçalho, em Luau/JS/`.gv`), então documentar o código melhora o índice.
-O gerador fica em `tools/indexer/`, e o porquê de cada decisão está em
-`docs/plano-indice-de-codigo.md`.
+O gerador fica em `tools/indexer/` (deste repo), e o porquê de cada decisão está em
+`../docs/plano-indice-de-codigo.md`.
 
 ## Convenções
 
@@ -389,8 +425,8 @@ subir a dependência**. Nunca contorne com `[patch.crates-io]` ou dependência p
    verde não basta para uma feature de UI.
 4. Commit completo **antes** do publish, e `git push`.
 5. `cargo publish` (validar antes com `cargo publish --dry-run`).
-6. Subir a versão em `crates/rustploy-gui/Cargo.toml` para a recém-publicada.
-7. `cargo check -p rustploy-gui` para confirmar.
+6. Subir a versão em `rustploy-gui/Cargo.toml` (repo da gui) para a recém-publicada.
+7. `cargo check` no `rustploy-gui` para confirmar.
 
 O passo 4 é o que evita a divergência do passo 0 — foi justamente pulá-lo que a
 criou, duas vezes.
@@ -473,10 +509,10 @@ porta reaproveita o JS velho do cache do navegador. Use ctrl+shift+r.
 
 ```bash
 luau-lsp analyze --base-luaurc=.luaurc \
-  --definitions=crates/rustploy-gui/views/scripts/glacier.d.luau <arquivo(s)>
+  --definitions=../rustploy-gui/views/scripts/glacier.d.luau <arquivo(s)>
 ```
 
-Não substitui `cargo test -p rustploy-gui --test templates_render` (o runtime
+Não substitui `cargo test --test templates_render (no rustploy-gui)` (o runtime
 `mlua` de verdade), mas pega erro de caminho de módulo e de tipo em segundos.
 Para o VS Code, a extensão `johnnymorganz.luau-lsp` (config já versionada em
 `.luaurc` + `.vscode/settings.json`). O `glacier.d.luau` **precisa** do
@@ -524,30 +560,30 @@ aqui" se perde.
 
 ## Build & Run
 
-```bash
-# Tudo
-cargo build
-cargo build --release
+Cada repo compila **sozinho** (o `rustploy-shared` vem do crates.io). Do
+diretório deste repo, o `Makefile` roda nos três: `make build`, `make check`,
+`make test`, `make fmt`, `make clippy`.
 
+```bash
 # Daemon (precisa do socket do Docker). `default-run = "rustployd"`, então o
 # `--bin` só é necessário para o outro binário (`rustployd-fw`).
 cargo run -p rustploy
 
-# GUI
-cargo run -p rustploy-gui
+# GUI (rode a partir do diretório do rustploy-gui: o debug lê views/ e assets/
+# do disco, relativos ao CWD)
+cd ../rustploy-gui && cargo run
 ```
 
-**Testes.** Os diretórios são `crates/daemon` e `crates/shared`, mas os
-**pacotes** se chamam `rustploy` e `rustploy-shared` (renomeados para o
-`cargo install rustploy`) — `-p daemon` / `-p shared` não resolvem. O daemon não
-tem lib target, então seus testes ficam sob `--bins`.
+**Testes.** Neste repo os diretórios são `crates/daemon` e `crates/importer`, mas
+os **pacotes** se chamam `rustploy` e `rustploy-import` — `-p daemon` não
+resolve. O daemon não tem lib target, então seus testes ficam sob `--bins`.
 
 ```bash
-cargo test -p rustploy --bins <nome_do_teste>
-cargo test -p rustploy-shared
-cargo test -p rustploy-gui --bins            # inclui a API de agente
-cargo test -p rustploy-gui --test templates_render   # runtime mlua real
+cargo test -p rustploy --bins <nome_do_teste>     # aqui, no rustploy-daemon
 cargo check --workspace
+# no rustploy-shared:   cargo test
+# no rustploy-gui:      cargo test --bins          # inclui a API de agente
+#                       cargo test --test templates_render   # runtime mlua real
 ```
 
 Três testes de `web_ui::headless_tests` exigem `google-chrome` instalado e
@@ -623,7 +659,11 @@ termina TLS com certificado ACME.
 | `daemon` | `rustployd` | Servidor: API, banco, Docker, ingress, motor de deploy, registry |
 | `rustploy-gui` | `rustploy-gui` | Cliente desktop glacier-ui (XML→iced). Toda a rede e lógica de negócio vive em **Luau** (`views/scripts/`), falando com o daemon pela API HTTP/JSON + SSE |
 | `fw-helper` | `rustployd-fw` | Helper privilegiado de firewall (root, socket activation em `/run/rustploy/fw.sock`). O daemon pede allow/deny de portas externas (`daemon/src/firewall.rs`); o helper só aceita portas dentro da faixa `[external_ports]` e só fala com o ufw. **Sem dependência da crate `shared`, de propósito.** Ver `docs/relatorio-porta-externa-automatica.md` |
-| `tools/indexer` | `indexer` | Gera `docs/indice/` (`make index`): o mapa de arquivos e símbolos da seção "Achar código" da Parte 2. Não é publicado nem empacotado |
+| `tools/indexer` | `indexer` | Gera `../docs/indice/` no agregador (`make index`): o mapa de arquivos e símbolos da seção "Achar código" da Parte 2. Não é publicado nem empacotado |
+
+Repos: `shared` é o repo `rustploy-shared`, `rustploy-gui` é o repo `rustploy-gui`;
+`daemon`, `fw-helper` (bin `rustployd-fw`, dentro de `crates/daemon`), o importer e
+`tools/indexer` são deste repo.
 
 Os identificadores são ULIDs, com prefixo por tipo (`prj_`, `svc_`, `dep_`,
 `arc_`).
@@ -642,7 +682,7 @@ O daemon tem **um** protocolo voltado a cliente: HTTP/JSON + SSE
 | `POST /api/services/<id>/archive` | upload de zip (corpo binário — **não** é um `Command`) |
 | `/webhook/…`, `/oauth/…` | rotas públicas, autenticação própria, fora do gate de bearer |
 
-`Command`, `Response` e `Event` vivem em `crates/shared/src/protocol.rs` e são
+`Command`, `Response` e `Event` vivem em `rustploy-shared/src/protocol.rs` e são
 despachados por `dispatch()` (`api/routes.rs`, um handler por variante em
 `api/handlers/`).
 
@@ -835,7 +875,7 @@ Os três pontos que registram rota usam essa mesma função. Se o deploy e o
 reconcile escolhessem alvos diferentes, o domínio mudaria de destino sozinho 30
 segundos depois de subir.
 
-## `rustploy-gui` (`crates/rustploy-gui/src/`)
+## `rustploy-gui` (repo `rustploy-gui`, `src/`)
 
 UI declarada em templates de sintaxe XML (`views/*.gv` — tags XML, extensão
 `.gv`, **não** `.xml`), renderizados pela crate publicada `glacier-ui`. Toda
@@ -844,7 +884,7 @@ mutação) vive em **Luau** (`views/scripts/`), **não** neste Rust — o `src/`
 é o runtime `iced::daemon`, a moldura da janela, a persistência local e a **API
 de agente** (`src/agent/`, a única parte do Rust daqui que fala rede).
 
-Rode da raiz do workspace (`cargo run -p rustploy-gui`) ou de um layout
+Rode da raiz do repo `rustploy-gui` (`cargo run`) ou de um layout
 empacotado: caminhos de template/script são relativos ao CWD que o glacier
 resolve, não necessariamente ao diretório de lançamento.
 
@@ -855,7 +895,7 @@ resolve, não necessariamente ao diretório de lançamento.
   para toda referência relativa resolver igual independente de como o app foi
   lançado. Ordem: `$RUSTPLOY_UI_ASSETS` → diretório do próprio executável
   (layout portátil/Windows) → `/usr/share/rustploy` (pacote Debian) → diretório
-  atual (dev). Confirma a base sondando `crates/rustploy-gui/views/app.gv`. Só
+  atual (dev). Confirma a base sondando `views/app.gv`. Só
   existe em debug: em release os assets são embutidos no binário
   (`embedded.rs`, `include_dir`) e o executável é standalone.
 - **`app/mod.rs`** — desde o glacier **0.38**, apenas **configuração do
@@ -945,7 +985,7 @@ boa ideia para quem chega agora, e todas já foram tentadas.
 | TUI Ratatui como interface primária | **removido**; `rustploy-gui` (glacier-ui) | o TUI levou junto o CLI `apply`/`export`, que não tem substituto — `ManifestApply`/`ManifestExport` ficaram acessíveis só por API |
 | "Não tem Web UI" | o daemon **serve uma webui** | toda feature de UI agora precisa entrar nos dois clientes |
 | UI declarada em KDL | **XML + Luau** | — |
-| `crates/rustploy-gui/src/app/` reimplementando o runtime `iced::daemon` (~250 linhas) | ganchos do builder do `GlacierDaemon` | o buraco era de API do glacier; foi fechado na 0.38 |
+| `rustploy-gui/src/app/` reimplementando o runtime `iced::daemon` (~250 linhas) | ganchos do builder do `GlacierDaemon` | o buraco era de API do glacier; foi fechado na 0.38 |
 | Login lembrado e geometria da janela persistidos à mão em `app/store.rs` | `storage` do Luau + `remember_window_geometry` nativos | — |
 | Auto-deploy por webhook marcado como "v2" | **implementado** | — |
 

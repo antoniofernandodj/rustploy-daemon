@@ -1,3 +1,9 @@
+# Layout do agregador (rustploy-suite): este repo é o submodule `rustploy-daemon`
+# e os irmãos ficam um nível acima. Sobrescreva se o seu checkout for outro.
+GUI_DIR    ?= ../rustploy-gui
+SHARED_DIR ?= ../rustploy-shared
+REPOS      := . $(GUI_DIR) $(SHARED_DIR)
+
 VERSION := $(shell grep '^version' crates/daemon/Cargo.toml | head -1 | cut -d'"' -f2)
 
 DAEMON_BIN := target/release/rustployd
@@ -10,6 +16,11 @@ RED   := \033[31m
 
 export CARGO_TERM_COLOR := never
 
+# Roda um comando em cada repo (daemon, gui, shared), parando no primeiro erro.
+define for_each_repo
+	@for r in $(REPOS); do echo "$(BOLD)==> $$r$(RESET)"; (cd $$r && $(1)) || exit 1; done
+endef
+
 .DEFAULT_GOAL := help
 
 # ── Build ──────────────────────────────────────────────────────────────────────
@@ -17,10 +28,11 @@ export CARGO_TERM_COLOR := never
 .PHONY: build
 build: ## Compila daemon e gui em modo release
 	cargo build --release --workspace
+	cargo build --release --manifest-path $(GUI_DIR)/Cargo.toml
 
 .PHONY: check
-check: ## Verifica o workspace sem linkar (mais rápido)
-	cargo check --workspace
+check: ## Verifica daemon, gui e shared sem linkar (mais rápido)
+	$(call for_each_repo,cargo check --workspace)
 
 .PHONY: dev-rustploy
 dev-rustploy: ## Roda o rustploy em modo debug (para desenvolvimento)
@@ -29,32 +41,32 @@ dev-rustploy: ## Roda o rustploy em modo debug (para desenvolvimento)
 # ── Qualidade ─────────────────────────────────────────────────────────────────
 
 .PHONY: test
-test: ## Roda todos os testes do workspace
-	cargo test --workspace
+test: ## Roda os testes de daemon, gui e shared
+	$(call for_each_repo,cargo test --workspace)
 
 .PHONY: fmt
-fmt: ## Formata todo o código com rustfmt
-	cargo fmt --all
+fmt: ## Formata todo o código com rustfmt (os três repos)
+	$(call for_each_repo,cargo fmt --all)
 
 .PHONY: fmt-check
 fmt-check: ## Verifica formatação sem modificar arquivos
-	cargo fmt --all -- --check
+	$(call for_each_repo,cargo fmt --all -- --check)
 
 .PHONY: clippy
-clippy: ## Roda o clippy em todo o workspace
-	cargo clippy --workspace --all-targets -- -D warnings
+clippy: ## Roda o clippy nos três repos
+	$(call for_each_repo,cargo clippy --workspace --all-targets -- -D warnings)
 
 .PHONY: lint
 lint: fmt-check clippy ## fmt-check + clippy
 
 .PHONY: index
-index: ## Regenera docs/indice/; checa tudo antes e, se algo falhar, não altera nada
+index: ## Regenera ../docs/indice/ (no agregador); checa tudo antes e, se algo falhar, não altera nada
 	cargo run -q -p indexer
 
 # ── Cross-compile (Windows) ───────────────────────────────────────────────────
 
 WIN_TARGET   := x86_64-pc-windows-msvc
-WIN_BIN      := target/$(WIN_TARGET)/release/rustploy-gui.exe
+WIN_BIN      := $(GUI_DIR)/target/$(WIN_TARGET)/release/rustploy-gui.exe
 
 .PHONY: rustploy-gui-windows
 rustploy-gui-windows: ## Compila o rustploy-gui para Windows (.exe) via cargo-xwin
@@ -62,7 +74,7 @@ rustploy-gui-windows: ## Compila o rustploy-gui para Windows (.exe) via cargo-xw
 		(echo "$(BOLD)Instalando cargo-xwin...$(RESET)" && cargo install cargo-xwin)
 	@rustup target list --installed | grep -q '^$(WIN_TARGET)$$' || \
 		rustup target add $(WIN_TARGET)
-	cargo xwin build --release -p rustploy-gui --target $(WIN_TARGET)
+	cargo xwin build --release --manifest-path $(GUI_DIR)/Cargo.toml --target $(WIN_TARGET)
 	@echo ""
 	@echo "$(GREEN)Executável Windows gerado:$(RESET)"
 	@ls -lh $(WIN_BIN)
@@ -81,32 +93,26 @@ rustploy-gui-windows-dist: ## Pacote .zip do rustploy-gui p/ Windows (apaga dist
 	# CRT estática (+crt-static) para não depender do Visual C++ Redistributable
 	# na máquina Windows de destino. O ícone do .exe é embutido pelo build.rs.
 	RUSTFLAGS="-C target-feature=+crt-static" \
-		cargo xwin build --release -p rustploy-gui --target $(WIN_TARGET)
+		cargo xwin build --release --manifest-path $(GUI_DIR)/Cargo.toml --target $(WIN_TARGET)
 	@echo "$(BOLD)Apagando dist/ e montando $(WIN_DIST_DIR)...$(RESET)"
 	@rm -rf dist
-	@mkdir -p $(WIN_DIST_DIR)/crates/rustploy-gui $(WIN_DIST_DIR)/crates/shared/templates
+	@mkdir -p $(WIN_DIST_DIR)/assets
 	@cp $(WIN_BIN) $(WIN_DIST_DIR)/
 	# Assets lidos em runtime por caminho relativo ao CWD (o exe faz chdir p/ a
-	# própria pasta no startup — ver src/assets.rs): mesma estrutura de pastas.
-	# `views/` é copiada INTEIRA (templates .xml, views/styles/*.gss+*.json,
-	# components/, e TODA a camada Luau — views/scripts/{app.luau,state.luau,
-	# helpers.luau,glacier.d.luau,fmt.luau,fmt/,handlers/,net/}): copiar por
-	# sub-pasta faz esse target esquecer um pacote novo silenciosamente (foi o
-	# bug real corrigido aqui — a versão anterior copiava
-	# `crates/rustploy-gui/templates`, renomeada p/ `views/` faz tempo, e nunca
-	# pegava `views/scripts/`). Não existe mais um `crates/rustploy-gui/styles/`
-	# separado — foi movido para dentro de `views/`.
-	@cp -r crates/rustploy-gui/views  $(WIN_DIST_DIR)/crates/rustploy-gui/
-	@mkdir -p $(WIN_DIST_DIR)/crates/rustploy-gui/assets
-	@cp -r crates/rustploy-gui/assets/icons $(WIN_DIST_DIR)/crates/rustploy-gui/assets/
-	@cp -r crates/shared/templates/blueprints $(WIN_DIST_DIR)/crates/shared/templates/
+	# própria pasta no startup — ver src/assets.rs no rustploy-gui): mesma
+	# estrutura de pastas do repo da gui. `views/` é copiada INTEIRA (templates,
+	# views/styles/*.gss+*.json, components/ e TODA a camada Luau em views/scripts/):
+	# copiar por sub-pasta faz este target esquecer um pacote novo silenciosamente.
+	@cp -r $(GUI_DIR)/views $(WIN_DIST_DIR)/
+	@cp -r $(GUI_DIR)/assets/icons $(WIN_DIST_DIR)/assets/
+	@cp -r $(GUI_DIR)/assets/blueprint-logos $(WIN_DIST_DIR)/assets/
 	@printf 'Descompacte e rode rustploy-gui.exe (duplo-clique).\r\n' \
 		> $(WIN_DIST_DIR)/LEIA-ME.txt
 	@echo "$(BOLD)Conferindo se a camada Luau foi empacotada...$(RESET)"
-	@test -f $(WIN_DIST_DIR)/crates/rustploy-gui/views/scripts/app.luau || \
+	@test -f $(WIN_DIST_DIR)/views/scripts/app.luau || \
 		(echo "$(BOLD)ERRO: views/scripts/app.luau não foi copiado — pacote incompleto$(RESET)" && exit 1)
-	@echo "  $$(find $(WIN_DIST_DIR)/crates/rustploy-gui/views/scripts -name '*.luau' | wc -l) arquivos .luau empacotados"
-	@test -f $(WIN_DIST_DIR)/crates/rustploy-gui/views/styles/app.gss || \
+	@echo "  $$(find $(WIN_DIST_DIR)/views/scripts -name '*.luau' | wc -l) arquivos .luau empacotados"
+	@test -f $(WIN_DIST_DIR)/views/styles/app.gss || \
 		(echo "$(BOLD)ERRO: views/styles/app.gss não foi copiado — pacote incompleto$(RESET)" && exit 1)
 	@cd dist && zip -qr rustploy-gui-windows.zip rustploy-gui-windows
 	@echo ""
@@ -156,7 +162,7 @@ rustploy-gui-windows-sign: win-selfsign-cert ## Assina o .exe (self-signed) com 
 	osslsigncode sign \
 		-pkcs12 $(WIN_SIGN_CERT) -pass $(WIN_SIGN_PASS) \
 		-h sha256 -t $(WIN_SIGN_TS_URL) \
-		-n "Rustploy GUI" -i https://github.com/antoniofernandodj/rustploy \
+		-n "Rustploy GUI" -i https://github.com/antoniofernandodj/rustploy-gui \
 		-in  $(WIN_BIN) \
 		-out $(WIN_BIN).signed
 	@mv $(WIN_BIN).signed $(WIN_BIN)
@@ -171,11 +177,11 @@ deb-gui: ## Pacote .deb do remote-gui p/ Linux (apaga dist e regera)
 	@rm -rf dist
 	@mkdir -p dist
 	# O pacote leva SÓ o binário + .desktop + ícones (ver `[package.metadata.deb]`
-	# no Cargo.toml): os assets de runtime (views/estilos/scripts Luau) são
+	# no Cargo.toml do rustploy-gui): os assets de runtime (views/estilos/scripts Luau) são
 	# EMBUTIDOS no executável em release via `include_dir` (src/embedded.rs, que
 	# só compila sob `cfg(not(debug_assertions))`), então não existe
 	# /usr/share/rustploy e o binário roda de qualquer CWD.
-	cargo deb -p rustploy-gui -o dist/
+	cargo deb --manifest-path $(GUI_DIR)/Cargo.toml -o $(CURDIR)/dist/
 	@echo ""
 	@echo "$(GREEN)Pacote Linux (.deb) gerado:$(RESET)"
 	@ls -lh dist/*.deb
@@ -366,8 +372,8 @@ install-docker: ## Instala o Docker Engine pelo repositório oficial (Ubuntu/Deb
 # ── Limpeza ───────────────────────────────────────────────────────────────────
 
 .PHONY: clean
-clean: ## Remove artefatos de build (target/)
-	cargo clean
+clean: ## Remove artefatos de build (target/ dos três repos)
+	$(call for_each_repo,cargo clean)
 
 .PHONY: clean-deb
 clean-deb: ## Remove apenas os .deb gerados
