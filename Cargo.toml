@@ -2,7 +2,6 @@
 members = [
     "crates/daemon",
     "crates/importer",
-    "tools/indexer",
 ]
 resolver = "2"
 

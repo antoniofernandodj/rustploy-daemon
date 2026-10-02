@@ -73,7 +73,7 @@ Gera:
 - `target/release/rustployd` — o daemon
 - `target/release/rustploy-gui` — o cliente desktop (ver [Cliente](#cliente)); em modo dev, `cargo run` a partir da raiz do `rustploy-gui` basta — os assets (templates XML, scripts Luau, estilos) são lidos com caminho relativo ao CWD.
 
-Para empacotar o `rustploy-gui` distribuível (binário + assets no mesmo pacote, sem depender do checkout do repo) use os alvos do `Makefile`:
+Para empacotar o `rustploy-gui` distribuível (binário + assets no mesmo pacote, sem depender do checkout do repo) use os alvos do `Makefile` (na raiz do agregador `rustploy`, que reúne os três repos):
 
 ```bash
 make deb-gui                    # .deb para Linux (cargo-deb) — dist/*.deb
@@ -166,7 +166,7 @@ Três repositórios, reunidos pelo agregador `rustploy` via git submodules
 (`git clone --recurse-submodules`):
 
 ```tree
-rustploy/                # agregador: .gitmodules + docs/
+rustploy/                # agregador: Makefile, AGENTS.md, docs/, tools/indexer, .github/ (release)
 ├── rustploy-shared/     # crates.io — Command, Event, Response, modelos de domínio, RustployConfig, templates
 ├── rustploy-daemon/     # este repo: rustployd — API HTTP, SQLite (sqlx), Docker, ingress, deploy engine (crates/daemon), importer
 └── rustploy-gui/        # rustploy-gui — único cliente (glacier-ui/XML→iced), fala HTTP
