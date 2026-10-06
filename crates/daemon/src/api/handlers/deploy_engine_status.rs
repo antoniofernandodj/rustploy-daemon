@@ -85,15 +85,12 @@ pub async fn handle(state: AppState) -> RpResponse {
             .map(|t| (now - t.at).num_seconds().max(0) as u64)
             .unwrap_or(elapsed_secs);
 
-        let percent = dep.state.to_percent();
-
         active.push(ActiveDeployInfo {
             deployment_id: dep.id,
             service_id: dep.service_id,
             service_name,
             project_name,
             state: dep.state,
-            percent,
             started_at: dep.started_at,
             elapsed_secs,
             current_state_secs,
@@ -113,15 +110,12 @@ pub async fn handle(state: AppState) -> RpResponse {
 
         let current_state_secs = (now - dep.started_at).num_seconds().max(0) as u64;
 
-        let percent = dep.state.to_percent();
-
         recent.push(ActiveDeployInfo {
             deployment_id: dep.id,
             service_id: dep.service_id,
             service_name,
             project_name,
             state: dep.state,
-            percent,
             started_at: dep.started_at,
             elapsed_secs,
             current_state_secs,
