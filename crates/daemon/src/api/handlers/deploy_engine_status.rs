@@ -97,6 +97,7 @@ pub async fn handle(state: AppState) -> RpResponse {
             started_at: dep.started_at,
             elapsed_secs,
             current_state_secs,
+            states: dep.states_log.clone(),
         });
     }
 
@@ -124,6 +125,7 @@ pub async fn handle(state: AppState) -> RpResponse {
             started_at: dep.started_at,
             elapsed_secs,
             current_state_secs,
+            states: dep.states_log.clone(),
         });
     }
 

@@ -265,9 +265,9 @@
               <text class="th col_svc">SERVIÇO</text>
               <text class="th col_proj">PROJETO</text>
               <text class="th col_state">ESTADO</text>
-              <text class="th col_dur">PROGRESSO</text>
               <text class="th col_dur">TOTAL</text>
               <text class="th col_start">FASE</text>
+              <text class="th col_act"></text>
             </row>
             <column class="table_body">
               <text class="empty_state" x-fallback="active">Nenhum deploy em andamento.</text>
@@ -280,9 +280,20 @@
                       <text class="state_dot" :class="'state_' + a.stateKind">●</text>
                       <text class="state_lbl" :class="'state_' + a.stateKind" x-text="a.stateLabel"></text>
                     </row>
-                    <text class="td col_dur" x-text="a.bar + ' ' + a.percent"></text>
                     <text class="muted col_dur" x-text="a.total"></text>
                     <text class="muted col_start" x-text="a.phase"></text>
+                    <row class="col_act">
+                      <button class="btn_sm_ghost" type="button" @click="openDetail(a.serviceId)">Detalhes</button>
+                    </row>
+                  </row>
+                  <row class="stepper">
+                    <template x-for="(st, i) in a.steps" :key="st.label">
+                      <row class="step_item">
+                        <text class="step_sep" x-show="i > 0">›</text>
+                        <text class="step" :class="'step_' + st.status"
+                              x-text="(st.status === 'done' ? '✓ ' : st.status === 'failed' ? '✕ ' : st.status === 'current' ? '● ' : '○ ') + st.label"></text>
+                      </row>
+                    </template>
                   </row>
                   <hr class="rule" />
                 </column>
@@ -328,6 +339,44 @@
                   <hr class="rule" />
                 </column>
               </template>
+            </column>
+          </column>
+        </column>
+
+        <!-- Modal "detalhes do deploy": a mesma linha de passos, em grande, e
+             o histórico de transições (estado, duração, mensagem). -->
+        <column class="modal_backdrop" x-show="detail" @click.self="closeDetail()">
+          <column class="modal_box">
+            <row class="modal_head">
+              <text class="label_cap" x-text="'DEPLOY · ' + (detail ? detail.service : '')"></text>
+              <button class="btn_ghost" type="button" @click="closeDetail()">Fechar</button>
+            </row>
+            <column class="modal_body" x-show="detail">
+              <row class="stepper">
+                <template x-for="(st, i) in (detail ? detail.steps : [])" :key="st.label">
+                  <row class="step_item">
+                    <text class="step_sep" x-show="i > 0">›</text>
+                    <text class="step" :class="'step_' + st.status"
+                          x-text="(st.status === 'done' ? '✓ ' : st.status === 'failed' ? '✕ ' : st.status === 'current' ? '● ' : '○ ') + st.label"></text>
+                  </row>
+                </template>
+              </row>
+              <row class="thead">
+                <text class="th col_state">ESTADO</text>
+                <text class="th col_dur">DURAÇÃO</text>
+                <text class="th col_start">MENSAGEM</text>
+              </row>
+              <template x-for="(d, i) in (detail ? detail.detail : [])" :key="i">
+                <column class="row_wrap">
+                  <row class="trow">
+                    <text class="td col_state" :class="'state_' + d.kind" x-text="d.label"></text>
+                    <text class="muted col_dur" x-text="d.dur"></text>
+                    <text class="muted col_start step_msg" x-text="d.msg"></text>
+                  </row>
+                  <hr class="rule" />
+                </column>
+              </template>
+              <text class="empty_state" x-show="detail && detail.detail.length === 0">Sem histórico de transições.</text>
             </column>
           </column>
         </column>

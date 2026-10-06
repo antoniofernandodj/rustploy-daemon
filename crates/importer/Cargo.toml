@@ -15,7 +15,7 @@ name = "rustploy-import"
 path = "src/main.rs"
 
 [dependencies]
-shared = { package = "rustploy-shared", version = "0.1.0" }
+shared = { package = "rustploy-shared", version = "0.1.1" }
 
 # CLI
 clap = { version = "4", features = ["derive"] }

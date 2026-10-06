@@ -519,14 +519,68 @@ export function monitoringRows(pairs, metricsById) {
   return rows;
 }
 
-/** Barra de progresso em blocos (`█`/`░`). Porta literal de
- * fmt/time.luau::progress_bar. */
-export function progressBar(percent, width = 12) {
-  const p = Number(percent) || 0;
-  let filled = Math.floor((p * width) / 100);
-  if (filled > width) filled = width;
-  if (filled < 0) filled = 0;
-  return "█".repeat(filled) + "░".repeat(width - filled);
+/** Passos do stepper do deploy. "Obter" agrupa pull/clone/build/compose para
+ * a linha não depender do tipo de serviço (imagem, git ou compose). Espelha
+ * fmt/dashboard.luau::DEPLOY_STEPS. */
+const DEPLOY_STEPS = [
+  { label: "Fila", states: ["Pending"] },
+  { label: "Checks", states: ["PreDeployCheck"] },
+  { label: "Deps", states: ["ResolvingDeps"] },
+  { label: "Obter", states: ["PullingImage", "CloningRepo", "BuildingImage", "ComposingUp"] },
+  { label: "Staging", states: ["Staging"] },
+  { label: "Health", states: ["HealthcheckPolling"] },
+  { label: "Swap", states: ["SwappingIn", "Draining", "Promoting"] },
+  { label: "Live", states: ["Live"] },
+];
+
+function stepOf(state) {
+  return DEPLOY_STEPS.findIndex((st) => st.states.includes(state));
+}
+
+/** Linha de passos: [{label, status}] com status done|current|failed|pending.
+ * Na falha o passo marcado é o de onde a última transição saiu (`from` do
+ * `→ Failed`); sem histórico, nenhum passo é marcado como falho. */
+export function deployStepper(info) {
+  const state = info.state;
+  let cur = stepOf(state);
+  let failed = -1;
+  if (state === "Live" || state === "Stopped" || state === "Pruning") {
+    cur = DEPLOY_STEPS.length;
+  } else if (state === "Failed" || state === "RollingBack") {
+    const log = info.states || [];
+    for (let i = log.length - 1; i >= 0; i--) {
+      const idx = stepOf(log[i].from);
+      if (idx >= 0) {
+        failed = idx;
+        break;
+      }
+    }
+    cur = failed;
+  }
+  return DEPLOY_STEPS.map((st, i) => ({
+    label: st.label,
+    status: i === failed ? "failed" : i < cur ? "done" : i === cur ? "current" : "pending",
+  }));
+}
+
+/** Detalhe do deploy para o modal: uma linha por transição (estado em que
+ * entrou, quanto durou, mensagem). A duração do estado é até a transição
+ * seguinte; o último fica com o tempo de fase corrente / total. */
+export function deployDetailRows(info) {
+  const log = info.states || [];
+  return log.map((t, i) => {
+    const start = Date.parse(t.at);
+    const end = i + 1 < log.length ? Date.parse(log[i + 1].at) : null;
+    const secs = end !== null ? Math.max(0, Math.round((end - start) / 1000)) : info.current_state_secs;
+    const last = i === log.length - 1;
+    return {
+      state: t.to,
+      label: t.to,
+      kind: t.to === "Failed" ? "bad" : last && info.state === t.to ? "info" : "ok",
+      dur: last && (t.to === "Failed" || t.to === "Live" || t.to === "Stopped") ? "—" : fmtSecs(secs),
+      msg: t.message || "",
+    };
+  });
 }
 
 /** Deploy Engine: "Executando agora". */
@@ -538,8 +592,8 @@ export function engActiveRows(active) {
       project: info.project_name,
       stateLabel: label,
       stateKind: kind,
-      percent: `${info.percent}%`,
-      bar: progressBar(info.percent, 12),
+      steps: deployStepper(info),
+      detail: deployDetailRows(info),
       total: fmtSecs(info.elapsed_secs),
       phase: fmtSecs(info.current_state_secs),
       serviceId: info.service_id,

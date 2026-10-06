@@ -17,6 +17,19 @@ document.addEventListener("alpine:init", () => {
     get active() {
       return engActiveRows(this.engine?.active);
     },
+    // Modal de detalhes: guarda só o serviceId; a linha é relida de `active`
+    // a cada snapshot, então o histórico e os passos andam ao vivo. Se o
+    // deploy terminar e sair de "Executando agora", o modal fecha.
+    detailId: null,
+    get detail() {
+      return this.detailId ? this.active.find((a) => a.serviceId === this.detailId) || null : null;
+    },
+    openDetail(id) {
+      this.detailId = id;
+    },
+    closeDetail() {
+      this.detailId = null;
+    },
     get queued() {
       return engQueuedRows(this.engine?.queued);
     },
