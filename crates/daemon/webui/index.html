@@ -2161,7 +2161,7 @@
         <row class="svc_head">
           <column class="header_titles">
             <row class="svc_title_row">
-              <button class="btn_ghost" type="button" @click="store.nav('project')">‹ Voltar</button>
+              <button class="btn_ghost" type="button" @click="store.nav('project')" x-text="'‹ ' + projectName"></button>
               <text class="title svc_title" x-text="svc ? svc.spec.name : ''"></text>
             </row>
             <row class="svc_substatus">
@@ -2171,15 +2171,23 @@
               </row>
             </row>
             <text class="muted" x-show="store.serviceMsg" x-text="store.serviceMsg"></text>
+            <template x-if="svc"><row class="svc_actions svc_actions_compact">
+              <button class="btn_primary" type="button" title="Deploy" @click="store.deployStart()">▶</button>
+              <button class="btn_blue" type="button" title="Reload" @click="store.serviceReload()">⟳</button>
+              <button class="btn_blue" type="button" title="Rollback" @click="store.deployRollback()">↩</button>
+              <button class="btn_danger" type="button" title="Stop" @click="store.serviceStop()">■</button>
+              <button class="btn_ghost" type="button" title="Exportar serviço"
+                      @click="store.openExportWin(store.selectedServiceId)">⇪</button>
+            </row></template>
           </column>
-          <row class="svc_actions" x-show="svc">
+          <template x-if="svc"><row class="svc_actions svc_actions_full">
             <button class="btn_primary" type="button" @click="store.deployStart()">Deploy</button>
             <button class="btn_blue" type="button" @click="store.serviceReload()">Reload</button>
             <button class="btn_blue" type="button" @click="store.deployRollback()">Rollback</button>
             <button class="btn_danger" type="button" @click="store.serviceStop()">Stop</button>
             <button class="btn_ghost" type="button" title="Gera um arquivo para recriar este serviço em outro servidor"
                     @click="store.openExportWin(store.selectedServiceId)">Exportar</button>
-          </row>
+          </row></template>
         </row>
 
         <column class="content_center" x-show="store.serviceLoading" style="padding:24px">

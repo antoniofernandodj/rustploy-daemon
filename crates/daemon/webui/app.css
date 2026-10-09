@@ -782,3 +782,10 @@ button:focus-visible, [tabindex]:focus-visible, select:focus-visible, summary:fo
 .dep_del_btn, .dk_rm { color: #fff; border-color: var(--danger); background: var(--danger); }
 .dep_del_btn:hover, .dk_rm:hover { background: var(--danger); filter: brightness(1.15); }
 .env_del { color: var(--danger); background: var(--border); border-radius: 4px; }
+
+/* Ações do serviço: rótulos à direita >1240px; ≤1240px ícones sob o título (como a GUI). */
+.svc_actions_compact { display: none !important; }
+@media (max-width: 1240px) {
+  .svc_actions_full    { display: none !important; }
+  .svc_actions_compact { display: flex !important; }
+}

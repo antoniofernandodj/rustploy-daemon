@@ -275,6 +275,11 @@ document.addEventListener("alpine:init", () => {
     get svc() {
       return this.store.serviceDetail;
     },
+    get projectName() {
+      const id = this.svc && this.svc.spec.project_id;
+      const p = ((this.store.snap && this.store.snap.projects) || []).find((e) => e.id === id);
+      return p ? p.name : "Voltar";
+    },
     get statusLabel() {
       return this.svc ? serviceStatusLabelKind(this.svc.status)[0] : "";
     },
