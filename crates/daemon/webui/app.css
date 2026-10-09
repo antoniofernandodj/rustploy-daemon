@@ -204,7 +204,7 @@ hr, .rule   { width: 100%; height: 1px; border: none; background: var(--border);
    o espremimento cascateava pros filhos de CADA .card (linhas viravam ~4px
    de altura, texto sobreposto). Só o scroll de .scroll_fill deve ceder
    espaço, nunca o grid. */
-.grid       { width: 100%; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; flex-shrink: 0; }
+.grid       { width: 100%; display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; flex-shrink: 0; }
 .card_head  { width: 100%; align-items: center; justify-content: space-between; gap: 8px; }
 .card_name  { flex: 1 1 auto; font-size: 16px; font-weight: 700; color: var(--text); }
 .card_open, .card_edit {
