@@ -235,12 +235,14 @@ hr, .rule   { width: 100%; height: 1px; border: none; background: var(--border);
     border: 1px solid var(--border); background: var(--surface); color: var(--text-2);
 }
 .card_stop:hover { background: var(--border); }
-/* Botão só de ícone na linha de ações do card (quadrado, não encolhe). */
+/* Botões só de ícone na linha de ações do card (dividem a largura por igual). */
 .card_icon {
-    flex: 0 0 38px; width: 38px; padding: 0; display: flex; align-items: center; justify-content: center;
+    flex: 1 1 0; min-width: 0; padding: 9px 0; display: flex; align-items: center; justify-content: center;
     border-radius: 5px; cursor: pointer; border: 1px solid var(--border); background: var(--surface); color: var(--text-2);
 }
 .card_icon:hover { background: var(--border); color: var(--text); }
+.card_icon_danger { border-color: var(--danger); background: rgba(218,54,51,.10); color: var(--danger); }
+.card_icon_danger:hover { background: rgba(218,54,51,.20); color: var(--danger); }
 
 /* ── Barra de topo do projeto/serviço (voltar + ações à direita) ───────── */
 .proj_topbar  { width: 100%; align-items: center; flex-shrink: 0; }

@@ -1580,10 +1580,14 @@
                 <button class="card_open" type="button" style="width:100%"
                         @click="store.openService(s.id)">Abrir ›</button>
                 <row class="card_actions">
-                  <button class="card_stop" type="button" @click="store.stopService(s.id)">Parar</button>
-                  <button class="card_remove" type="button" @click="store.stopAndDeleteService(s.id)">Remover</button>
+                  <button class="card_icon" type="button" title="Parar" aria-label="Parar serviço"
+                          @click="store.stopService(s.id)"><span x-icon="'stop'"></span></button>
+                  <button class="card_icon card_icon_danger" type="button" title="Remover" aria-label="Remover serviço"
+                          @click="store.stopAndDeleteService(s.id)"><span x-icon="'trash'"></span></button>
                   <button class="card_icon" type="button" title="Exportar serviço (arquivo para recriá-lo em outro servidor)"
                           aria-label="Exportar serviço" @click="store.openExportWin(s.id)"><span x-icon="'export'"></span></button>
+                  <button class="card_icon" type="button" title="Importar serviço de um arquivo exportado"
+                          aria-label="Importar serviço" @click="store.openNewService('import')"><span x-icon="'import'"></span></button>
                 </row>
               </column>
             </template>
@@ -1700,7 +1704,7 @@
 
       <!-- ── Novo serviço (wizard por passos, porta de new_service.gv) ──── -->
       <column class="modal_backdrop" x-data="newService" x-show="$store.app.showNewService"
-              @newservice-reset.window="reset()">
+              @newservice-reset.window="reset($event)">
         <column class="modal_box" x-win="'new_service'" data-w="760" data-h="640">
         <row class="modal_head">
           <text class="label_cap">NOVO SERVIÇO</text>

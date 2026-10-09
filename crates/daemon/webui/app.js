@@ -598,8 +598,9 @@ document.addEventListener("alpine:init", () => {
 
     // ── Services ─────────────────────────────────────────────────────
 
-    openNewService() {
-      window.dispatchEvent(new CustomEvent("newservice-reset"));
+    /** `step` opcional: "import" abre direto no passo Importar (ícone do card). */
+    openNewService(step) {
+      window.dispatchEvent(new CustomEvent("newservice-reset", { detail: { step } }));
       this.showNewService = true;
     },
     closeNewService() {

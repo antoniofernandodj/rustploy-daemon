@@ -130,7 +130,7 @@ document.addEventListener("alpine:init", () => {
 
     /** Janela reaberta: volta ao passo 1 sem lixo do uso anterior (o catálogo
      * dos bancos/brokers/templates fica em cache, não precisa refazer). */
-    reset() {
+    reset(ev) {
       this.step = "pick_type";
       this.error = "";
       this.submitting = false;
@@ -141,6 +141,7 @@ document.addEventListener("alpine:init", () => {
       this.composeName = "";
       this.composeDomain = "";
       this.templateSearch = "";
+      if (ev?.detail?.step === "import") this.gotoImport();
     },
 
     // ── Submissões ────────────────────────────────────────────────────
