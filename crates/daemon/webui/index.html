@@ -77,18 +77,17 @@
     <column class="sidebar" x-show="$store.app.menuOpen" x-data="{
         groups: [
           { title: 'DEPLOYMENT OPS', items: [
-            { v: 'deployments',   label: 'Deployments',   icon: 'deploy' },
-            { v: 'deploy_engine', label: 'Deploy Engine', icon: 'engine' },
-            { v: 'monitoring',    label: 'Monitoring',    icon: 'monitor' },
-            { v: 'schedules',     label: 'Schedules',     icon: 'clock' },
-            { v: 'ingress',       label: 'Ingress',       icon: 'ingress' },
-            { v: 'docker',        label: 'Docker',        icon: 'docker' } ] },
+            { v: 'deployments',   label: 'Deployments',   icon: '▶' },
+            { v: 'deploy_engine', label: 'Deploy Engine', icon: '⚡' },
+            { v: 'monitoring',    label: 'Monitoring',    icon: '◔' },
+            { v: 'schedules',     label: 'Schedules',     icon: '◫' },
+            { v: 'ingress',       label: 'Ingress',       icon: '↦' },
+            { v: 'docker',        label: 'Docker',        icon: '◉' } ] },
           { title: 'MANAGEMENT', items: [
-            { v: 'projects', label: 'Projects', icon: 'folder', also: ['project', 'service'] } ] } ],
+            { v: 'projects', label: 'Projects', icon: '◧', also: ['project', 'service'] } ] } ],
         on(it) { const v = $store.app.view; return v === it.v || (it.also || []).includes(v); }
       }">
       <row class="brand_row">
-        <span class="brand_logo" x-icon.20="'rocket'"></span>
         <column class="brand_box">
           <text class="brand">Rustploy</text>
           <text class="brand_sub">PRODUCTION CLUSTER</text>
@@ -100,7 +99,7 @@
           <template x-for="it in g.items" :key="it.v">
             <button type="button" :class="on(it) ? 'nav_row_on' : 'nav_row_off'" :title="it.label"
                     @click="$store.app.nav(it.v)">
-              <span :class="on(it) ? 'nav_icon_on' : 'nav_icon_off'" x-icon="it.icon"></span>
+              <span :class="on(it) ? 'nav_icon_on' : 'nav_icon_off'" x-text="it.icon"></span>
               <text :class="on(it) ? 'nav_label_on' : 'nav_label_off'" x-text="it.label"></text>
             </button>
           </template>
@@ -110,12 +109,12 @@
       <hr class="rule" />
       <button type="button" @click="$store.app.nav('settings')" title="Settings"
               :class="$store.app.view === 'settings' ? 'nav_row_on' : 'nav_row_off'">
-        <span :class="$store.app.view === 'settings' ? 'nav_icon_on' : 'nav_icon_off'" x-icon="'settings'"></span>
+        <span :class="$store.app.view === 'settings' ? 'nav_icon_on' : 'nav_icon_off'" x-text="'⌥'"></span>
         <text :class="$store.app.view === 'settings' ? 'nav_label_on' : 'nav_label_off'">Settings</text>
       </button>
       <button type="button" @click="$store.app.nav('support')" title="Support"
               :class="$store.app.view === 'support' ? 'nav_row_on' : 'nav_row_off'">
-        <span :class="$store.app.view === 'support' ? 'nav_icon_on' : 'nav_icon_off'" x-icon="'help'"></span>
+        <span :class="$store.app.view === 'support' ? 'nav_icon_on' : 'nav_icon_off'" x-text="'◊'"></span>
         <text :class="$store.app.view === 'support' ? 'nav_label_on' : 'nav_label_off'">Support</text>
       </button>
     </column>
@@ -125,16 +124,12 @@
         <button class="btn_ghost menu_btn" type="button" title="Mostrar/ocultar o menu"
                 @click="$store.app.menuOpen = !$store.app.menuOpen">☰</button>
         <row class="search_wrap">
-          <span class="search_ico" x-icon="'search'"></span>
           <input class="search" type="text" placeholder="Search deployments, nodes…"
                  x-model="$store.app.search" @input="$store.app.searchChanged($event.target.value)" />
         </row>
-        <row class="status_pill topbar_status">
-          <span class="pill_dot"></span>
-          <text x-text="'daemon v' + $store.app.daemonVersion"></text>
-        </row>
+        <text class="muted topbar_status" x-text="'● daemon v' + $store.app.daemonVersion"></text>
         <button class="btn_danger btn_icon" type="button" @click="$store.app.stopAll()" title="Para todos os containers gerenciados">
-          <span x-icon="'power'"></span><text>Stop All</text>
+          <text>Stop All</text>
         </button>
         <button class="btn_ghost" type="button" @click="$store.app.disconnect()">Disconnect</button>
       </row>
@@ -1592,11 +1587,11 @@
                         @click="store.openService(s.id)">Abrir ›</button>
                 <row class="card_actions">
                   <button class="card_icon" type="button" title="Parar" aria-label="Parar serviço"
-                          @click="store.stopService(s.id)"><span x-icon="'stop'"></span></button>
+                          @click="store.stopService(s.id)">■</button>
                   <button class="card_icon card_icon_danger" type="button" title="Remover" aria-label="Remover serviço"
-                          @click="store.stopAndDeleteService(s.id)"><span x-icon="'trash'"></span></button>
+                          @click="store.stopAndDeleteService(s.id)">✕</button>
                   <button class="card_icon" type="button" title="Exportar serviço (arquivo para recriá-lo em outro servidor)"
-                          aria-label="Exportar serviço" @click="store.openExportWin(s.id)"><span x-icon="'export'"></span></button>
+                          aria-label="Exportar serviço" @click="store.openExportWin(s.id)">⇪</button>
                 </row>
               </column>
             </template>
@@ -2633,9 +2628,9 @@
                 <row class="wh_row">
                   <input class="field_input wh_url" type="text" readonly :value="webhookUrl" @focus="$event.target.select()" />
                   <button class="copy_btn btn_icon" type="button" @click="copyToClipboard(webhookUrl)">
-                    <span x-icon="'copy'"></span><text>Copiar</text></button>
+                    <text>Copiar</text></button>
                   <button class="dep_del_btn btn_icon" type="button" :disabled="webhookBusy" @click="regenWebhook()">
-                    <span x-icon="'refresh'"></span><text>Regenerar</text></button>
+                    <text>Regenerar</text></button>
                 </row>
               </template>
               <text class="muted" x-show="!webhookUrl">

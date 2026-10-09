@@ -238,11 +238,11 @@ hr, .rule   { width: 100%; height: 1px; border: none; background: var(--border);
 /* Botões só de ícone na linha de ações do card (dividem a largura por igual). */
 .card_icon {
     flex: 1 1 0; min-width: 0; padding: 9px 0; display: flex; align-items: center; justify-content: center;
-    border-radius: 5px; cursor: pointer; border: 1px solid var(--border); background: var(--surface); color: var(--text-2);
+    border-radius: 5px; cursor: pointer; border: 1px solid var(--border); background: var(--border); color: var(--text-2);
 }
-.card_icon:hover { background: var(--border); color: var(--text); }
-.card_icon_danger { border-color: var(--danger); background: rgba(218,54,51,.10); color: var(--danger); }
-.card_icon_danger:hover { background: rgba(218,54,51,.20); color: var(--danger); }
+.card_icon:hover { filter: brightness(1.2); }
+.card_icon_danger { border-color: var(--danger); background: var(--danger); color: #fff; }
+.card_icon_danger:hover { filter: brightness(1.15); }
 
 /* ── Barra de topo do projeto/serviço (voltar + ações à direita) ───────── */
 .proj_topbar  { width: 100%; align-items: center; flex-shrink: 0; }
@@ -611,7 +611,7 @@ input[type="checkbox"] { accent-color: var(--blue); width: 15px; height: 15px; c
 /* Barra superior. */
 .topbar { background: rgba(10,14,20,.85); backdrop-filter: blur(8px); position: relative; z-index: 3; }
 .search_wrap { flex: 1 1 auto; position: relative; align-items: center; min-width: 0; }
-.search_wrap .search { width: 100%; padding-left: 38px; }
+.search_wrap .search { width: 100%; }
 .search_ico { position: absolute; left: 13px; color: var(--faint); pointer-events: none; }
 .status_pill { align-items: center; gap: 8px; padding: 7px 13px; border-radius: 999px; background: var(--raised); border: 1px solid var(--border); font-size: 12px; color: var(--muted); white-space: nowrap; }
 .pill_dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 8px var(--ok); animation: pulse 2.4s ease-in-out infinite; }
@@ -729,3 +729,4 @@ button[data-busy] {
 .chip     { padding: 3px 9px; border: 1px solid var(--border); border-radius: 10px; font-family: ui-monospace, monospace; font-size: 12px; color: var(--text-2); }
 
 .menu_btn { padding: 11px 14px; flex-shrink: 0; }
+.nav_icon_on, .nav_icon_off { line-height: 1; width: 14px; }
