@@ -51,6 +51,11 @@ async fn main() -> Result<()> {
         .expect("failed to install rustls ring CryptoProvider");
 
     info!(version = env!("CARGO_PKG_VERSION"), "rustployd starting");
+    info!(
+        "executando versão {} ({})",
+        env!("CARGO_PKG_VERSION"),
+        env!("RUSTPLOY_GIT_SHA")
+    );
 
     // Database — resolve path with fallback
     let db_path = resolve_data_path(&config.daemon.db_path);

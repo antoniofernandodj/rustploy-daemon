@@ -30,6 +30,21 @@ fn main() {
     let webui_dir = Path::new(&manifest_dir).join("webui");
     println!("cargo:rerun-if-changed={}", webui_dir.display());
 
+    // Commit do build, para distinguir dois binários da MESMA versão (um deb
+    // reaproveitado, um submodule defasado). Reexecuta a cada mudança de fonte;
+    // sem git (tarball) cai em "desconhecido".
+    println!("cargo:rerun-if-changed=src");
+    let sha = std::process::Command::new("git")
+        .args(["rev-parse", "--short", "HEAD"])
+        .current_dir(&manifest_dir)
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "desconhecido".to_string());
+    println!("cargo:rustc-env=RUSTPLOY_GIT_SHA={sha}");
+
     let mut rel_paths = Vec::new();
     collect_files(&webui_dir, &webui_dir, &mut rel_paths);
     rel_paths.sort();

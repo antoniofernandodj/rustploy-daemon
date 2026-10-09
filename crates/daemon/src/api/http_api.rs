@@ -202,6 +202,19 @@ async fn handle(
         (&Method::GET, "/oauth/gitea/callback" | "/oauth/github/callback") => {
             return Ok(boxed(public_routes::oauth_callback(req, state).await));
         }
+        // Versão em texto puro, sem token: serve para um `curl` descobrir qual
+        // binário está no ar (a versão sozinha não distingue dois builds do
+        // mesmo número, por isso o commit junto).
+        (&Method::GET, "/api/version") => {
+            return Ok(text(
+                StatusCode::OK,
+                format!(
+                    "rustployd {} ({})\n",
+                    env!("CARGO_PKG_VERSION"),
+                    env!("RUSTPLOY_GIT_SHA")
+                ),
+            ));
+        }
         (&Method::GET, p) => {
             // Web UI/PWA (crates/daemon/webui/): HTML/CSS/JS/ícones
             // estáticos, sem dado nenhum — servidos fora do gate de token de
