@@ -730,3 +730,55 @@ button[data-busy] {
 
 .menu_btn { padding: 11px 14px; flex-shrink: 0; }
 .nav_icon_on, .nav_icon_off { line-height: 1; width: 14px; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   FIDELIDADE À GUI — achata o POLIMENTO acima para ficar parecido com o
+   client iced: sem sombras, gradientes, hover que sobe, anel de foco nem
+   animação de entrada; botões de fundo cheio (no .gss, `color:` num botão é
+   o preenchimento). Fica por último de propósito: apagar este bloco devolve
+   o visual polido.
+   ═══════════════════════════════════════════════════════════════════════ */
+:root { --shadow-sm: none; --shadow-md: none; --shadow-lg: none; --ring: none; }
+.card, .stat_card, .panel, .panel_fill, .section, .section_fill, .form_panel, .panel_pad, .kv_list, .log_panel { box-shadow: none; }
+.grid > .card:hover { transform: none; box-shadow: none; border-color: var(--border); }
+.stat_card { background: var(--surface); }
+.title { letter-spacing: normal; }
+.card_name { letter-spacing: normal; }
+.sidebar { background: var(--surface); border-right: none; }
+.nav_row_on { background: var(--blue); box-shadow: none; }
+.nav_row_on::before { display: none; }
+.nav_row_on, .nav_row_off { font-weight: 400; }
+.topbar { background: none; backdrop-filter: none; }
+.btn_primary, .btn_danger, .btn_ghost { font-weight: 400; }
+.btn_primary:hover { border-color: var(--green); }
+button:focus-visible, [tabindex]:focus-visible, select:focus-visible, summary:focus-visible { box-shadow: none; outline: 1px solid var(--accent); }
+.field_input:focus, .search:focus, .env_in_key:focus, .env_in_val:focus, .env_editor:focus { box-shadow: none; background: var(--raised); }
+.field_input:hover, .env_in_key:hover, .env_in_val:hover { border-color: var(--border); }
+.svc_tabs_wrap > *, .content > .env_wrap, .content > .form_panel { animation: none; }
+.tab_on { box-shadow: none; }
+.state_dot { filter: none; }
+.state_info .state_dot, .state_dot.state_info { animation: none; }
+.trow:hover { background: none; }
+.login_wrap { background: var(--bg); }
+.login_card { border-radius: 7px; box-shadow: none; border-color: var(--border); background: var(--surface); }
+.connect_btn { box-shadow: none; border-radius: 5px; }
+.toast_bar { display: none; }
+.muted:where([x-show*="Loading"]), .muted:where([x-show*="loading"]) { animation: none; }
+[x-fallback]::before { display: none; }
+[x-fallback] { padding: 16px !important; text-align: left; }
+
+/* Botões de fundo cheio. */
+.btn_sm_primary { color: #fff; border-color: var(--green); background: var(--green); }
+.btn_sm_ghost   { color: var(--text-2); border-color: var(--border); background: var(--border); }
+.btn_sm_danger  { color: #fff; border-color: var(--danger); background: var(--danger); }
+.btn_sm_primary:hover, .btn_sm_danger:hover { background: inherit; filter: brightness(1.15); }
+.btn_sm_ghost:hover { background: var(--border); filter: brightness(1.2); }
+.btn_blue       { color: #fff; border-color: var(--blue); background: var(--blue); }
+.btn_blue:hover { background: var(--blue); filter: brightness(1.15); }
+.btn_export     { color: var(--text-2); background: var(--border); }
+.btn_export:hover { background: var(--border); filter: brightness(1.2); }
+.copy_btn, .dep_logs_btn { color: var(--text-2); border-color: var(--border); background: var(--border); }
+.copy_btn:hover, .dep_logs_btn:hover { background: var(--border); border-color: var(--border); filter: brightness(1.2); }
+.dep_del_btn, .dk_rm { color: #fff; border-color: var(--danger); background: var(--danger); }
+.dep_del_btn:hover, .dk_rm:hover { background: var(--danger); filter: brightness(1.15); }
+.env_del { color: var(--danger); background: var(--border); border-radius: 4px; }
