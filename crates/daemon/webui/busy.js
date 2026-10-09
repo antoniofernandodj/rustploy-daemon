@@ -8,11 +8,21 @@
 //      `current` (e engole o evento se o botão já está ocupado);
 //   2. os métodos do `Alpine.store`/`Alpine.data` são embrulhados: se o método
 //      devolve uma Promise, o botão guardado fica ocupado até ela assentar.
+// O botão libera no PRIMEIRO toast de resposta da ação (toast/toastOk/toastErr/
+// toastWarn/toastResult), não só quando o método inteiro termina: depois do toast
+// os métodos ainda costumam reler serviço/snapshot (mais rpcs) e esperar isso
+// deixaria o botão travado segundos além da resposta. Toasts disparados por
+// eventos do stream (SSE) não contam — não são resposta a clique nenhum.
 // Métodos síncronos passam intactos (não piscam) e devolvem o botão a `current`
 // para um `@click="a(); b()"` em que só o `b` é assíncrono.
 
 const SAFETY_MS = 15 * 60 * 1000; // rede de segurança: nunca prende um botão para sempre
 const SKIP = new Set(["init", "destroy"]);
+const TOASTS = new Set(["toast", "toastOk", "toastErr", "toastWarn", "toastResult"]);
+const STREAM = new Set(["onStreamEvent", "applyBusEvent", "applySnapshot"]);
+
+const held = new Set(); // release() de cada botão ocupado
+let fromStream = 0; // >0 enquanto roda código de evento SSE (síncrono)
 
 let current = null;
 
@@ -34,12 +44,14 @@ function lock(btn) {
   const release = () => {
     if (done) return;
     done = true;
+    held.delete(release);
     clearTimeout(safety);
     btn.removeAttribute("data-busy");
     btn.removeAttribute("aria-busy");
     if (own) btn.disabled = false;
   };
   const safety = setTimeout(release, SAFETY_MS);
+  held.add(release);
   return release;
 }
 
@@ -64,13 +76,35 @@ function wrap(fn) {
   };
 }
 
+/** Toast de resposta: libera os botões ocupados (fora de eventos do stream). */
+function wrapToast(fn) {
+  return function (...args) {
+    const out = fn.apply(this, args);
+    if (!fromStream) [...held].forEach((release) => release());
+    return out;
+  };
+}
+
+/** Evento SSE: os toasts de dentro não são resposta a um clique. */
+function wrapStream(fn) {
+  return function (...args) {
+    fromStream++;
+    try {
+      return fn.apply(this, args);
+    } finally {
+      fromStream--;
+    }
+  };
+}
+
 function track(obj) {
   if (!obj || typeof obj !== "object") return obj;
   for (const key of Object.keys(obj)) {
     if (SKIP.has(key)) continue;
     const d = Object.getOwnPropertyDescriptor(obj, key);
     if (d && typeof d.value === "function") {
-      Object.defineProperty(obj, key, { ...d, value: wrap(d.value) });
+      const fn = TOASTS.has(key) ? wrapToast(d.value) : STREAM.has(key) ? wrapStream(d.value) : wrap(d.value);
+      Object.defineProperty(obj, key, { ...d, value: fn });
     }
   }
   return obj;
