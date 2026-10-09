@@ -2781,9 +2781,9 @@ dependencies = [
 
 [[package]]
 name = "rustploy-shared"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "44b3f95d8e86a71b875c589d3b8e9408ea37624770e3c7d3da54f1a5596a0d5b"
+checksum = "1d0e041fda9b9d956f517871fbdc25f24a2180652744064c9790dea34e1d476b"
 dependencies = [
  "chrono",
  "hmac",

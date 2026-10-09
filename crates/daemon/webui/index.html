@@ -1738,7 +1738,143 @@
             <text class="muted">Blueprints prontos do catálogo (stacks completas).</text>
             <button class="card_open" type="button" @click="gotoTemplate()">Selecionar ›</button>
           </column>
+          <column class="card">
+            <text class="card_name">Importar</text>
+            <text class="muted">Recrie aqui um serviço exportado de outro servidor (arquivo .yml).</text>
+            <button class="card_open" type="button" @click="gotoImport()">Selecionar ›</button>
+          </column>
         </column>
+
+        <!-- Importar serviço exportado (screens/service_bundle.js) -->
+        <template x-if="step === 'import'">
+          <column class="form_panel" x-data="serviceImport" style="gap:12px">
+            <text class="muted">
+              O serviço será criado no projeto aberto, sem deploy — revise e clique em Deploy depois.
+              Só a configuração vem no arquivo; os dados (volumes, bancos) não.
+            </text>
+
+            <!-- Escolha do pacote; some depois da análise (o relatório precisa do espaço) -->
+            <column style="gap:12px" x-show="!report">
+              <column class="field_group">
+                <text class="field_label">ARQUIVO DO PACOTE (.yml)</text>
+                <input class="field_input" type="file" accept=".yml,.yaml,text/yaml" @change="pickFile($event)" />
+              </column>
+              <column class="field_group">
+                <text class="field_label">…OU COLE O TEXTO</text>
+                <textarea class="env_editor" x-model="text" placeholder="apiVersion: rustploy/v1&#10;kind: Service&#10;…"
+                          style="min-height:110px"></textarea>
+                <row class="env_add">
+                  <button class="btn_blue" type="button" @click="analyze(true)" :disabled="analyzing"
+                          x-text="analyzing ? 'Analisando…' : 'Analisar'"></button>
+                </row>
+              </column>
+            </column>
+            <row class="env_add" x-show="report">
+              <text class="muted" x-text="'Pacote: ' + (fileName || 'texto colado')"></text>
+              <button class="btn_sm_ghost" type="button" @click="clear()">Trocar pacote</button>
+            </row>
+
+            <text class="err" x-show="error" x-text="error"></text>
+
+            <template x-if="report">
+              <column style="gap:14px">
+                <column class="field_group">
+                  <text class="field_label">NOME DO SERVIÇO NOVO</text>
+                  <input class="field_input" type="text" x-model="name" @change="analyze()" />
+                  <text class="err" x-show="report.name_conflict">
+                    Já existe um serviço com esse nome neste projeto — escolha outro.
+                  </text>
+                </column>
+
+                <!-- Avisos: o que não veio / o que merece atenção -->
+                <column style="gap:6px" x-show="report.warnings.length">
+                  <text class="field_label">ATENÇÃO</text>
+                  <template x-for="w in report.warnings" :key="w.code">
+                    <text class="muted" x-text="'• ' + w.message"></text>
+                  </template>
+                </column>
+
+                <!-- Valores que o pacote não trouxe (exportado sem valores) -->
+                <column style="gap:6px" x-show="report.missing_service_vars.length">
+                  <text class="field_label">VARIÁVEIS DO SERVIÇO SEM VALOR (obrigatório)</text>
+                  <template x-for="k in report.missing_service_vars" :key="k">
+                    <row class="var_row">
+                      <text class="var_key" x-text="k"></text>
+                      <input class="field_input" type="text" x-model="vars[k]" @change="analyze()" placeholder="valor" />
+                    </row>
+                  </template>
+                </column>
+                <column style="gap:6px" x-show="report.missing_project_vars.length">
+                  <text class="field_label">VARIÁVEIS DO PROJETO SEM VALOR (obrigatório)</text>
+                  <template x-for="k in report.missing_project_vars" :key="k">
+                    <row class="var_row">
+                      <text class="var_key" x-text="k"></text>
+                      <input class="field_input" type="text" x-model="projectVars[k]" @change="analyze()" placeholder="valor" />
+                    </row>
+                  </template>
+                </column>
+
+                <!-- Secrets que este projeto não tem -->
+                <column style="gap:6px" x-show="report.missing_secrets.length">
+                  <text class="field_label">SECRETS QUE ESTE PROJETO NÃO TEM</text>
+                  <text class="muted">Informe o valor para criá-los, ou deixe vazio para seguir sem (o serviço fica com a referência quebrada até você criar o secret).</text>
+                  <template x-for="n in report.missing_secrets" :key="n">
+                    <row class="var_row">
+                      <text class="var_key" x-text="n"></text>
+                      <input class="field_input" type="password" x-model="secrets[n]" @change="analyze()" placeholder="valor do secret" autocomplete="off" />
+                    </row>
+                  </template>
+                </column>
+
+                <!-- Git provider do pacote que não existe aqui -->
+                <column class="field_group" x-show="report.missing_git_provider">
+                  <text class="field_label" x-text="'GIT PROVIDER \'' + report.missing_git_provider + '\' NÃO EXISTE AQUI'"></text>
+                  <select class="field_input" x-model="gitProviderId" @change="analyze()">
+                    <option value="">seguir sem provider</option>
+                    <template x-for="p in gitProviders" :key="p.id">
+                      <option :value="p.id" x-text="p.name"></option>
+                    </template>
+                  </select>
+                </column>
+
+                <!-- Variáveis do projeto trazidas: uma decisão por linha -->
+                <column style="gap:6px" x-show="report.project_env.length">
+                  <text class="field_label">VARIÁVEIS DO PROJETO TRAZIDAS</text>
+                  <text class="muted">Nada do projeto é sobrescrito sem você escolher.</text>
+                  <template x-for="s in report.project_env" :key="s.key">
+                    <row class="var_row">
+                      <text class="var_key" x-text="s.key"></text>
+                      <text class="muted" x-text="(s.is_secret ? 'secret · ' : '') + stateLabel(s.state)"></text>
+                      <select class="field_input" x-show="s.state !== 'Same'" :value="projectEnv[s.key] || s.choice"
+                              @change="chooseEnv(s.key, $event.target.value)">
+                        <template x-for="c in choicesFor(s)" :key="c">
+                          <option :value="c" :selected="(projectEnv[s.key] || s.choice) === c" x-text="choiceLabel(s, c)"></option>
+                        </template>
+                      </select>
+                      <text class="muted" x-show="s.state === 'Same'">já existe igual — nada a fazer</text>
+                    </row>
+                  </template>
+                </column>
+
+                <label class="check_row">
+                  <input type="checkbox" x-model="dropDomains" @change="analyze()" />
+                  <span>Não trazer os domínios</span>
+                </label>
+                <label class="check_row">
+                  <input type="checkbox" x-model="deploy" />
+                  <span>Fazer deploy logo depois de criar</span>
+                </label>
+
+                <row class="env_add">
+                  <button class="btn_primary" type="button" @click="create()" :disabled="!canCreate || creating"
+                          x-text="creating ? 'Criando…' : 'Criar serviço'"></button>
+                  <button class="btn_ghost" type="button" @click="$store.app.closeNewService()">Cancelar</button>
+                </row>
+                <text class="muted" x-show="hasMissing">Preencha os valores obrigatórios acima para criar.</text>
+              </column>
+            </template>
+          </column>
+        </template>
 
         <!-- Application -->
         <column class="form_panel" x-show="step === 'app_form'">
@@ -1912,6 +2048,81 @@
         </column>
       </column>
 
+      <!-- ── Janela: exportar serviço (screens/service_bundle.js) ───────────── -->
+      <column class="modal_backdrop" x-data="serviceExport" x-show="$store.app.exportWin">
+        <column class="modal_box" x-win="'service_export'" data-w="640" data-h="620">
+          <row class="modal_head">
+            <text class="label_cap" x-text="'EXPORTAR · ' + (plan ? plan.service_name : '')"></text>
+            <button class="btn_ghost" type="button" @click="close()">Fechar</button>
+          </row>
+          <column class="modal_body" style="gap:14px">
+            <text class="muted" x-show="loading">carregando…</text>
+            <text class="err" x-show="error" x-text="error"></text>
+            <text class="err" x-show="plan && plan.blocked" x-text="plan && plan.blocked"></text>
+
+            <template x-if="plan && !plan.blocked">
+              <column style="gap:14px">
+                <text class="muted">
+                  Gera um arquivo para recriar este serviço em outro servidor: abra um projeto de lá,
+                  Novo serviço → Importar. Só a configuração vai; os dados (volumes, bancos) não.
+                </text>
+
+                <column style="gap:6px">
+                  <text class="field_label" x-text="'VARIÁVEIS DO SERVIÇO (' + plan.service_env.length + ') — todas vão'"></text>
+                  <text class="muted" x-show="!plan.service_env.length">Este serviço não tem variáveis próprias.</text>
+                  <row class="chip_row">
+                    <template x-for="v in plan.service_env" :key="v.key">
+                      <text class="chip" x-text="v.key + (v.is_secret ? ' 🔒' : '')"></text>
+                    </template>
+                  </row>
+                </column>
+
+                <column style="gap:6px">
+                  <text class="field_label" x-text="'VARIÁVEIS DO PROJETO “' + plan.project_name + '” — marque as que o app precisa'"></text>
+                  <text class="muted">
+                    O container recebe TODAS as variáveis do projeto, e o rustploy não sabe quais o código lê.
+                    As marcadas por padrão são as que o serviço cita como ${VAR}; o resto é com você.
+                  </text>
+                  <row class="env_add" x-show="plan.project_env.length">
+                    <input class="field_input" type="text" placeholder="filtrar…" x-model="filter" />
+                    <button class="btn_sm_ghost" type="button" @click="pickSuggested()">Sugeridas</button>
+                    <button class="btn_sm_ghost" type="button" @click="pickAll()">Todas</button>
+                    <button class="btn_sm_ghost" type="button" @click="pickNone()">Nenhuma</button>
+                  </row>
+                  <text class="muted" x-show="!plan.project_env.length">O projeto não tem variáveis.</text>
+                  <template x-for="v in projectVars" :key="v.key">
+                    <label class="check_row">
+                      <input type="checkbox" x-model="picked[v.key]" />
+                      <span x-text="v.key"></span>
+                      <span class="muted" x-show="v.is_secret">· secret</span>
+                      <span class="muted" x-show="v.suggested">· citada pelo serviço</span>
+                    </label>
+                  </template>
+                </column>
+
+                <label class="check_row">
+                  <input type="checkbox" x-model="includeValues" />
+                  <span>Incluir os valores das variáveis</span>
+                </label>
+                <text class="err" x-show="includeValues">
+                  O arquivo vai conter segredos em texto. Trate-o como uma senha.
+                  (Secrets do rustploy, “secret:NOME”, nunca são decifrados: só a referência vai.)
+                </text>
+                <text class="muted" x-show="!includeValues">
+                  Sem valores: o arquivo leva só os nomes, e quem importar preenche os valores.
+                </text>
+
+                <row class="env_add">
+                  <button class="btn_primary" type="button" @click="download()">Baixar .yml</button>
+                  <button class="btn_blue" type="button" @click="copy()">Copiar texto</button>
+                  <button class="btn_ghost" type="button" @click="close()">Fechar</button>
+                </row>
+              </column>
+            </template>
+          </column>
+        </column>
+      </column>
+
       <!-- ── Janela: logs ao vivo do serviço (destacável da aba Logs) ───────── -->
       <column class="modal_backdrop" x-show="$store.app.logWin">
         <column class="modal_box" x-win="'service_logs'" data-w="900" data-h="560">
@@ -1956,6 +2167,8 @@
             <button class="btn_blue" type="button" @click="store.serviceReload()">Reload</button>
             <button class="btn_blue" type="button" @click="store.deployRollback()">Rollback</button>
             <button class="btn_danger" type="button" @click="store.serviceStop()">Stop</button>
+            <button class="btn_ghost" type="button" title="Gera um arquivo para recriar este serviço em outro servidor"
+                    @click="store.openExportWin(store.selectedServiceId)">Exportar</button>
           </row>
         </row>
 

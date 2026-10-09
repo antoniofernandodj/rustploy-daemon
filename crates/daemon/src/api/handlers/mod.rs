@@ -77,6 +77,8 @@ pub mod secret_list;
 pub mod secret_set;
 pub mod service_archive_upload;
 pub mod service_connection_info;
+pub mod service_export;
+pub mod service_import;
 pub mod service_create;
 pub mod service_delete;
 pub mod service_get;

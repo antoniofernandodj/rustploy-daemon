@@ -18,6 +18,9 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         Command::ProjectUpdate { .. } => "ProjectUpdate",
         Command::ProjectEnvSet { .. } => "ProjectEnvSet",
         Command::ServiceCreate(_) => "ServiceCreate",
+        Command::ServiceExportPlan { .. } => "ServiceExportPlan",
+        Command::ServiceExport { .. } => "ServiceExport",
+        Command::ServiceImport(_) => "ServiceImport",
         Command::ServiceList { .. } => "ServiceList",
         Command::ServiceGet { .. } => "ServiceGet",
         Command::ServiceUpdate { .. } => "ServiceUpdate",
@@ -186,6 +189,18 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
             handlers::service_connection_info::handle(state, service_id).await
         }
         Command::ServiceGet { id } => handlers::service_get::handle(state, id).await,
+        Command::ServiceExportPlan { service_id } => {
+            handlers::service_export::plan(state, service_id).await
+        }
+        Command::ServiceExport {
+            service_id,
+            include_values,
+            project_env_keys,
+        } => {
+            handlers::service_export::export(state, service_id, include_values, project_env_keys)
+                .await
+        }
+        Command::ServiceImport(req) => handlers::service_import::handle(state, req).await,
         Command::ServiceUpdate { id, spec } => {
             handlers::service_update::handle(state, id, spec).await
         }

@@ -39,7 +39,7 @@ assets = [
 
 [dependencies]
 fs_extra = "1.3.0" # Nova dependência para copiar diretórios
-shared = { package = "rustploy-shared", version = "0.2.0" }
+shared = { package = "rustploy-shared", version = "0.3.0" }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }

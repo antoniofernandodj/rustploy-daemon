@@ -75,6 +75,10 @@ document.addEventListener("alpine:init", () => {
       this.error = "";
       this.step = "app_form";
     },
+    gotoImport() {
+      this.error = "";
+      this.step = "import";
+    },
     gotoCompose() {
       this.error = "";
       this.step = "compose_form";

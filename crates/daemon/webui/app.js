@@ -23,6 +23,7 @@ import "./screens/projects.js";
 import "./screens/project_detail.js";
 import "./screens/new_service.js";
 import "./screens/service_detail.js";
+import "./screens/service_bundle.js";
 import Alpine from "https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/module.esm.js";
 import { Api } from "./net/api.js";
 import { openStream } from "./net/sse.js";
@@ -138,6 +139,7 @@ document.addEventListener("alpine:init", () => {
     // `projectWin` = null (fechada) | {} (novo) | {id,name,description} (editar).
     projectWin: null,
     showNewService: false,
+    exportWin: null, // janela "Exportar serviço" (screens/service_bundle.js): null | { serviceId }
     logWin: false, // janela de logs ao vivo do serviço aberto (wm.js)
     njobStep: "pick_project", // "pick_project" | "pick_service" | "form"
     // Modo edição: aberto por openEditJob(id) em vez do fluxo normal — pula
@@ -602,6 +604,12 @@ document.addEventListener("alpine:init", () => {
     },
     closeNewService() {
       this.showNewService = false;
+    },
+    openExportWin(serviceId) {
+      this.exportWin = { serviceId };
+    },
+    closeExportWin() {
+      this.exportWin = null;
     },
     openProjectWin(p) {
       this.projectWin = p ? { id: p.id, name: p.name, description: p.description || "" } : {};
