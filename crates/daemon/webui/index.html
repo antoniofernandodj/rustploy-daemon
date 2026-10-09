@@ -1903,6 +1903,7 @@
 
         <!-- Application -->
         <column class="form_panel" x-show="step === 'app_form'">
+          <text class="label_cap">NOVA APPLICATION</text>
           <text class="label_cap">NOME</text>
           <input class="field_input" type="text" x-model="appName" placeholder="meu-servico" />
           <text class="label_cap" style="margin-top:14px">ORIGEM</text>
@@ -1933,6 +1934,7 @@
 
         <!-- Compose Stack -->
         <column class="form_panel" x-show="step === 'compose_form'">
+          <text class="label_cap">NOVA COMPOSE STACK</text>
           <text class="label_cap">NOME</text>
           <input class="field_input" type="text" x-model="composeName" placeholder="meu-stack" />
           <text class="label_cap" style="margin-top:14px">PORTA</text>
@@ -1948,35 +1950,46 @@
         </column>
 
         <!-- Database: escolher -->
-        <column class="grid" x-show="step === 'pick_db'">
-          <template x-for="db in catalog.dbs" :key="db.id">
-            <column class="card">
-              <text class="card_name" x-text="db.label"></text>
-              <text class="muted" x-text="db.image"></text>
-              <button class="card_open" type="button" @click="pickDb(db)">Selecionar ›</button>
-            </column>
-          </template>
+        <column class="form_panel" x-show="step === 'pick_db'">
+          <text class="label_cap">ESCOLHA O BANCO DE DADOS</text>
+          <column class="kv_list">
+            <template x-for="db in catalog.dbs" :key="db.id">
+              <row class="kv_row">
+                <column class="header_titles">
+                  <text class="env_key" x-text="db.label"></text>
+                  <text class="muted" x-text="db.image"></text>
+                </column>
+                <button class="btn_primary" type="button" @click="pickDb(db)">Selecionar ›</button>
+              </row>
+            </template>
+          </column>
         </column>
         <!-- Database: form -->
         <column class="form_panel" x-show="step === 'db_form'">
-          <text class="label_cap" x-text="selectedDb ? selectedDb.label : ''"></text>
-          <input class="field_input" type="text" x-model="dbServiceName" placeholder="nome do serviço (opcional)" style="margin-top:8px" />
+          <text class="label_cap" x-text="'NOVA ' + (selectedDb ? selectedDb.label : '')"></text>
+          <text class="label_cap" style="margin-top:8px">NOME</text>
+          <input class="field_input" type="text" x-model="dbServiceName" placeholder="meu-banco" />
           <template x-if="selectedDb && selectedDb.has_db_name">
-            <input class="field_input" type="text" x-model="dbName" placeholder="nome do banco" style="margin-top:8px" />
+            <column style="gap:6px; margin-top:8px"><text class="label_cap">DATABASE NAME</text>
+            <input class="field_input" type="text" x-model="dbName" placeholder="app" /></column>
           </template>
           <template x-if="selectedDb && selectedDb.has_user">
-            <input class="field_input" type="text" x-model="dbUser" placeholder="usuário" style="margin-top:8px" />
+            <column style="gap:6px; margin-top:8px"><text class="label_cap">USER</text>
+            <input class="field_input" type="text" x-model="dbUser" placeholder="user" /></column>
           </template>
-          <input class="field_input" type="password" x-model="dbPassword" placeholder="senha" style="margin-top:8px" />
+          <text class="label_cap" style="margin-top:8px">PASSWORD</text>
+          <input class="field_input" type="password" x-model="dbPassword" placeholder="(vazio = sem senha, só no Redis)" />
           <template x-if="selectedDb && selectedDb.has_rootpw">
-            <input class="field_input" type="password" x-model="dbRootPassword" placeholder="senha root" style="margin-top:8px" />
+            <column style="gap:6px; margin-top:8px"><text class="label_cap">ROOT PASSWORD</text>
+            <input class="field_input" type="password" x-model="dbRootPassword" /></column>
           </template>
           <template x-if="selectedDb && selectedDb.has_replica">
             <label class="check_row" style="margin-top:8px">
               <input type="checkbox" x-model="dbUseReplica" /><span>Use Replica Sets</span>
             </label>
           </template>
-          <input class="field_input" type="text" x-model="dbImage" placeholder="imagem" style="margin-top:8px" />
+          <text class="label_cap" style="margin-top:8px">DOCKER IMAGE</text>
+          <input class="field_input" type="text" x-model="dbImage" placeholder="imagem" />
           <row class="env_add" style="margin-top:14px">
             <button class="btn_primary" type="button" @click="submitDb()" :disabled="submitting"
                     x-text="submitting ? 'Criando…' : 'Criar'"></button>
@@ -1984,26 +1997,33 @@
         </column>
 
         <!-- Broker: escolher -->
-        <column class="grid" x-show="step === 'pick_broker'">
-          <template x-for="b in catalog.brokers" :key="b.id">
-            <column class="card">
-              <text class="card_name" x-text="b.label"></text>
-              <text class="muted" x-text="b.image"></text>
-              <button class="card_open" type="button" @click="pickBroker(b)">Selecionar ›</button>
-            </column>
-          </template>
+        <column class="form_panel" x-show="step === 'pick_broker'">
+          <text class="label_cap">ESCOLHA O BROKER</text>
+          <column class="kv_list">
+            <template x-for="b in catalog.brokers" :key="b.id">
+              <row class="kv_row">
+                <column class="header_titles">
+                  <text class="env_key" x-text="b.label"></text>
+                  <text class="muted" x-text="b.image"></text>
+                </column>
+                <button class="btn_primary" type="button" @click="pickBroker(b)">Selecionar ›</button>
+              </row>
+            </template>
+          </column>
         </column>
         <!-- Broker: form -->
         <column class="form_panel" x-show="step === 'broker_form'">
-          <text class="label_cap" x-text="selectedBroker ? selectedBroker.label : ''"></text>
-          <input class="field_input" type="text" x-model="brokerServiceName" placeholder="nome do serviço (opcional)" style="margin-top:8px" />
+          <text class="label_cap" x-text="'NOVO ' + (selectedBroker ? selectedBroker.label : '')"></text>
+          <text class="label_cap" style="margin-top:8px">NOME</text>
+          <input class="field_input" type="text" x-model="brokerServiceName" placeholder="meu-broker" />
           <template x-if="selectedBroker && selectedBroker.has_user">
             <column style="gap:8px; margin-top:8px">
               <input class="field_input" type="text" x-model="brokerUser" placeholder="usuário" />
               <input class="field_input" type="password" x-model="brokerPassword" placeholder="senha" />
             </column>
           </template>
-          <input class="field_input" type="text" x-model="brokerImage" placeholder="imagem" style="margin-top:8px" />
+          <text class="label_cap" style="margin-top:8px">DOCKER IMAGE</text>
+          <input class="field_input" type="text" x-model="brokerImage" placeholder="imagem" />
           <row class="env_add" style="margin-top:14px">
             <button class="btn_primary" type="button" @click="submitBroker()" :disabled="submitting"
                     x-text="submitting ? 'Criando…' : 'Criar'"></button>
@@ -2012,14 +2032,17 @@
 
         <!-- Template: escolher -->
         <column x-show="step === 'pick_template'">
-          <input class="field_input" type="text" x-model="templateSearch" placeholder="Buscar template…" style="max-width:400px" />
-          <column class="grid" style="margin-top:14px">
+          <text class="label_cap">BUSCAR</text>
+          <input class="field_input" type="text" x-model="templateSearch" placeholder="buscar templates…" />
+          <column class="kv_list" style="margin-top:14px">
             <template x-for="t in filteredTemplates" :key="t.id">
-              <column class="card">
-                <text class="card_name" x-text="t.name"></text>
-                <text class="muted" x-text="t.description"></text>
-                <button class="card_open" type="button" @click="pickTemplate(t)">Selecionar ›</button>
-              </column>
+              <row class="kv_row">
+                <column class="header_titles">
+                  <text class="env_key" x-text="t.name"></text>
+                  <text class="muted" x-show="t.description" x-text="t.description"></text>
+                </column>
+                <button class="btn_primary" type="button" @click="pickTemplate(t)">Escolher ›</button>
+              </row>
             </template>
             <text class="muted" x-fallback="filteredTemplates" style="padding:16px">
               Nenhum template encontrado.
@@ -2028,8 +2051,9 @@
         </column>
         <!-- Template: form -->
         <column class="form_panel" x-show="step === 'template_form'">
-          <text class="label_cap" x-text="selectedTemplate ? selectedTemplate.name : ''"></text>
-          <input class="field_input" type="text" x-model="templateServiceName" placeholder="nome do serviço (opcional)" style="margin-top:8px" />
+          <text class="label_cap" x-text="(selectedTemplate ? selectedTemplate.name : '') + ' — CONFIGURAR'"></text>
+          <text class="label_cap" style="margin-top:8px">NOME DO SERVIÇO</text>
+          <input class="field_input" type="text" x-model="templateServiceName" :placeholder="selectedTemplate ? selectedTemplate.name : ''" />
           <template x-for="(v, i) in (selectedTemplate ? selectedTemplate.vars : [])" :key="v.idx">
             <column style="margin-top:8px">
               <text class="label_cap" x-text="v.label"></text>
