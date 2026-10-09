@@ -1586,8 +1586,8 @@
                           @click="store.stopAndDeleteService(s.id)"><span x-icon="'trash'"></span></button>
                   <button class="card_icon" type="button" title="Exportar serviço (arquivo para recriá-lo em outro servidor)"
                           aria-label="Exportar serviço" @click="store.openExportWin(s.id)"><span x-icon="'export'"></span></button>
-                  <button class="card_icon" type="button" title="Importar serviço de um arquivo exportado"
-                          aria-label="Importar serviço" @click="store.openNewService('import')"><span x-icon="'import'"></span></button>
+                  <!-- Atalho de importar saiu do card: a entrada agora é "+ Novo serviço" → "Importar".
+                       store.openNewService('import') segue funcionando se for preciso voltar. -->
                 </row>
               </column>
             </template>
