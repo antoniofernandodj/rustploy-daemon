@@ -1245,6 +1245,7 @@ impl DeployExecutor {
                     if let Ok(ip) =
                         containers::get_container_ip(&self.docker.inner, cid, &network_name).await
                     {
+                        self.wait_compose_healthcheck(&ip, svc, dep).await;
                         let ips = vec![ip];
                         if !svc.spec.domain_routes().is_empty() {
                             info!(deployment_id = %dep.id, ?ips, "ComposingUp: registrando rotas de domínio");
@@ -1303,6 +1304,48 @@ impl DeployExecutor {
     /// Espera o container de staging ficar saudável (healthcheck do spec ou o
     /// HEALTHCHECK nativo da imagem) e, se falhar, guarda as últimas linhas de
     /// log dele antes do rollback removê-lo.
+    /// Espera, com tempo limitado, o healthcheck TCP/HTTP do serviço Compose
+    /// responder antes de promovê-lo a `Running`. Sem isto o `compose up`
+    /// devolve assim que o container sobe, a porta ainda está fechada, e o
+    /// watchdog marca `Degraded` na primeira checagem.
+    ///
+    /// Só informa, nunca falha o deploy: numa stack Compose a porta do spec
+    /// pode não ser a que o healthcheck espera, e reprovar aqui quebraria
+    /// deploys que hoje funcionam. Estourar o prazo vira uma linha no log e o
+    /// watchdog segue dono do veredito depois.
+    async fn wait_compose_healthcheck(&self, ip: &str, svc: &shared::Service, dep: &shared::Deployment) {
+        let hc = &svc.spec.healthcheck;
+        if !matches!(hc.kind, HealthcheckKind::Tcp | HealthcheckKind::Http { .. }) {
+            return;
+        }
+        let port = svc.spec.port;
+        let timeout = std::time::Duration::from_secs(hc.timeout_secs as u64);
+        let interval = std::time::Duration::from_secs((hc.interval_secs as u64).max(1));
+        self.log_step(&dep.id, &svc.id, &format!("--> Healthcheck: aguardando {ip}:{port}")).await;
+        tokio::time::sleep(std::time::Duration::from_secs(hc.start_period_secs as u64)).await;
+        for attempt in 1..=hc.retries.max(1) {
+            let ok = match &hc.kind {
+                HealthcheckKind::Http { path, expected_status } => {
+                    crate::health::check_http(&format!("http://{ip}:{port}{path}"), *expected_status, timeout).await
+                }
+                _ => crate::health::check_tcp(&format!("{ip}:{port}"), timeout).await,
+            };
+            if ok {
+                self.log_step(&dep.id, &svc.id, "--> Healthcheck OK").await;
+                return;
+            }
+            if attempt < hc.retries.max(1) {
+                tokio::time::sleep(interval).await;
+            }
+        }
+        self.log_step(
+            &dep.id,
+            &svc.id,
+            &format!("--> Healthcheck não respondeu em {ip}:{port} no prazo; seguindo (o watchdog continua conferindo)"),
+        )
+        .await;
+    }
+
     async fn poll_healthcheck(
         &self,
         ip: &str,
