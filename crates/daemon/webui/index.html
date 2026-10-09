@@ -1582,6 +1582,8 @@
                 <row class="card_actions">
                   <button class="card_stop" type="button" @click="store.stopService(s.id)">Parar</button>
                   <button class="card_remove" type="button" @click="store.stopAndDeleteService(s.id)">Remover</button>
+                  <button class="card_icon" type="button" title="Exportar serviço (arquivo para recriá-lo em outro servidor)"
+                          aria-label="Exportar serviço" @click="store.openExportWin(s.id)"><span x-icon="'export'"></span></button>
                 </row>
               </column>
             </template>

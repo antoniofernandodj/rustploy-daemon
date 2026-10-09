@@ -35,6 +35,7 @@ const P = {
   search: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>',
   pause: '<path d="M8 5v14M16 5v14"/>',
   play: '<path d="M6 4l14 8-14 8V4z"/>',
+  export: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/>',
 };
 
 export function iconSvg(name, size) {

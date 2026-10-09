@@ -235,6 +235,12 @@ hr, .rule   { width: 100%; height: 1px; border: none; background: var(--border);
     border: 1px solid var(--border); background: var(--surface); color: var(--text-2);
 }
 .card_stop:hover { background: var(--border); }
+/* Botão só de ícone na linha de ações do card (quadrado, não encolhe). */
+.card_icon {
+    flex: 0 0 38px; width: 38px; padding: 0; display: flex; align-items: center; justify-content: center;
+    border-radius: 5px; cursor: pointer; border: 1px solid var(--border); background: var(--surface); color: var(--text-2);
+}
+.card_icon:hover { background: var(--border); color: var(--text); }
 
 /* ── Barra de topo do projeto/serviço (voltar + ações à direita) ───────── */
 .proj_topbar  { width: 100%; align-items: center; flex-shrink: 0; }
@@ -527,7 +533,7 @@ input, textarea, select { font-family: inherit; font-size: inherit; color: inher
 
 /* Botões: transição, pressão e desabilitado coerentes. */
 .btn_primary, .btn_danger, .btn_ghost, .btn_blue, .btn_sm_primary, .btn_sm_ghost, .btn_sm_danger,
-.card_open, .card_edit, .card_remove, .card_stop, .copy_btn, .dep_logs_btn, .dep_del_btn, .dk_rm,
+.card_open, .card_edit, .card_remove, .card_stop, .card_icon, .copy_btn, .dep_logs_btn, .dep_del_btn, .dk_rm,
 .tab_on, .tab_off, .nav_row_on, .nav_row_off, .btn_export, .btn_export_on {
     transition: background var(--t) var(--ease), border-color var(--t) var(--ease), color var(--t) var(--ease), transform .06s, box-shadow var(--t);
 }
