@@ -1478,6 +1478,10 @@
             <text class="title">Projects</text>
             <text class="subtitle">Projetos do cluster e a contagem de serviços de cada um.</text>
           </column>
+          <row class="stats_row">
+            <column class="stat_card"><text class="label_cap">SERVICES</text><text class="stat_num" x-text="servicesCount"></text></column>
+            <column class="stat_card"><text class="label_cap">PROJECTS</text><text class="stat_num_g" x-text="rows.length"></text></column>
+          </row>
         </row>
         <row class="env_add">
           <button class="btn_primary" type="button" @click="store.openProjectWin()">+ Novo projeto</button>
@@ -1494,15 +1498,10 @@
                 <text class="muted" x-text="row.description || '—'"></text>
                 <hr class="rule" />
 
-                <column style="gap:6px; margin-top:8px">
-                    <row style="gap:8px; align-items:center">
-                      <button class="card_open" type="button" @click="store.openProject(row.id)">Abrir ›</button>
-                      <button class="card_edit" type="button" @click="store.openProjectWin(row)">Editar</button>
-                      <button class="card_remove" type="button" x-show="row.canDelete"
-                              @click="store.deleteProject(row.id)">Remover</button>
-                    </row>
-                    <text class="muted" x-show="!row.canDelete">Não removível: tem serviços</text>
-                  </column>
+                <button class="card_open" type="button" @click="store.openProject(row.id)">Abrir ›</button>
+                <button class="card_remove" type="button" x-show="row.canDelete"
+                        @click="store.deleteProject(row.id)">Remover</button>
+                <text class="muted" x-show="!row.canDelete">Não removível: tem serviços</text>
               </column>
             </template>
             <text class="muted" x-fallback="rows" style="padding:16px">Nenhum projeto ainda.</text>

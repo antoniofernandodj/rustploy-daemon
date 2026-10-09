@@ -17,6 +17,10 @@ document.addEventListener("alpine:init", () => {
     editName: "",
     editDesc: "",
 
+    get servicesCount() {
+      return ((this.store.snap && this.store.snap.services) || []).length;
+    },
+
     get rows() {
       const s = this.store;
       const services = (s.snap && s.snap.services) || [];
