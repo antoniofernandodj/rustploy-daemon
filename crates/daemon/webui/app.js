@@ -74,6 +74,7 @@ document.addEventListener("alpine:init", () => {
     // ── Sessão / navegação (≈ ctx.screen/ctx.view do glacier) ────────────
     screen: "login",
     view: "deployments",
+    menuOpen: true,
     connected: false,
     statusLine: "pronto para conectar",
     error: "",

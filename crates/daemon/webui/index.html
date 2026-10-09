@@ -74,7 +74,7 @@
 
   <!-- ── Shell (sidebar + topbar + conteúdo) ─────────────────────────── -->
   <row class="screen" x-show="$store.app.screen === 'shell'">
-    <column class="sidebar" x-data="{
+    <column class="sidebar" x-show="$store.app.menuOpen" x-data="{
         groups: [
           { title: 'DEPLOYMENT OPS', items: [
             { v: 'deployments',   label: 'Deployments',   icon: 'deploy' },
@@ -113,10 +113,17 @@
         <span :class="$store.app.view === 'settings' ? 'nav_icon_on' : 'nav_icon_off'" x-icon="'settings'"></span>
         <text :class="$store.app.view === 'settings' ? 'nav_label_on' : 'nav_label_off'">Settings</text>
       </button>
+      <button type="button" @click="$store.app.nav('support')" title="Support"
+              :class="$store.app.view === 'support' ? 'nav_row_on' : 'nav_row_off'">
+        <span :class="$store.app.view === 'support' ? 'nav_icon_on' : 'nav_icon_off'" x-icon="'help'"></span>
+        <text :class="$store.app.view === 'support' ? 'nav_label_on' : 'nav_label_off'">Support</text>
+      </button>
     </column>
 
     <column class="main_col">
       <row class="topbar">
+        <button class="btn_ghost menu_btn" type="button" title="Mostrar/ocultar o menu"
+                @click="$store.app.menuOpen = !$store.app.menuOpen">☰</button>
         <row class="search_wrap">
           <span class="search_ico" x-icon="'search'"></span>
           <input class="search" type="text" placeholder="Search deployments, nodes…"
@@ -132,6 +139,11 @@
         <button class="btn_ghost" type="button" @click="$store.app.disconnect()">Disconnect</button>
       </row>
       <hr class="rule" />
+
+      <column class="content" x-show="$store.app.view === 'support'">
+        <text class="title">Support</text>
+        <text class="subtitle">github.com/antoniofernandodj/rustploy</text>
+      </column>
 
       <column class="content" x-data="dashboard" x-show="$store.app.view === 'deployments'">
         <row class="header_row">
