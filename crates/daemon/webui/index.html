@@ -1718,40 +1718,55 @@
         <row class="proj_actions" x-show="step !== 'pick_type'" style="flex-shrink:0">
           <button class="btn_sm_ghost" type="button" @click="gotoType()">‹ Tipo</button>
         </row>
-        <text class="subtitle" x-show="step === 'pick_type'" style="flex-shrink:0">Escolha o tipo de serviço.</text>
+        <text class="subtitle" x-show="step === 'pick_type'" style="flex-shrink:0">Escolha o tipo e configure o serviço antes de criar.</text>
         <text class="err" x-show="error" x-text="error"></text>
 
         <!-- Passo 1: escolher tipo -->
-        <column class="grid" x-show="step === 'pick_type'">
-          <column class="card">
-            <text class="card_name">Application</text>
-            <text class="muted">Repositório Git (build) ou imagem pronta de registry.</text>
-            <button class="card_open" type="button" @click="gotoApp()">Selecionar ›</button>
-          </column>
-          <column class="card">
-            <text class="card_name">Compose Stack</text>
-            <text class="muted">Cole um docker-compose.yml próprio.</text>
-            <button class="card_open" type="button" @click="gotoCompose()">Selecionar ›</button>
-          </column>
-          <column class="card">
-            <text class="card_name">Database</text>
-            <text class="muted">PostgreSQL, MySQL, MariaDB, MongoDB ou Redis já configurados.</text>
-            <button class="card_open" type="button" @click="gotoDb()">Selecionar ›</button>
-          </column>
-          <column class="card">
-            <text class="card_name">Broker</text>
-            <text class="muted">Kafka, RabbitMQ ou NATS já configurados.</text>
-            <button class="card_open" type="button" @click="gotoBroker()">Selecionar ›</button>
-          </column>
-          <column class="card">
-            <text class="card_name">Template</text>
-            <text class="muted">Blueprints prontos do catálogo (stacks completas).</text>
-            <button class="card_open" type="button" @click="gotoTemplate()">Selecionar ›</button>
-          </column>
-          <column class="card">
-            <text class="card_name">Importar</text>
-            <text class="muted">Recrie aqui um serviço exportado de outro servidor (arquivo .yml).</text>
-            <button class="card_open" type="button" @click="gotoImport()">Selecionar ›</button>
+        <column class="form_panel" x-show="step === 'pick_type'">
+          <text class="label_cap">ESCOLHA O TIPO DE SERVIÇO</text>
+          <column class="kv_list">
+            <row class="kv_row">
+              <column class="header_titles">
+                <text class="env_key">Application</text>
+                <text class="muted">Web app via Git ou imagem</text>
+              </column>
+              <button class="btn_primary" type="button" @click="gotoApp()">Selecionar ›</button>
+            </row>
+            <row class="kv_row">
+              <column class="header_titles">
+                <text class="env_key">Database</text>
+                <text class="muted">Banco de dados gerenciado</text>
+              </column>
+              <button class="btn_primary" type="button" @click="gotoDb()">Selecionar ›</button>
+            </row>
+            <row class="kv_row">
+              <column class="header_titles">
+                <text class="env_key">Broker</text>
+                <text class="muted">Mensageria: Kafka, RabbitMQ, NATS</text>
+              </column>
+              <button class="btn_primary" type="button" @click="gotoBroker()">Selecionar ›</button>
+            </row>
+            <row class="kv_row">
+              <column class="header_titles">
+                <text class="env_key">Compose</text>
+                <text class="muted">Stack Docker Compose</text>
+              </column>
+              <button class="btn_primary" type="button" @click="gotoCompose()">Selecionar ›</button>
+            </row>
+            <row class="kv_row">
+              <column class="header_titles">
+                <text class="env_key">Template</text>
+                <text class="muted">A partir de um preset</text>
+              </column>
+              <button class="btn_primary" type="button" @click="gotoTemplate()">Selecionar ›</button>
+            </row>
+            <row class="kv_row">
+              <column class="header_titles">
+                <text class="env_key">Importar</text>
+                <text class="muted">Recriar um serviço exportado de outro servidor</text>
+              </column>
+              <button class="btn_primary" type="button" @click="gotoImport()">Selecionar ›</button>
+            </row>
           </column>
         </column>
 
