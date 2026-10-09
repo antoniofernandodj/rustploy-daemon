@@ -121,7 +121,22 @@ document.addEventListener("alpine:init", () => {
     },
 
     cancel() {
-      this.store.nav("project");
+      this.store.closeNewService();
+    },
+
+    /** Janela reaberta: volta ao passo 1 sem lixo do uso anterior (o catálogo
+     * dos bancos/brokers/templates fica em cache, não precisa refazer). */
+    reset() {
+      this.step = "pick_type";
+      this.error = "";
+      this.submitting = false;
+      this.appName = "";
+      this.gitUrl = "";
+      this.registryImage = "";
+      this.appDomain = "";
+      this.composeName = "";
+      this.composeDomain = "";
+      this.templateSearch = "";
     },
 
     // ── Submissões ────────────────────────────────────────────────────

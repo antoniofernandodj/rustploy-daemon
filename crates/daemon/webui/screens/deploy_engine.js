@@ -10,6 +10,31 @@ document.addEventListener("alpine:init", () => {
       return Alpine.store("app");
     },
 
+    // Aba ativa (mesmas 3 da GUI: Fila / Executando / Histórico 24h).
+    tab: "fila",
+
+    // Reordenar a fila arrastando (DeployQueueReorder, como o drag-and-drop da
+    // GUI): solta a linha A sobre a B e A passa a ficar antes de B.
+    dragId: null,
+    overId: null,
+    dragStart(ev, id) {
+      this.dragId = id;
+      ev.dataTransfer.effectAllowed = "move";
+      ev.dataTransfer.setData("text/plain", id);
+    },
+    dragEnd() {
+      this.dragId = null;
+      this.overId = null;
+    },
+    async dropOn(targetId) {
+      const from = this.dragId;
+      this.dragEnd();
+      if (!from || from === targetId) return;
+      const order = this.queued.map((q) => q.deploymentId).filter((x) => x !== from);
+      order.splice(order.indexOf(targetId), 0, from);
+      await this.store.queueReorder(order);
+    },
+
     get engine() {
       return this.store.snap?.engine || null;
     },

@@ -27,6 +27,9 @@ import Alpine from "https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/module.esm.
 import { Api } from "./net/api.js";
 import { openStream } from "./net/sse.js";
 import { registerDirectives } from "./directives.js";
+import { registerWindows } from "./wm.js";
+import { registerIcons } from "./icons.js";
+import { registerBusy } from "./busy.js";
 import {
   fmtUptime,
   fmtBytes,
@@ -45,6 +48,9 @@ import {
 
 window.Alpine = Alpine;
 registerDirectives(Alpine);
+registerWindows(Alpine);
+registerIcons(Alpine);
+registerBusy(Alpine);
 
 const PREFS_KEY = "rustploy.prefs";
 
@@ -127,6 +133,12 @@ document.addEventListener("alpine:init", () => {
     // handlers/jobs.luau::open_new_job_window e a aba do projeto). Modal
     // renderizado uma vez em index.html, fora do escopo de qualquer tela.
     showNewJob: false,
+    // Janelas (wm.js) "Novo projeto/Editar projeto" e "Novo serviço": estado no
+    // store porque várias telas as abrem (grid de projetos, tela do projeto).
+    // `projectWin` = null (fechada) | {} (novo) | {id,name,description} (editar).
+    projectWin: null,
+    showNewService: false,
+    logWin: false, // janela de logs ao vivo do serviço aberto (wm.js)
     njobStep: "pick_project", // "pick_project" | "pick_service" | "form"
     // Modo edição: aberto por openEditJob(id) em vez do fluxo normal — pula
     // pro passo "form" (project_id/trigger_service_id não são editáveis via
@@ -260,7 +272,7 @@ document.addEventListener("alpine:init", () => {
     toast(message, kind = "info", durationMs = 4000) {
       if (!message) return null;
       const id = ++this.toastSeq;
-      this.toasts.push({ id, kind, message: String(message) });
+      this.toasts.push({ id, kind, message: String(message), ms: durationMs });
       setTimeout(() => this.dismissToast(id), durationMs);
       return id;
     },
@@ -585,7 +597,17 @@ document.addEventListener("alpine:init", () => {
     // ── Services ─────────────────────────────────────────────────────
 
     openNewService() {
-      this.nav("new_service");
+      window.dispatchEvent(new CustomEvent("newservice-reset"));
+      this.showNewService = true;
+    },
+    closeNewService() {
+      this.showNewService = false;
+    },
+    openProjectWin(p) {
+      this.projectWin = p ? { id: p.id, name: p.name, description: p.description || "" } : {};
+    },
+    closeProjectWin() {
+      this.projectWin = null;
     },
 
     /** Catálogos do wizard (bancos/brokers/templates) — buscados uma vez ao
@@ -614,6 +636,7 @@ document.addEventListener("alpine:init", () => {
       if (r.ok) {
         this.toastOk("serviço criado");
         await this.refreshNow();
+        this.closeNewService();
         const created = r.value?.Service;
         if (created) this.openService(created.id);
         else this.nav("project");
@@ -657,6 +680,7 @@ document.addEventListener("alpine:init", () => {
       if (r.ok) {
         this.toastOk("serviço criado");
         await this.refreshNow();
+        this.closeNewService();
         const created = r.value?.Service;
         if (created) this.openService(created.id);
         else this.nav("project");
@@ -804,6 +828,12 @@ document.addEventListener("alpine:init", () => {
     async queuePromote(deploymentId) {
       const r = await this.api.rpcChecked({ DeployQueuePromote: { deployment_id: deploymentId } });
       this.toastResult(r, "deploy movido para o topo da fila");
+      await this.refreshNow();
+    },
+
+    async queueReorder(order) {
+      const r = await this.api.rpcChecked({ DeployQueueReorder: { order } });
+      this.toastResult(r, "fila reordenada");
       await this.refreshNow();
     },
 

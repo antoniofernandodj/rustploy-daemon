@@ -23,4 +23,23 @@ export function registerDirectives(Alpine) {
       });
     });
   });
+
+  // `x-follow`: "tail -f" — mantém a rolagem no fim enquanto chegam linhas, mas
+  // só se o usuário já estava no fim (rolou pra cima pra ler = não puxa de volta).
+  Alpine.directive("follow", (el, _d, { cleanup }) => {
+    let stick = true;
+    const atEnd = () => el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+    const onScroll = () => {
+      stick = atEnd();
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    const mo = new MutationObserver(() => {
+      if (stick) el.scrollTop = el.scrollHeight;
+    });
+    mo.observe(el, { childList: true, subtree: true });
+    cleanup(() => {
+      el.removeEventListener("scroll", onScroll);
+      mo.disconnect();
+    });
+  });
 }

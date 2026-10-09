@@ -5,6 +5,28 @@
 //   • variante unitária  → string:  "DaemonStatus", "StopAllManaged"
 //   • variante com campos → objeto: { ProjectDelete: { id: "..." } }
 
+/** Teto de cada requisição. Sem ele um daemon mudo deixaria a ação (e o botão
+ * bloqueado por busy.js) pendurada para sempre; estourar vira `{ ok:false }`. */
+const RPC_TIMEOUT_MS = 60_000;
+const UPLOAD_TIMEOUT_MS = 10 * 60_000;
+
+/** `fetch` com timeout cobrindo cabeçalho E corpo; o erro de timeout vira
+ * mensagem legível. Devolve `{ ok, status, json() }` com o corpo já lido. */
+async function fetchTimeout(url, init, ms) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), ms);
+  try {
+    const res = await fetch(url, { ...init, signal: ctl.signal });
+    const text = await res.text();
+    return { ok: res.ok, status: res.status, json: async () => JSON.parse(text) };
+  } catch (e) {
+    if (ctl.signal.aborted) throw new Error("tempo esgotado (" + Math.round(ms / 1000) + "s) sem resposta do daemon");
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export class Api {
   constructor(baseUrl, token) {
     this.baseUrl = baseUrl.replace(/\/+$/, "");
@@ -21,11 +43,11 @@ export class Api {
   async rpc(cmd) {
     let res;
     try {
-      res = await fetch(this.baseUrl + "/api/rpc", {
-        method: "POST",
-        headers: this.headers(),
-        body: JSON.stringify(cmd),
-      });
+      res = await fetchTimeout(
+        this.baseUrl + "/api/rpc",
+        { method: "POST", headers: this.headers(), body: JSON.stringify(cmd) },
+        RPC_TIMEOUT_MS,
+      );
     } catch (e) {
       return { ok: false, error: e && e.message ? e.message : "falha de rede" };
     }
@@ -61,11 +83,11 @@ export class Api {
       const h = { "Content-Type": "application/zip" };
       if (this.token) h["Authorization"] = "Bearer " + this.token;
       h["X-Rustploy-Filename"] = file.name || "archive.zip";
-      res = await fetch(`${this.baseUrl}/api/services/${serviceId}/archive`, {
-        method: "POST",
-        headers: h,
-        body: file,
-      });
+      res = await fetchTimeout(
+        `${this.baseUrl}/api/services/${serviceId}/archive`,
+        { method: "POST", headers: h, body: file },
+        UPLOAD_TIMEOUT_MS,
+      );
     } catch (e) {
       return { ok: false, error: e && e.message ? e.message : "falha de rede" };
     }

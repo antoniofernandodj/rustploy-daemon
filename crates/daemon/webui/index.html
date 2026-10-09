@@ -74,63 +74,61 @@
 
   <!-- ── Shell (sidebar + topbar + conteúdo) ─────────────────────────── -->
   <row class="screen" x-show="$store.app.screen === 'shell'">
-    <column class="sidebar">
-      <column class="brand_box">
-        <text class="brand">Rustploy</text>
-        <text class="brand_sub">PRODUCTION CLUSTER</text>
-      </column>
-      <text class="nav_section">DEPLOYMENT OPS</text>
-      <button type="button" @click="$store.app.nav('deployments')"
-              :class="$store.app.view === 'deployments' ? 'nav_row_on' : 'nav_row_off'">
-        <text :class="$store.app.view === 'deployments' ? 'nav_icon_on' : 'nav_icon_off'">▶</text>
-        <text :class="$store.app.view === 'deployments' ? 'nav_label_on' : 'nav_label_off'">Deployments</text>
-      </button>
-      <button type="button" @click="$store.app.nav('deploy_engine')"
-              :class="$store.app.view === 'deploy_engine' ? 'nav_row_on' : 'nav_row_off'">
-        <text :class="$store.app.view === 'deploy_engine' ? 'nav_icon_on' : 'nav_icon_off'">⚡</text>
-        <text :class="$store.app.view === 'deploy_engine' ? 'nav_label_on' : 'nav_label_off'">Deploy Engine</text>
-      </button>
-      <button type="button" @click="$store.app.nav('monitoring')"
-              :class="$store.app.view === 'monitoring' ? 'nav_row_on' : 'nav_row_off'">
-        <text :class="$store.app.view === 'monitoring' ? 'nav_icon_on' : 'nav_icon_off'">◔</text>
-        <text :class="$store.app.view === 'monitoring' ? 'nav_label_on' : 'nav_label_off'">Monitoring</text>
-      </button>
-      <button type="button" @click="$store.app.nav('schedules')"
-              :class="$store.app.view === 'schedules' ? 'nav_row_on' : 'nav_row_off'">
-        <text :class="$store.app.view === 'schedules' ? 'nav_icon_on' : 'nav_icon_off'">◫</text>
-        <text :class="$store.app.view === 'schedules' ? 'nav_label_on' : 'nav_label_off'">Schedules</text>
-      </button>
-      <button type="button" @click="$store.app.nav('ingress')"
-              :class="$store.app.view === 'ingress' ? 'nav_row_on' : 'nav_row_off'">
-        <text :class="$store.app.view === 'ingress' ? 'nav_icon_on' : 'nav_icon_off'">↦</text>
-        <text :class="$store.app.view === 'ingress' ? 'nav_label_on' : 'nav_label_off'">Ingress</text>
-      </button>
-      <button type="button" @click="$store.app.nav('docker')"
-              :class="$store.app.view === 'docker' ? 'nav_row_on' : 'nav_row_off'">
-        <text :class="$store.app.view === 'docker' ? 'nav_icon_on' : 'nav_icon_off'">◉</text>
-        <text :class="$store.app.view === 'docker' ? 'nav_label_on' : 'nav_label_off'">Docker</text>
-      </button>
-      <text class="nav_section">MANAGEMENT</text>
-      <button type="button" @click="$store.app.nav('projects')"
-              :class="['projects','project','new_service','service'].includes($store.app.view) ? 'nav_row_on' : 'nav_row_off'">
-        <text :class="['projects','project','new_service','service'].includes($store.app.view) ? 'nav_icon_on' : 'nav_icon_off'">◧</text>
-        <text :class="['projects','project','new_service','service'].includes($store.app.view) ? 'nav_label_on' : 'nav_label_off'">Projects</text>
-      </button>
+    <column class="sidebar" x-data="{
+        groups: [
+          { title: 'DEPLOYMENT OPS', items: [
+            { v: 'deployments',   label: 'Deployments',   icon: 'deploy' },
+            { v: 'deploy_engine', label: 'Deploy Engine', icon: 'engine' },
+            { v: 'monitoring',    label: 'Monitoring',    icon: 'monitor' },
+            { v: 'schedules',     label: 'Schedules',     icon: 'clock' },
+            { v: 'ingress',       label: 'Ingress',       icon: 'ingress' },
+            { v: 'docker',        label: 'Docker',        icon: 'docker' } ] },
+          { title: 'MANAGEMENT', items: [
+            { v: 'projects', label: 'Projects', icon: 'folder', also: ['project', 'service'] } ] } ],
+        on(it) { const v = $store.app.view; return v === it.v || (it.also || []).includes(v); }
+      }">
+      <row class="brand_row">
+        <span class="brand_logo" x-icon.20="'rocket'"></span>
+        <column class="brand_box">
+          <text class="brand">Rustploy</text>
+          <text class="brand_sub">PRODUCTION CLUSTER</text>
+        </column>
+      </row>
+      <template x-for="g in groups" :key="g.title">
+        <column class="nav_group">
+          <text class="nav_section" x-text="g.title"></text>
+          <template x-for="it in g.items" :key="it.v">
+            <button type="button" :class="on(it) ? 'nav_row_on' : 'nav_row_off'" :title="it.label"
+                    @click="$store.app.nav(it.v)">
+              <span :class="on(it) ? 'nav_icon_on' : 'nav_icon_off'" x-icon="it.icon"></span>
+              <text :class="on(it) ? 'nav_label_on' : 'nav_label_off'" x-text="it.label"></text>
+            </button>
+          </template>
+        </column>
+      </template>
       <column class="nav_spacer"></column>
       <hr class="rule" />
-      <button type="button" @click="$store.app.nav('settings')"
+      <button type="button" @click="$store.app.nav('settings')" title="Settings"
               :class="$store.app.view === 'settings' ? 'nav_row_on' : 'nav_row_off'">
-        <text :class="$store.app.view === 'settings' ? 'nav_icon_on' : 'nav_icon_off'">⌥</text>
+        <span :class="$store.app.view === 'settings' ? 'nav_icon_on' : 'nav_icon_off'" x-icon="'settings'"></span>
         <text :class="$store.app.view === 'settings' ? 'nav_label_on' : 'nav_label_off'">Settings</text>
       </button>
     </column>
 
     <column class="main_col">
       <row class="topbar">
-        <input class="search" type="text" placeholder="Search deployments, nodes…"
-               x-model="$store.app.search" @input="$store.app.searchChanged($event.target.value)" />
-        <text class="muted topbar_status" x-text="'● daemon v' + $store.app.daemonVersion"></text>
-        <button class="btn_danger" type="button" @click="$store.app.stopAll()">Stop All</button>
+        <row class="search_wrap">
+          <span class="search_ico" x-icon="'search'"></span>
+          <input class="search" type="text" placeholder="Search deployments, nodes…"
+                 x-model="$store.app.search" @input="$store.app.searchChanged($event.target.value)" />
+        </row>
+        <row class="status_pill topbar_status">
+          <span class="pill_dot"></span>
+          <text x-text="'daemon v' + $store.app.daemonVersion"></text>
+        </row>
+        <button class="btn_danger btn_icon" type="button" @click="$store.app.stopAll()" title="Para todos os containers gerenciados">
+          <span x-icon="'power'"></span><text>Stop All</text>
+        </button>
         <button class="btn_ghost" type="button" @click="$store.app.disconnect()">Disconnect</button>
       </row>
       <hr class="rule" />
@@ -225,12 +223,21 @@
           </row>
         </row>
 
+        <row class="tabs">
+          <button type="button" :class="tab === 'fila' ? 'tab_on' : 'tab_off'" @click="tab = 'fila'"
+                  x-text="'Fila (' + queued.length + ')'"></button>
+          <button type="button" :class="tab === 'executando' ? 'tab_on' : 'tab_off'" @click="tab = 'executando'"
+                  x-text="'Executando (' + active.length + ')'"></button>
+          <button type="button" :class="tab === 'historico' ? 'tab_on' : 'tab_off'" @click="tab = 'historico'"
+                  x-text="'Histórico 24h (' + recent.length + ')'"></button>
+        </row>
+
         <!-- As três seções são irmãs e de tamanhos diferentes: fila e
              "executando agora" crescem com o conteúdo (uma fila vazia não tem
              por que ocupar um terço da janela) e só o histórico fica com o
              espaço que sobra, porque é a única lista que cresce sem limite.
              Mesma estrutura de home.gv (client iced). -->
-        <column class="section">
+        <column class="section" x-show="tab === 'fila'">
           <row class="section_head">
             <text class="section_title" x-text="'NA FILA (' + queued.length + ')'"></text>
             <button class="copy_btn" type="button" @click="store.queueTogglePause()"
@@ -241,8 +248,11 @@
             <text class="empty_state" x-fallback="queued">Nenhum deploy na fila.</text>
             <column class="table_body">
               <template x-for="q in queued" :key="q.deploymentId">
-                <column class="row_wrap">
+                <column class="row_wrap" draggable="true" :class="{ drop_over: overId === q.deploymentId && dragId !== q.deploymentId, dragging: dragId === q.deploymentId }"
+                        @dragstart="dragStart($event, q.deploymentId)" @dragover.prevent="overId = q.deploymentId"
+                        @dragleave="overId === q.deploymentId && (overId = null)" @drop.prevent="dropOn(q.deploymentId)" @dragend="dragEnd()">
                   <row class="trow">
+                    <span class="drag_grip" title="Arraste para reordenar">⠿</span>
                     <text class="td_key col_svc" x-text="q.pos + '. ' + q.service"></text>
                     <text class="td col_start" x-text="q.project"></text>
                     <button class="copy_btn" type="button" @click="store.queuePromote(q.deploymentId)">↑ topo</button>
@@ -256,7 +266,7 @@
         </column>
 
         <!-- Executando agora: no máximo um deploy por vez (a fila é serial). -->
-        <column class="section">
+        <column class="section" x-show="tab === 'executando'">
           <row class="section_head">
             <text class="section_title" x-text="'EXECUTANDO AGORA (' + active.length + ')'"></text>
           </row>
@@ -304,7 +314,7 @@
 
         <!-- Histórico 24h: a única lista que cresce sem limite — fica com o
              espaço restante e com o scroll. -->
-        <column class="section_fill">
+        <column class="section_fill" x-show="tab === 'historico'">
           <row class="section_head">
             <text class="section_title" x-text="'HISTÓRICO 24H (' + recent.length + ')'"></text>
           </row>
@@ -345,8 +355,8 @@
 
         <!-- Modal "detalhes do deploy": a mesma linha de passos, em grande, e
              o histórico de transições (estado, duração, mensagem). -->
-        <column class="modal_backdrop" x-show="detail" @click.self="closeDetail()">
-          <column class="modal_box">
+        <column class="modal_backdrop" x-show="detail">
+          <column class="modal_box" x-win="'deploy_detail'" data-w="860" data-h="600">
             <row class="modal_head">
               <text class="label_cap" x-text="'DEPLOY · ' + (detail ? detail.service : '')"></text>
               <button class="btn_ghost" type="button" @click="closeDetail()">Fechar</button>
@@ -841,8 +851,8 @@
 
         <!-- Modal "novo token de registry": 2 passos, form → reveal (o
              segredo só aparece uma vez e nunca mais é recuperável). -->
-        <column class="modal_backdrop" x-show="showTokenModal" @click.self="closeTokenModal()">
-          <column class="modal_box">
+        <column class="modal_backdrop" x-show="showTokenModal">
+          <column class="modal_box" x-win="'registry_token'" data-w="520" data-h="420">
             <row class="modal_head">
               <text class="label_cap">NOVO TOKEN DE REGISTRY</text>
               <button class="btn_ghost" type="button" @click="closeTokenModal()">Fechar</button>
@@ -952,8 +962,8 @@
            equivalente ao new_job_window do cliente iced. Projetos/serviços
            já vêm do snapshot em memória — sem pré-semear como o Luau
            precisa fazer pro motor isolado da janela. -->
-      <column class="modal_backdrop" x-show="$store.app.showNewJob" @click.self="$store.app.closeNewJob()">
-        <column class="modal_box">
+      <column class="modal_backdrop" x-show="$store.app.showNewJob">
+        <column class="modal_box" x-win="'new_job'" data-w="760" data-h="640">
           <row class="modal_head">
             <text class="label_cap" x-text="$store.app.njobEditId ? 'EDITAR JOB' : 'NOVO JOB'"></text>
             <row style="gap:8px">
@@ -1119,14 +1129,14 @@
       </column>
 
       <!-- Modal de logs ao vivo de uma execução de job -->
-      <column class="modal_backdrop" x-show="$store.app.jobLogsFor" @click.self="$store.app.closeJobLogs()">
-        <column class="modal_box">
+      <column class="modal_backdrop" x-show="$store.app.jobLogsFor">
+        <column class="modal_box" x-win="'job_logs'" data-w="860" data-h="560">
           <row class="modal_head">
             <text class="label_cap">LOGS DO JOB</text>
             <button class="btn_ghost" type="button" @click="$store.app.closeJobLogs()">Fechar</button>
           </row>
           <column class="modal_body log_panel">
-            <column class="scroll_fill">
+            <column class="scroll_fill" x-follow>
               <column class="log_body">
                 <template x-for="(l, i) in $store.app.jobLogLines" :key="i">
                   <row class="log_line">
@@ -1470,18 +1480,8 @@
           </column>
         </row>
         <row class="env_add">
-          <button class="btn_primary" type="button" @click="showNewForm = !showNewForm"
-                  x-text="showNewForm ? 'Cancelar' : '+ Novo projeto'"></button>
+          <button class="btn_primary" type="button" @click="store.openProjectWin()">+ Novo projeto</button>
         </row>
-        <column class="form_panel" x-show="showNewForm" style="max-width:480px">
-          <input class="field_input" type="text" placeholder="Nome do projeto" x-model="newName" />
-          <input class="field_input" type="text" placeholder="Descrição (opcional)" x-model="newDesc"
-                 style="margin-top:8px" />
-          <text class="err" x-show="newError" x-text="newError" style="margin-top:6px"></text>
-          <row class="env_add" style="margin-top:10px">
-            <button class="btn_primary" type="button" @click="submitNew()">Criar</button>
-          </row>
-        </column>
 
         <column class="scroll_fill">
           <column class="grid">
@@ -1494,27 +1494,15 @@
                 <text class="muted" x-text="row.description || '—'"></text>
                 <hr class="rule" />
 
-                <template x-if="editingId === row.id">
-                  <column style="gap:8px; margin-top:8px">
-                    <input class="field_input" type="text" x-model="editName" />
-                    <input class="field_input" type="text" x-model="editDesc" />
-                    <row class="env_add">
-                      <button class="btn_primary" type="button" @click="saveEdit()">Salvar</button>
-                      <button class="btn_ghost" type="button" @click="cancelEdit()">Cancelar</button>
-                    </row>
-                  </column>
-                </template>
-                <template x-if="editingId !== row.id">
-                  <column style="gap:6px; margin-top:8px">
+                <column style="gap:6px; margin-top:8px">
                     <row style="gap:8px; align-items:center">
                       <button class="card_open" type="button" @click="store.openProject(row.id)">Abrir ›</button>
-                      <button class="card_edit" type="button" @click="startEdit(row)">Editar</button>
+                      <button class="card_edit" type="button" @click="store.openProjectWin(row)">Editar</button>
                       <button class="card_remove" type="button" x-show="row.canDelete"
                               @click="store.deleteProject(row.id)">Remover</button>
                     </row>
                     <text class="muted" x-show="!row.canDelete">Não removível: tem serviços</text>
                   </column>
-                </template>
               </column>
             </template>
             <text class="muted" x-fallback="rows" style="padding:16px">Nenhum projeto ainda.</text>
@@ -1529,23 +1517,13 @@
           <column class="hspacer"></column>
           <row class="proj_actions" x-show="!editing">
             <button class="btn_sm_primary" type="button" @click="store.openNewService()">+ Novo serviço</button>
-            <button class="btn_sm_ghost" type="button" @click="startEdit()">Editar projeto</button>
+            <button class="btn_sm_ghost" type="button" @click="store.openProjectWin(project)">Editar projeto</button>
             <button class="btn_sm_danger" type="button" x-show="canDelete"
                     @click="store.deleteProject(store.selectedProjectId)">Remover projeto</button>
           </row>
         </row>
 
-        <template x-if="editing">
-          <column class="field_group" style="max-width:480px">
-            <input class="field_input" type="text" x-model="editName" />
-            <input class="field_input" type="text" x-model="editDesc" style="margin-top:8px" />
-            <row class="env_add" style="margin-top:8px">
-              <button class="btn_primary" type="button" @click="saveEdit()">Salvar</button>
-              <button class="btn_ghost" type="button" @click="cancelEdit()">Cancelar</button>
-            </row>
-          </column>
-        </template>
-        <template x-if="!editing">
+        <template x-if="true">
           <row class="header_row">
             <column class="header_titles">
               <text class="title" x-text="project ? project.name : ''"></text>
@@ -1719,17 +1697,18 @@
       </column>
 
       <!-- ── Novo serviço (wizard por passos, porta de new_service.gv) ──── -->
-      <column class="content" x-data="newService" x-show="$store.app.view === 'new_service'">
-        <row class="header_row">
-          <column class="header_titles">
-            <text class="title">Novo serviço</text>
-            <text class="subtitle" x-show="step === 'pick_type'">Escolha o tipo de serviço.</text>
-          </column>
-          <row class="proj_actions">
-            <button class="btn_sm_ghost" type="button" @click="gotoType()" x-show="step !== 'pick_type'">‹ Tipo</button>
-            <button class="btn_sm_ghost" type="button" @click="cancel()">Cancelar</button>
-          </row>
+      <column class="modal_backdrop" x-data="newService" x-show="$store.app.showNewService"
+              @newservice-reset.window="reset()">
+        <column class="modal_box" x-win="'new_service'" data-w="760" data-h="640">
+        <row class="modal_head">
+          <text class="label_cap">NOVO SERVIÇO</text>
+          <button class="btn_ghost" type="button" @click="cancel()">Fechar</button>
         </row>
+        <column class="modal_body" style="gap:14px">
+        <row class="proj_actions" x-show="step !== 'pick_type'" style="flex-shrink:0">
+          <button class="btn_sm_ghost" type="button" @click="gotoType()">‹ Tipo</button>
+        </row>
+        <text class="subtitle" x-show="step === 'pick_type'" style="flex-shrink:0">Escolha o tipo de serviço.</text>
         <text class="err" x-show="error" x-text="error"></text>
 
         <!-- Passo 1: escolher tipo -->
@@ -1900,6 +1879,59 @@
             <button class="btn_primary" type="button" @click="submitTemplate()" :disabled="submitting"
                     x-text="submitting ? 'Criando…' : 'Criar'"></button>
           </row>
+        </column>
+      </column>
+        </column>
+      </column>
+
+      <!-- ── Janela: novo/editar projeto (wm.js) ───────────────────────────── -->
+      <column class="modal_backdrop" x-data="projectWin" x-show="$store.app.projectWin">
+        <column class="modal_box" x-win="'project_form'" data-w="480" data-h="340">
+          <row class="modal_head">
+            <text class="label_cap" x-text="editing ? 'EDITAR PROJETO' : 'NOVO PROJETO'"></text>
+            <button class="btn_ghost" type="button" @click="store.closeProjectWin()">Fechar</button>
+          </row>
+          <column class="modal_body" style="gap:12px">
+            <form style="display:flex; flex-direction:column; gap:12px; flex-shrink:0" @submit.prevent="submit()">
+              <column class="field_group">
+                <text class="field_label">NOME</text>
+                <input class="field_input" type="text" placeholder="meu-projeto" x-model="name" />
+              </column>
+              <column class="field_group">
+                <text class="field_label">DESCRIÇÃO (opcional)</text>
+                <input class="field_input" type="text" placeholder="Para que serve este projeto" x-model="desc" />
+              </column>
+              <text class="err" x-show="error" x-text="error"></text>
+              <row class="env_add">
+                <button class="btn_primary" type="submit" :disabled="busy"
+                        x-text="busy ? 'Salvando…' : (editing ? 'Salvar' : 'Criar projeto')"></button>
+                <button class="btn_ghost" type="button" @click="store.closeProjectWin()">Cancelar</button>
+              </row>
+            </form>
+          </column>
+        </column>
+      </column>
+
+      <!-- ── Janela: logs ao vivo do serviço (destacável da aba Logs) ───────── -->
+      <column class="modal_backdrop" x-show="$store.app.logWin">
+        <column class="modal_box" x-win="'service_logs'" data-w="900" data-h="560">
+          <row class="modal_head">
+            <text class="label_cap" x-text="'LOGS · ' + ($store.app.serviceNameById($store.app.selectedServiceId) || '')"></text>
+            <button class="btn_ghost" type="button" @click="$store.app.logWin = false">Fechar</button>
+          </row>
+          <column class="modal_body log_panel" style="border:none; border-radius:0">
+            <column class="scroll_fill" x-follow>
+              <column class="log_body">
+                <template x-for="(l, i) in $store.app.serviceLogLines" :key="i">
+                  <row class="log_line">
+                    <text class="log_time" x-text="$store.app.timeHms(l.timestamp)"></text>
+                    <text class="log_text" :style="l.stream === 'Stderr' ? 'color:#F85149' : ''" x-text="l.line"></text>
+                  </row>
+                </template>
+                <text class="muted" x-fallback="$store.app.serviceLogLines" style="padding:12px">Aguardando linhas de log…</text>
+              </column>
+            </column>
+          </column>
         </column>
       </column>
 
@@ -2361,7 +2393,32 @@
               </row>
             </column>
 
-            <column class="panel_fill" x-show="store.serviceTab === 'deployments'">
+            <column class="env_wrap" x-show="store.serviceTab === 'deployments'">
+            <!-- Webhook de deploy: um POST na URL dispara um deploy (o token na
+                 própria URL é a autenticação). Compose não tem. -->
+            <column class="form_panel" x-show="webhookSupported" style="max-width:none">
+              <row class="env_head">
+                <text class="label_cap">WEBHOOK DE DEPLOY</text>
+                <text class="ok" x-show="copyMsg" x-text="copyMsg"></text>
+              </row>
+              <template x-if="webhookUrl">
+                <row class="wh_row">
+                  <input class="field_input wh_url" type="text" readonly :value="webhookUrl" @focus="$event.target.select()" />
+                  <button class="copy_btn btn_icon" type="button" @click="copyToClipboard(webhookUrl)">
+                    <span x-icon="'copy'"></span><text>Copiar</text></button>
+                  <button class="dep_del_btn btn_icon" type="button" :disabled="webhookBusy" @click="regenWebhook()">
+                    <span x-icon="'refresh'"></span><text>Regenerar</text></button>
+                </row>
+              </template>
+              <text class="muted" x-show="!webhookUrl">
+                O token nasce no primeiro deploy deste serviço — rode um deploy para a URL aparecer.
+              </text>
+              <text class="muted">
+                Um POST nesta URL dispara um deploy. O corpo é ignorado: o token na própria URL é a
+                autenticação. Regenerar invalida a URL anterior.
+              </text>
+            </column>
+            <column class="panel_fill">
               <row class="thead">
                 <text class="th col_state">ESTADO</text>
                 <text class="th col_dur">DURAÇÃO</text>
@@ -2389,6 +2446,7 @@
                 </template>
                 <text class="muted" x-fallback="deployments" style="padding:16px">Nenhum deploy ainda.</text>
               </column>
+            </column>
             </column>
 
             <!-- Healthcheck (editável) -->
@@ -2436,7 +2494,11 @@
 
             <!-- Logs -->
             <column class="log_panel" x-show="store.serviceTab === 'logs'">
-              <column class="scroll_fill">
+              <row class="env_head">
+                <text class="muted_fill" x-text="(store.serviceLogLines || []).length + ' linhas · ao vivo'"></text>
+                <button class="btn_sm_ghost" type="button" @click="store.logWin = true">Abrir em janela ⧉</button>
+              </row>
+              <column class="scroll_fill" x-follow>
                 <column class="log_body">
                   <template x-for="(l, i) in store.serviceLogLines" :key="i">
                     <row class="log_line">
@@ -2505,8 +2567,8 @@
              fora da área rolável (sempre visível), scroll 2D contido no
              <pre> — build logs têm linhas longas sem quebra (barras de
              progresso do docker pull) que antes vazavam da tela. -->
-        <column class="modal_backdrop" x-show="buildLogFor" @click.self="closeBuildLog()">
-          <column class="modal_box">
+        <column class="modal_backdrop" x-show="buildLogFor">
+          <column class="modal_box" x-win="'build_log'" data-w="900" data-h="600">
             <row class="modal_head">
               <text class="label_cap">BUILD LOG</text>
               <button class="btn_ghost" type="button" @click="closeBuildLog()">Fechar</button>
@@ -2524,12 +2586,13 @@
        de tela (inclusive um logout no meio de uma ação). -->
   <column class="toast_wrap" aria-live="polite" aria-atomic="false">
     <template x-for="t in $store.app.toasts" :key="t.id">
-      <row class="toast" :class="'toast_' + t.kind" role="status">
+      <row class="toast" :class="'toast_' + t.kind" role="status" :style="'--ms:' + t.ms + 'ms'">
         <text class="toast_icon" aria-hidden="true"
               x-text="({ info: 'ℹ', success: '✓', warning: '⚠', error: '✕' })[t.kind] || 'ℹ'"></text>
         <text class="toast_msg" x-text="t.message"></text>
         <button class="toast_close" type="button" aria-label="Fechar"
                 @click="$store.app.dismissToast(t.id)">&times;</button>
+        <span class="toast_bar"></span>
       </row>
     </template>
   </column>

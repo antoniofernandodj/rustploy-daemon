@@ -51,8 +51,39 @@ document.addEventListener("alpine:init", () => {
           this.loadConnUrl();
           this.loadSharedState();
           this.loadMigration();
+          this.loadWebhook();
         }
       );
+    },
+
+    // ── Webhook de deploy (aba Deployments) ────────────────────────────────
+    // Porta de handlers/services.luau (set_webhook_url / regen_webhook). Servido
+    // pelo MESMO listener da API; Compose não tem webhook. O token nasce no
+    // primeiro deploy — antes disso o daemon devolve `WebhookUrl: null`.
+    webhookUrl: "",
+    webhookBusy: false,
+    get webhookSupported() {
+      const spec = this.store.serviceDetail && this.store.serviceDetail.spec;
+      return !!spec && !(spec.source && spec.source.Compose);
+    },
+    async loadWebhook() {
+      this.webhookUrl = "";
+      const id = this.store.selectedServiceId;
+      if (!id || !this.webhookSupported) return;
+      const r = await this.store.api.rpc({ GetWebhookUrl: { service_id: id } });
+      if (r.ok && typeof r.value?.WebhookUrl === "string") this.webhookUrl = r.value.WebhookUrl;
+    },
+    async regenWebhook() {
+      if (!confirm("Regenerar o token do webhook? A URL anterior deixa de funcionar na hora.")) return;
+      this.webhookBusy = true;
+      const r = await this.store.api.rpcChecked({ RegenerateWebhookToken: { service_id: this.store.selectedServiceId } });
+      this.webhookBusy = false;
+      if (r.ok && typeof r.value?.WebhookUrl === "string") {
+        this.webhookUrl = r.value.WebhookUrl;
+        this.store.toastOk("token do webhook regenerado");
+      } else {
+        this.store.toastErr("erro: " + (r.error || "resposta inesperada"));
+      }
     },
 
     // ── Migração para banco compartilhado (aba Migrar) ─────────────────────

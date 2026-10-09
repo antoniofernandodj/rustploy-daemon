@@ -58,4 +58,42 @@ document.addEventListener("alpine:init", () => {
       if (r.ok) this.editingId = null;
     },
   }));
+
+  // Janela "Novo projeto"/"Editar projeto" (wm.js). O estado de abertura mora
+  // no store (`projectWin`); aqui só o formulário.
+  Alpine.data("projectWin", () => ({
+    get store() {
+      return Alpine.store("app");
+    },
+    name: "",
+    desc: "",
+    error: "",
+    busy: false,
+    get editing() {
+      return !!(this.store.projectWin && this.store.projectWin.id);
+    },
+    init() {
+      this.$watch(
+        () => this.store.projectWin,
+        (w) => {
+          if (!w) return;
+          this.name = w.name || "";
+          this.desc = w.description || "";
+          this.error = "";
+          this.busy = false;
+        }
+      );
+    },
+    async submit() {
+      this.error = "";
+      this.busy = true;
+      const w = this.store.projectWin;
+      const r = w && w.id
+        ? await this.store.updateProject(w.id, this.name, this.desc)
+        : await this.store.createProject(this.name, this.desc);
+      this.busy = false;
+      if (r.ok) this.store.closeProjectWin();
+      else this.error = r.error;
+    },
+  }));
 });
