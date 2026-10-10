@@ -120,7 +120,14 @@ export function registerWindows(Alpine) {
     dMax.setAttribute("aria-label", "Maximizar janela");
     ctl.append(dClose, dMax);
     head.prepend(ctl);
-    if (closeBtn) closeBtn.style.display = "none";
+    // O "Fechar" do markup continua visível, agora como ✕ à direita da barra
+    // (o ponto vermelho de 12px sozinho passava despercebido).
+    if (closeBtn) {
+      closeBtn.textContent = "✕";
+      closeBtn.title = "Fechar (Esc)";
+      closeBtn.setAttribute("aria-label", "Fechar janela");
+      closeBtn.classList.add("win_x");
+    }
     dClose.addEventListener("click", () => {
       if (closeBtn) closeBtn.click();
       else layer.dispatchEvent(new CustomEvent("win-close", { bubbles: true }));

@@ -789,3 +789,7 @@ button:focus-visible, [tabindex]:focus-visible, select:focus-visible, summary:fo
   .svc_actions_full    { display: none !important; }
   .svc_actions_compact { display: flex !important; }
 }
+
+/* ✕ de fechar na barra de título das janelas flutuantes (wm.js). */
+.modal_head .win_x { margin-left: auto; padding: 5px 11px; flex-shrink: 0; font-size: 13px; line-height: 1; }
+.modal_head .win_x:hover { background: var(--danger); border-color: var(--danger); filter: none; color: #fff; }
