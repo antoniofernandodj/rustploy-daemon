@@ -6,8 +6,8 @@
 // (`undefined`/`null` antes do primeiro fetch), a mesma leitura do `<if empty>`
 // da GUI. Vai ao lado do `<template x-for>` que ele cobre, no mesmo container:
 //
-//   <column class="table_body">
-//     <text class="empty_state" x-fallback="queued">Nenhum deploy na fila.</text>
+//   <column class="table__body">
+//     <text class="empty-state" x-fallback="queued">Nenhum deploy na fila.</text>
 //     <template x-for="q in queued" :key="q.id"> … </template>
 //   </column>
 //

@@ -40,7 +40,7 @@ document.addEventListener("alpine:init", () => {
 
     // `x-show` mantém este componente montado por toda a sessão — abrir um
     // serviço não recria o Alpine.data. `initGeneralForm()` roda no clique da
-    // aba (mesmo padrão de initHcForm/initAdvForm), mas a aba General é a
+    // aba (mesmo padrão de initHealthcheckForm/initAdvancedForm), mas a aba General é a
     // default de `openService()`, que não passa por nenhum clique — daí o
     // watch, pra sincronizar o form assim que `serviceDetail` chega do fetch.
     init() {
@@ -48,7 +48,7 @@ document.addEventListener("alpine:init", () => {
         () => this.store.serviceDetail,
         () => {
           if (this.store.serviceTab === "general") this.initGeneralForm();
-          this.loadConnUrl();
+          this.loadConnectionUrl();
           this.loadSharedState();
           this.loadMigration();
           this.loadWebhook();
@@ -82,26 +82,26 @@ document.addEventListener("alpine:init", () => {
         this.webhookUrl = r.value.WebhookUrl;
         this.store.toastOk("token do webhook regenerado");
       } else {
-        this.store.toastErr("erro: " + (r.error || "resposta inesperada"));
+        this.store.toastError("erro: " + (r.error || "resposta inesperada"));
       }
     },
 
     // ── Migração para banco compartilhado (aba Migrar) ─────────────────────
     // Porta de handlers/services.luau (load_migration_state, mig_*). O daemon
     // roda os passos em segundo plano; enquanto `Running`, repolla a cada 3 s.
-    migDests: [],
+    migrationDestinations: [],
     mig: null,
-    migTimer: null,
-    fMig: { db: "", dest: "", env: "" },
+    migrationTimer: null,
+    serviceFormMigration: { db: "", dest: "", env: "" },
     get canMigrate() {
       return this.canShare && !this.svc?.spec?.shared;
     },
-    get migSteps() {
+    get migrationSteps() {
       const icon = { ok: "✓", running: "…", failed: "✗", skipped: "–", pending: "·" };
       return (this.mig?.steps || []).map((s) => ({ ...s, icon: icon[s.state] || "·" }));
     },
     async loadMigration() {
-      clearTimeout(this.migTimer);
+      clearTimeout(this.migrationTimer);
       if (!this.canMigrate) {
         this.mig = null;
         if (this.store.serviceTab === "migrar") this.store.setServiceTab("general");
@@ -109,40 +109,40 @@ document.addEventListener("alpine:init", () => {
       }
       const spec = this.svc.spec;
       const id = this.svc.id;
-      if (!this.fMig.db) {
+      if (!this.serviceFormMigration.db) {
         // Serviço primeiro, depois o projeto (mesma precedência do deploy).
-        const projEnv = (this.store.snap?.projects || []).find((p) => p.id === spec.project_id)?.env_vars || [];
-        const get = (k) => [spec.env_vars || [], projEnv].map((vs) => vs.find((e) => e.key === k)?.value?.Plain).find(Boolean);
-        this.fMig.db = get("POSTGRES_DB") || get("MYSQL_DATABASE") || "";
+        const projectEnv = (this.store.snap?.projects || []).find((p) => p.id === spec.project_id)?.env_vars || [];
+        const get = (k) => [spec.env_vars || [], projectEnv].map((vs) => vs.find((e) => e.key === k)?.value?.Plain).find(Boolean);
+        this.serviceFormMigration.db = get("POSTGRES_DB") || get("MYSQL_DATABASE") || "";
       }
       const [d, m] = await Promise.all([
         this.store.api.rpc("ManagedDatabaseListAll"),
         this.store.api.rpc({ MigrationList: { project_id: spec.project_id } }),
       ]);
-      this.migDests = (d.ok ? d.value?.ManagedDatabases || [] : [])
+      this.migrationDestinations = (d.ok ? d.value?.ManagedDatabases || [] : [])
         .filter((x) => x.project_id === spec.project_id)
         .map((x) => ({ id: x.id, name: `${x.name} (${x.env_var})` }));
       this.mig = (m.ok ? m.value?.Migrations || [] : []).find((x) => x.source_service_id === id) || null;
       if (this.mig?.status === "Running") {
-        this.migTimer = setTimeout(() => this.svc?.id === id && this.loadMigration(), 3000);
+        this.migrationTimer = setTimeout(() => this.svc?.id === id && this.loadMigration(), 3000);
       }
     },
     async startMigration() {
-      if (!this.fMig.dest || !this.fMig.db.trim()) {
-        this.store.toastErr("Escolha o database de destino e informe o de origem");
+      if (!this.serviceFormMigration.dest || !this.serviceFormMigration.db.trim()) {
+        this.store.toastError("Escolha o database de destino e informe o de origem");
         return;
       }
       if (!confirm("Os serviços do projeto que usam este banco serão parados durante o dump/restore e subirão de novo no banco novo. O banco antigo é mantido (parado) para rollback. Iniciar?")) return;
       const r = await this.store.api.rpcChecked({
         MigrationStart: {
           source_service_id: this.svc.id,
-          source_database: this.fMig.db.trim(),
-          dest_database_id: this.fMig.dest,
-          env_var: this.fMig.env.trim(),
+          source_database: this.serviceFormMigration.db.trim(),
+          dest_database_id: this.serviceFormMigration.dest,
+          env_var: this.serviceFormMigration.env.trim(),
         },
       });
       if (!r.ok) {
-        this.store.toastErr(r.error);
+        this.store.toastError(r.error);
         return;
       }
       this.store.toastOk("Migração iniciada");
@@ -151,14 +151,14 @@ document.addEventListener("alpine:init", () => {
     async rollbackMigration() {
       if (!confirm("A app volta ao banco antigo. O que foi escrito no banco novo depois da migração se perde. Reverter?")) return;
       const r = await this.store.api.rpcChecked({ MigrationRollback: { id: this.mig.id } });
-      if (!r.ok) this.store.toastErr(r.error);
+      if (!r.ok) this.store.toastError(r.error);
       await this.loadMigration();
     },
-    async discardOldDb() {
+    async discardOldDatabase() {
       if (!confirm("O serviço do banco antigo é removido, com os dados dele. Sem volta. Descartar?")) return;
       const r = await this.store.api.rpcChecked({ MigrationDiscard: { id: this.mig.id } });
       if (!r.ok) {
-        this.store.toastErr(r.error);
+        this.store.toastError(r.error);
         return;
       }
       this.store.toastOk("Banco antigo descartado");
@@ -170,10 +170,10 @@ document.addEventListener("alpine:init", () => {
     // O daemon cria database + usuário, conecta o servidor à rede do projeto
     // e grava a env var nele — ver docs/plano-banco-compartilhado.md.
     mdbs: [],
-    mdbProjects: [],
-    mdbUrl: "",
-    mdbLabel: "",
-    fMdb: { name: "", project: "", env: "", limit: "", timeout: "", overwrite: false, skipEnv: false },
+    sharedDatabaseProjects: [],
+    sharedDatabaseUrl: "",
+    sharedDatabaseLabel: "",
+    serviceFormSharedDatabase: { name: "", project: "", env: "", limit: "", timeout: "", overwrite: false, skipEnv: false },
     get canShare() {
       const k = (this.svc?.spec?.db_kind || "").toLowerCase();
       return (
@@ -196,7 +196,7 @@ document.addEventListener("alpine:init", () => {
         this.store.api.rpc({ ManagedDatabaseList: { server_service_id: id } }),
       ]);
       const projects = p.ok ? p.value?.Projects || [] : [];
-      this.mdbProjects = projects.map((x) => ({ id: x.id, name: x.name }));
+      this.sharedDatabaseProjects = projects.map((x) => ({ id: x.id, name: x.name }));
       const names = Object.fromEntries(projects.map((x) => [x.id, x.name]));
       this.mdbs = (d.ok ? d.value?.ManagedDatabases || [] : []).map((x) => ({
         id: x.id,
@@ -208,7 +208,7 @@ document.addEventListener("alpine:init", () => {
     },
     async setShared(on) {
       if (!on && this.mdbs.length > 0) {
-        this.store.toastErr("Remova os databases deste servidor antes de deixar de compartilhar");
+        this.store.toastError("Remova os databases deste servidor antes de deixar de compartilhar");
         return;
       }
       const spec = JSON.parse(JSON.stringify(this.svc.spec));
@@ -216,14 +216,14 @@ document.addEventListener("alpine:init", () => {
       else delete spec.shared;
       await this.store.saveServiceSpec(spec, on ? "servidor compartilhado" : "compartilhamento desligado");
     },
-    showMdb(d) {
-      this.mdbUrl = d.url;
-      this.mdbLabel = `${d.name} → ${d.envVar}`;
+    showSharedDatabase(d) {
+      this.sharedDatabaseUrl = d.url;
+      this.sharedDatabaseLabel = `${d.name} → ${d.envVar}`;
     },
-    async createMdb() {
-      const f = this.fMdb;
+    async createSharedDatabase() {
+      const f = this.serviceFormSharedDatabase;
       if (!f.name.trim() || !f.project) {
-        this.store.toastErr("Informe o nome e o projeto consumidor");
+        this.store.toastError("Informe o nome e o projeto consumidor");
         return;
       }
       const num = (v) => (String(v).trim() === "" ? null : Number(v));
@@ -240,35 +240,35 @@ document.addEventListener("alpine:init", () => {
         },
       });
       if (!r.ok) {
-        this.store.toastErr(r.error);
+        this.store.toastError(r.error);
         return;
       }
       this.store.toastOk("Database criado");
-      this.fMdb.name = "";
+      this.serviceFormSharedDatabase.name = "";
       await this.loadSharedState();
     },
-    async deleteMdb(d) {
+    async deleteSharedDatabase(d) {
       if (!confirm("Remover o database e o usuário do servidor, com todos os dados? Irreversível.")) return;
       const r = await this.store.api.rpcChecked({ ManagedDatabaseDelete: { id: d.id } });
       if (!r.ok) {
-        this.store.toastErr(r.error);
+        this.store.toastError(r.error);
         return;
       }
-      this.mdbUrl = "";
+      this.sharedDatabaseUrl = "";
       await this.loadSharedState();
     },
 
     // Internal URL vem pronta do daemon (`shared::connection`): host real do
     // serviço, usuário/senha/database — não é mais montada aqui.
-    connUrl: "",
-    async loadConnUrl() {
+    connectionUrl: "",
+    async loadConnectionUrl() {
       const id = this.svc?.id;
       if (!id) return;
       try {
         const r = await this.store.api.rpc({ ServiceConnectionInfo: { service_id: id } });
-        if (this.svc?.id === id) this.connUrl = r.ok ? r.value?.ConnectionInfo?.internal_url || "" : "";
+        if (this.svc?.id === id) this.connectionUrl = r.ok ? r.value?.ConnectionInfo?.internal_url || "" : "";
       } catch (_) {
-        this.connUrl = "";
+        this.connectionUrl = "";
       }
     },
 
@@ -294,32 +294,32 @@ document.addEventListener("alpine:init", () => {
     // Porta de handlers/services.luau (compose_save/compose_cancel/gen_save/
     // archive_upload/gitea_provider_pick/gitea_repo_pick) + service.gv
     // ~L192-566. `initGeneralForm()` sincroniza os campos locais com o spec
-    // atual — chamado ao abrir a aba, mesmo padrão de initHcForm/initAdvForm.
+    // atual — chamado ao abrir a aba, mesmo padrão de initHealthcheckForm/initAdvancedForm.
     composeText: "",
-    composeOrig: "",
+    composeOriginal: "",
     // Renomear (aba General). Porta de save_service_name em handlers/services.luau.
     editName: "",
-    provTab: "git", // "git" | "gitea" | "zip"
-    fRepoUrl: "",
-    fBranch: "",
-    fGenPort: "",
-    fUsername: "",
-    fCredentials: "",
-    fBuildPath: "",
-    fWatchPaths: "",
-    fSubmodules: false,
-    fDockerfile: "",
-    fContextPath: "",
-    fBuildStage: "",
-    fArchivePort: "",
+    providerTab: "git", // "git" | "gitea" | "zip"
+    serviceFormRepoUrl: "",
+    serviceFormBranch: "",
+    serviceFormGeneralPort: "",
+    serviceFormUsername: "",
+    serviceFormCredentials: "",
+    serviceFormBuildPath: "",
+    serviceFormWatchPaths: "",
+    serviceFormSubmodules: false,
+    serviceFormDockerfile: "",
+    serviceFormContextPath: "",
+    serviceFormBuildStage: "",
+    serviceFormArchivePort: "",
     giteaProviderId: "",
     giteaProviders: [],
     giteaRepoFullName: "",
     giteaRepos: [],
     giteaBranches: [],
-    giteaMsg: "",
+    giteaMessage: "",
     archiveFile: null,
-    archiveMsg: "",
+    archiveMessage: "",
 
     get isCompose() {
       return !!this.svc?.spec?.source?.Compose;
@@ -331,41 +331,41 @@ document.addEventListener("alpine:init", () => {
       this.editName = spec.name;
       if (spec.source.Compose) {
         this.composeText = spec.source.Compose.content || "";
-        this.composeOrig = this.composeText;
+        this.composeOriginal = this.composeText;
         return;
       }
-      this.fGenPort = String(spec.port ?? "");
-      this.fArchivePort = this.fGenPort;
+      this.serviceFormGeneralPort = String(spec.port ?? "");
+      this.serviceFormArchivePort = this.serviceFormGeneralPort;
       const git = spec.source.Git;
       if (git) {
-        this.fRepoUrl = git.url || "";
-        this.fBranch = git.branch || "main";
-        this.fUsername = git.username || "";
-        this.fCredentials = git.credentials || "";
-        this.fBuildPath = git.root_path || ".";
-        this.fWatchPaths = (git.watch_paths || []).join(", ");
-        this.fSubmodules = !!git.submodules;
-        this.fDockerfile = git.dockerfile_path || "Dockerfile";
-        this.fContextPath = git.build_context || ".";
-        this.fBuildStage = git.build_stage || "";
+        this.serviceFormRepoUrl = git.url || "";
+        this.serviceFormBranch = git.branch || "main";
+        this.serviceFormUsername = git.username || "";
+        this.serviceFormCredentials = git.credentials || "";
+        this.serviceFormBuildPath = git.root_path || ".";
+        this.serviceFormWatchPaths = (git.watch_paths || []).join(", ");
+        this.serviceFormSubmodules = !!git.submodules;
+        this.serviceFormDockerfile = git.dockerfile_path || "Dockerfile";
+        this.serviceFormContextPath = git.build_context || ".";
+        this.serviceFormBuildStage = git.build_stage || "";
         this.giteaProviderId = git.provider_id || "";
-        this.provTab = git.provider_id ? "gitea" : "git";
+        this.providerTab = git.provider_id ? "gitea" : "git";
         // Repõe a lista de contas (o picker não guarda full_name/branches no
         // spec — só url/branch já resolvidos, que os campos acima preenchem).
-        if (this.provTab === "gitea") await this.setProvTab("gitea");
+        if (this.providerTab === "gitea") await this.setProviderTab("gitea");
       } else {
-        this.fRepoUrl = spec.source.Registry?.image || "";
-        this.fBranch = "main";
-        this.fUsername = "";
-        this.fCredentials = "";
-        this.fBuildPath = ".";
-        this.fWatchPaths = "";
-        this.fSubmodules = false;
-        this.fDockerfile = "Dockerfile";
-        this.fContextPath = ".";
-        this.fBuildStage = "";
+        this.serviceFormRepoUrl = spec.source.Registry?.image || "";
+        this.serviceFormBranch = "main";
+        this.serviceFormUsername = "";
+        this.serviceFormCredentials = "";
+        this.serviceFormBuildPath = ".";
+        this.serviceFormWatchPaths = "";
+        this.serviceFormSubmodules = false;
+        this.serviceFormDockerfile = "Dockerfile";
+        this.serviceFormContextPath = ".";
+        this.serviceFormBuildStage = "";
         this.giteaProviderId = "";
-        this.provTab = "git";
+        this.providerTab = "git";
       }
     },
 
@@ -381,7 +381,7 @@ document.addEventListener("alpine:init", () => {
     async renameService() {
       const name = this.editName.trim();
       if (!name) {
-        this.store.toastErr("Informe o nome do serviço");
+        this.store.toastError("Informe o nome do serviço");
         return;
       }
       if (name === this.svc.spec.name) return;
@@ -397,20 +397,20 @@ document.addEventListener("alpine:init", () => {
       await this.store.saveServiceSpec(spec, "compose salvo");
     },
     cancelCompose() {
-      this.composeText = this.composeOrig;
+      this.composeText = this.composeOriginal;
     },
 
-    async setProvTab(tab) {
-      this.provTab = tab;
+    async setProviderTab(tab) {
+      this.providerTab = tab;
       if (tab === "gitea" && this.giteaProviders.length === 0) {
-        this.giteaMsg = "carregando contas…";
+        this.giteaMessage = "carregando contas…";
         const r = await this.store.api.rpc("GitProviderList");
         if (r.ok && r.value?.GitProviders) {
           this.giteaProviders = r.value.GitProviders;
-          this.giteaMsg = "";
+          this.giteaMessage = "";
         } else {
-          this.giteaMsg = "";
-          this.store.toastErr("erro ao listar contas conectadas");
+          this.giteaMessage = "";
+          this.store.toastError("erro ao listar contas conectadas");
         }
       }
     },
@@ -421,14 +421,14 @@ document.addEventListener("alpine:init", () => {
       this.giteaRepos = [];
       this.giteaBranches = [];
       if (!this.giteaProviderId) return;
-      this.giteaMsg = "carregando repositórios…";
+      this.giteaMessage = "carregando repositórios…";
       const r = await this.store.api.rpc({ GitRepoList: { provider_id: this.giteaProviderId } });
       if (r.ok && r.value?.GitRepos) {
         this.giteaRepos = r.value.GitRepos;
-        this.giteaMsg = `${r.value.GitRepos.length} repositório(s)`;
+        this.giteaMessage = `${r.value.GitRepos.length} repositório(s)`;
       } else {
-        this.giteaMsg = "";
-        this.store.toastErr("erro ao listar repositórios");
+        this.giteaMessage = "";
+        this.store.toastError("erro ao listar repositórios");
       }
     },
 
@@ -436,20 +436,20 @@ document.addEventListener("alpine:init", () => {
       if (!fullName) return;
       this.giteaRepoFullName = fullName;
       const repo = this.giteaRepos.find((r) => r.full_name === fullName);
-      if (repo?.clone_url) this.fRepoUrl = repo.clone_url;
-      if (repo?.default_branch) this.fBranch = repo.default_branch;
+      if (repo?.clone_url) this.serviceFormRepoUrl = repo.clone_url;
+      if (repo?.default_branch) this.serviceFormBranch = repo.default_branch;
       this.giteaBranches = [];
       if (!this.giteaProviderId) return;
-      this.giteaMsg = "carregando branches…";
+      this.giteaMessage = "carregando branches…";
       const r = await this.store.api.rpc({
         GitBranchList: { provider_id: this.giteaProviderId, repo_full_name: fullName },
       });
       if (r.ok && r.value?.GitBranches) {
         this.giteaBranches = r.value.GitBranches;
-        this.giteaMsg = "";
+        this.giteaMessage = "";
       } else {
-        this.giteaMsg = "";
-        this.store.toastErr("erro ao listar branches");
+        this.giteaMessage = "";
+        this.store.toastError("erro ao listar branches");
       }
     },
 
@@ -457,25 +457,25 @@ document.addEventListener("alpine:init", () => {
      * looksLikeGitUrl decide Git vs Registry quando a origem ainda não é Git. */
     async saveSource() {
       const spec = JSON.parse(JSON.stringify(this.svc.spec));
-      const port = Number(this.fGenPort);
+      const port = Number(this.serviceFormGeneralPort);
       if (Number.isFinite(port) && port > 0) spec.port = Math.floor(port);
-      const repo = this.fRepoUrl.trim();
-      const watch = this.fWatchPaths
+      const repo = this.serviceFormRepoUrl.trim();
+      const watch = this.serviceFormWatchPaths
         .split(",")
         .map((s) => s.trim())
         .filter(Boolean);
       const git = {
         Git: {
           url: repo,
-          branch: this.fBranch.trim() || "main",
-          root_path: this.fBuildPath.trim() || ".",
+          branch: this.serviceFormBranch.trim() || "main",
+          root_path: this.serviceFormBuildPath.trim() || ".",
           watch_paths: watch,
-          submodules: this.fSubmodules,
-          dockerfile_path: this.fDockerfile.trim() || "Dockerfile",
-          build_context: this.fContextPath.trim() || ".",
-          build_stage: this.fBuildStage.trim() || null,
-          credentials: this.fCredentials.trim() || null,
-          username: this.fUsername.trim() || null,
+          submodules: this.serviceFormSubmodules,
+          dockerfile_path: this.serviceFormDockerfile.trim() || "Dockerfile",
+          build_context: this.serviceFormContextPath.trim() || ".",
+          build_stage: this.serviceFormBuildStage.trim() || null,
+          credentials: this.serviceFormCredentials.trim() || null,
+          username: this.serviceFormUsername.trim() || null,
           provider_id: this.giteaProviderId || null,
         },
       };
@@ -496,21 +496,21 @@ document.addEventListener("alpine:init", () => {
         this.store.toastWarn("selecione um arquivo .zip");
         return;
       }
-      this.archiveMsg = "enviando zip…";
+      this.archiveMessage = "enviando zip…";
       const r = await this.store.api.uploadArchive(this.svc.id, this.archiveFile);
       if (r.ok) {
-        this.archiveMsg = "";
+        this.archiveMessage = "";
         this.archiveFile = null;
         this.store.toastOk("zip enviado");
         await this.store.fetchServiceDetail(this.svc.id);
         await this.store.refreshNow();
       } else {
-        this.archiveMsg = "";
-        this.store.toastErr("erro: " + r.error);
+        this.archiveMessage = "";
+        this.store.toastError("erro: " + r.error);
       }
-      if (this.fArchivePort) {
+      if (this.serviceFormArchivePort) {
         const spec = JSON.parse(JSON.stringify(this.svc.spec));
-        const port = Number(this.fArchivePort);
+        const port = Number(this.serviceFormArchivePort);
         if (Number.isFinite(port) && port > 0) {
           spec.port = Math.floor(port);
           await this.store.saveServiceSpec(spec);
@@ -519,12 +519,12 @@ document.addEventListener("alpine:init", () => {
     },
 
     // ── Connection ────────────────────────────────────────────────────
-    copyMsg: "",
+    copyMessage: "",
     async copyToClipboard(text) {
       try {
         await navigator.clipboard.writeText(text || "");
-        this.copyMsg = "copiado!";
-        setTimeout(() => (this.copyMsg = ""), 1500);
+        this.copyMessage = "copiado!";
+        setTimeout(() => (this.copyMessage = ""), 1500);
       } catch {
         /* clipboard indisponível (ex. contexto não-seguro) — sem drama */
       }
@@ -563,8 +563,8 @@ document.addEventListener("alpine:init", () => {
         hostPort: spec.host_port || "—",
         domain: domain || "—",
         tls: tls ? "enabled" : "disabled",
-        dbKind: spec.db_kind || null,
-        internalUrl: this.connUrl || "—",
+        databaseKind: spec.db_kind || null,
+        internalUrl: this.connectionUrl || "—",
         externalUrl: externalUrl(domain, tls, spec.host_port, spec.db_kind, this.store.api.baseUrl, spec.env_vars),
       };
     },
@@ -592,7 +592,7 @@ document.addEventListener("alpine:init", () => {
       }
     },
 
-    async delEnvVar(key) {
+    async deleteEnvVar(key) {
       // JSON round-trip (não structuredClone): this.svc.spec é um Proxy
       // reativo do Alpine — o clonador estrutural nativo do browser não
       // sabe copiá-lo (DataCloneError). O JSON round-trip descarta a
@@ -659,7 +659,7 @@ document.addEventListener("alpine:init", () => {
       }
     },
 
-    async delDomain(domain) {
+    async deleteDomain(domain) {
       // JSON round-trip (não structuredClone): this.svc.spec é um Proxy
       // reativo do Alpine — o clonador estrutural nativo do browser não
       // sabe copiá-lo (DataCloneError). O JSON round-trip descarta a
@@ -671,40 +671,40 @@ document.addEventListener("alpine:init", () => {
     },
 
     // ── Healthcheck ───────────────────────────────────────────────────
-    hcKind: "none", // "none" | "tcp" | "http" | "docker"
-    hcPath: "",
-    hcStatus: "200",
-    hcInterval: "5",
-    hcTimeout: "3",
-    hcRetries: "10",
-    hcStart: "5",
+    healthcheckKind: "none", // "none" | "tcp" | "http" | "docker"
+    healthcheckPath: "",
+    healthcheckStatus: "200",
+    healthcheckInterval: "5",
+    healthcheckTimeout: "3",
+    healthcheckRetries: "10",
+    healthcheckStart: "5",
 
     /** Popula o form local a partir do spec atual — chamado ao abrir a aba
      * (o form é editável, não reativo direto ao spec, então precisa de um
      * ponto explícito de sincronização). */
-    initHcForm() {
+    initHealthcheckForm() {
       const hc = this.svc?.spec?.healthcheck;
       if (!hc) return;
       if (typeof hc.kind === "string") {
-        this.hcKind = hc.kind === "DockerNative" ? "docker" : hc.kind.toLowerCase();
+        this.healthcheckKind = hc.kind === "DockerNative" ? "docker" : hc.kind.toLowerCase();
       } else if (hc.kind?.Http) {
-        this.hcKind = "http";
-        this.hcPath = hc.kind.Http.path;
-        this.hcStatus = String(hc.kind.Http.expected_status);
+        this.healthcheckKind = "http";
+        this.healthcheckPath = hc.kind.Http.path;
+        this.healthcheckStatus = String(hc.kind.Http.expected_status);
       }
-      this.hcInterval = String(hc.interval_secs);
-      this.hcTimeout = String(hc.timeout_secs);
-      this.hcRetries = String(hc.retries);
-      this.hcStart = String(hc.start_period_secs);
+      this.healthcheckInterval = String(hc.interval_secs);
+      this.healthcheckTimeout = String(hc.timeout_secs);
+      this.healthcheckRetries = String(hc.retries);
+      this.healthcheckStart = String(hc.start_period_secs);
     },
 
     async saveHealthcheck() {
       let kind;
-      if (this.hcKind === "http") {
-        kind = { Http: { path: this.hcPath.trim() || "/", expected_status: Number(this.hcStatus) || 200 } };
-      } else if (this.hcKind === "docker") {
+      if (this.healthcheckKind === "http") {
+        kind = { Http: { path: this.healthcheckPath.trim() || "/", expected_status: Number(this.healthcheckStatus) || 200 } };
+      } else if (this.healthcheckKind === "docker") {
         kind = "DockerNative";
-      } else if (this.hcKind === "tcp") {
+      } else if (this.healthcheckKind === "tcp") {
         kind = "Tcp";
       } else {
         kind = "None";
@@ -713,24 +713,24 @@ document.addEventListener("alpine:init", () => {
       const spec = JSON.parse(JSON.stringify(this.svc.spec));
       spec.healthcheck = {
         kind,
-        interval_secs: Number(this.hcInterval) || cur.interval_secs,
-        timeout_secs: Number(this.hcTimeout) || cur.timeout_secs,
-        retries: Number(this.hcRetries) || cur.retries,
-        start_period_secs: Number(this.hcStart) || cur.start_period_secs,
+        interval_secs: Number(this.healthcheckInterval) || cur.interval_secs,
+        timeout_secs: Number(this.healthcheckTimeout) || cur.timeout_secs,
+        retries: Number(this.healthcheckRetries) || cur.retries,
+        start_period_secs: Number(this.healthcheckStart) || cur.start_period_secs,
       };
       await this.store.saveServiceSpec(spec, "healthcheck salvo");
     },
 
     // ── Advanced ──────────────────────────────────────────────────────
-    advReplicas: "1",
-    advRunCommand: "",
+    advancedReplicas: "1",
+    advancedRunCommand: "",
 
-    initAdvForm() {
+    initAdvancedForm() {
       const spec = this.svc?.spec;
       if (!spec) return;
-      this.advReplicas = String(spec.replicas || 1);
-      this.advRunCommand = spec.run_command || "";
-      this.advPdcAddJobId = "";
+      this.advancedReplicas = String(spec.replicas || 1);
+      this.advancedRunCommand = spec.run_command || "";
+      this.advancedPreDeployCheckAddJobId = "";
     },
 
     get runArgsText() {
@@ -740,10 +740,10 @@ document.addEventListener("alpine:init", () => {
 
     async saveAdvanced() {
       const spec = JSON.parse(JSON.stringify(this.svc.spec));
-      let r = Number(this.advReplicas) || 1;
+      let r = Number(this.advancedReplicas) || 1;
       if (r < 1) r = 1;
       spec.replicas = Math.floor(r);
-      const rc = this.advRunCommand.trim();
+      const rc = this.advancedRunCommand.trim();
       spec.run_command = rc || null;
       await this.store.saveServiceSpec(spec, "advanced salvo");
     },
@@ -791,10 +791,10 @@ document.addEventListener("alpine:init", () => {
         .map((s) => ({ id: s.job.id, name: s.job.name }));
     },
 
-    advPdcAddJobId: "",
+    advancedPreDeployCheckAddJobId: "",
 
-    async pdcAdd() {
-      const jobId = this.advPdcAddJobId;
+    async preDeployCheckAdd() {
+      const jobId = this.advancedPreDeployCheckAddJobId;
       if (!jobId) return;
       const ids = this.preDeployQueueIds.slice();
       if (!ids.includes(jobId)) ids.push(jobId);
@@ -802,10 +802,10 @@ document.addEventListener("alpine:init", () => {
       spec.pre_deploy_job_ids = ids;
       spec.pre_deploy_job_id = null;
       const r = await this.store.saveServiceSpec(spec, "check adicionado à fila");
-      if (r.ok) this.advPdcAddJobId = "";
+      if (r.ok) this.advancedPreDeployCheckAddJobId = "";
     },
 
-    async pdcDel(jobId) {
+    async preDeployCheckDelete(jobId) {
       const spec = JSON.parse(JSON.stringify(this.svc.spec));
       spec.pre_deploy_job_ids = this.preDeployQueueIds.filter((id) => id !== jobId);
       spec.pre_deploy_job_id = null;
@@ -814,7 +814,7 @@ document.addEventListener("alpine:init", () => {
 
     // Sem drag-and-drop na web UI (sem lib de DnD): reordena com botões
     // mover-pra-cima/baixo — mesmo resultado final do arraste na GUI iced.
-    async pdcMove(jobId, delta) {
+    async preDeployCheckMove(jobId, delta) {
       const ids = this.preDeployQueueIds.slice();
       const i = ids.indexOf(jobId);
       const j = i + delta;

@@ -2,7 +2,7 @@
 // vez), execução em andamento e histórico das últimas 24h. Porta da seção
 // `equals="deploy_engine"` de home.gv — tudo vem de `snap.engine`
 // (DeployEngineSummary), já anexado ao Snapshot pelo daemon (sem RPC extra).
-import { fmtUptime, engActiveRows, engQueuedRows, engRecentRows } from "../fmt.js";
+import { fmtUptime, deployEngineActiveRows, deployEngineQueuedRows, deployEngineRecentRows } from "../fmt.js";
 
 document.addEventListener("alpine:init", () => {
   Alpine.data("deployEngine", () => ({
@@ -40,7 +40,7 @@ document.addEventListener("alpine:init", () => {
     },
 
     get active() {
-      return engActiveRows(this.engine?.active);
+      return deployEngineActiveRows(this.engine?.active);
     },
     // Modal de detalhes: guarda só o serviceId; a linha é relida de `active`
     // a cada snapshot, então o histórico e os passos andam ao vivo. Se o
@@ -56,10 +56,10 @@ document.addEventListener("alpine:init", () => {
       this.detailId = null;
     },
     get queued() {
-      return engQueuedRows(this.engine?.queued);
+      return deployEngineQueuedRows(this.engine?.queued);
     },
     get recent() {
-      return engRecentRows(this.engine?.recent);
+      return deployEngineRecentRows(this.engine?.recent);
     },
     get paused() {
       return !!this.engine?.paused;

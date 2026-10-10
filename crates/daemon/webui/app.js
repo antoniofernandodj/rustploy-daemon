@@ -96,16 +96,16 @@ document.addEventListener("alpine:init", () => {
     daemonVersion: "",
     daemonUptime: "…",
     servicesLabel: "…",
-    deploymentsMsg: "",
+    deploymentsMessage: "",
 
     // ── Eventos ao vivo do bus (≈ State.metrics_by_id / ctx.sys_*) ─────
     // Só chegam por /api/events kind="bus" — o snapshot periódico (2s) não
     // carrega métricas por container nem do host (ver onStreamEvent).
     metricsById: {}, // service_id -> ContainerMetricsPoint
-    sysCpu: "—",
-    sysMem: "—",
-    sysDisk: "—",
-    sysLoad: "—",
+    hostCpu: "—",
+    hostMemory: "—",
+    hostDisk: "—",
+    hostLoad: "—",
 
     // ── Docker / Registry (aba Docker) ──────────────────────────────────
     dockerTab: "containers",
@@ -142,42 +142,42 @@ document.addEventListener("alpine:init", () => {
     showNewService: false,
     exportWin: null, // janela "Exportar serviço" (screens/service_bundle.js): null | { serviceId }
     logWin: false, // janela de logs ao vivo do serviço aberto (wm.js)
-    njobStep: "pick_project", // "pick_project" | "pick_service" | "form"
+    newJobStep: "pick_project", // "pick_project" | "pick_service" | "form"
     // Modo edição: aberto por openEditJob(id) em vez do fluxo normal — pula
     // pro passo "form" (project_id/trigger_service_id não são editáveis via
     // JobUpdate, então não há passos 1/2). `null` = criando um job novo.
-    njobEditId: null,
-    njobEnabled: true,
-    njobProjectId: "",
-    njobProjectName: "",
-    njobServiceId: "",
-    njobServiceName: "",
-    njobName: "",
-    njobCompose: "",
+    newJobEditId: null,
+    newJobEnabled: true,
+    newJobProjectId: "",
+    newJobProjectName: "",
+    newJobServiceId: "",
+    newJobServiceName: "",
+    newJobName: "",
+    newJobCompose: "",
     // Fonte do compose: "compose" (colado, default) | "git" (clona um repo a
     // cada execução, mesmo picker conta→repo→branch da aba Git de serviço —
-    // ver njobSetSourceTab/njobGitProviderPick/njobGitRepoPick).
-    njobSourceTab: "compose",
-    njobGitProviderId: "",
-    njobGitProviders: [],
-    njobGitRepos: [],
-    njobGitRepoFullName: "",
-    njobGitBranches: [],
-    njobGitBranch: "",
-    njobComposePath: "docker-compose.yml",
-    njobGitMsg: "",
-    njobMainService: "",
+    // ver newJobSetSourceTab/newJobGitProviderPick/newJobGitRepoPick).
+    newJobSourceTab: "compose",
+    newJobGitProviderId: "",
+    newJobGitProviders: [],
+    newJobGitRepos: [],
+    newJobGitRepoFullName: "",
+    newJobGitBranches: [],
+    newJobGitBranch: "",
+    newJobComposePath: "docker-compose.yml",
+    newJobGitMessage: "",
+    newJobMainService: "",
     // Env vars próprias do job — maior precedência (por cima de projeto +
-    // serviço gatilho). Blob .env colado, parseado em njobCreate.
-    njobEnvText: "",
-    njobKind: "manual", // "manual" | "interval" | "daily" | "weekly"
-    njobHours: "6",
+    // serviço gatilho). Blob .env colado, parseado em newJobCreate.
+    newJobEnvText: "",
+    newJobKind: "manual", // "manual" | "interval" | "daily" | "weekly"
+    newJobHours: "6",
     // Uma chave só, "HH:MM": quem edita agora é o <input type="time">.
     // hmJoin/hmSplit fazem a ponte com o {hour, minute} do daemon.
-    njobTime: "03:00",
-    njobWeekday: "0",
-    njobErr: "",
-    njobSubmitting: false,
+    newJobTime: "03:00",
+    newJobWeekday: "0",
+    newJobError: "",
+    newJobSubmitting: false,
 
     // Modal de logs ao vivo de uma execução de job — mesma razão do wizard
     // acima (aberto tanto da tela Schedules quanto da aba Jobs do projeto).
@@ -185,59 +185,59 @@ document.addEventListener("alpine:init", () => {
 
     // ── Settings (Web Server / Git / Infra as Code) ─────────────────────
     settingsTab: "web",
-    ssPublicBase: "",
-    ssEmail: "",
-    ssRegistryDomain: "",
-    settingsMsg: "",
+    serverSettingsPublicBase: "",
+    serverSettingsEmail: "",
+    serverSettingsRegistryDomain: "",
+    settingsMessage: "",
     gitProviders: [],
-    gpKind: "gitea", // "gitea" | "github"
-    gpMode: "oauth", // "oauth" | "pat"
-    gpName: "",
-    gpBaseUrl: "",
-    gpClientId: "",
-    gpClientSecret: "",
-    gpPat: "",
-    gpMsg: "",
-    gpOauthUrl: "",
-    iacYaml: "",
-    iacDotenv: "",
-    iacHasExport: false,
-    iacExportMsg: "",
-    iacImportYaml: "",
-    iacImportDotenv: "",
-    iacPrune: false,
-    iacDeploy: false,
-    iacHasMissing: false,
-    iacMissingVars: "",
-    iacHasReport: false,
-    iacReportLines: [],
-    iacImportMsg: "",
+    gitProviderKind: "gitea", // "gitea" | "github"
+    gitProviderMode: "oauth", // "oauth" | "pat"
+    gitProviderName: "",
+    gitProviderBaseUrl: "",
+    gitProviderClientId: "",
+    gitProviderClientSecret: "",
+    gitProviderPersonalAccessToken: "",
+    gitProviderMessage: "",
+    gitProviderOauthUrl: "",
+    manifestYaml: "",
+    manifestDotenv: "",
+    manifestHasExport: false,
+    manifestExportMessage: "",
+    manifestImportYaml: "",
+    manifestImportDotenv: "",
+    manifestPrune: false,
+    manifestDeploy: false,
+    manifestHasMissing: false,
+    manifestMissingVars: "",
+    manifestHasReport: false,
+    manifestReportLines: [],
+    manifestImportMessage: "",
 
     // Settings → Manutenção (limpeza automática de Docker) — ver
     // docs/plano-limpeza-automatica-docker.md. Porta de handlers/settings.luau
-    // (dc_*). `dcLastRunAtRaw` é um campo "mudo" (não exibido, só round-trip):
+    // (dc_*). `dockerCleanupLastRunAtRaw` é um campo "mudo" (não exibido, só round-trip):
     // preserva o `last_run_at` real entre saves pra um agendamento
     // IntervalHours não reiniciar a contagem toda vez que o usuário salva.
-    dcEnabled: false,
-    dcKind: "daily", // "interval" | "daily" | "weekly"
-    dcHours: "6",
-    dcTime: "03:00",
-    dcWeekday: "0",
-    dcContainers: false,
-    dcImages: false,
-    dcImagesAll: false,
-    dcVolumes: false,
-    dcVolumesAll: false,
-    dcNetworks: false,
-    dcBuildCache: false,
-    dcNextRunLabel: "—",
-    dcLastRunAtRaw: null,
-    dcLastRunText: "ainda não rodou",
-    dcRunning: false,
-    dcMsg: "",
+    dockerCleanupEnabled: false,
+    dockerCleanupKind: "daily", // "interval" | "daily" | "weekly"
+    dockerCleanupHours: "6",
+    dockerCleanupTime: "03:00",
+    dockerCleanupWeekday: "0",
+    dockerCleanupContainers: false,
+    dockerCleanupImages: false,
+    dockerCleanupImagesAll: false,
+    dockerCleanupVolumes: false,
+    dockerCleanupVolumesAll: false,
+    dockerCleanupNetworks: false,
+    dockerCleanupBuildCache: false,
+    dockerCleanupNextRunLabel: "—",
+    dockerCleanupLastRunAtRaw: null,
+    dockerCleanupLastRunText: "ainda não rodou",
+    dockerCleanupRunning: false,
+    dockerCleanupMessage: "",
 
-    get gpRedirect() {
-      return oauthRedirectUri(this.ssPublicBase, this.gpKind);
+    get gitProviderRedirect() {
+      return oauthRedirectUri(this.serverSettingsPublicBase, this.gitProviderKind);
     },
 
     // ── Navegação (≈ ctx.view do glacier) ───────────────────────────
@@ -254,7 +254,7 @@ document.addEventListener("alpine:init", () => {
     serviceDetail: null, // Service (ServiceGet)
     serviceDeployments: [], // Vec<Deployment> (DeployHistory)
     serviceTab: "general",
-    serviceMsg: "",
+    serviceMessage: "",
     serviceLoading: false,
     serviceLogLines: [],
     serviceLogStream: null,
@@ -283,7 +283,7 @@ document.addEventListener("alpine:init", () => {
     toastOk(message) {
       return this.toast(message, "success");
     },
-    toastErr(message) {
+    toastError(message) {
       return this.toast(message, "error");
     },
     toastWarn(message) {
@@ -297,7 +297,7 @@ document.addEventListener("alpine:init", () => {
       if (r.ok) {
         if (okMessage) this.toastOk(okMessage);
       } else {
-        this.toastErr("erro: " + r.error);
+        this.toastError("erro: " + r.error);
       }
       return r.ok;
     },
@@ -399,18 +399,18 @@ document.addEventListener("alpine:init", () => {
       if (!ev || typeof ev !== "object") return;
       if (ev.DockerCleanupCompleted) {
         const p = ev.DockerCleanupCompleted;
-        this.dcRunning = false;
-        this.dcLastRunText = dockerCleanupLastRunSummary({ at: p.at, results: p.results });
-        this.dcLastRunAtRaw = p.at;
+        this.dockerCleanupRunning = false;
+        this.dockerCleanupLastRunText = dockerCleanupLastRunSummary({ at: p.at, results: p.results });
+        this.dockerCleanupLastRunAtRaw = p.at;
       } else if (ev.ContainerMetrics) {
         const p = ev.ContainerMetrics;
         if (p.service_id) this.metricsById[p.service_id] = p;
       } else if (ev.SystemMetrics) {
         const s = ev.SystemMetrics;
-        this.sysCpu = `${(s.cpu_percent || 0).toFixed(0)}%`;
-        this.sysMem = `${fmtBytes(s.mem_used_bytes)} / ${fmtBytes(s.mem_total_bytes)}`;
-        this.sysDisk = `${fmtBytes(s.disk_used_bytes)} / ${fmtBytes(s.disk_total_bytes)}`;
-        this.sysLoad = `${(s.load_avg_1 || 0).toFixed(2)} ${(s.load_avg_5 || 0).toFixed(2)} ${(s.load_avg_15 || 0).toFixed(2)}`;
+        this.hostCpu = `${(s.cpu_percent || 0).toFixed(0)}%`;
+        this.hostMemory = `${fmtBytes(s.mem_used_bytes)} / ${fmtBytes(s.mem_total_bytes)}`;
+        this.hostDisk = `${fmtBytes(s.disk_used_bytes)} / ${fmtBytes(s.disk_total_bytes)}`;
+        this.hostLoad = `${(s.load_avg_1 || 0).toFixed(2)} ${(s.load_avg_5 || 0).toFixed(2)} ${(s.load_avg_15 || 0).toFixed(2)}`;
       } else if (ev.DeployStateChanged) {
         // O evento sempre carregou `message` — o MOTIVO da falha (texto do
         // docker build, healthcheck que não passou…) — e nenhum dos dois
@@ -423,7 +423,7 @@ document.addEventListener("alpine:init", () => {
         const motivo = shortReason(d.message);
         if (d.service_id && d.service_id === this.selectedServiceId) {
           if (terminal) {
-            this.serviceMsg =
+            this.serviceMessage =
               d.state === "Live"
                 ? "deploy concluído"
                 : motivo
@@ -431,7 +431,7 @@ document.addEventListener("alpine:init", () => {
                   : `deploy: ${d.state}`;
             this.fetchServiceDetail(d.service_id);
           } else {
-            this.serviceMsg = `deploy · ${d.state}`;
+            this.serviceMessage = `deploy · ${d.state}`;
           }
         }
         // Desfecho do deploy que ESTE usuário disparou, mesmo que ele já
@@ -445,7 +445,7 @@ document.addEventListener("alpine:init", () => {
           if (d.state === "Live") {
             this.toastOk(`${nome}: deploy concluído`);
           } else {
-            this.toastErr(`${nome}: ${motivo || "deploy " + d.state}`);
+            this.toastError(`${nome}: ${motivo || "deploy " + d.state}`);
           }
         }
       }
@@ -497,7 +497,7 @@ document.addEventListener("alpine:init", () => {
       ) {
         return;
       }
-      this.deploymentsMsg = `removendo ${ids.length} deployment(s)…`;
+      this.deploymentsMessage = `removendo ${ids.length} deployment(s)…`;
       let removed = 0,
         failed = 0;
       for (const id of ids) {
@@ -505,9 +505,9 @@ document.addEventListener("alpine:init", () => {
         if (r.ok) removed++;
         else failed++;
       }
-      this.deploymentsMsg = "";
+      this.deploymentsMessage = "";
       if (failed === 0) this.toastOk(`${removed} deployment(s) removido(s)`);
-      else this.toastErr(`${removed} removido(s), ${failed} falharam`);
+      else this.toastError(`${removed} removido(s), ${failed} falharam`);
     },
 
     async refreshNow() {
@@ -701,7 +701,7 @@ document.addEventListener("alpine:init", () => {
     async openService(id) {
       this.selectedServiceId = id;
       this.serviceTab = "general";
-      this.serviceMsg = "";
+      this.serviceMessage = "";
       this.serviceDeployments = [];
       this.serviceLoading = true;
       this.nav("service");
@@ -711,7 +711,7 @@ document.addEventListener("alpine:init", () => {
     async fetchServiceDetail(id) {
       const r = await this.api.rpc({ ServiceGet: { id } });
       if (!r.ok || !r.value?.Service) {
-        this.serviceMsg = r.ok ? "serviço não encontrado" : r.error;
+        this.serviceMessage = r.ok ? "serviço não encontrado" : r.error;
         this.serviceLoading = false;
         return;
       }
@@ -721,15 +721,15 @@ document.addEventListener("alpine:init", () => {
       this.serviceLoading = false;
     },
 
-    async saveServiceSpec(spec, okMsg) {
+    async saveServiceSpec(spec, okMessage) {
       const id = this.selectedServiceId;
       const r = await this.api.rpcChecked({ ServiceUpdate: { id, spec } });
       if (r.ok) {
-        this.toastOk(okMsg || "salvo");
+        this.toastOk(okMessage || "salvo");
         await this.fetchServiceDetail(id);
         await this.refreshNow();
       } else {
-        this.toastErr("erro: " + r.error);
+        this.toastError("erro: " + r.error);
       }
       return r;
     },
@@ -744,7 +744,7 @@ document.addEventListener("alpine:init", () => {
         this.nav("project");
         this.toastOk("serviço removido");
       } else {
-        this.toastErr("erro ao remover: " + r.error);
+        this.toastError("erro ao remover: " + r.error);
       }
     },
 
@@ -765,33 +765,33 @@ document.addEventListener("alpine:init", () => {
      * ingress — ver service_delete.rs), então parar primeiro evita deixar
      * um container órfão rodando fora do controle do rustploy. */
     async stopAndDeleteService(id) {
-      const depJobs = (this.snap?.jobs || [])
+      const deploymentJobs = (this.snap?.jobs || [])
         .filter((s) => s.job.trigger_service_id === id)
         .map((s) => s.job.name)
         .sort();
       let message = "O serviço será parado e removido.";
-      if (depJobs.length > 0) {
-        message += ` Os jobs de Schedules que dependem dele também serão removidos, com histórico: ${depJobs.join(", ")}.`;
+      if (deploymentJobs.length > 0) {
+        message += ` Os jobs de Schedules que dependem dele também serão removidos, com histórico: ${deploymentJobs.join(", ")}.`;
       }
       message += " Essa ação não pode ser desfeita.";
       if (!confirm(message)) return;
 
       const r1 = await this.api.rpcChecked({ ServiceStop: { service_id: id } });
       if (!r1.ok) {
-        this.toastErr("erro ao parar: " + r1.error);
+        this.toastError("erro ao parar: " + r1.error);
         return;
       }
       const r2 = await this.api.rpcChecked({ ServiceDelete: { id } });
       if (r2.ok) this.toastOk("serviço parado e removido");
-      else this.toastErr("erro ao remover: " + r2.error);
+      else this.toastError("erro ao remover: " + r2.error);
       await this.refreshNow();
     },
 
     async deployStart() {
       const id = this.selectedServiceId;
-      this.serviceMsg = "iniciando deploy…";
+      this.serviceMessage = "iniciando deploy…";
       const r = await this.api.rpcChecked({ DeployStart: { service_id: id } });
-      this.serviceMsg = "";
+      this.serviceMessage = "";
       // Guarda quem o USUÁRIO mandou deployar: o desfecho (DeployStateChanged)
       // vira toast mesmo que ele já tenha navegado para outra tela — é o par
       // do `State.deploy_track` da GUI desktop.
@@ -863,7 +863,7 @@ document.addEventListener("alpine:init", () => {
      * quando o daemon o devolve; sem esse payload (algum prune que responde
      * só Ok), mensagem genérica. */
     toastPrune(r) {
-      if (!r.ok) return this.toastErr("erro: " + r.error);
+      if (!r.ok) return this.toastError("erro: " + r.error);
       const pr = r.value?.PruneResult;
       return this.toastOk(
         pr
@@ -942,7 +942,7 @@ document.addEventListener("alpine:init", () => {
       this.registryTokens = (r.ok && r.value?.RegistryTokens) || [];
     },
 
-    async registryRmTag(tag) {
+    async registryRemoveTag(tag) {
       const repo = this.registrySelectedRepo;
       const r = await this.api.rpcChecked({ RegistryTagDelete: { repo, tag } });
       this.toastResult(r, `tag ${tag} removida`);
@@ -951,7 +951,7 @@ document.addEventListener("alpine:init", () => {
         await this.refreshNow();
       }
     },
-    async registryRmRepo(name) {
+    async registryRemoveRepo(name) {
       const r = await this.api.rpcChecked({ RegistryRepoDelete: { repo: name } });
       this.toastResult(r, `repositório ${name} removido`);
       if (r.ok) {
@@ -970,10 +970,10 @@ document.addEventListener("alpine:init", () => {
         );
         await this.refreshNow();
       } else {
-        this.toastErr("erro: " + r.error);
+        this.toastError("erro: " + r.error);
       }
     },
-    async registryRmToken(name) {
+    async registryRemoveToken(name) {
       const r = await this.api.rpcChecked({ RegistryTokenRevoke: { name } });
       this.toastResult(r, `token ${name} revogado`);
       if (r.ok) await this.registryRefreshTokens();
@@ -1059,139 +1059,139 @@ document.addEventListener("alpine:init", () => {
     // ── Wizard "novo job" (ver campos no bloco de estado acima) ──────────
     // Porta de new_job_window.luau — mesmos passos e mesma validação.
 
-    get njobProjects() {
+    get newJobProjects() {
       return this.snap?.projects || [];
     },
     /** Serviços do projeto escolhido — já em memória (snap.services), sem
      * re-fetch (diferente do Luau, que precisa pré-semear a janela isolada). */
-    get njobServicesFiltered() {
+    get newJobServicesFiltered() {
       return (this.snap?.services || []).filter(
-        (e) => e.service.spec.project_id === this.njobProjectId
+        (e) => e.service.spec.project_id === this.newJobProjectId
       );
     },
 
     openNewJob() {
       this.showNewJob = true;
-      this.njobStep = "pick_project";
-      this.njobEditId = null;
-      this.njobEnabled = true;
-      this.njobProjectId = "";
-      this.njobProjectName = "";
-      this.njobServiceId = "";
-      this.njobServiceName = "";
-      this.njobName = "";
-      this.njobCompose = "";
-      this.njobSourceTab = "compose";
-      this.njobGitProviderId = "";
-      this.njobGitProviders = [];
-      this.njobGitRepos = [];
-      this.njobGitRepoFullName = "";
-      this.njobGitBranches = [];
-      this.njobGitBranch = "";
-      this.njobComposePath = "docker-compose.yml";
-      this.njobGitMsg = "";
-      this.njobMainService = "";
-      this.njobEnvText = "";
-      this.njobKind = "manual";
-      this.njobHours = "6";
-      this.njobTime = "03:00";
-      this.njobWeekday = "0";
-      this.njobErr = "";
+      this.newJobStep = "pick_project";
+      this.newJobEditId = null;
+      this.newJobEnabled = true;
+      this.newJobProjectId = "";
+      this.newJobProjectName = "";
+      this.newJobServiceId = "";
+      this.newJobServiceName = "";
+      this.newJobName = "";
+      this.newJobCompose = "";
+      this.newJobSourceTab = "compose";
+      this.newJobGitProviderId = "";
+      this.newJobGitProviders = [];
+      this.newJobGitRepos = [];
+      this.newJobGitRepoFullName = "";
+      this.newJobGitBranches = [];
+      this.newJobGitBranch = "";
+      this.newJobComposePath = "docker-compose.yml";
+      this.newJobGitMessage = "";
+      this.newJobMainService = "";
+      this.newJobEnvText = "";
+      this.newJobKind = "manual";
+      this.newJobHours = "6";
+      this.newJobTime = "03:00";
+      this.newJobWeekday = "0";
+      this.newJobError = "";
     },
     closeNewJob() {
       this.showNewJob = false;
     },
-    njobPickProject(id, name) {
-      this.njobProjectId = id;
-      this.njobProjectName = name;
-      this.njobStep = "pick_service";
+    newJobPickProject(id, name) {
+      this.newJobProjectId = id;
+      this.newJobProjectName = name;
+      this.newJobStep = "pick_service";
     },
-    njobPickService(id, name) {
-      this.njobServiceId = id;
-      this.njobServiceName = name;
-      this.njobStep = "form";
+    newJobPickService(id, name) {
+      this.newJobServiceId = id;
+      this.newJobServiceName = name;
+      this.newJobStep = "form";
     },
-    njobPickNoService() {
-      this.njobServiceId = "";
-      this.njobServiceName = "nenhum (autônomo)";
-      this.njobStep = "form";
+    newJobPickNoService() {
+      this.newJobServiceId = "";
+      this.newJobServiceName = "nenhum (autônomo)";
+      this.newJobStep = "form";
     },
-    njobBack() {
+    newJobBack() {
       // Modo edição: não há passos 1/2 pra voltar (project_id/
       // trigger_service_id não são editáveis via JobUpdate) — fecha o modal.
-      if (this.njobEditId) {
+      if (this.newJobEditId) {
         this.closeNewJob();
         return;
       }
-      if (this.njobStep === "form") this.njobStep = "pick_service";
-      else if (this.njobStep === "pick_service") this.njobStep = "pick_project";
+      if (this.newJobStep === "form") this.newJobStep = "pick_service";
+      else if (this.newJobStep === "pick_service") this.newJobStep = "pick_project";
     },
 
     // ── Fonte do compose: aba "Compose" x aba "Git" (picker conta→repo→branch) ──
     // Porta de njob_source/njob_git_provider_pick/njob_git_repo_pick do
     // cliente iced (new_job_window.luau) — mesma resolução, sem a limitação
     // de janela isolada (aqui é só um fetch preguiçoso na primeira troca de aba).
-    async njobSetSourceTab(kind) {
-      this.njobSourceTab = kind;
-      if (kind === "git" && this.njobGitProviders.length === 0) {
-        this.njobGitMsg = "carregando contas…";
+    async newJobSetSourceTab(kind) {
+      this.newJobSourceTab = kind;
+      if (kind === "git" && this.newJobGitProviders.length === 0) {
+        this.newJobGitMessage = "carregando contas…";
         const r = await this.api.rpc("GitProviderList");
         if (r.ok && r.value?.GitProviders) {
-          this.njobGitProviders = r.value.GitProviders;
-          this.njobGitMsg = "";
+          this.newJobGitProviders = r.value.GitProviders;
+          this.newJobGitMessage = "";
         } else {
-          this.njobGitMsg = "erro ao listar contas conectadas";
+          this.newJobGitMessage = "erro ao listar contas conectadas";
         }
       }
     },
-    async njobGitProviderPick(id) {
-      this.njobGitProviderId = id || "";
-      this.njobGitRepoFullName = "";
-      this.njobGitRepos = [];
-      this.njobGitBranches = [];
-      if (!this.njobGitProviderId) return;
-      this.njobGitMsg = "carregando repositórios…";
-      const r = await this.api.rpc({ GitRepoList: { provider_id: this.njobGitProviderId } });
+    async newJobGitProviderPick(id) {
+      this.newJobGitProviderId = id || "";
+      this.newJobGitRepoFullName = "";
+      this.newJobGitRepos = [];
+      this.newJobGitBranches = [];
+      if (!this.newJobGitProviderId) return;
+      this.newJobGitMessage = "carregando repositórios…";
+      const r = await this.api.rpc({ GitRepoList: { provider_id: this.newJobGitProviderId } });
       if (r.ok && r.value?.GitRepos) {
-        this.njobGitRepos = r.value.GitRepos;
-        this.njobGitMsg = `${r.value.GitRepos.length} repositório(s)`;
+        this.newJobGitRepos = r.value.GitRepos;
+        this.newJobGitMessage = `${r.value.GitRepos.length} repositório(s)`;
       } else {
-        this.njobGitMsg = "erro ao listar repositórios";
+        this.newJobGitMessage = "erro ao listar repositórios";
       }
     },
-    async njobGitRepoPick(fullName) {
+    async newJobGitRepoPick(fullName) {
       if (!fullName) return;
-      this.njobGitRepoFullName = fullName;
-      const repo = this.njobGitRepos.find((r) => r.full_name === fullName);
-      if (repo?.default_branch) this.njobGitBranch = repo.default_branch;
-      this.njobGitBranches = [];
-      if (!this.njobGitProviderId) return;
-      this.njobGitMsg = "carregando branches…";
+      this.newJobGitRepoFullName = fullName;
+      const repo = this.newJobGitRepos.find((r) => r.full_name === fullName);
+      if (repo?.default_branch) this.newJobGitBranch = repo.default_branch;
+      this.newJobGitBranches = [];
+      if (!this.newJobGitProviderId) return;
+      this.newJobGitMessage = "carregando branches…";
       const r = await this.api.rpc({
-        GitBranchList: { provider_id: this.njobGitProviderId, repo_full_name: fullName },
+        GitBranchList: { provider_id: this.newJobGitProviderId, repo_full_name: fullName },
       });
       if (r.ok && r.value?.GitBranches) {
-        this.njobGitBranches = r.value.GitBranches;
-        this.njobGitMsg = "";
+        this.newJobGitBranches = r.value.GitBranches;
+        this.newJobGitMessage = "";
       } else {
-        this.njobGitMsg = "erro ao listar branches";
+        this.newJobGitMessage = "erro ao listar branches";
       }
     },
 
     /** Monta `recurrence` (Option<Recurrence>, externally-tagged) a partir
-     * de njobKind. */
-    buildNjobRecurrence() {
-      if (this.njobKind === "interval") {
-        return { IntervalHours: Math.max(1, Number(this.njobHours) || 1) };
+     * de newJobKind. */
+    buildNewJobRecurrence() {
+      if (this.newJobKind === "interval") {
+        return { IntervalHours: Math.max(1, Number(this.newJobHours) || 1) };
       }
-      const [hora, minuto] = hmSplit(this.njobTime);
-      if (this.njobKind === "daily") {
+      const [hora, minuto] = hmSplit(this.newJobTime);
+      if (this.newJobKind === "daily") {
         return { Daily: { hour: hora, minute: minuto } };
       }
-      if (this.njobKind === "weekly") {
+      if (this.newJobKind === "weekly") {
         return {
           Weekly: {
-            weekday: Number(this.njobWeekday) || 0,
+            weekday: Number(this.newJobWeekday) || 0,
             hour: hora,
             minute: minuto,
           },
@@ -1200,27 +1200,27 @@ document.addEventListener("alpine:init", () => {
       return null;
     },
 
-    async njobCreate() {
-      if (!this.njobName.trim() || !this.njobMainService.trim()) {
-        this.njobErr = "nome e main service são obrigatórios";
+    async newJobCreate() {
+      if (!this.newJobName.trim() || !this.newJobMainService.trim()) {
+        this.newJobError = "nome e main service são obrigatórios";
         return;
       }
       let compose = "";
       let gitSource = null;
-      if (this.njobSourceTab === "git") {
-        const branch = this.njobGitBranch.trim();
-        if (!this.njobGitRepoFullName || !branch) {
-          this.njobErr = "selecione repositório e branch";
+      if (this.newJobSourceTab === "git") {
+        const branch = this.newJobGitBranch.trim();
+        if (!this.newJobGitRepoFullName || !branch) {
+          this.newJobError = "selecione repositório e branch";
           return;
         }
-        const composePath = this.njobComposePath.trim() || "docker-compose.yml";
-        const repo = this.njobGitRepos.find((r) => r.full_name === this.njobGitRepoFullName);
+        const composePath = this.newJobComposePath.trim() || "docker-compose.yml";
+        const repo = this.newJobGitRepos.find((r) => r.full_name === this.newJobGitRepoFullName);
         if (!repo?.clone_url) {
-          this.njobErr = "não foi possível resolver a URL do repositório — selecione de novo";
+          this.newJobError = "não foi possível resolver a URL do repositório — selecione de novo";
           return;
         }
         gitSource = {
-          provider_id: this.njobGitProviderId || null,
+          provider_id: this.newJobGitProviderId || null,
           url: repo.clone_url,
           branch,
           username: null,
@@ -1228,53 +1228,53 @@ document.addEventListener("alpine:init", () => {
           compose_path: composePath,
         };
       } else {
-        compose = this.njobCompose;
+        compose = this.newJobCompose;
         if (!compose.trim()) {
-          this.njobErr = "cole o docker-compose.yml do job";
+          this.newJobError = "cole o docker-compose.yml do job";
           return;
         }
       }
-      this.njobErr = "";
-      this.njobSubmitting = true;
-      const { vars: envVars, comments: envComments } = parseDotenv(this.njobEnvText);
+      this.newJobError = "";
+      this.newJobSubmitting = true;
+      const { vars: envVars, comments: envComments } = parseDotenv(this.newJobEnvText);
       let r;
-      if (this.njobEditId) {
+      if (this.newJobEditId) {
         r = await this.api.rpcChecked({
           JobUpdate: {
-            id: this.njobEditId,
-            name: this.njobName.trim(),
+            id: this.newJobEditId,
+            name: this.newJobName.trim(),
             compose,
             git_source: gitSource,
-            main_service: this.njobMainService.trim(),
+            main_service: this.newJobMainService.trim(),
             env_vars: envVars,
             env_comments: envComments,
-            enabled: this.njobEnabled,
-            recurrence: this.buildNjobRecurrence(),
+            enabled: this.newJobEnabled,
+            recurrence: this.buildNewJobRecurrence(),
           },
         });
         if (r.ok) await this.refreshNow();
       } else {
         r = await this.jobCreate({
-          project_id: this.njobProjectId,
+          project_id: this.newJobProjectId,
           // "" (não null) = job autônomo — Command::JobCreate::trigger_service_id
           // é String simples no protocolo (não Option<String>); o handler no
           // daemon é quem converte "" → None (job_create.rs).
-          trigger_service_id: this.njobServiceId || "",
-          name: this.njobName.trim(),
+          trigger_service_id: this.newJobServiceId || "",
+          name: this.newJobName.trim(),
           compose,
           git_source: gitSource,
-          main_service: this.njobMainService.trim(),
+          main_service: this.newJobMainService.trim(),
           env_vars: envVars,
           env_comments: envComments,
-          recurrence: this.buildNjobRecurrence(),
+          recurrence: this.buildNewJobRecurrence(),
         });
       }
-      this.njobSubmitting = false;
+      this.newJobSubmitting = false;
       if (r.ok) {
-        this.toastOk(this.njobEditId ? "job atualizado" : "job criado");
+        this.toastOk(this.newJobEditId ? "job atualizado" : "job criado");
         this.closeNewJob();
       } else {
-        this.njobErr = r.error;
+        this.newJobError = r.error;
       }
     },
 
@@ -1290,63 +1290,63 @@ document.addEventListener("alpine:init", () => {
         return;
       }
       this.showNewJob = true;
-      this.njobEditId = id;
-      this.njobStep = "form";
-      this.njobErr = "";
-      this.njobName = job.name || "";
-      this.njobMainService = job.main_service || "";
-      this.njobEnabled = !!job.enabled;
-      this.njobEnvText = dotenvFromVars(job.env_vars, job.env_comments);
+      this.newJobEditId = id;
+      this.newJobStep = "form";
+      this.newJobError = "";
+      this.newJobName = job.name || "";
+      this.newJobMainService = job.main_service || "";
+      this.newJobEnabled = !!job.enabled;
+      this.newJobEnvText = dotenvFromVars(job.env_vars, job.env_comments);
 
       const rec = job.recurrence;
       if (rec?.IntervalHours != null) {
-        this.njobKind = "interval";
-        this.njobHours = String(rec.IntervalHours);
+        this.newJobKind = "interval";
+        this.newJobHours = String(rec.IntervalHours);
       } else if (rec?.Daily) {
-        this.njobKind = "daily";
-        this.njobTime = hmJoin(rec.Daily.hour, rec.Daily.minute);
+        this.newJobKind = "daily";
+        this.newJobTime = hmJoin(rec.Daily.hour, rec.Daily.minute);
       } else if (rec?.Weekly) {
-        this.njobKind = "weekly";
-        this.njobWeekday = String(rec.Weekly.weekday);
-        this.njobTime = hmJoin(rec.Weekly.hour, rec.Weekly.minute);
+        this.newJobKind = "weekly";
+        this.newJobWeekday = String(rec.Weekly.weekday);
+        this.newJobTime = hmJoin(rec.Weekly.hour, rec.Weekly.minute);
       } else {
-        this.njobKind = "manual";
+        this.newJobKind = "manual";
       }
 
       if (job.git_source) {
-        this.njobSourceTab = "git";
-        this.njobCompose = "";
-        this.njobGitBranch = job.git_source.branch || "";
-        this.njobComposePath = job.git_source.compose_path || "docker-compose.yml";
-        this.njobGitProviderId = job.git_source.provider_id || "";
-        if (this.njobGitProviderId) {
+        this.newJobSourceTab = "git";
+        this.newJobCompose = "";
+        this.newJobGitBranch = job.git_source.branch || "";
+        this.newJobComposePath = job.git_source.compose_path || "docker-compose.yml";
+        this.newJobGitProviderId = job.git_source.provider_id || "";
+        if (this.newJobGitProviderId) {
           // O modal já está visível neste ponto (showNewJob=true lá em cima)
           // — sem esta mensagem os selects de repo/branch ficam vazios,
           // sem nenhuma explicação, durante os 2-3 round-trips abaixo.
-          this.njobGitMsg = "carregando repositórios…";
+          this.newJobGitMessage = "carregando repositórios…";
           const rp = await this.api.rpc("GitProviderList");
-          if (rp.ok && rp.value?.GitProviders) this.njobGitProviders = rp.value.GitProviders;
-          const rr = await this.api.rpc({ GitRepoList: { provider_id: this.njobGitProviderId } });
+          if (rp.ok && rp.value?.GitProviders) this.newJobGitProviders = rp.value.GitProviders;
+          const rr = await this.api.rpc({ GitRepoList: { provider_id: this.newJobGitProviderId } });
           if (rr.ok && rr.value?.GitRepos) {
-            this.njobGitRepos = rr.value.GitRepos;
-            const match = this.njobGitRepos.find((repo) => repo.clone_url === job.git_source.url);
-            this.njobGitRepoFullName = match?.full_name || "";
-            if (this.njobGitRepoFullName) {
-              this.njobGitMsg = "carregando branches…";
+            this.newJobGitRepos = rr.value.GitRepos;
+            const match = this.newJobGitRepos.find((repo) => repo.clone_url === job.git_source.url);
+            this.newJobGitRepoFullName = match?.full_name || "";
+            if (this.newJobGitRepoFullName) {
+              this.newJobGitMessage = "carregando branches…";
               const rb = await this.api.rpc({
                 GitBranchList: {
-                  provider_id: this.njobGitProviderId,
-                  repo_full_name: this.njobGitRepoFullName,
+                  provider_id: this.newJobGitProviderId,
+                  repo_full_name: this.newJobGitRepoFullName,
                 },
               });
-              if (rb.ok && rb.value?.GitBranches) this.njobGitBranches = rb.value.GitBranches;
+              if (rb.ok && rb.value?.GitBranches) this.newJobGitBranches = rb.value.GitBranches;
             }
           }
-          this.njobGitMsg = "";
+          this.newJobGitMessage = "";
         }
       } else {
-        this.njobSourceTab = "compose";
-        this.njobCompose = job.compose || "";
+        this.newJobSourceTab = "compose";
+        this.newJobCompose = job.compose || "";
       }
     },
 
@@ -1400,42 +1400,42 @@ document.addEventListener("alpine:init", () => {
       const r = await this.api.rpc("GetDaemonSettings");
       if (r.ok && r.value?.DaemonSettings) {
         const s = r.value.DaemonSettings;
-        this.ssPublicBase = s.public_base_url || "";
-        this.ssEmail = s.acme_email || "";
-        this.ssRegistryDomain = s.registry_domain || "";
+        this.serverSettingsPublicBase = s.public_base_url || "";
+        this.serverSettingsEmail = s.acme_email || "";
+        this.serverSettingsRegistryDomain = s.registry_domain || "";
       }
-      await this.gpRefresh();
-      await this.dcLoad();
+      await this.gitProviderRefresh();
+      await this.dockerCleanupLoad();
     },
 
     async settingsSave() {
-      const email = this.ssEmail.trim();
-      const registryDomain = this.ssRegistryDomain.trim();
-      this.settingsMsg = "salvando…";
+      const email = this.serverSettingsEmail.trim();
+      const registryDomain = this.serverSettingsRegistryDomain.trim();
+      this.settingsMessage = "salvando…";
       const r = await this.api.rpcChecked({
         SetDaemonSettings: {
           acme_email: email || null,
           registry_domain: registryDomain || null,
         },
       });
-      this.settingsMsg = "";
+      this.settingsMessage = "";
       this.toastResult(r, "configurações salvas");
     },
 
-    async gpRefresh() {
+    async gitProviderRefresh() {
       const r = await this.api.rpc("GitProviderList");
       this.gitProviders = (r.ok && r.value?.GitProviders) || [];
     },
 
     /** Mesmas validações de handlers/settings.luau::gp_connect: GitHub cai
      * pro github.com se a Base URL vier vazia (só existe pra Enterprise);
-     * Gitea sempre exige Base URL. Client id+secret OU PAT, conforme gpMode. */
-    async gpConnect() {
-      this.gpOauthUrl = "";
-      const isGithub = this.gpKind === "github";
+     * Gitea sempre exige Base URL. Client id+secret OU PAT, conforme gitProviderMode. */
+    async gitProviderConnect() {
+      this.gitProviderOauthUrl = "";
+      const isGithub = this.gitProviderKind === "github";
       const kindWire = isGithub ? "Github" : "Gitea";
       const label = isGithub ? "GitHub" : "Gitea";
-      let base = this.gpBaseUrl.trim();
+      let base = this.gitProviderBaseUrl.trim();
       if (!base) {
         if (isGithub) base = "https://github.com";
         else {
@@ -1443,12 +1443,12 @@ document.addEventListener("alpine:init", () => {
           return;
         }
       }
-      const name = this.gpName.trim() || label;
-      const isOauth = this.gpMode !== "pat";
+      const name = this.gitProviderName.trim() || label;
+      const isOauth = this.gitProviderMode !== "pat";
       let cmd;
       if (isOauth) {
-        const cid = this.gpClientId.trim();
-        const csec = this.gpClientSecret || "";
+        const cid = this.gitProviderClientId.trim();
+        const csec = this.gitProviderClientSecret || "";
         if (!cid || !csec.trim()) {
           this.toastWarn("Client ID e Client Secret são obrigatórios");
           return;
@@ -1465,7 +1465,7 @@ document.addEventListener("alpine:init", () => {
           },
         };
       } else {
-        const pat = this.gpPat || "";
+        const pat = this.gitProviderPersonalAccessToken || "";
         if (!pat.trim()) {
           this.toastWarn("informe o Personal Access Token");
           return;
@@ -1482,11 +1482,11 @@ document.addEventListener("alpine:init", () => {
           },
         };
       }
-      this.gpMsg = "conectando…";
+      this.gitProviderMessage = "conectando…";
       const r = await this.api.rpc(cmd);
       if (!r.ok || !r.value?.GitProviderInfo) {
-        this.gpMsg = "";
-        this.toastErr("erro: " + (r.ok ? "resposta inesperada" : r.error));
+        this.gitProviderMessage = "";
+        this.toastError("erro: " + (r.ok ? "resposta inesperada" : r.error));
         return;
       }
       const pid = r.value.GitProviderInfo.id;
@@ -1495,91 +1495,91 @@ document.addEventListener("alpine:init", () => {
         // linkava por não saber abrir o browser), aqui abrimos direto.
         const ro = await this.api.rpc({ GitOAuthStart: { provider_id: pid } });
         if (ro.ok && ro.value?.OAuthUrl) {
-          this.gpOauthUrl = ro.value.OAuthUrl;
-          this.gpMsg = "autorize a janela aberta e depois clique em Atualizar";
+          this.gitProviderOauthUrl = ro.value.OAuthUrl;
+          this.gitProviderMessage = "autorize a janela aberta e depois clique em Atualizar";
           window.open(ro.value.OAuthUrl, "_blank");
         } else {
-          this.gpMsg = "provider criado; inicie o OAuth manualmente";
+          this.gitProviderMessage = "provider criado; inicie o OAuth manualmente";
         }
       } else {
-        this.gpMsg = "";
+        this.gitProviderMessage = "";
         this.toastOk(`conta ${label} conectada`);
       }
-      this.gpName = "";
-      this.gpBaseUrl = "";
-      this.gpClientId = "";
-      this.gpClientSecret = "";
-      this.gpPat = "";
-      await this.gpRefresh();
+      this.gitProviderName = "";
+      this.gitProviderBaseUrl = "";
+      this.gitProviderClientId = "";
+      this.gitProviderClientSecret = "";
+      this.gitProviderPersonalAccessToken = "";
+      await this.gitProviderRefresh();
     },
 
-    async gpDelete(id) {
+    async gitProviderDelete(id) {
       const r = await this.api.rpcChecked({ GitProviderDelete: { id } });
-      this.gpMsg = "";
+      this.gitProviderMessage = "";
       this.toastResult(r, "provider removido");
-      await this.gpRefresh();
+      await this.gitProviderRefresh();
     },
 
-    async iacExport() {
-      this.iacExportMsg = "exportando…";
+    async manifestExport() {
+      this.manifestExportMessage = "exportando…";
       const r = await this.api.rpcChecked("ManifestExportAll");
       if (!r.ok || !r.value?.ManifestBundle) {
-        this.iacExportMsg = "";
-        this.toastErr("erro: " + (r.ok ? "resposta inesperada" : r.error));
+        this.manifestExportMessage = "";
+        this.toastError("erro: " + (r.ok ? "resposta inesperada" : r.error));
         return;
       }
-      this.iacYaml = r.value.ManifestBundle.yaml;
-      this.iacDotenv = r.value.ManifestBundle.dotenv;
-      this.iacHasExport = true;
-      this.iacExportMsg = "";
+      this.manifestYaml = r.value.ManifestBundle.yaml;
+      this.manifestDotenv = r.value.ManifestBundle.dotenv;
+      this.manifestHasExport = true;
+      this.manifestExportMessage = "";
       this.toastOk("manifesto exportado");
     },
 
     /** 3 formas de resposta possíveis (mesma distinção de handlers/
      * settings.luau::iac_import): MissingEnvVars (nada aplicado), Err
      * (rpc-level), ou ManifestReport (sucesso). */
-    async iacImport() {
-      this.iacHasMissing = false;
-      this.iacHasReport = false;
-      this.iacMissingVars = "";
-      this.iacReportLines = [];
+    async manifestImport() {
+      this.manifestHasMissing = false;
+      this.manifestHasReport = false;
+      this.manifestMissingVars = "";
+      this.manifestReportLines = [];
 
-      const yaml = this.iacImportYaml || "";
+      const yaml = this.manifestImportYaml || "";
       if (!yaml.trim()) {
         this.toastWarn("cole o YAML do manifesto");
         return;
       }
 
-      this.iacImportMsg = "importando…";
+      this.manifestImportMessage = "importando…";
       const r = await this.api.rpc({
         ManifestImport: {
           yaml,
-          dotenv: this.iacImportDotenv || "",
-          prune: this.iacPrune,
-          deploy: this.iacDeploy,
+          dotenv: this.manifestImportDotenv || "",
+          prune: this.manifestPrune,
+          deploy: this.manifestDeploy,
         },
       });
       if (!r.ok) {
-        this.iacImportMsg = "";
-        this.toastErr("erro: " + r.error);
+        this.manifestImportMessage = "";
+        this.toastError("erro: " + r.error);
         return;
       }
       const v = r.value;
       if (v?.MissingEnvVars) {
-        this.iacHasMissing = true;
-        this.iacMissingVars = v.MissingEnvVars.join(", ");
-        this.iacImportMsg = "faltam variáveis — nada foi aplicado";
-        this.toastErr("faltam variáveis — nada foi aplicado");
+        this.manifestHasMissing = true;
+        this.manifestMissingVars = v.MissingEnvVars.join(", ");
+        this.manifestImportMessage = "faltam variáveis — nada foi aplicado";
+        this.toastError("faltam variáveis — nada foi aplicado");
         return;
       }
       if (v?.Err) {
-        this.iacImportMsg = "";
-        this.toastErr(`erro: ${v.Err.code}: ${v.Err.message}`);
+        this.manifestImportMessage = "";
+        this.toastError(`erro: ${v.Err.code}: ${v.Err.message}`);
         return;
       }
       if (!v?.ManifestReport) {
-        this.iacImportMsg = "";
-        this.toastErr("resposta inesperada do daemon");
+        this.manifestImportMessage = "";
+        this.toastError("resposta inesperada do daemon");
         return;
       }
       const lines = (v.ManifestReport.actions || []).map(
@@ -1588,9 +1588,9 @@ document.addEventListener("alpine:init", () => {
       if ((v.ManifestReport.deployed || []).length > 0) {
         lines.push("deploy disparado: " + v.ManifestReport.deployed.join(", "));
       }
-      this.iacReportLines = lines;
-      this.iacHasReport = true;
-      this.iacImportMsg = "";
+      this.manifestReportLines = lines;
+      this.manifestHasReport = true;
+      this.manifestImportMessage = "";
       this.toastOk("import concluído");
       await this.refreshNow();
     },
@@ -1602,51 +1602,51 @@ document.addEventListener("alpine:init", () => {
 
     /** Recorrência (Option<Recurrence>, externally-tagged) → campos do
      * formulário — mesmo formato do unpack usado ao editar um Job (acima,
-     * perto de `njobKind`). */
-    dcApplyConfig(cfg) {
-      this.dcEnabled = !!cfg.enabled;
-      this.dcContainers = !!cfg.containers;
-      this.dcImages = !!cfg.images;
-      this.dcImagesAll = !!cfg.images_all;
-      this.dcVolumes = !!cfg.volumes;
-      this.dcVolumesAll = !!cfg.volumes_all;
-      this.dcNetworks = !!cfg.networks;
-      this.dcBuildCache = !!cfg.build_cache;
+     * perto de `newJobKind`). */
+    dockerCleanupApplyConfig(cfg) {
+      this.dockerCleanupEnabled = !!cfg.enabled;
+      this.dockerCleanupContainers = !!cfg.containers;
+      this.dockerCleanupImages = !!cfg.images;
+      this.dockerCleanupImagesAll = !!cfg.images_all;
+      this.dockerCleanupVolumes = !!cfg.volumes;
+      this.dockerCleanupVolumesAll = !!cfg.volumes_all;
+      this.dockerCleanupNetworks = !!cfg.networks;
+      this.dockerCleanupBuildCache = !!cfg.build_cache;
       const r = cfg.recurrence;
       if (r && r.IntervalHours != null) {
-        this.dcKind = "interval";
-        this.dcHours = String(r.IntervalHours);
+        this.dockerCleanupKind = "interval";
+        this.dockerCleanupHours = String(r.IntervalHours);
       } else if (r && r.Weekly) {
-        this.dcKind = "weekly";
-        this.dcTime = hmJoin(r.Weekly.hour, r.Weekly.minute);
-        this.dcWeekday = String(r.Weekly.weekday);
+        this.dockerCleanupKind = "weekly";
+        this.dockerCleanupTime = hmJoin(r.Weekly.hour, r.Weekly.minute);
+        this.dockerCleanupWeekday = String(r.Weekly.weekday);
       } else if (r && r.Daily) {
-        this.dcKind = "daily";
-        this.dcTime = hmJoin(r.Daily.hour, r.Daily.minute);
+        this.dockerCleanupKind = "daily";
+        this.dockerCleanupTime = hmJoin(r.Daily.hour, r.Daily.minute);
       } else {
-        this.dcKind = "daily";
+        this.dockerCleanupKind = "daily";
       }
-      this.dcNextRunLabel = cfg.next_run_at ? dateDmHm(cfg.next_run_at) : "—";
-      this.dcLastRunAtRaw = cfg.last_run_at ?? null;
+      this.dockerCleanupNextRunLabel = cfg.next_run_at ? dateDmHm(cfg.next_run_at) : "—";
+      this.dockerCleanupLastRunAtRaw = cfg.last_run_at ?? null;
     },
 
-    async dcLoad() {
+    async dockerCleanupLoad() {
       const r = await this.api.rpc("DockerCleanupConfigGet");
       if (r.ok && r.value?.DockerCleanupConfig) {
-        this.dcApplyConfig(r.value.DockerCleanupConfig.config);
-        this.dcLastRunText = dockerCleanupLastRunSummary(r.value.DockerCleanupConfig.last_run);
+        this.dockerCleanupApplyConfig(r.value.DockerCleanupConfig.config);
+        this.dockerCleanupLastRunText = dockerCleanupLastRunSummary(r.value.DockerCleanupConfig.last_run);
       }
     },
 
-    dcBuildRecurrence() {
-      if (this.dcKind === "interval") {
-        return { IntervalHours: Math.max(1, parseInt(this.dcHours, 10) || 1) };
+    dockerCleanupBuildRecurrence() {
+      if (this.dockerCleanupKind === "interval") {
+        return { IntervalHours: Math.max(1, parseInt(this.dockerCleanupHours, 10) || 1) };
       }
-      const [hora, minuto] = hmSplit(this.dcTime);
-      if (this.dcKind === "weekly") {
+      const [hora, minuto] = hmSplit(this.dockerCleanupTime);
+      if (this.dockerCleanupKind === "weekly") {
         return {
           Weekly: {
-            weekday: parseInt(this.dcWeekday, 10) || 0,
+            weekday: parseInt(this.dockerCleanupWeekday, 10) || 0,
             hour: hora,
             minute: minuto,
           },
@@ -1660,42 +1660,42 @@ document.addEventListener("alpine:init", () => {
       };
     },
 
-    async dcSave() {
-      this.dcMsg = "salvando…";
+    async dockerCleanupSave() {
+      this.dockerCleanupMessage = "salvando…";
       const r = await this.api.rpcChecked({
         DockerCleanupConfigSet: {
           config: {
-            enabled: this.dcEnabled,
-            recurrence: this.dcBuildRecurrence(),
-            containers: this.dcContainers,
-            images: this.dcImages,
-            images_all: this.dcImagesAll,
-            volumes: this.dcVolumes,
-            volumes_all: this.dcVolumesAll,
-            networks: this.dcNetworks,
-            build_cache: this.dcBuildCache,
-            last_run_at: this.dcLastRunAtRaw,
+            enabled: this.dockerCleanupEnabled,
+            recurrence: this.dockerCleanupBuildRecurrence(),
+            containers: this.dockerCleanupContainers,
+            images: this.dockerCleanupImages,
+            images_all: this.dockerCleanupImagesAll,
+            volumes: this.dockerCleanupVolumes,
+            volumes_all: this.dockerCleanupVolumesAll,
+            networks: this.dockerCleanupNetworks,
+            build_cache: this.dockerCleanupBuildCache,
+            last_run_at: this.dockerCleanupLastRunAtRaw,
           },
         },
       });
       if (r.ok && r.value?.DockerCleanupConfig) {
-        this.dcApplyConfig(r.value.DockerCleanupConfig.config);
-        this.dcLastRunText = dockerCleanupLastRunSummary(r.value.DockerCleanupConfig.last_run);
-        this.dcMsg = "";
+        this.dockerCleanupApplyConfig(r.value.DockerCleanupConfig.config);
+        this.dockerCleanupLastRunText = dockerCleanupLastRunSummary(r.value.DockerCleanupConfig.last_run);
+        this.dockerCleanupMessage = "";
         this.toastOk("configurações salvas");
       } else {
-        this.dcMsg = "";
-        this.toastErr("erro: " + r.error);
+        this.dockerCleanupMessage = "";
+        this.toastError("erro: " + r.error);
       }
     },
 
     /** Botão "Executar agora": roda os recursos marcados fora do horário
      * agendado, independente do interruptor geral. Roda em background no
-     * daemon — `dcRunning` volta a `false` quando `Event::DockerCleanupCompleted`
+     * daemon — `dockerCleanupRunning` volta a `false` quando `Event::DockerCleanupCompleted`
      * chega (applyBusEvent), não pela resposta deste RPC. */
-    async dcRunNow() {
+    async dockerCleanupRunNow() {
       const anySelected =
-        this.dcContainers || this.dcImages || this.dcVolumes || this.dcNetworks || this.dcBuildCache;
+        this.dockerCleanupContainers || this.dockerCleanupImages || this.dockerCleanupVolumes || this.dockerCleanupNetworks || this.dockerCleanupBuildCache;
       if (!anySelected) {
         this.toastWarn("marque pelo menos um recurso");
         return;
@@ -1707,13 +1707,13 @@ document.addEventListener("alpine:init", () => {
       ) {
         return;
       }
-      this.dcRunning = true;
-      this.dcMsg = "executando…";
+      this.dockerCleanupRunning = true;
+      this.dockerCleanupMessage = "executando…";
       const r = await this.api.rpcChecked("DockerCleanupRunNow");
       if (!r.ok) {
-        this.dcRunning = false;
-        this.dcMsg = "";
-        this.toastErr("erro: " + r.error);
+        this.dockerCleanupRunning = false;
+        this.dockerCleanupMessage = "";
+        this.toastError("erro: " + r.error);
       }
     },
 

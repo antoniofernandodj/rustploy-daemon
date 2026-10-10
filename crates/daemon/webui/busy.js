@@ -8,7 +8,7 @@
 //      `current` (e engole o evento se o botão já está ocupado);
 //   2. os métodos do `Alpine.store`/`Alpine.data` são embrulhados: se o método
 //      devolve uma Promise, o botão guardado fica ocupado até ela assentar.
-// O botão libera no PRIMEIRO toast de resposta da ação (toast/toastOk/toastErr/
+// O botão libera no PRIMEIRO toast de resposta da ação (toast/toastOk/toastError/
 // toastWarn/toastResult), não só quando o método inteiro termina: depois do toast
 // os métodos ainda costumam reler serviço/snapshot (mais rpcs) e esperar isso
 // deixaria o botão travado segundos além da resposta. Toasts disparados por
@@ -18,7 +18,7 @@
 
 const SAFETY_MS = 15 * 60 * 1000; // rede de segurança: nunca prende um botão para sempre
 const SKIP = new Set(["init", "destroy"]);
-const TOASTS = new Set(["toast", "toastOk", "toastErr", "toastWarn", "toastResult"]);
+const TOASTS = new Set(["toast", "toastOk", "toastError", "toastWarn", "toastResult"]);
 const STREAM = new Set(["onStreamEvent", "applyBusEvent", "applySnapshot"]);
 
 const held = new Set(); // release() de cada botão ocupado

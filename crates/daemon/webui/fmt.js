@@ -306,8 +306,8 @@ export function safeName(name) {
   return out.replace(/^_+/, "").replace(/_+$/, "");
 }
 
-function internalScheme(dbKind) {
-  const k = (dbKind || "").toLowerCase();
+function internalScheme(databaseKind) {
+  const k = (databaseKind || "").toLowerCase();
   if (k === "postgres" || k === "postgresql") return "postgresql";
   if (k === "mysql" || k === "mariadb") return "mysql";
   if (k === "redis") return "redis";
@@ -339,9 +339,9 @@ export function composeHost(content, ingressService) {
 
 /** URL de conexão dentro da rede Docker do daemon (`rp_<safe>:<porta>`, com
  * esquema por tipo de banco). */
-export function internalUrl(dbKind, safe, port, composeHostName) {
+export function internalUrl(databaseKind, safe, port, composeHostName) {
   const host = `${composeHostName || `rp_${safe}`}:${port}`;
-  const scheme = internalScheme(dbKind);
+  const scheme = internalScheme(databaseKind);
   return scheme ? `${scheme}://${host}` : host;
 }
 
@@ -351,8 +351,8 @@ function envPlain(vars, key) {
 }
 
 /** (database, user, password) lidos das env vars conhecidas do banco. */
-function dbCredentials(dbKind, vars) {
-  const k = (dbKind || "").toLowerCase();
+function databaseCredentials(databaseKind, vars) {
+  const k = (databaseKind || "").toLowerCase();
   if (k === "postgres" || k === "postgresql") {
     return [envPlain(vars, "POSTGRES_DB"), envPlain(vars, "POSTGRES_USER"), envPlain(vars, "POSTGRES_PASSWORD")];
   }
@@ -367,7 +367,7 @@ function dbCredentials(dbKind, vars) {
   return [null, null, null];
 }
 
-function withDbCredentials(base, database, user, password) {
+function withDatabaseCredentials(base, database, user, password) {
   let url = base;
   if (database) url += `/${database}`;
   const params = [];
@@ -398,11 +398,11 @@ function externalScheme(k) {
   return null;
 }
 
-function dbConnectionUrl(dbKind, host, port, database, user, password) {
-  const k = (dbKind || "").toLowerCase();
+function databaseConnectionUrl(databaseKind, host, port, database, user, password) {
+  const k = (databaseKind || "").toLowerCase();
   const hp = `${host}:${port}`;
   if (k === "postgres" || k === "postgresql") {
-    return "jdbc:" + withDbCredentials(`postgresql://${hp}`, database, user, password);
+    return "jdbc:" + withDatabaseCredentials(`postgresql://${hp}`, database, user, password);
   }
   const scheme = externalScheme(k);
   if (!scheme) return hp;
@@ -422,15 +422,15 @@ function urlHost(apiUrl) {
 
 /** URL de conexão externa: domínio HTTP tem prioridade; sem domínio, cai
  * pro passthrough TCP (host_port) com a URL idiomática do banco. */
-export function externalUrl(domain, tls, hostPort, dbKind, apiUrl, envVars) {
-  const [database, user, password] = dbCredentials(dbKind, envVars);
+export function externalUrl(domain, tls, hostPort, databaseKind, apiUrl, envVars) {
+  const [database, user, password] = databaseCredentials(databaseKind, envVars);
   if (domain && domain.trim()) {
     const clean = domain.replace(/\/+$/, "");
     return `${tls ? "https" : "http"}://${clean}`;
   }
   if (hostPort) {
     const host = urlHost(apiUrl) || "<host>";
-    return dbConnectionUrl(dbKind, host, String(hostPort), database, user, password);
+    return databaseConnectionUrl(databaseKind, host, String(hostPort), database, user, password);
   }
   return "—";
 }
@@ -584,7 +584,7 @@ export function deployDetailRows(info) {
 }
 
 /** Deploy Engine: "Executando agora". */
-export function engActiveRows(active) {
+export function deployEngineActiveRows(active) {
   return (active || []).map((info) => {
     const [label, kind] = stateLabelKind(info.state);
     return {
@@ -602,7 +602,7 @@ export function engActiveRows(active) {
 }
 
 /** Deploy Engine: "Na fila" (o primeiro é o próximo a rodar). */
-export function engQueuedRows(queued) {
+export function deployEngineQueuedRows(queued) {
   return (queued || []).map((info, i) => ({
     deploymentId: info.deployment_id,
     pos: i + 1,
@@ -911,7 +911,7 @@ export function dockerCleanupLastRunSummary(lr) {
 }
 
 /** Deploy Engine: "Histórico 24h". */
-export function engRecentRows(recent) {
+export function deployEngineRecentRows(recent) {
   return (recent || []).map((info) => {
     const [label, kind] = stateLabelKind(info.state);
     let icon = "○";

@@ -39,8 +39,8 @@ document.addEventListener("alpine:init", () => {
     },
     editing: false,
     editName: "",
-    editDesc: "",
-    projTab: "services", // "services" | "env" | "secrets" | "jobs"
+    editDescription: "",
+    projectTab: "services", // "services" | "env" | "secrets" | "jobs"
 
     get project() {
       const s = this.store;
@@ -89,14 +89,14 @@ document.addEventListener("alpine:init", () => {
       const p = this.project;
       if (!p) return;
       this.editName = p.name;
-      this.editDesc = p.description || "";
+      this.editDescription = p.description || "";
       this.editing = true;
     },
     cancelEdit() {
       this.editing = false;
     },
     async saveEdit() {
-      const r = await this.store.updateProject(this.store.selectedProjectId, this.editName, this.editDesc);
+      const r = await this.store.updateProject(this.store.selectedProjectId, this.editName, this.editDescription);
       if (r.ok) this.editing = false;
     },
 
@@ -123,7 +123,7 @@ document.addEventListener("alpine:init", () => {
         this.newEnvValue = "";
       }
     },
-    async delEnvVar(key) {
+    async deleteEnvVar(key) {
       const p = this.project;
       const vars = (p.env_vars || []).filter((e) => e.key !== key);
       const comments = (p.env_comments || []).filter((c) => c.before_key !== key);

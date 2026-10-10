@@ -37,14 +37,14 @@ document.addEventListener("alpine:init", () => {
     composeDomain: "",
 
     // ── Database ──────────────────────────────────────────────────
-    selectedDb: null,
-    dbServiceName: "",
-    dbName: "",
-    dbUser: "",
-    dbPassword: "",
-    dbRootPassword: "",
-    dbImage: "",
-    dbUseReplica: false,
+    selectedDatabase: null,
+    databaseServiceName: "",
+    databaseName: "",
+    databaseUser: "",
+    databasePassword: "",
+    databaseRootPassword: "",
+    databaseImage: "",
+    databaseUseReplica: false,
 
     // ── Broker ────────────────────────────────────────────────────
     selectedBroker: null,
@@ -83,20 +83,20 @@ document.addEventListener("alpine:init", () => {
       this.error = "";
       this.step = "compose_form";
     },
-    async gotoDb() {
+    async gotoDatabase() {
       this.error = "";
       await this.ensureCatalog();
       this.step = "pick_db";
     },
-    pickDb(db) {
-      this.selectedDb = db;
-      this.dbUser = db.user;
-      this.dbImage = db.image;
-      this.dbName = "";
-      this.dbPassword = "";
-      this.dbRootPassword = "";
-      this.dbUseReplica = false;
-      this.dbServiceName = "";
+    pickDatabase(db) {
+      this.selectedDatabase = db;
+      this.databaseUser = db.user;
+      this.databaseImage = db.image;
+      this.databaseName = "";
+      this.databasePassword = "";
+      this.databaseRootPassword = "";
+      this.databaseUseReplica = false;
+      this.databaseServiceName = "";
       this.step = "db_form";
     },
     async gotoBroker() {
@@ -224,29 +224,29 @@ document.addEventListener("alpine:init", () => {
       if (!r.ok) this.error = r.error;
     },
 
-    async submitDb() {
+    async submitDatabase() {
       this.error = "";
-      const db = this.selectedDb;
-      if (db.has_db_name && !this.dbName.trim()) {
+      const db = this.selectedDatabase;
+      if (db.has_db_name && !this.databaseName.trim()) {
         this.error = "nome do banco obrigatório";
         return;
       }
-      if (db.has_user && !this.dbUser.trim()) {
+      if (db.has_user && !this.databaseUser.trim()) {
         this.error = "usuário obrigatório";
         return;
       }
-      if (!this.dbPassword.trim()) {
+      if (!this.databasePassword.trim()) {
         this.error = "senha obrigatória";
         return;
       }
       const req = this.baseReq("database", db.id);
-      req.name = this.dbServiceName;
-      req.db_name = this.dbName;
-      req.user = this.dbUser;
-      req.password = this.dbPassword;
-      req.root_password = this.dbRootPassword;
-      req.image = this.dbImage;
-      req.use_replica = this.dbUseReplica;
+      req.name = this.databaseServiceName;
+      req.db_name = this.databaseName;
+      req.user = this.databaseUser;
+      req.password = this.databasePassword;
+      req.root_password = this.databaseRootPassword;
+      req.image = this.databaseImage;
+      req.use_replica = this.databaseUseReplica;
       this.submitting = true;
       const r = await this.store.wizardCreate(req);
       this.submitting = false;

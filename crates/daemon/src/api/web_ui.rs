@@ -293,7 +293,7 @@ mod headless_tests {
         // Login (tela default, antes de qualquer seed).
         wait_alpine_ready(&page).await;
         assert!(
-            visible(&page, ".login_wrap").await,
+            visible(&page, ".login").await,
             "tela de login deveria estar visível antes do login"
         );
 
@@ -387,7 +387,7 @@ mod headless_tests {
         assert!(
             visible(
                 &page,
-                "[x-data=\"serviceDetail\"] input[x-model=\"fRepoUrl\"]"
+                "[x-data=\"serviceDetail\"] input[x-model=\"serviceFormRepoUrl\"]"
             )
             .await,
             "aba General deveria mostrar o form Git (sourceKind=Git)"
@@ -398,7 +398,7 @@ mod headless_tests {
         let prov_tabs: &[(&str, &str)] = &[
             (
                 "git",
-                "[x-data=\"serviceDetail\"] input[x-model=\"fRepoUrl\"]",
+                "[x-data=\"serviceDetail\"] input[x-model=\"serviceFormRepoUrl\"]",
             ),
             (
                 "gitea",
@@ -408,10 +408,10 @@ mod headless_tests {
         ];
         for (tab, selector) in prov_tabs {
             page.evaluate(format!(
-                "Alpine.$data(document.querySelector('[x-data=\"serviceDetail\"]')).setProvTab({tab:?})"
+                "Alpine.$data(document.querySelector('[x-data=\"serviceDetail\"]')).setProviderTab({tab:?})"
             ))
             .await
-            .unwrap_or_else(|e| panic!("setProvTab({tab}): {e}"));
+            .unwrap_or_else(|e| panic!("setProviderTab({tab}): {e}"));
             assert!(
                 visible(&page, selector).await,
                 "prov_tab={tab} deveria mostrar {selector}"
@@ -480,7 +480,7 @@ mod headless_tests {
                 window.__saved = [];
                 s.saveServiceSpec = async (spec, msg) => { window.__saved.push({ spec, msg }); return { ok: true }; };
                 window.__toasts = [];
-                s.toastErr = (m) => window.__toasts.push(m);
+                s.toastError = (m) => window.__toasts.push(m);
                 Alpine.$data(document.querySelector('[x-data="serviceDetail"]')).initGeneralForm();
             })()"#,
         )
@@ -538,7 +538,7 @@ mod headless_tests {
         // O detalhe passa a ter o nome novo; o host interno segue o YAML.
         let url = eval_str(
             &page,
-            &format!("(() => {{ Alpine.store('app').serviceDetail.spec.name = 'meu-banco'; {d}.connUrl = 'postgresql://u:p@rp_banco:5432/db'; return {d}.connectionInfo.internalUrl; }})()")
+            &format!("(() => {{ Alpine.store('app').serviceDetail.spec.name = 'meu-banco'; {d}.connectionUrl = 'postgresql://u:p@rp_banco:5432/db'; return {d}.connectionInfo.internalUrl; }})()")
         )
         .await;
         // O host (chave do YAML) agora é decidido no daemon
@@ -548,7 +548,7 @@ mod headless_tests {
         // Application: outro aviso.
         let app = eval_str(
             &page,
-            &format!("(() => {{ {d}.connUrl = ''; const s = Alpine.store('app'); s.serviceDetail = {{ id: 'svc_2', status: 'Running', live_container_id: null, spec: {{ name: 'meu-api', port: 8080, replicas: 1, project_id: 'prj_1', env_vars: [], domains: [], source: {{ Registry: {{ image: 'nginx' }} }}, healthcheck: {{ kind: 'None', interval_secs: 5, timeout_secs: 3, retries: 10, start_period_secs: 5 }} }} }}; return JSON.stringify({{ note: {d}.renameNote, url: {d}.connectionInfo.internalUrl }}); }})()")
+            &format!("(() => {{ {d}.connectionUrl = ''; const s = Alpine.store('app'); s.serviceDetail = {{ id: 'svc_2', status: 'Running', live_container_id: null, spec: {{ name: 'meu-api', port: 8080, replicas: 1, project_id: 'prj_1', env_vars: [], domains: [], source: {{ Registry: {{ image: 'nginx' }} }}, healthcheck: {{ kind: 'None', interval_secs: 5, timeout_secs: 3, retries: 10, start_period_secs: 5 }} }} }}; return JSON.stringify({{ note: {d}.renameNote, url: {d}.connectionInfo.internalUrl }}); }})()")
         )
         .await;
         let a: serde_json::Value = serde_json::from_str(&app).unwrap();
@@ -579,7 +579,7 @@ mod headless_tests {
             r#"(() => {
                 const s = Alpine.store('app');
                 s.toastOk('salvo');
-                s.toastErr('erro: falhou');
+                s.toastError('erro: falhou');
                 s.toastWarn('confira os campos');
             })()"#,
         )
@@ -587,17 +587,17 @@ mod headless_tests {
         .expect("dispara três toasts");
 
         assert!(
-            visible(&page, ".toast_wrap .toast_success").await,
+            visible(&page, ".toast-wrap .toast--success").await,
             "toast de sucesso deveria aparecer"
         );
         for kind in ["success", "error", "warning"] {
             assert!(
-                visible(&page, &format!(".toast_wrap .toast_{kind}")).await,
+                visible(&page, &format!(".toast-wrap .toast--{kind}")).await,
                 "toast kind={kind} deveria aparecer"
             );
         }
         let count = page
-            .evaluate("document.querySelectorAll('.toast_wrap .toast').length")
+            .evaluate("document.querySelectorAll('.toast-wrap .toast').length")
             .await
             .expect("conta os toasts")
             .into_value::<u32>()
@@ -608,12 +608,12 @@ mod headless_tests {
         );
 
         // O "×" dispensa só o seu.
-        page.evaluate("document.querySelector('.toast_wrap .toast_error .toast_close').click()")
+        page.evaluate("document.querySelector('.toast-wrap .toast--error .toast__close').click()")
             .await
             .expect("clica no × do toast de erro");
         for _ in 0..20 {
             let n = page
-                .evaluate("document.querySelectorAll('.toast_wrap .toast').length")
+                .evaluate("document.querySelectorAll('.toast-wrap .toast').length")
                 .await
                 .ok()
                 .and_then(|r| r.into_value::<u32>().ok())
@@ -624,17 +624,17 @@ mod headless_tests {
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
         let restantes = page
-            .evaluate("[...document.querySelectorAll('.toast_wrap .toast')].map(e => e.className).join(' ')")
+            .evaluate("[...document.querySelectorAll('.toast-wrap .toast')].map(e => e.className).join(' ')")
             .await
             .expect("classes restantes")
             .into_value::<String>()
             .expect("string");
         assert!(
-            !restantes.contains("toast_error"),
+            !restantes.contains("toast--error"),
             "o × deveria remover o toast clicado; restou: {restantes}"
         );
         assert!(
-            restantes.contains("toast_success") && restantes.contains("toast_warning"),
+            restantes.contains("toast--success") && restantes.contains("toast--warning"),
             "os outros dois deveriam continuar; restou: {restantes}"
         );
 
@@ -643,12 +643,12 @@ mod headless_tests {
             .await
             .expect("toast curto");
         assert!(
-            visible(&page, ".toast_wrap .toast_info").await,
+            visible(&page, ".toast-wrap .toast--info").await,
             "toast info deveria aparecer antes de expirar"
         );
         tokio::time::sleep(Duration::from_millis(400)).await;
         let sobrou_info = page
-            .evaluate("!!document.querySelector('.toast_wrap .toast_info')")
+            .evaluate("!!document.querySelector('.toast-wrap .toast--info')")
             .await
             .expect("consulta o toast info")
             .into_value::<bool>()
@@ -701,7 +701,7 @@ mod headless_tests {
         .expect("abre o servidor compartilhado");
 
         assert!(
-            visible(&page, "[x-data=\"serviceDetail\"] input[x-model=\"fMdb.name\"]").await,
+            visible(&page, "[x-data=\"serviceDetail\"] input[x-model=\"serviceFormSharedDatabase.name\"]").await,
             "a aba Databases deveria mostrar o formulário"
         );
         let d = "Alpine.$data(document.querySelector('[x-data=\"serviceDetail\"]'))";
@@ -714,7 +714,7 @@ mod headless_tests {
 
         let sent = eval_str(
             &page,
-            &format!("(async () => {{ const d = {d}; window.__rpc = []; d.fMdb = {{ name: ' rdo ', project: 'prj_a', env: '', limit: '20', timeout: '', overwrite: true }}; await d.createMdb(); return JSON.stringify(window.__rpc.find(c => c.ManagedDatabaseCreate).ManagedDatabaseCreate); }})()"),
+            &format!("(async () => {{ const d = {d}; window.__rpc = []; d.serviceFormSharedDatabase = {{ name: ' rdo ', project: 'prj_a', env: '', limit: '20', timeout: '', overwrite: true }}; await d.createSharedDatabase(); return JSON.stringify(window.__rpc.find(c => c.ManagedDatabaseCreate).ManagedDatabaseCreate); }})()"),
         )
         .await;
         let v: serde_json::Value = serde_json::from_str(&sent).unwrap();
@@ -771,7 +771,7 @@ mod headless_tests {
         let d = "Alpine.$data(document.querySelector('[x-data=\"serviceDetail\"]'))";
         let loaded = eval_str(
             &page,
-            &format!("(async () => {{ const d = {d}; await d.loadMigration(); return JSON.stringify({{ dests: d.migDests.map(x => x.id), db: d.fMig.db, st: d.mig.status, steps: d.migSteps.map(x => x.icon).join('') }}); }})()"),
+            &format!("(async () => {{ const d = {d}; await d.loadMigration(); return JSON.stringify({{ dests: d.migrationDestinations.map(x => x.id), db: d.serviceFormMigration.db, st: d.mig.status, steps: d.migrationSteps.map(x => x.icon).join('') }}); }})()"),
         )
         .await;
         assert_eq!(
@@ -780,12 +780,12 @@ mod headless_tests {
             "só destinos do mesmo projeto; origem preenchida do POSTGRES_DB"
         );
         assert!(
-            visible(&page, "[x-data=\"serviceDetail\"] input[x-model=\"fMig.db\"]").await,
+            visible(&page, "[x-data=\"serviceDetail\"] input[x-model=\"serviceFormMigration.db\"]").await,
             "a aba Migrar deveria mostrar o formulário"
         );
         let sent = eval_str(
             &page,
-            &format!("(async () => {{ window.confirm = () => true; const d = {d}; window.__rpc = []; d.fMig.dest = 'mdb_1'; d.fMig.env = ' URL_BANCO '; await d.startMigration(); return JSON.stringify(window.__rpc.find(c => c.MigrationStart).MigrationStart); }})()"),
+            &format!("(async () => {{ window.confirm = () => true; const d = {d}; window.__rpc = []; d.serviceFormMigration.dest = 'mdb_1'; d.serviceFormMigration.env = ' URL_BANCO '; await d.startMigration(); return JSON.stringify(window.__rpc.find(c => c.MigrationStart).MigrationStart); }})()"),
         )
         .await;
         let v: serde_json::Value = serde_json::from_str(&sent).unwrap();

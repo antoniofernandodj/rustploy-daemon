@@ -23,7 +23,7 @@ document.addEventListener("alpine:init", () => {
     picked: {}, // chave de variável do projeto → marcada?
     includeValues: true,
     filter: "",
-    copyMsg: "",
+    copyMessage: "",
 
     init() {
       this.$watch("$store.app.exportWin", (w) => (w ? this.load(w.serviceId) : this.reset()));
@@ -36,7 +36,7 @@ document.addEventListener("alpine:init", () => {
       this.picked = {};
       this.includeValues = true;
       this.filter = "";
-      this.copyMsg = "";
+      this.copyMessage = "";
     },
 
     async load(serviceId) {

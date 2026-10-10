@@ -47,7 +47,7 @@ function bringToFront(layer) {
 
 /** Mantém a janela alcançável: ao menos a barra de título dentro da tela. */
 function clamp(box) {
-  if (box.classList.contains("win_max")) return;
+  if (box.classList.contains("win--max")) return;
   const vw = window.innerWidth;
   const vh = window.innerHeight;
   const r = box.getBoundingClientRect();
@@ -79,12 +79,12 @@ export function registerWindows(Alpine) {
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape" || e.defaultPrevented) return;
     let best = null;
-    for (const layer of document.querySelectorAll(".modal_backdrop")) {
+    for (const layer of document.querySelectorAll(".modal__backdrop")) {
       if (layer.style.display === "none" || !layer.firstElementChild) continue;
       if (getComputedStyle(layer).display === "none") continue;
       if (!best || Number(layer.style.zIndex || 0) >= Number(best.style.zIndex || 0)) best = layer;
     }
-    const close = best && best.querySelector(".win_close");
+    const close = best && best.querySelector(".win__dot--close");
     if (close) {
       e.preventDefault();
       close.click();
@@ -92,30 +92,30 @@ export function registerWindows(Alpine) {
   });
 
   window.addEventListener("resize", () => {
-    document.querySelectorAll(".modal_box").forEach(clamp);
+    document.querySelectorAll(".modal__box").forEach(clamp);
   });
 
   Alpine.directive("win", (box, { expression }, { evaluate, cleanup }) => {
     const key = expression ? String(evaluate(expression)) : "";
     const layer = box.parentElement;
-    const head = box.querySelector(":scope > .modal_head");
+    const head = box.querySelector(":scope > .modal__head");
     if (!layer || !head) return;
 
     box.classList.add("win");
-    layer.classList.add("win_layer");
+    layer.classList.add("win__layer");
 
     // ── Barra de título: pontos de controle à esquerda ─────────────────
     const closeBtn = [...head.querySelectorAll("button")].find((b) => b.textContent.trim() === "Fechar");
     const ctl = document.createElement("div");
-    ctl.className = "win_ctls";
+    ctl.className = "win__ctls";
     const dClose = document.createElement("button");
     dClose.type = "button";
-    dClose.className = "win_dot win_close";
+    dClose.className = "win__dot win__dot--close";
     dClose.title = "Fechar (Esc)";
     dClose.setAttribute("aria-label", "Fechar janela");
     const dMax = document.createElement("button");
     dMax.type = "button";
-    dMax.className = "win_dot win_maxbtn";
+    dMax.className = "win__dot win__dot--max";
     dMax.title = "Maximizar / restaurar";
     dMax.setAttribute("aria-label", "Maximizar janela");
     ctl.append(dClose, dMax);
@@ -126,7 +126,7 @@ export function registerWindows(Alpine) {
       closeBtn.textContent = "✕";
       closeBtn.title = "Fechar (Esc)";
       closeBtn.setAttribute("aria-label", "Fechar janela");
-      closeBtn.classList.add("win_x");
+      closeBtn.classList.add("win__x");
     }
     dClose.addEventListener("click", () => {
       if (closeBtn) closeBtn.click();
@@ -149,7 +149,7 @@ export function registerWindows(Alpine) {
     }
 
     const persist = () => {
-      if (!key || !box.style.left || box.classList.contains("win_max")) return;
+      if (!key || !box.style.left || box.classList.contains("win--max")) return;
       const r = box.getBoundingClientRect();
       if (r.width < 50) return; // oculta
       lsSet(key, { x: r.left, y: r.top, w: r.width, h: r.height });
@@ -164,7 +164,7 @@ export function registerWindows(Alpine) {
         pin(box);
         requestAnimationFrame(() => {
           clamp(box);
-          const f = box.querySelector(".modal_body input:not([type=checkbox]):not([type=hidden]), .modal_body textarea");
+          const f = box.querySelector(".modal__body input:not([type=checkbox]):not([type=hidden]), .modal__body textarea");
           if (f && !box.contains(document.activeElement)) f.focus({ preventScroll: true });
         });
       }
@@ -180,12 +180,12 @@ export function registerWindows(Alpine) {
     // ── Arrastar pela barra ────────────────────────────────────────────
     head.addEventListener("pointerdown", (e) => {
       if (e.button !== 0 || e.target.closest("button, input, select, textarea, a")) return;
-      if (box.classList.contains("win_max") || window.matchMedia("(max-width: 700px)").matches) return;
+      if (box.classList.contains("win--max") || window.matchMedia("(max-width: 700px)").matches) return;
       pin(box);
       const sx = e.clientX - box.offsetLeft;
       const sy = e.clientY - box.offsetTop;
       head.setPointerCapture(e.pointerId);
-      box.classList.add("win_dragging");
+      box.classList.add("win--dragging");
       const move = (ev) => {
         box.style.left = ev.clientX - sx + "px";
         box.style.top = ev.clientY - sy + "px";
@@ -194,7 +194,7 @@ export function registerWindows(Alpine) {
         head.removeEventListener("pointermove", move);
         head.removeEventListener("pointerup", up);
         head.removeEventListener("pointercancel", up);
-        box.classList.remove("win_dragging");
+        box.classList.remove("win--dragging");
         clamp(box);
         persist();
       };
@@ -205,12 +205,12 @@ export function registerWindows(Alpine) {
 
     // ── Maximizar / restaurar ──────────────────────────────────────────
     const toggleMax = () => {
-      if (box.classList.contains("win_max")) {
-        box.classList.remove("win_max");
+      if (box.classList.contains("win--max")) {
+        box.classList.remove("win--max");
         clamp(box);
       } else {
         pin(box);
-        box.classList.add("win_max");
+        box.classList.add("win--max");
       }
     };
     dMax.addEventListener("click", toggleMax);

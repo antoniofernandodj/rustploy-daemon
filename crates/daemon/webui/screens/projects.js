@@ -11,11 +11,11 @@ document.addEventListener("alpine:init", () => {
     },
     showNewForm: false,
     newName: "",
-    newDesc: "",
+    newDescription: "",
     newError: "",
     editingId: null,
     editName: "",
-    editDesc: "",
+    editDescription: "",
 
     get servicesCount() {
       return ((this.store.snap && this.store.snap.services) || []).length;
@@ -39,10 +39,10 @@ document.addEventListener("alpine:init", () => {
 
     async submitNew() {
       this.newError = "";
-      const r = await this.store.createProject(this.newName, this.newDesc);
+      const r = await this.store.createProject(this.newName, this.newDescription);
       if (r.ok) {
         this.newName = "";
-        this.newDesc = "";
+        this.newDescription = "";
         this.showNewForm = false;
       } else {
         this.newError = r.error;
@@ -52,13 +52,13 @@ document.addEventListener("alpine:init", () => {
     startEdit(row) {
       this.editingId = row.id;
       this.editName = row.name;
-      this.editDesc = row.description;
+      this.editDescription = row.description;
     },
     cancelEdit() {
       this.editingId = null;
     },
     async saveEdit() {
-      const r = await this.store.updateProject(this.editingId, this.editName, this.editDesc);
+      const r = await this.store.updateProject(this.editingId, this.editName, this.editDescription);
       if (r.ok) this.editingId = null;
     },
   }));

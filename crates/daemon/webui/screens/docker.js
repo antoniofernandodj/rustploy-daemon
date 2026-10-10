@@ -57,36 +57,36 @@ document.addEventListener("alpine:init", () => {
 
     // ── Modal "novo token" ───────────────────────────────────────────────
     showTokenModal: false,
-    ntokStep: "form", // "form" | "reveal"
-    ntokName: "",
-    ntokScope: "pull",
-    ntokErr: "",
-    ntokLoginCmd: "",
+    newRegistryTokenStep: "form", // "form" | "reveal"
+    newRegistryTokenName: "",
+    newRegistryTokenScope: "pull",
+    newRegistryTokenError: "",
+    newRegistryTokenLoginCommand: "",
 
     openTokenModal() {
       this.showTokenModal = true;
-      this.ntokStep = "form";
-      this.ntokName = "";
-      this.ntokScope = "pull";
-      this.ntokErr = "";
-      this.ntokLoginCmd = "";
+      this.newRegistryTokenStep = "form";
+      this.newRegistryTokenName = "";
+      this.newRegistryTokenScope = "pull";
+      this.newRegistryTokenError = "";
+      this.newRegistryTokenLoginCommand = "";
     },
     closeTokenModal() {
       this.showTokenModal = false;
     },
-    async ntokCreate() {
-      if (!this.ntokName.trim()) {
-        this.ntokErr = "nome obrigatório";
+    async newRegistryTokenCreate() {
+      if (!this.newRegistryTokenName.trim()) {
+        this.newRegistryTokenError = "nome obrigatório";
         return;
       }
-      this.ntokErr = "";
-      const r = await this.store.registryCreateToken(this.ntokName.trim(), this.ntokScope);
+      this.newRegistryTokenError = "";
+      const r = await this.store.registryCreateToken(this.newRegistryTokenName.trim(), this.newRegistryTokenScope);
       if (!r.ok) {
-        this.ntokErr = r.error;
+        this.newRegistryTokenError = r.error;
         return;
       }
-      this.ntokLoginCmd = `docker login ${this.registryHost} -u ${this.ntokName.trim()} -p ${r.secret}`;
-      this.ntokStep = "reveal";
+      this.newRegistryTokenLoginCommand = `docker login ${this.registryHost} -u ${this.newRegistryTokenName.trim()} -p ${r.secret}`;
+      this.newRegistryTokenStep = "reveal";
     },
   }));
 });
