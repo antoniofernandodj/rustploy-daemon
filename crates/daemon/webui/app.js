@@ -32,20 +32,20 @@ import { registerWindows } from "./wm.js";
 import { registerIcons } from "./icons.js";
 import { registerBusy } from "./busy.js";
 import {
-  fmtUptime,
-  fmtBytes,
+  formatUptime,
+  formatBytes,
   stripAnsi,
   oauthRedirectUri,
   timeHms,
-  dateDmHms,
-  dateDmHm,
+  dateDayMonthHourMinuteSecond,
+  dateDayMonthHourMinute,
   parseDotenv,
   dotenvFromVars,
   dockerCleanupLastRunSummary,
   shortReason,
-  hmJoin,
-  hmSplit,
-} from "./fmt.js";
+  hourMinuteJoin,
+  hourMinuteSplit,
+} from "./format.js";
 
 window.Alpine = Alpine;
 registerDirectives(Alpine);
@@ -63,8 +63,8 @@ function loadPrefs() {
   }
 }
 
-function savePrefs(p) {
-  localStorage.setItem(PREFS_KEY, JSON.stringify(p));
+function savePrefs(preferences) {
+  localStorage.setItem(PREFS_KEY, JSON.stringify(preferences));
 }
 
 document.addEventListener("alpine:init", () => {
@@ -173,7 +173,7 @@ document.addEventListener("alpine:init", () => {
     newJobKind: "manual", // "manual" | "interval" | "daily" | "weekly"
     newJobHours: "6",
     // Uma chave só, "HH:MM": quem edita agora é o <input type="time">.
-    // hmJoin/hmSplit fazem a ponte com o {hour, minute} do daemon.
+    // hourMinuteJoin/hourMinuteSplit fazem a ponte com o {hour, minute} do daemon.
     newJobTime: "03:00",
     newJobWeekday: "0",
     newJobError: "",
@@ -274,10 +274,10 @@ document.addEventListener("alpine:init", () => {
 
     toast(message, kind = "info", durationMs = 4000) {
       if (!message) return null;
-      const id = ++this.toastSeq;
-      this.toasts.push({ id, kind, message: String(message), ms: durationMs });
-      setTimeout(() => this.dismissToast(id), durationMs);
-      return id;
+      const toastId = ++this.toastSeq;
+      this.toasts.push({ id: toastId, kind, message: String(message), ms: durationMs });
+      setTimeout(() => this.dismissToast(toastId), durationMs);
+      return toastId;
     },
 
     toastOk(message) {
@@ -293,23 +293,23 @@ document.addEventListener("alpine:init", () => {
     // Desfecho de um rpc num passo só: `okMessage` omitido = sucesso
     // silencioso (a tela já mostra o resultado, um toast seria ruído).
     // Devolve `r.ok` para caber num `if`.
-    toastResult(r, okMessage) {
-      if (r.ok) {
+    toastResult(result, okMessage) {
+      if (result.ok) {
         if (okMessage) this.toastOk(okMessage);
       } else {
-        this.toastError("erro: " + r.error);
+        this.toastError("erro: " + result.error);
       }
-      return r.ok;
+      return result.ok;
     },
 
-    dismissToast(id) {
-      const i = this.toasts.findIndex((t) => t.id === id);
-      if (i !== -1) this.toasts.splice(i, 1);
+    dismissToast(toastId) {
+      const toastIndex = this.toasts.findIndex((toast) => toast.id === toastId);
+      if (toastIndex !== -1) this.toasts.splice(toastIndex, 1);
     },
 
-    serviceNameById(id) {
-      const e = (this.snap?.services || []).find((x) => x.service.id === id);
-      return e?.service?.spec?.name || "serviço";
+    serviceNameById(serviceId) {
+      const entry = (this.snap?.services || []).find((service) => service.service.id === serviceId);
+      return entry?.service?.spec?.name || "serviço";
     },
 
     nav(view) {
@@ -333,9 +333,9 @@ document.addEventListener("alpine:init", () => {
       this.error = "";
 
       const client = new Api(base, this.token);
-      const r = await client.rpc("DaemonStatus");
-      if (!r.ok) {
-        this.error = r.error;
+      const daemonStatusResponse = await client.rpc("DaemonStatus");
+      if (!daemonStatusResponse.ok) {
+        this.error = daemonStatusResponse.error;
         this.statusLine = "falha na conexão";
         this.connected = false;
         return;
@@ -369,8 +369,8 @@ document.addEventListener("alpine:init", () => {
       this.stream?.close();
       this.stream = openStream(this.api.baseUrl, this.api.token, "/api/events", {
         onEvent: (kind, data) => this.onStreamEvent(data),
-        onError: (msg) => {
-          this.statusLine = "stream: " + msg;
+        onError: (message) => {
+          this.statusLine = "stream: " + message;
         },
         onClose: () => {
           this.stream = null;
@@ -383,55 +383,55 @@ document.addEventListener("alpine:init", () => {
       });
     },
 
-    onStreamEvent(msg) {
-      if (!msg || typeof msg !== "object") return;
-      if (msg.kind === "snapshot") this.applySnapshot(msg);
-      else if (msg.kind === "bus") this.applyBusEvent(msg.event);
+    onStreamEvent(streamMessage) {
+      if (!streamMessage || typeof streamMessage !== "object") return;
+      if (streamMessage.kind === "snapshot") this.applySnapshot(streamMessage);
+      else if (streamMessage.kind === "bus") this.applyBusEvent(streamMessage.event);
     },
 
     /** Um evento do bus (mesmo formato que stream.luau::apply_bus trata) —
      * unit variants chegam como string crua (ex. "DeployQueueChanged"). */
-    applyBusEvent(ev) {
-      if (ev === "DeployQueueChanged") {
+    applyBusEvent(busEvent) {
+      if (busEvent === "DeployQueueChanged") {
         this.refreshNow();
         return;
       }
-      if (!ev || typeof ev !== "object") return;
-      if (ev.DockerCleanupCompleted) {
-        const p = ev.DockerCleanupCompleted;
+      if (!busEvent || typeof busEvent !== "object") return;
+      if (busEvent.DockerCleanupCompleted) {
+        const cleanupEvent = busEvent.DockerCleanupCompleted;
         this.dockerCleanupRunning = false;
-        this.dockerCleanupLastRunText = dockerCleanupLastRunSummary({ at: p.at, results: p.results });
-        this.dockerCleanupLastRunAtRaw = p.at;
-      } else if (ev.ContainerMetrics) {
-        const p = ev.ContainerMetrics;
-        if (p.service_id) this.metricsById[p.service_id] = p;
-      } else if (ev.SystemMetrics) {
-        const s = ev.SystemMetrics;
-        this.hostCpu = `${(s.cpu_percent || 0).toFixed(0)}%`;
-        this.hostMemory = `${fmtBytes(s.mem_used_bytes)} / ${fmtBytes(s.mem_total_bytes)}`;
-        this.hostDisk = `${fmtBytes(s.disk_used_bytes)} / ${fmtBytes(s.disk_total_bytes)}`;
-        this.hostLoad = `${(s.load_avg_1 || 0).toFixed(2)} ${(s.load_avg_5 || 0).toFixed(2)} ${(s.load_avg_15 || 0).toFixed(2)}`;
-      } else if (ev.DeployStateChanged) {
+        this.dockerCleanupLastRunText = dockerCleanupLastRunSummary({ at: cleanupEvent.at, results: cleanupEvent.results });
+        this.dockerCleanupLastRunAtRaw = cleanupEvent.at;
+      } else if (busEvent.ContainerMetrics) {
+        const containerMetrics = busEvent.ContainerMetrics;
+        if (containerMetrics.service_id) this.metricsById[containerMetrics.service_id] = containerMetrics;
+      } else if (busEvent.SystemMetrics) {
+        const systemMetrics = busEvent.SystemMetrics;
+        this.hostCpu = `${(systemMetrics.cpu_percent || 0).toFixed(0)}%`;
+        this.hostMemory = `${formatBytes(systemMetrics.mem_used_bytes)} / ${formatBytes(systemMetrics.mem_total_bytes)}`;
+        this.hostDisk = `${formatBytes(systemMetrics.disk_used_bytes)} / ${formatBytes(systemMetrics.disk_total_bytes)}`;
+        this.hostLoad = `${(systemMetrics.load_avg_1 || 0).toFixed(2)} ${(systemMetrics.load_avg_5 || 0).toFixed(2)} ${(systemMetrics.load_avg_15 || 0).toFixed(2)}`;
+      } else if (busEvent.DeployStateChanged) {
         // O evento sempre carregou `message` — o MOTIVO da falha (texto do
         // docker build, healthcheck que não passou…) — e nenhum dos dois
         // clientes o lia. Sem isto, a tela do serviço só via a linha do
         // deployment virar `Failed` no snapshot de 2s, sem hipótese nenhuma
         // do porquê. Ver docs/plano-erro-de-deploy-invisivel.md.
-        const d = ev.DeployStateChanged;
+        const deployEvent = busEvent.DeployStateChanged;
         const terminal =
-          d.state === "Live" || d.state === "Failed" || d.state === "Stopped";
-        const motivo = shortReason(d.message);
-        if (d.service_id && d.service_id === this.selectedServiceId) {
+          deployEvent.state === "Live" || deployEvent.state === "Failed" || deployEvent.state === "Stopped";
+        const motivo = shortReason(deployEvent.message);
+        if (deployEvent.service_id && deployEvent.service_id === this.selectedServiceId) {
           if (terminal) {
             this.serviceMessage =
-              d.state === "Live"
+              deployEvent.state === "Live"
                 ? "deploy concluído"
                 : motivo
                   ? `deploy falhou: ${motivo}`
-                  : `deploy: ${d.state}`;
-            this.fetchServiceDetail(d.service_id);
+                  : `deploy: ${deployEvent.state}`;
+            this.fetchServiceDetail(deployEvent.service_id);
           } else {
-            this.serviceMessage = `deploy · ${d.state}`;
+            this.serviceMessage = `deploy · ${deployEvent.state}`;
           }
         }
         // Desfecho do deploy que ESTE usuário disparou, mesmo que ele já
@@ -439,34 +439,34 @@ document.addEventListener("alpine:init", () => {
         // outra coisa enquanto o build roda. A GUI desktop resolve isso com
         // notificação do SO mais toast; no browser ficamos no toast (uma
         // Notification exigiria pedir permissão, que ninguém pediu).
-        if (terminal && d.service_id && d.service_id === this.deployTrackId) {
+        if (terminal && deployEvent.service_id && deployEvent.service_id === this.deployTrackId) {
           this.deployTrackId = null;
-          const nome = this.serviceNameById(d.service_id);
-          if (d.state === "Live") {
+          const nome = this.serviceNameById(deployEvent.service_id);
+          if (deployEvent.state === "Live") {
             this.toastOk(`${nome}: deploy concluído`);
           } else {
-            this.toastError(`${nome}: ${motivo || "deploy " + d.state}`);
+            this.toastError(`${nome}: ${motivo || "deploy " + deployEvent.state}`);
           }
         }
       }
     },
 
-    applySnapshot(msg) {
-      this.snap = msg;
-      const st = msg.status;
-      if (st) {
-        this.daemonVersion = st.version || "";
-        this.daemonUptime = fmtUptime(st.uptime_secs);
-        this.servicesLabel = `${st.services_running || 0}/${st.services_total || 0}`;
+    applySnapshot(snapshot) {
+      this.snap = snapshot;
+      const daemonStatus = snapshot.status;
+      if (daemonStatus) {
+        this.daemonVersion = daemonStatus.version || "";
+        this.daemonUptime = formatUptime(daemonStatus.uptime_secs);
+        this.servicesLabel = `${daemonStatus.services_running || 0}/${daemonStatus.services_total || 0}`;
       }
       const byId = {};
-      for (const s of msg.jobs || []) byId[s.job.id] = s.job;
+      for (const job of snapshot.jobs || []) byId[job.job.id] = job.job;
       this.jobsById = byId;
       this.dataLoading = false;
     },
 
-    searchChanged(v) {
-      this.search = v || "";
+    searchChanged(searchText) {
+      this.search = searchText || "";
     },
 
     async stopAll() {
@@ -475,34 +475,34 @@ document.addEventListener("alpine:init", () => {
       }
       if (!this.api) return;
       this.statusLine = "parando todos…";
-      const r = await this.api.rpcChecked("StopAllManaged");
-      this.statusLine = r.ok ? "todos os serviços parados" : "falha ao parar";
-      this.toastResult(r, "todos os serviços parados");
+      const stopAllManagedResponse = await this.api.rpcChecked("StopAllManaged");
+      this.statusLine = stopAllManagedResponse.ok ? "todos os serviços parados" : "falha ao parar";
+      this.toastResult(stopAllManagedResponse, "todos os serviços parados");
     },
 
     async clearFinished() {
       if (!this.snap) return;
-      const ids = (this.snap.deployments || [])
-        .map((s) => s.deployment)
-        .filter((d) => d.state === "Stopped" || d.state === "Failed")
-        .map((d) => d.id);
-      if (ids.length === 0) {
+      const deploymentIds = (this.snap.deployments || [])
+        .map((deployment) => deployment.deployment)
+        .filter((deployment) => deployment.state === "Stopped" || deployment.state === "Failed")
+        .map((deployment) => deployment.id);
+      if (deploymentIds.length === 0) {
         this.toastWarn("nada para limpar");
         return;
       }
       if (
         !confirm(
-          `Remove do histórico ${ids.length} deployment(s) em estado Stopped ou Failed, e seus build logs. Ação irreversível.`
+          `Remove do histórico ${deploymentIds.length} deployment(s) em estado Stopped ou Failed, e seus build logs. Ação irreversível.`
         )
       ) {
         return;
       }
-      this.deploymentsMessage = `removendo ${ids.length} deployment(s)…`;
+      this.deploymentsMessage = `removendo ${deploymentIds.length} deployment(s)…`;
       let removed = 0,
         failed = 0;
-      for (const id of ids) {
-        const r = await this.api.rpcChecked({ DeployDelete: { deployment_id: id } });
-        if (r.ok) removed++;
+      for (const deploymentId of deploymentIds) {
+        const deployDeleteResponse = await this.api.rpcChecked({ DeployDelete: { deployment_id: deploymentId } });
+        if (deployDeleteResponse.ok) removed++;
         else failed++;
       }
       this.deploymentsMessage = "";
@@ -512,10 +512,10 @@ document.addEventListener("alpine:init", () => {
 
     async refreshNow() {
       if (!this.api) return;
-      const r = await this.api.rpc("Snapshot");
-      if (r.ok && r.value && typeof r.value.Snapshot === "string") {
+      const snapshotResponse = await this.api.rpc("Snapshot");
+      if (snapshotResponse.ok && snapshotResponse.value && typeof snapshotResponse.value.Snapshot === "string") {
         try {
-          this.applySnapshot(JSON.parse(r.value.Snapshot));
+          this.applySnapshot(JSON.parse(snapshotResponse.value.Snapshot));
         } catch {
           /* snapshot malformado — ignora, o próximo tick de 2s corrige */
         }
@@ -526,75 +526,75 @@ document.addEventListener("alpine:init", () => {
 
     async createProject(name, description) {
       if (!name || !name.trim()) return { ok: false, error: "nome obrigatório" };
-      const r = await this.api.rpcChecked({
+      const projectCreateResponse = await this.api.rpcChecked({
         ProjectCreate: { name: name.trim(), description: description?.trim() || null },
       });
-      if (r.ok) {
+      if (projectCreateResponse.ok) {
         this.toastOk("projeto criado");
         await this.refreshNow();
       }
-      return r;
+      return projectCreateResponse;
     },
 
-    async updateProject(id, name, description) {
-      const r = await this.api.rpcChecked({
-        ProjectUpdate: { id, name: name.trim(), description: description?.trim() || null },
+    async updateProject(projectId, name, description) {
+      const projectUpdateResponse = await this.api.rpcChecked({
+        ProjectUpdate: { id: projectId, name: name.trim(), description: description?.trim() || null },
       });
-      this.toastResult(r, "projeto atualizado");
-      if (r.ok) await this.refreshNow();
-      return r;
+      this.toastResult(projectUpdateResponse, "projeto atualizado");
+      if (projectUpdateResponse.ok) await this.refreshNow();
+      return projectUpdateResponse;
     },
 
-    async deleteProject(id) {
+    async deleteProject(projectId) {
       if (!confirm("Remover este projeto? Só funciona se não houver serviços nele.")) {
         return { ok: false, error: "cancelado" };
       }
-      const r = await this.api.rpcChecked({ ProjectDelete: { id } });
-      this.toastResult(r, "projeto removido");
-      if (r.ok) {
+      const projectDeleteResponse = await this.api.rpcChecked({ ProjectDelete: { id: projectId } });
+      this.toastResult(projectDeleteResponse, "projeto removido");
+      if (projectDeleteResponse.ok) {
         await this.refreshNow();
         this.nav("projects");
       }
-      return r;
+      return projectDeleteResponse;
     },
 
-    openProject(id) {
-      this.selectedProjectId = id;
+    openProject(projectId) {
+      this.selectedProjectId = projectId;
       this.nav("project");
     },
 
     async saveProjectEnv(envVars, envComments) {
-      const r = await this.api.rpcChecked({
+      const projectEnvSetResponse = await this.api.rpcChecked({
         ProjectEnvSet: {
           project_id: this.selectedProjectId,
           env_vars: envVars,
           env_comments: envComments,
         },
       });
-      this.toastResult(r, "variáveis salvas");
-      if (r.ok) await this.refreshNow();
-      return r;
+      this.toastResult(projectEnvSetResponse, "variáveis salvas");
+      if (projectEnvSetResponse.ok) await this.refreshNow();
+      return projectEnvSetResponse;
     },
 
     async addSecret(name, value) {
       if (!name.trim()) return { ok: false, error: "nome obrigatório" };
-      const r = await this.api.rpcChecked({
+      const secretSetResponse = await this.api.rpcChecked({
         SecretSet: { project_id: this.selectedProjectId, name: name.trim(), value },
       });
-      this.toastResult(r, `secret ${name.trim()} salvo`);
-      if (r.ok) await this.refreshNow();
-      return r;
+      this.toastResult(secretSetResponse, `secret ${name.trim()} salvo`);
+      if (secretSetResponse.ok) await this.refreshNow();
+      return secretSetResponse;
     },
 
     async deleteSecret(name) {
       if (!confirm(`Remover o secret "${name}"? Serviços que o referenciam vão falhar no próximo deploy.`)) {
         return;
       }
-      const r = await this.api.rpcChecked({
+      const secretDeleteResponse = await this.api.rpcChecked({
         SecretDelete: { project_id: this.selectedProjectId, name },
       });
-      this.toastResult(r, `secret ${name} removido`);
-      if (r.ok) await this.refreshNow();
+      this.toastResult(secretDeleteResponse, `secret ${name} removido`);
+      if (secretDeleteResponse.ok) await this.refreshNow();
     },
 
     // ── Services ─────────────────────────────────────────────────────
@@ -613,8 +613,8 @@ document.addEventListener("alpine:init", () => {
     closeExportWin() {
       this.exportWin = null;
     },
-    openProjectWin(p) {
-      this.projectWin = p ? { id: p.id, name: p.name, description: p.description || "" } : {};
+    openProjectWin(project) {
+      this.projectWin = project ? { id: project.id, name: project.name, description: project.description || "" } : {};
     },
     closeProjectWin() {
       this.projectWin = null;
@@ -623,14 +623,14 @@ document.addEventListener("alpine:init", () => {
     /** Catálogos do wizard (bancos/brokers/templates) — buscados uma vez ao
      * abrir a tela "Novo serviço" (ver screens/new_service.js). */
     async fetchWizardCatalog(search) {
-      const r = await this.api.rpc({ WizardCatalog: { search: search || "" } });
-      if (!r.ok || !r.value?.WizardCatalog) return { dbs: [], brokers: [], templates: [] };
-      const c = r.value.WizardCatalog;
+      const wizardCatalogResponse = await this.api.rpc({ WizardCatalog: { search: search || "" } });
+      if (!wizardCatalogResponse.ok || !wizardCatalogResponse.value?.WizardCatalog) return { dbs: [], brokers: [], templates: [] };
+      const catalog = wizardCatalogResponse.value.WizardCatalog;
       try {
         return {
-          dbs: JSON.parse(c.dbs),
-          brokers: JSON.parse(c.brokers),
-          templates: JSON.parse(c.templates),
+          dbs: JSON.parse(catalog.dbs),
+          brokers: JSON.parse(catalog.brokers),
+          templates: JSON.parse(catalog.templates),
         };
       } catch {
         return { dbs: [], brokers: [], templates: [] };
@@ -641,17 +641,17 @@ document.addEventListener("alpine:init", () => {
      * daemon (shared::wizard::build_spec) monta o ServiceSpec certo conforme
      * `req.kind`. Usado por Compose/Database/Broker/Template: o backend gera
      * o compose e as env vars corretas (mesma lógica do client iced). */
-    async wizardCreate(req) {
-      const r = await this.api.rpcChecked({ WizardCreate: req });
-      if (r.ok) {
+    async wizardCreate(createRequest) {
+      const wizardCreateResponse = await this.api.rpcChecked({ WizardCreate: createRequest });
+      if (wizardCreateResponse.ok) {
         this.toastOk("serviço criado");
         await this.refreshNow();
         this.closeNewService();
-        const created = r.value?.Service;
+        const created = wizardCreateResponse.value?.Service;
         if (created) this.openService(created.id);
         else this.nav("project");
       }
-      return r;
+      return wizardCreateResponse;
     },
 
     /** `source` já é o `ServiceSource` externally-tagged. Usado só pelo tipo
@@ -686,76 +686,76 @@ document.addEventListener("alpine:init", () => {
         db_kind: null,
         domains: [],
       };
-      const r = await this.api.rpcChecked({ ServiceCreate: spec });
-      if (r.ok) {
+      const serviceCreateResponse = await this.api.rpcChecked({ ServiceCreate: spec });
+      if (serviceCreateResponse.ok) {
         this.toastOk("serviço criado");
         await this.refreshNow();
         this.closeNewService();
-        const created = r.value?.Service;
+        const created = serviceCreateResponse.value?.Service;
         if (created) this.openService(created.id);
         else this.nav("project");
       }
-      return r;
+      return serviceCreateResponse;
     },
 
-    async openService(id) {
-      this.selectedServiceId = id;
+    async openService(serviceId) {
+      this.selectedServiceId = serviceId;
       this.serviceTab = "general";
       this.serviceMessage = "";
       this.serviceDeployments = [];
       this.serviceLoading = true;
       this.nav("service");
-      await this.fetchServiceDetail(id);
+      await this.fetchServiceDetail(serviceId);
     },
 
-    async fetchServiceDetail(id) {
-      const r = await this.api.rpc({ ServiceGet: { id } });
-      if (!r.ok || !r.value?.Service) {
-        this.serviceMessage = r.ok ? "serviço não encontrado" : r.error;
+    async fetchServiceDetail(serviceId) {
+      const serviceGetResponse = await this.api.rpc({ ServiceGet: { id: serviceId } });
+      if (!serviceGetResponse.ok || !serviceGetResponse.value?.Service) {
+        this.serviceMessage = serviceGetResponse.ok ? "serviço não encontrado" : serviceGetResponse.error;
         this.serviceLoading = false;
         return;
       }
-      this.serviceDetail = r.value.Service;
-      const rh = await this.api.rpc({ DeployHistory: { service_id: id, limit: 30 } });
-      this.serviceDeployments = (rh.ok && rh.value?.Deployments) || [];
+      this.serviceDetail = serviceGetResponse.value.Service;
+      const deployHistoryResponse = await this.api.rpc({ DeployHistory: { service_id: serviceId, limit: 30 } });
+      this.serviceDeployments = (deployHistoryResponse.ok && deployHistoryResponse.value?.Deployments) || [];
       this.serviceLoading = false;
     },
 
     async saveServiceSpec(spec, okMessage) {
-      const id = this.selectedServiceId;
-      const r = await this.api.rpcChecked({ ServiceUpdate: { id, spec } });
-      if (r.ok) {
+      const serviceId = this.selectedServiceId;
+      const serviceUpdateResponse = await this.api.rpcChecked({ ServiceUpdate: { id: serviceId, spec } });
+      if (serviceUpdateResponse.ok) {
         this.toastOk(okMessage || "salvo");
-        await this.fetchServiceDetail(id);
+        await this.fetchServiceDetail(serviceId);
         await this.refreshNow();
       } else {
-        this.toastError("erro: " + r.error);
+        this.toastError("erro: " + serviceUpdateResponse.error);
       }
-      return r;
+      return serviceUpdateResponse;
     },
 
-    async deleteService(id) {
+    async deleteService(serviceId) {
       if (!confirm("Remover este serviço? Para o container e apaga o histórico. Ação irreversível.")) {
         return;
       }
-      const r = await this.api.rpcChecked({ ServiceDelete: { id } });
-      if (r.ok) {
+      const serviceDeleteResponse = await this.api.rpcChecked({ ServiceDelete: { id: serviceId } });
+      if (serviceDeleteResponse.ok) {
         await this.refreshNow();
         this.nav("project");
         this.toastOk("serviço removido");
       } else {
-        this.toastError("erro ao remover: " + r.error);
+        this.toastError("erro ao remover: " + serviceDeleteResponse.error);
       }
     },
 
     /** Botão "Parar" do card de serviço (grid do projeto) — porta de
      * handlers/projects.luau::svc_stop_id. */
-    async stopService(id) {
+    async stopService(serviceId) {
       if (!confirm("Parar serviço? O tráfego para ele será interrompido até um novo deploy.")) {
         return;
       }
-      const r = await this.api.rpcChecked({ ServiceStop: { service_id: id } });
-      this.toastResult(r, "serviço parado");
+      const serviceStopResponse = await this.api.rpcChecked({ ServiceStop: { service_id: serviceId } });
+      this.toastResult(serviceStopResponse, "serviço parado");
       await this.refreshNow();
     },
 
@@ -764,10 +764,10 @@ document.addEventListener("alpine:init", () => {
      * NÃO para o container (o handler só apaga linhas do DB e rotas de
      * ingress — ver service_delete.rs), então parar primeiro evita deixar
      * um container órfão rodando fora do controle do rustploy. */
-    async stopAndDeleteService(id) {
+    async stopAndDeleteService(serviceId) {
       const deploymentJobs = (this.snap?.jobs || [])
-        .filter((s) => s.job.trigger_service_id === id)
-        .map((s) => s.job.name)
+        .filter((job) => job.job.trigger_service_id === serviceId)
+        .map((job) => job.job.name)
         .sort();
       let message = "O serviço será parado e removido.";
       if (deploymentJobs.length > 0) {
@@ -776,51 +776,51 @@ document.addEventListener("alpine:init", () => {
       message += " Essa ação não pode ser desfeita.";
       if (!confirm(message)) return;
 
-      const r1 = await this.api.rpcChecked({ ServiceStop: { service_id: id } });
-      if (!r1.ok) {
-        this.toastError("erro ao parar: " + r1.error);
+      const serviceStopResponse = await this.api.rpcChecked({ ServiceStop: { service_id: serviceId } });
+      if (!serviceStopResponse.ok) {
+        this.toastError("erro ao parar: " + serviceStopResponse.error);
         return;
       }
-      const r2 = await this.api.rpcChecked({ ServiceDelete: { id } });
-      if (r2.ok) this.toastOk("serviço parado e removido");
-      else this.toastError("erro ao remover: " + r2.error);
+      const serviceDeleteResponse = await this.api.rpcChecked({ ServiceDelete: { id: serviceId } });
+      if (serviceDeleteResponse.ok) this.toastOk("serviço parado e removido");
+      else this.toastError("erro ao remover: " + serviceDeleteResponse.error);
       await this.refreshNow();
     },
 
     async deployStart() {
-      const id = this.selectedServiceId;
+      const serviceId = this.selectedServiceId;
       this.serviceMessage = "iniciando deploy…";
-      const r = await this.api.rpcChecked({ DeployStart: { service_id: id } });
+      const deployStartResponse = await this.api.rpcChecked({ DeployStart: { service_id: serviceId } });
       this.serviceMessage = "";
       // Guarda quem o USUÁRIO mandou deployar: o desfecho (DeployStateChanged)
       // vira toast mesmo que ele já tenha navegado para outra tela — é o par
       // do `State.deploy_track` da GUI desktop.
-      if (r.ok) this.deployTrackId = id;
-      this.toastResult(r, "deploy iniciado");
-      await this.fetchServiceDetail(id);
+      if (deployStartResponse.ok) this.deployTrackId = serviceId;
+      this.toastResult(deployStartResponse, "deploy iniciado");
+      await this.fetchServiceDetail(serviceId);
       await this.refreshNow();
     },
 
     async deployAbort(deploymentId) {
-      const r = await this.api.rpcChecked({ DeployAbort: { deployment_id: deploymentId } });
-      this.toastResult(r, "deploy cancelado");
+      const deployAbortResponse = await this.api.rpcChecked({ DeployAbort: { deployment_id: deploymentId } });
+      this.toastResult(deployAbortResponse, "deploy cancelado");
       await this.fetchServiceDetail(this.selectedServiceId);
     },
 
     async deployRollback() {
       if (!confirm("Reverter para o deploy anterior?")) return;
-      const id = this.selectedServiceId;
-      const r = await this.api.rpcChecked({ DeployRollback: { service_id: id } });
-      if (r.ok) this.deployTrackId = id;
-      this.toastResult(r, "rollback iniciado");
-      await this.fetchServiceDetail(id);
+      const serviceId = this.selectedServiceId;
+      const deployRollbackResponse = await this.api.rpcChecked({ DeployRollback: { service_id: serviceId } });
+      if (deployRollbackResponse.ok) this.deployTrackId = serviceId;
+      this.toastResult(deployRollbackResponse, "rollback iniciado");
+      await this.fetchServiceDetail(serviceId);
     },
 
     async deleteDeployment(deploymentId) {
-      const r = await this.api.rpcChecked({ DeployDelete: { deployment_id: deploymentId } });
-      this.toastResult(r, "deployment removido");
-      if (r.ok) await this.fetchServiceDetail(this.selectedServiceId);
-      return r;
+      const deployDeleteResponse = await this.api.rpcChecked({ DeployDelete: { deployment_id: deploymentId } });
+      this.toastResult(deployDeleteResponse, "deployment removido");
+      if (deployDeleteResponse.ok) await this.fetchServiceDetail(this.selectedServiceId);
+      return deployDeleteResponse;
     },
 
     // ── Deploy Engine (fila global) ─────────────────────────────────────
@@ -830,27 +830,27 @@ document.addEventListener("alpine:init", () => {
     /** Cancela um deploy que ainda espera na fila — reaproveita DeployAbort
      * (o daemon já trata remoção da fila como caso do abort). */
     async queueCancel(deploymentId) {
-      const r = await this.api.rpcChecked({ DeployAbort: { deployment_id: deploymentId } });
-      this.toastResult(r, "deploy cancelado");
+      const deployAbortResponse = await this.api.rpcChecked({ DeployAbort: { deployment_id: deploymentId } });
+      this.toastResult(deployAbortResponse, "deploy cancelado");
       await this.refreshNow();
     },
 
     async queuePromote(deploymentId) {
-      const r = await this.api.rpcChecked({ DeployQueuePromote: { deployment_id: deploymentId } });
-      this.toastResult(r, "deploy movido para o topo da fila");
+      const deployQueuePromoteResponse = await this.api.rpcChecked({ DeployQueuePromote: { deployment_id: deploymentId } });
+      this.toastResult(deployQueuePromoteResponse, "deploy movido para o topo da fila");
       await this.refreshNow();
     },
 
     async queueReorder(order) {
-      const r = await this.api.rpcChecked({ DeployQueueReorder: { order } });
-      this.toastResult(r, "fila reordenada");
+      const deployQueueReorderResponse = await this.api.rpcChecked({ DeployQueueReorder: { order } });
+      this.toastResult(deployQueueReorderResponse, "fila reordenada");
       await this.refreshNow();
     },
 
     async queueTogglePause() {
       const paused = !!this.snap?.engine?.paused;
-      const r = await this.api.rpcChecked({ DeployQueuePause: { paused: !paused } });
-      this.toastResult(r, paused ? "fila retomada" : "fila pausada");
+      const deployQueuePauseResponse = await this.api.rpcChecked({ DeployQueuePause: { paused: !paused } });
+      this.toastResult(deployQueuePauseResponse, paused ? "fila retomada" : "fila pausada");
       await this.refreshNow();
     },
 
@@ -862,56 +862,56 @@ document.addEventListener("alpine:init", () => {
     /** Toast de um prune, com o Response::PruneResult{count,reclaimed_bytes}
      * quando o daemon o devolve; sem esse payload (algum prune que responde
      * só Ok), mensagem genérica. */
-    toastPrune(r) {
-      if (!r.ok) return this.toastError("erro: " + r.error);
-      const pr = r.value?.PruneResult;
+    toastPrune(result) {
+      if (!result.ok) return this.toastError("erro: " + result.error);
+      const pruneResult = result.value?.PruneResult;
       return this.toastOk(
-        pr
-          ? `removidos: ${pr.count} · ${fmtBytes(pr.reclaimed_bytes)} liberados`
+        pruneResult
+          ? `removidos: ${pruneResult.count} · ${formatBytes(pruneResult.reclaimed_bytes)} liberados`
           : "limpeza concluída"
       );
     },
 
     async dockerPruneContainers() {
-      const r = await this.api.rpcChecked("PruneContainers");
-      this.toastPrune(r);
+      const pruneContainersResponse = await this.api.rpcChecked("PruneContainers");
+      this.toastPrune(pruneContainersResponse);
       await this.refreshNow();
     },
     async dockerPruneImages() {
-      const r = await this.api.rpcChecked({ PruneImages: { all: this.pruneAllImages } });
-      this.toastPrune(r);
+      const pruneImagesResponse = await this.api.rpcChecked({ PruneImages: { all: this.pruneAllImages } });
+      this.toastPrune(pruneImagesResponse);
       await this.refreshNow();
     },
     async dockerPruneVolumes() {
-      const r = await this.api.rpcChecked({ PruneVolumes: { all: this.pruneAllVolumes } });
-      this.toastPrune(r);
+      const pruneVolumesResponse = await this.api.rpcChecked({ PruneVolumes: { all: this.pruneAllVolumes } });
+      this.toastPrune(pruneVolumesResponse);
       await this.refreshNow();
     },
     async dockerPruneNetworks() {
-      const r = await this.api.rpcChecked("PruneNetworks");
-      this.toastPrune(r);
+      const pruneNetworksResponse = await this.api.rpcChecked("PruneNetworks");
+      this.toastPrune(pruneNetworksResponse);
       await this.refreshNow();
     },
 
-    async dockerRemoveContainer(id) {
-      const r = await this.api.rpcChecked({ RemoveContainer: { id } });
-      this.toastResult(r, "removido");
-      if (r.ok) await this.refreshNow();
+    async dockerRemoveContainer(containerId) {
+      const removeContainerResponse = await this.api.rpcChecked({ RemoveContainer: { id: containerId } });
+      this.toastResult(removeContainerResponse, "removido");
+      if (removeContainerResponse.ok) await this.refreshNow();
     },
-    async dockerRemoveImage(id) {
-      const r = await this.api.rpcChecked({ RemoveImage: { id } });
-      this.toastResult(r, "removido");
-      if (r.ok) await this.refreshNow();
+    async dockerRemoveImage(imageId) {
+      const removeImageResponse = await this.api.rpcChecked({ RemoveImage: { id: imageId } });
+      this.toastResult(removeImageResponse, "removido");
+      if (removeImageResponse.ok) await this.refreshNow();
     },
     async dockerRemoveVolume(name) {
-      const r = await this.api.rpcChecked({ RemoveVolume: { name } });
-      this.toastResult(r, "removido");
-      if (r.ok) await this.refreshNow();
+      const removeVolumeResponse = await this.api.rpcChecked({ RemoveVolume: { name } });
+      this.toastResult(removeVolumeResponse, "removido");
+      if (removeVolumeResponse.ok) await this.refreshNow();
     },
-    async dockerRemoveNetwork(id) {
-      const r = await this.api.rpcChecked({ RemoveNetwork: { id } });
-      this.toastResult(r, "removido");
-      if (r.ok) await this.refreshNow();
+    async dockerRemoveNetwork(networkId) {
+      const removeNetworkResponse = await this.api.rpcChecked({ RemoveNetwork: { id: networkId } });
+      this.toastResult(removeNetworkResponse, "removido");
+      if (removeNetworkResponse.ok) await this.refreshNow();
     },
 
     /** Troca a sub-aba Docker; ao entrar em "registry" busca os tokens (não
@@ -926,8 +926,8 @@ document.addEventListener("alpine:init", () => {
     async registryOpenRepo(name) {
       this.registrySelectedRepo = name;
       this.registryTagsLoading = true;
-      const r = await this.api.rpc({ RegistryTagList: { repo: name } });
-      this.registryTags = (r.ok && r.value?.RegistryTags) || [];
+      const registryTagListResponse = await this.api.rpc({ RegistryTagList: { repo: name } });
+      this.registryTags = (registryTagListResponse.ok && registryTagListResponse.value?.RegistryTags) || [];
       this.registryTagsLoading = false;
     },
     registryCloseRepo() {
@@ -938,68 +938,68 @@ document.addEventListener("alpine:init", () => {
     /** Sem rpcChecked de propósito (mesmo comportamento silencioso do Luau —
      * falha aqui não é acionável pelo usuário, só deixa a lista vazia). */
     async registryRefreshTokens() {
-      const r = await this.api.rpc("RegistryTokenList");
-      this.registryTokens = (r.ok && r.value?.RegistryTokens) || [];
+      const registryTokenListResponse = await this.api.rpc("RegistryTokenList");
+      this.registryTokens = (registryTokenListResponse.ok && registryTokenListResponse.value?.RegistryTokens) || [];
     },
 
     async registryRemoveTag(tag) {
       const repo = this.registrySelectedRepo;
-      const r = await this.api.rpcChecked({ RegistryTagDelete: { repo, tag } });
-      this.toastResult(r, `tag ${tag} removida`);
-      if (r.ok) {
+      const registryTagDeleteResponse = await this.api.rpcChecked({ RegistryTagDelete: { repo, tag } });
+      this.toastResult(registryTagDeleteResponse, `tag ${tag} removida`);
+      if (registryTagDeleteResponse.ok) {
         await this.registryOpenRepo(repo);
         await this.refreshNow();
       }
     },
     async registryRemoveRepo(name) {
-      const r = await this.api.rpcChecked({ RegistryRepoDelete: { repo: name } });
-      this.toastResult(r, `repositório ${name} removido`);
-      if (r.ok) {
+      const registryRepoDeleteResponse = await this.api.rpcChecked({ RegistryRepoDelete: { repo: name } });
+      this.toastResult(registryRepoDeleteResponse, `repositório ${name} removido`);
+      if (registryRepoDeleteResponse.ok) {
         if (this.registrySelectedRepo === name) this.registryCloseRepo();
         await this.refreshNow();
       }
     },
     async registryGc() {
-      const r = await this.api.rpcChecked("RegistryGc");
-      if (r.ok) {
-        const gc = r.value?.RegistryGcResult;
+      const registryGcResponse = await this.api.rpcChecked("RegistryGc");
+      if (registryGcResponse.ok) {
+        const gcResult = registryGcResponse.value?.RegistryGcResult;
         this.toastOk(
-          gc
-            ? `GC: ${gc.blobs_removed} arquivo(s) removido(s) · ${fmtBytes(gc.bytes_freed)} liberados`
+          gcResult
+            ? `GC: ${gcResult.blobs_removed} arquivo(s) removido(s) · ${formatBytes(gcResult.bytes_freed)} liberados`
             : "GC concluído"
         );
         await this.refreshNow();
       } else {
-        this.toastError("erro: " + r.error);
+        this.toastError("erro: " + registryGcResponse.error);
       }
     },
     async registryRemoveToken(name) {
-      const r = await this.api.rpcChecked({ RegistryTokenRevoke: { name } });
-      this.toastResult(r, `token ${name} revogado`);
-      if (r.ok) await this.registryRefreshTokens();
+      const registryTokenRevokeResponse = await this.api.rpcChecked({ RegistryTokenRevoke: { name } });
+      this.toastResult(registryTokenRevokeResponse, `token ${name} revogado`);
+      if (registryTokenRevokeResponse.ok) await this.registryRefreshTokens();
     },
 
     /** Devolve {ok, secret} pro modal de "novo token" — o segredo só existe
      * nesta resposta, nunca mais é recuperável depois. */
     async registryCreateToken(name, scope) {
-      const r = await this.api.rpcChecked({ RegistryTokenCreate: { name, scope } });
-      if (!r.ok) return { ok: false, error: r.error };
+      const registryTokenCreateResponse = await this.api.rpcChecked({ RegistryTokenCreate: { name, scope } });
+      if (!registryTokenCreateResponse.ok) return { ok: false, error: registryTokenCreateResponse.error };
       await this.registryRefreshTokens();
-      return { ok: true, secret: r.value.RegistryTokenCreated.secret };
+      return { ok: true, secret: registryTokenCreateResponse.value.RegistryTokenCreated.secret };
     },
 
     // ── Schedules (jobs one-shot) ────────────────────────────────────────
     // Porta de handlers/jobs.luau.
 
-    async jobRunNow(id) {
-      if (this.jobsInflight[id]) return;
-      this.jobsInflight[id] = true;
+    async jobRunNow(jobId) {
+      if (this.jobsInflight[jobId]) return;
+      this.jobsInflight[jobId] = true;
       try {
-        const r = await this.api.rpcChecked({ JobRunNow: { id } });
-        this.toastResult(r, "job disparado");
+        const jobRunNowResponse = await this.api.rpcChecked({ JobRunNow: { id: jobId } });
+        this.toastResult(jobRunNowResponse, "job disparado");
         await this.refreshNow();
       } finally {
-        delete this.jobsInflight[id];
+        delete this.jobsInflight[jobId];
       }
     },
 
@@ -1011,20 +1011,20 @@ document.addEventListener("alpine:init", () => {
      * NotFound nesse caso (inofensivo, só a mensagem de erro). */
     async jobRunCancel(jobRunId) {
       if (!jobRunId) return;
-      const r = await this.api.rpcChecked({ JobRunCancel: { job_run_id: jobRunId } });
-      this.toastResult(r, "cancelamento solicitado");
+      const jobRunCancelResponse = await this.api.rpcChecked({ JobRunCancel: { job_run_id: jobRunId } });
+      this.toastResult(jobRunCancelResponse, "cancelamento solicitado");
       await this.refreshNow();
     },
 
     /** Reenvia o Job inteiro (só `enabled` inverte) — o daemon não tem um
      * PATCH parcial; mesma limitação do cliente iced. */
-    async jobToggle(id) {
-      const job = this.jobsById[id];
+    async jobToggle(jobId) {
+      const job = this.jobsById[jobId];
       if (!job) {
         this.toastWarn("job não encontrado no snapshot atual");
         return;
       }
-      const r = await this.api.rpcChecked({
+      const jobUpdateResponse = await this.api.rpcChecked({
         JobUpdate: {
           id: job.id,
           name: job.name,
@@ -1037,23 +1037,23 @@ document.addEventListener("alpine:init", () => {
           recurrence: job.recurrence,
         },
       });
-      this.toastResult(r, job.enabled ? "job desativado" : "job ativado");
+      this.toastResult(jobUpdateResponse, job.enabled ? "job desativado" : "job ativado");
       await this.refreshNow();
     },
 
-    async jobDelete(id) {
+    async jobDelete(jobId) {
       if (!confirm("Remover este job? Ação irreversível.")) return;
-      const r = await this.api.rpcChecked({ JobDelete: { id } });
-      this.toastResult(r, "job removido");
+      const jobDeleteResponse = await this.api.rpcChecked({ JobDelete: { id: jobId } });
+      this.toastResult(jobDeleteResponse, "job removido");
       await this.refreshNow();
     },
 
     /** `payload` = { project_id, trigger_service_id, name, compose,
      * main_service, recurrence }. */
     async jobCreate(payload) {
-      const r = await this.api.rpcChecked({ JobCreate: payload });
-      if (r.ok) await this.refreshNow();
-      return r;
+      const jobCreateResponse = await this.api.rpcChecked({ JobCreate: payload });
+      if (jobCreateResponse.ok) await this.refreshNow();
+      return jobCreateResponse;
     },
 
     // ── Wizard "novo job" (ver campos no bloco de estado acima) ──────────
@@ -1066,7 +1066,7 @@ document.addEventListener("alpine:init", () => {
      * re-fetch (diferente do Luau, que precisa pré-semear a janela isolada). */
     get newJobServicesFiltered() {
       return (this.snap?.services || []).filter(
-        (e) => e.service.spec.project_id === this.newJobProjectId
+        (service) => service.service.spec.project_id === this.newJobProjectId
       );
     },
 
@@ -1101,13 +1101,13 @@ document.addEventListener("alpine:init", () => {
     closeNewJob() {
       this.showNewJob = false;
     },
-    newJobPickProject(id, name) {
-      this.newJobProjectId = id;
+    newJobPickProject(projectId, name) {
+      this.newJobProjectId = projectId;
       this.newJobProjectName = name;
       this.newJobStep = "pick_service";
     },
-    newJobPickService(id, name) {
-      this.newJobServiceId = id;
+    newJobPickService(serviceId, name) {
+      this.newJobServiceId = serviceId;
       this.newJobServiceName = name;
       this.newJobStep = "form";
     },
@@ -1135,26 +1135,26 @@ document.addEventListener("alpine:init", () => {
       this.newJobSourceTab = kind;
       if (kind === "git" && this.newJobGitProviders.length === 0) {
         this.newJobGitMessage = "carregando contas…";
-        const r = await this.api.rpc("GitProviderList");
-        if (r.ok && r.value?.GitProviders) {
-          this.newJobGitProviders = r.value.GitProviders;
+        const gitProviderListResponse = await this.api.rpc("GitProviderList");
+        if (gitProviderListResponse.ok && gitProviderListResponse.value?.GitProviders) {
+          this.newJobGitProviders = gitProviderListResponse.value.GitProviders;
           this.newJobGitMessage = "";
         } else {
           this.newJobGitMessage = "erro ao listar contas conectadas";
         }
       }
     },
-    async newJobGitProviderPick(id) {
-      this.newJobGitProviderId = id || "";
+    async newJobGitProviderPick(providerId) {
+      this.newJobGitProviderId = providerId || "";
       this.newJobGitRepoFullName = "";
       this.newJobGitRepos = [];
       this.newJobGitBranches = [];
       if (!this.newJobGitProviderId) return;
       this.newJobGitMessage = "carregando repositórios…";
-      const r = await this.api.rpc({ GitRepoList: { provider_id: this.newJobGitProviderId } });
-      if (r.ok && r.value?.GitRepos) {
-        this.newJobGitRepos = r.value.GitRepos;
-        this.newJobGitMessage = `${r.value.GitRepos.length} repositório(s)`;
+      const gitRepoListResponse = await this.api.rpc({ GitRepoList: { provider_id: this.newJobGitProviderId } });
+      if (gitRepoListResponse.ok && gitRepoListResponse.value?.GitRepos) {
+        this.newJobGitRepos = gitRepoListResponse.value.GitRepos;
+        this.newJobGitMessage = `${gitRepoListResponse.value.GitRepos.length} repositório(s)`;
       } else {
         this.newJobGitMessage = "erro ao listar repositórios";
       }
@@ -1162,16 +1162,16 @@ document.addEventListener("alpine:init", () => {
     async newJobGitRepoPick(fullName) {
       if (!fullName) return;
       this.newJobGitRepoFullName = fullName;
-      const repo = this.newJobGitRepos.find((r) => r.full_name === fullName);
+      const repo = this.newJobGitRepos.find((newJobGitRepo) => newJobGitRepo.full_name === fullName);
       if (repo?.default_branch) this.newJobGitBranch = repo.default_branch;
       this.newJobGitBranches = [];
       if (!this.newJobGitProviderId) return;
       this.newJobGitMessage = "carregando branches…";
-      const r = await this.api.rpc({
+      const gitBranchListResponse = await this.api.rpc({
         GitBranchList: { provider_id: this.newJobGitProviderId, repo_full_name: fullName },
       });
-      if (r.ok && r.value?.GitBranches) {
-        this.newJobGitBranches = r.value.GitBranches;
+      if (gitBranchListResponse.ok && gitBranchListResponse.value?.GitBranches) {
+        this.newJobGitBranches = gitBranchListResponse.value.GitBranches;
         this.newJobGitMessage = "";
       } else {
         this.newJobGitMessage = "erro ao listar branches";
@@ -1184,7 +1184,7 @@ document.addEventListener("alpine:init", () => {
       if (this.newJobKind === "interval") {
         return { IntervalHours: Math.max(1, Number(this.newJobHours) || 1) };
       }
-      const [hora, minuto] = hmSplit(this.newJobTime);
+      const [hora, minuto] = hourMinuteSplit(this.newJobTime);
       if (this.newJobKind === "daily") {
         return { Daily: { hour: hora, minute: minuto } };
       }
@@ -1214,7 +1214,7 @@ document.addEventListener("alpine:init", () => {
           return;
         }
         const composePath = this.newJobComposePath.trim() || "docker-compose.yml";
-        const repo = this.newJobGitRepos.find((r) => r.full_name === this.newJobGitRepoFullName);
+        const repo = this.newJobGitRepos.find((newJobGitRepo) => newJobGitRepo.full_name === this.newJobGitRepoFullName);
         if (!repo?.clone_url) {
           this.newJobError = "não foi possível resolver a URL do repositório — selecione de novo";
           return;
@@ -1237,9 +1237,9 @@ document.addEventListener("alpine:init", () => {
       this.newJobError = "";
       this.newJobSubmitting = true;
       const { vars: envVars, comments: envComments } = parseDotenv(this.newJobEnvText);
-      let r;
+      let saveResponse;
       if (this.newJobEditId) {
-        r = await this.api.rpcChecked({
+        saveResponse = await this.api.rpcChecked({
           JobUpdate: {
             id: this.newJobEditId,
             name: this.newJobName.trim(),
@@ -1252,9 +1252,9 @@ document.addEventListener("alpine:init", () => {
             recurrence: this.buildNewJobRecurrence(),
           },
         });
-        if (r.ok) await this.refreshNow();
+        if (saveResponse.ok) await this.refreshNow();
       } else {
-        r = await this.jobCreate({
+        saveResponse = await this.jobCreate({
           project_id: this.newJobProjectId,
           // "" (não null) = job autônomo — Command::JobCreate::trigger_service_id
           // é String simples no protocolo (não Option<String>); o handler no
@@ -1270,11 +1270,11 @@ document.addEventListener("alpine:init", () => {
         });
       }
       this.newJobSubmitting = false;
-      if (r.ok) {
+      if (saveResponse.ok) {
         this.toastOk(this.newJobEditId ? "job atualizado" : "job criado");
         this.closeNewJob();
       } else {
-        this.newJobError = r.error;
+        this.newJobError = saveResponse.error;
       }
     },
 
@@ -1283,14 +1283,14 @@ document.addEventListener("alpine:init", () => {
      * não são editáveis via JobUpdate, então não há passos 1/2 aqui). Só
      * webui — sem a limitação de janela isolada do cliente iced, então
      * resolve a conta/repo/branch do git_source direto, sem pré-fetch. */
-    async openEditJob(id) {
-      const job = this.jobsById[id];
+    async openEditJob(jobId) {
+      const job = this.jobsById[jobId];
       if (!job) {
         this.toastWarn("job não encontrado no snapshot atual");
         return;
       }
       this.showNewJob = true;
-      this.newJobEditId = id;
+      this.newJobEditId = jobId;
       this.newJobStep = "form";
       this.newJobError = "";
       this.newJobName = job.name || "";
@@ -1298,17 +1298,17 @@ document.addEventListener("alpine:init", () => {
       this.newJobEnabled = !!job.enabled;
       this.newJobEnvText = dotenvFromVars(job.env_vars, job.env_comments);
 
-      const rec = job.recurrence;
-      if (rec?.IntervalHours != null) {
+      const recurrence = job.recurrence;
+      if (recurrence?.IntervalHours != null) {
         this.newJobKind = "interval";
-        this.newJobHours = String(rec.IntervalHours);
-      } else if (rec?.Daily) {
+        this.newJobHours = String(recurrence.IntervalHours);
+      } else if (recurrence?.Daily) {
         this.newJobKind = "daily";
-        this.newJobTime = hmJoin(rec.Daily.hour, rec.Daily.minute);
-      } else if (rec?.Weekly) {
+        this.newJobTime = hourMinuteJoin(recurrence.Daily.hour, recurrence.Daily.minute);
+      } else if (recurrence?.Weekly) {
         this.newJobKind = "weekly";
-        this.newJobWeekday = String(rec.Weekly.weekday);
-        this.newJobTime = hmJoin(rec.Weekly.hour, rec.Weekly.minute);
+        this.newJobWeekday = String(recurrence.Weekly.weekday);
+        this.newJobTime = hourMinuteJoin(recurrence.Weekly.hour, recurrence.Weekly.minute);
       } else {
         this.newJobKind = "manual";
       }
@@ -1324,22 +1324,22 @@ document.addEventListener("alpine:init", () => {
           // — sem esta mensagem os selects de repo/branch ficam vazios,
           // sem nenhuma explicação, durante os 2-3 round-trips abaixo.
           this.newJobGitMessage = "carregando repositórios…";
-          const rp = await this.api.rpc("GitProviderList");
-          if (rp.ok && rp.value?.GitProviders) this.newJobGitProviders = rp.value.GitProviders;
-          const rr = await this.api.rpc({ GitRepoList: { provider_id: this.newJobGitProviderId } });
-          if (rr.ok && rr.value?.GitRepos) {
-            this.newJobGitRepos = rr.value.GitRepos;
+          const gitProviderListResponse = await this.api.rpc("GitProviderList");
+          if (gitProviderListResponse.ok && gitProviderListResponse.value?.GitProviders) this.newJobGitProviders = gitProviderListResponse.value.GitProviders;
+          const gitRepoListResponse = await this.api.rpc({ GitRepoList: { provider_id: this.newJobGitProviderId } });
+          if (gitRepoListResponse.ok && gitRepoListResponse.value?.GitRepos) {
+            this.newJobGitRepos = gitRepoListResponse.value.GitRepos;
             const match = this.newJobGitRepos.find((repo) => repo.clone_url === job.git_source.url);
             this.newJobGitRepoFullName = match?.full_name || "";
             if (this.newJobGitRepoFullName) {
               this.newJobGitMessage = "carregando branches…";
-              const rb = await this.api.rpc({
+              const gitBranchListResponse = await this.api.rpc({
                 GitBranchList: {
                   provider_id: this.newJobGitProviderId,
                   repo_full_name: this.newJobGitRepoFullName,
                 },
               });
-              if (rb.ok && rb.value?.GitBranches) this.newJobGitBranches = rb.value.GitBranches;
+              if (gitBranchListResponse.ok && gitBranchListResponse.value?.GitBranches) this.newJobGitBranches = gitBranchListResponse.value.GitBranches;
             }
           }
           this.newJobGitMessage = "";
@@ -1373,8 +1373,8 @@ document.addEventListener("alpine:init", () => {
         {
           onEvent: (_kind, data) => {
             if (data?.kind === "bus_batch" && Array.isArray(data.events)) {
-              for (const ev of data.events) {
-                const line = ev?.JobLogLine;
+              for (const event of data.events) {
+                const line = event?.JobLogLine;
                 if (line) this.jobLogLines.push(this.cleanLogEntry(line));
               }
               const MAX = 2000;
@@ -1397,12 +1397,12 @@ document.addEventListener("alpine:init", () => {
     // o usuário está digitando nos formulários).
 
     async loadSettings() {
-      const r = await this.api.rpc("GetDaemonSettings");
-      if (r.ok && r.value?.DaemonSettings) {
-        const s = r.value.DaemonSettings;
-        this.serverSettingsPublicBase = s.public_base_url || "";
-        this.serverSettingsEmail = s.acme_email || "";
-        this.serverSettingsRegistryDomain = s.registry_domain || "";
+      const getDaemonSettingsResponse = await this.api.rpc("GetDaemonSettings");
+      if (getDaemonSettingsResponse.ok && getDaemonSettingsResponse.value?.DaemonSettings) {
+        const settings = getDaemonSettingsResponse.value.DaemonSettings;
+        this.serverSettingsPublicBase = settings.public_base_url || "";
+        this.serverSettingsEmail = settings.acme_email || "";
+        this.serverSettingsRegistryDomain = settings.registry_domain || "";
       }
       await this.gitProviderRefresh();
       await this.dockerCleanupLoad();
@@ -1412,19 +1412,19 @@ document.addEventListener("alpine:init", () => {
       const email = this.serverSettingsEmail.trim();
       const registryDomain = this.serverSettingsRegistryDomain.trim();
       this.settingsMessage = "salvando…";
-      const r = await this.api.rpcChecked({
+      const setDaemonSettingsResponse = await this.api.rpcChecked({
         SetDaemonSettings: {
           acme_email: email || null,
           registry_domain: registryDomain || null,
         },
       });
       this.settingsMessage = "";
-      this.toastResult(r, "configurações salvas");
+      this.toastResult(setDaemonSettingsResponse, "configurações salvas");
     },
 
     async gitProviderRefresh() {
-      const r = await this.api.rpc("GitProviderList");
-      this.gitProviders = (r.ok && r.value?.GitProviders) || [];
+      const gitProviderListResponse = await this.api.rpc("GitProviderList");
+      this.gitProviders = (gitProviderListResponse.ok && gitProviderListResponse.value?.GitProviders) || [];
     },
 
     /** Mesmas validações de handlers/settings.luau::gp_connect: GitHub cai
@@ -1445,32 +1445,32 @@ document.addEventListener("alpine:init", () => {
       }
       const name = this.gitProviderName.trim() || label;
       const isOauth = this.gitProviderMode !== "pat";
-      let cmd;
+      let providerCommand;
       if (isOauth) {
-        const cid = this.gitProviderClientId.trim();
+        const clientId = this.gitProviderClientId.trim();
         const csec = this.gitProviderClientSecret || "";
-        if (!cid || !csec.trim()) {
+        if (!clientId || !csec.trim()) {
           this.toastWarn("Client ID e Client Secret são obrigatórios");
           return;
         }
-        cmd = {
+        providerCommand = {
           GitProviderCreate: {
             kind: kindWire,
             name,
             base_url: base,
             auth_mode: "OAuth",
-            oauth_client_id: cid,
+            oauth_client_id: clientId,
             oauth_client_secret: csec,
             pat: null,
           },
         };
       } else {
-        const pat = this.gitProviderPersonalAccessToken || "";
-        if (!pat.trim()) {
+        const personalAccessToken = this.gitProviderPersonalAccessToken || "";
+        if (!personalAccessToken.trim()) {
           this.toastWarn("informe o Personal Access Token");
           return;
         }
-        cmd = {
+        providerCommand = {
           GitProviderCreate: {
             kind: kindWire,
             name,
@@ -1478,26 +1478,26 @@ document.addEventListener("alpine:init", () => {
             auth_mode: "Pat",
             oauth_client_id: null,
             oauth_client_secret: null,
-            pat,
+            pat: personalAccessToken,
           },
         };
       }
       this.gitProviderMessage = "conectando…";
-      const r = await this.api.rpc(cmd);
-      if (!r.ok || !r.value?.GitProviderInfo) {
+      const rpcResponse = await this.api.rpc(providerCommand);
+      if (!rpcResponse.ok || !rpcResponse.value?.GitProviderInfo) {
         this.gitProviderMessage = "";
-        this.toastError("erro: " + (r.ok ? "resposta inesperada" : r.error));
+        this.toastError("erro: " + (rpcResponse.ok ? "resposta inesperada" : rpcResponse.error));
         return;
       }
-      const pid = r.value.GitProviderInfo.id;
+      const providerId = rpcResponse.value.GitProviderInfo.id;
       if (isOauth) {
         // OAuth precisa de round-trip no navegador — diferente do Luau (que só
         // linkava por não saber abrir o browser), aqui abrimos direto.
-        const ro = await this.api.rpc({ GitOAuthStart: { provider_id: pid } });
-        if (ro.ok && ro.value?.OAuthUrl) {
-          this.gitProviderOauthUrl = ro.value.OAuthUrl;
+        const gitOAuthStartResponse = await this.api.rpc({ GitOAuthStart: { provider_id: providerId } });
+        if (gitOAuthStartResponse.ok && gitOAuthStartResponse.value?.OAuthUrl) {
+          this.gitProviderOauthUrl = gitOAuthStartResponse.value.OAuthUrl;
           this.gitProviderMessage = "autorize a janela aberta e depois clique em Atualizar";
-          window.open(ro.value.OAuthUrl, "_blank");
+          window.open(gitOAuthStartResponse.value.OAuthUrl, "_blank");
         } else {
           this.gitProviderMessage = "provider criado; inicie o OAuth manualmente";
         }
@@ -1513,23 +1513,23 @@ document.addEventListener("alpine:init", () => {
       await this.gitProviderRefresh();
     },
 
-    async gitProviderDelete(id) {
-      const r = await this.api.rpcChecked({ GitProviderDelete: { id } });
+    async gitProviderDelete(providerId) {
+      const gitProviderDeleteResponse = await this.api.rpcChecked({ GitProviderDelete: { id: providerId } });
       this.gitProviderMessage = "";
-      this.toastResult(r, "provider removido");
+      this.toastResult(gitProviderDeleteResponse, "provider removido");
       await this.gitProviderRefresh();
     },
 
     async manifestExport() {
       this.manifestExportMessage = "exportando…";
-      const r = await this.api.rpcChecked("ManifestExportAll");
-      if (!r.ok || !r.value?.ManifestBundle) {
+      const manifestExportAllResponse = await this.api.rpcChecked("ManifestExportAll");
+      if (!manifestExportAllResponse.ok || !manifestExportAllResponse.value?.ManifestBundle) {
         this.manifestExportMessage = "";
-        this.toastError("erro: " + (r.ok ? "resposta inesperada" : r.error));
+        this.toastError("erro: " + (manifestExportAllResponse.ok ? "resposta inesperada" : manifestExportAllResponse.error));
         return;
       }
-      this.manifestYaml = r.value.ManifestBundle.yaml;
-      this.manifestDotenv = r.value.ManifestBundle.dotenv;
+      this.manifestYaml = manifestExportAllResponse.value.ManifestBundle.yaml;
+      this.manifestDotenv = manifestExportAllResponse.value.ManifestBundle.dotenv;
       this.manifestHasExport = true;
       this.manifestExportMessage = "";
       this.toastOk("manifesto exportado");
@@ -1551,7 +1551,7 @@ document.addEventListener("alpine:init", () => {
       }
 
       this.manifestImportMessage = "importando…";
-      const r = await this.api.rpc({
+      const manifestImportResponse = await this.api.rpc({
         ManifestImport: {
           yaml,
           dotenv: this.manifestImportDotenv || "",
@@ -1559,34 +1559,34 @@ document.addEventListener("alpine:init", () => {
           deploy: this.manifestDeploy,
         },
       });
-      if (!r.ok) {
+      if (!manifestImportResponse.ok) {
         this.manifestImportMessage = "";
-        this.toastError("erro: " + r.error);
+        this.toastError("erro: " + manifestImportResponse.error);
         return;
       }
-      const v = r.value;
-      if (v?.MissingEnvVars) {
+      const applyResult = manifestImportResponse.value;
+      if (applyResult?.MissingEnvVars) {
         this.manifestHasMissing = true;
-        this.manifestMissingVars = v.MissingEnvVars.join(", ");
+        this.manifestMissingVars = applyResult.MissingEnvVars.join(", ");
         this.manifestImportMessage = "faltam variáveis — nada foi aplicado";
         this.toastError("faltam variáveis — nada foi aplicado");
         return;
       }
-      if (v?.Err) {
+      if (applyResult?.Err) {
         this.manifestImportMessage = "";
-        this.toastError(`erro: ${v.Err.code}: ${v.Err.message}`);
+        this.toastError(`erro: ${applyResult.Err.code}: ${applyResult.Err.message}`);
         return;
       }
-      if (!v?.ManifestReport) {
+      if (!applyResult?.ManifestReport) {
         this.manifestImportMessage = "";
         this.toastError("resposta inesperada do daemon");
         return;
       }
-      const lines = (v.ManifestReport.actions || []).map(
-        (a) => `[${a.action}] ${a.kind} ${a.name}`
+      const lines = (applyResult.ManifestReport.actions || []).map(
+        (action) => `[${action.action}] ${action.kind} ${action.name}`
       );
-      if ((v.ManifestReport.deployed || []).length > 0) {
-        lines.push("deploy disparado: " + v.ManifestReport.deployed.join(", "));
+      if ((applyResult.ManifestReport.deployed || []).length > 0) {
+        lines.push("deploy disparado: " + applyResult.ManifestReport.deployed.join(", "));
       }
       this.manifestReportLines = lines;
       this.manifestHasReport = true;
@@ -1603,38 +1603,38 @@ document.addEventListener("alpine:init", () => {
     /** Recorrência (Option<Recurrence>, externally-tagged) → campos do
      * formulário — mesmo formato do unpack usado ao editar um Job (acima,
      * perto de `newJobKind`). */
-    dockerCleanupApplyConfig(cfg) {
-      this.dockerCleanupEnabled = !!cfg.enabled;
-      this.dockerCleanupContainers = !!cfg.containers;
-      this.dockerCleanupImages = !!cfg.images;
-      this.dockerCleanupImagesAll = !!cfg.images_all;
-      this.dockerCleanupVolumes = !!cfg.volumes;
-      this.dockerCleanupVolumesAll = !!cfg.volumes_all;
-      this.dockerCleanupNetworks = !!cfg.networks;
-      this.dockerCleanupBuildCache = !!cfg.build_cache;
-      const r = cfg.recurrence;
-      if (r && r.IntervalHours != null) {
+    dockerCleanupApplyConfig(config) {
+      this.dockerCleanupEnabled = !!config.enabled;
+      this.dockerCleanupContainers = !!config.containers;
+      this.dockerCleanupImages = !!config.images;
+      this.dockerCleanupImagesAll = !!config.images_all;
+      this.dockerCleanupVolumes = !!config.volumes;
+      this.dockerCleanupVolumesAll = !!config.volumes_all;
+      this.dockerCleanupNetworks = !!config.networks;
+      this.dockerCleanupBuildCache = !!config.build_cache;
+      const recurrence = config.recurrence;
+      if (recurrence && recurrence.IntervalHours != null) {
         this.dockerCleanupKind = "interval";
-        this.dockerCleanupHours = String(r.IntervalHours);
-      } else if (r && r.Weekly) {
+        this.dockerCleanupHours = String(recurrence.IntervalHours);
+      } else if (recurrence && recurrence.Weekly) {
         this.dockerCleanupKind = "weekly";
-        this.dockerCleanupTime = hmJoin(r.Weekly.hour, r.Weekly.minute);
-        this.dockerCleanupWeekday = String(r.Weekly.weekday);
-      } else if (r && r.Daily) {
+        this.dockerCleanupTime = hourMinuteJoin(recurrence.Weekly.hour, recurrence.Weekly.minute);
+        this.dockerCleanupWeekday = String(recurrence.Weekly.weekday);
+      } else if (recurrence && recurrence.Daily) {
         this.dockerCleanupKind = "daily";
-        this.dockerCleanupTime = hmJoin(r.Daily.hour, r.Daily.minute);
+        this.dockerCleanupTime = hourMinuteJoin(recurrence.Daily.hour, recurrence.Daily.minute);
       } else {
         this.dockerCleanupKind = "daily";
       }
-      this.dockerCleanupNextRunLabel = cfg.next_run_at ? dateDmHm(cfg.next_run_at) : "—";
-      this.dockerCleanupLastRunAtRaw = cfg.last_run_at ?? null;
+      this.dockerCleanupNextRunLabel = config.next_run_at ? dateDayMonthHourMinute(config.next_run_at) : "—";
+      this.dockerCleanupLastRunAtRaw = config.last_run_at ?? null;
     },
 
     async dockerCleanupLoad() {
-      const r = await this.api.rpc("DockerCleanupConfigGet");
-      if (r.ok && r.value?.DockerCleanupConfig) {
-        this.dockerCleanupApplyConfig(r.value.DockerCleanupConfig.config);
-        this.dockerCleanupLastRunText = dockerCleanupLastRunSummary(r.value.DockerCleanupConfig.last_run);
+      const dockerCleanupConfigGetResponse = await this.api.rpc("DockerCleanupConfigGet");
+      if (dockerCleanupConfigGetResponse.ok && dockerCleanupConfigGetResponse.value?.DockerCleanupConfig) {
+        this.dockerCleanupApplyConfig(dockerCleanupConfigGetResponse.value.DockerCleanupConfig.config);
+        this.dockerCleanupLastRunText = dockerCleanupLastRunSummary(dockerCleanupConfigGetResponse.value.DockerCleanupConfig.last_run);
       }
     },
 
@@ -1642,7 +1642,7 @@ document.addEventListener("alpine:init", () => {
       if (this.dockerCleanupKind === "interval") {
         return { IntervalHours: Math.max(1, parseInt(this.dockerCleanupHours, 10) || 1) };
       }
-      const [hora, minuto] = hmSplit(this.dockerCleanupTime);
+      const [hora, minuto] = hourMinuteSplit(this.dockerCleanupTime);
       if (this.dockerCleanupKind === "weekly") {
         return {
           Weekly: {
@@ -1662,7 +1662,7 @@ document.addEventListener("alpine:init", () => {
 
     async dockerCleanupSave() {
       this.dockerCleanupMessage = "salvando…";
-      const r = await this.api.rpcChecked({
+      const dockerCleanupConfigSetResponse = await this.api.rpcChecked({
         DockerCleanupConfigSet: {
           config: {
             enabled: this.dockerCleanupEnabled,
@@ -1678,14 +1678,14 @@ document.addEventListener("alpine:init", () => {
           },
         },
       });
-      if (r.ok && r.value?.DockerCleanupConfig) {
-        this.dockerCleanupApplyConfig(r.value.DockerCleanupConfig.config);
-        this.dockerCleanupLastRunText = dockerCleanupLastRunSummary(r.value.DockerCleanupConfig.last_run);
+      if (dockerCleanupConfigSetResponse.ok && dockerCleanupConfigSetResponse.value?.DockerCleanupConfig) {
+        this.dockerCleanupApplyConfig(dockerCleanupConfigSetResponse.value.DockerCleanupConfig.config);
+        this.dockerCleanupLastRunText = dockerCleanupLastRunSummary(dockerCleanupConfigSetResponse.value.DockerCleanupConfig.last_run);
         this.dockerCleanupMessage = "";
         this.toastOk("configurações salvas");
       } else {
         this.dockerCleanupMessage = "";
-        this.toastError("erro: " + r.error);
+        this.toastError("erro: " + dockerCleanupConfigSetResponse.error);
       }
     },
 
@@ -1709,27 +1709,27 @@ document.addEventListener("alpine:init", () => {
       }
       this.dockerCleanupRunning = true;
       this.dockerCleanupMessage = "executando…";
-      const r = await this.api.rpcChecked("DockerCleanupRunNow");
-      if (!r.ok) {
+      const dockerCleanupRunNowResponse = await this.api.rpcChecked("DockerCleanupRunNow");
+      if (!dockerCleanupRunNowResponse.ok) {
         this.dockerCleanupRunning = false;
         this.dockerCleanupMessage = "";
-        this.toastError("erro: " + r.error);
+        this.toastError("erro: " + dockerCleanupRunNowResponse.error);
       }
     },
 
     async serviceStop() {
-      const id = this.selectedServiceId;
-      const r = await this.api.rpcChecked({ ServiceStop: { service_id: id } });
-      this.toastResult(r, "serviço parado");
-      await this.fetchServiceDetail(id);
+      const serviceId = this.selectedServiceId;
+      const serviceStopResponse = await this.api.rpcChecked({ ServiceStop: { service_id: serviceId } });
+      this.toastResult(serviceStopResponse, "serviço parado");
+      await this.fetchServiceDetail(serviceId);
       await this.refreshNow();
     },
 
     async serviceReload() {
-      const id = this.selectedServiceId;
-      const r = await this.api.rpcChecked({ ServiceReload: { service_id: id } });
-      this.toastResult(r, "serviço recarregado");
-      await this.fetchServiceDetail(id);
+      const serviceId = this.selectedServiceId;
+      const serviceReloadResponse = await this.api.rpcChecked({ ServiceReload: { service_id: serviceId } });
+      this.toastResult(serviceReloadResponse, "serviço recarregado");
+      await this.fetchServiceDetail(serviceId);
     },
 
     // ── Logs (aba Logs do serviço) ───────────────────────────────────
@@ -1741,13 +1741,13 @@ document.addEventListener("alpine:init", () => {
      * truncado (defesa contra uma linha absurda — ex. um dump binário sem
      * quebra — quebrar o layout inteiro da aba, como aconteceu antes de
      * filtrar ANSI: a barra de escape crua virava glifos de caixa e o texto
-     * "empilhava" visualmente). Mesmo teto de fmt/service_detail.luau::
+     * "empilhava" visualmente). Mesmo teto de format/service_detail.luau::
      * log_rows (LINE_MAX). */
-    cleanLogEntry(e) {
+    cleanLogEntry(logEntry) {
       const LINE_MAX = 4000;
-      let line = stripAnsi(e.line || "");
+      let line = stripAnsi(logEntry.line || "");
       if (line.length > LINE_MAX) line = line.slice(0, LINE_MAX) + "…";
-      return { stream: e.stream, line, timestamp: e.timestamp };
+      return { stream: logEntry.stream, line, timestamp: logEntry.timestamp };
     },
 
     /** Exposta no store (não só no módulo) porque o modal de logs de job é
@@ -1756,25 +1756,25 @@ document.addEventListener("alpine:init", () => {
 
     async startServiceLogs() {
       this.stopServiceLogs();
-      const id = this.selectedServiceId;
+      const serviceId = this.selectedServiceId;
       // Semeia o histórico ANTES de abrir o stream ao vivo — mesma ordem do
       // client iced (handlers/services.luau::open_logs_window): sem isso, um
       // serviço já rodando há tempo (sem stdout novo desde então) mostra a
       // aba vazia para sempre, mesmo tendo logs de sobra.
-      const seed = await this.api.rpc({ LogsGet: { service_id: id, tail: 500 } });
+      const seed = await this.api.rpc({ LogsGet: { service_id: serviceId, tail: 500 } });
       this.serviceLogLines = ((seed.ok && seed.value?.Logs) || []).map(this.cleanLogEntry);
       // A troca de aba pode ter acontecido enquanto o fetch estava em voo —
       // se o usuário já saiu da aba Logs (ou do serviço), não abre a stream.
-      if (this.serviceTab !== "logs" || this.selectedServiceId !== id) return;
+      if (this.serviceTab !== "logs" || this.selectedServiceId !== serviceId) return;
       this.serviceLogStream = openStream(
         this.api.baseUrl,
         this.api.token,
-        `/api/services/${id}/logs`,
+        `/api/services/${serviceId}/logs`,
         {
           onEvent: (_kind, data) => {
             if (data?.kind === "bus_batch" && Array.isArray(data.events)) {
-              for (const ev of data.events) {
-                const line = ev?.LogLine;
+              for (const event of data.events) {
+                const line = event?.LogLine;
                 if (line) this.serviceLogLines.push(this.cleanLogEntry(line));
               }
               const MAX = 2000;

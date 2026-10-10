@@ -1,7 +1,7 @@
 // screens/ingress.js — tela "Ingress": rotas ativas no reverse proxy (por
 // domínio) e portas TCP de host expostas diretamente. Porta da seção
 // `equals="ingress"` de home.gv.
-import { pairList, ingressRows, hostPortRows } from "../fmt.js";
+import { servicePairList, ingressRows, hostPortRows } from "../format.js";
 
 document.addEventListener("alpine:init", () => {
   Alpine.data("ingress", () => ({
@@ -10,7 +10,7 @@ document.addEventListener("alpine:init", () => {
     },
 
     get pairs() {
-      return pairList(this.store.snap?.services);
+      return servicePairList(this.store.snap?.services);
     },
     get routes() {
       return ingressRows(this.pairs);

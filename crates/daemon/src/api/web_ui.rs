@@ -285,7 +285,7 @@ mod headless_tests {
     /// `support` não existe na webui (só no client iced — ver
     /// `docs/inventario-paridade-telas.md`), então não entra aqui.
     #[tokio::test]
-    async fn todas_as_telas_principais_renderizam() {
+    async fn all_main_screens_render() {
         let addr = spawn_static_server().await;
         let (browser, _handler) = launch().await;
         let page = open_page(&browser, addr).await;
@@ -329,7 +329,7 @@ mod headless_tests {
     /// `project_services` no client iced (divergência mecânica de nome, ver
     /// `docs/inventario-paridade-telas.md`); precisa de `selectedProjectId`.
     #[tokio::test]
-    async fn project_detail_renderiza() {
+    async fn project_detail_renders() {
         let addr = spawn_static_server().await;
         let (browser, _handler) = launch().await;
         let page = open_page(&browser, addr).await;
@@ -354,10 +354,10 @@ mod headless_tests {
     /// Detalhe de serviço + a aba General (edição de origem — Compose / Git
     /// / conta conectada / Zip), implementada nesta sessão. `serviceDetail`
     /// não é derivado de `snap` (o real vem de `fetchServiceDetail`), então
-    /// precisa ser semeado à mão — mesma razão de `m.define_data("svc_env",
+    /// precisa ser semeado à mão — mesma razão de `m.define_data("service_env",
     /// ...)` no teste iced.
     #[tokio::test]
-    async fn service_detail_e_general_tab_renderizam() {
+    async fn service_detail_and_general_tab_render() {
         let addr = spawn_static_server().await;
         let (browser, _handler) = launch().await;
         let page = open_page(&browser, addr).await;
@@ -455,7 +455,7 @@ mod headless_tests {
     /// "Internal URL" de um Compose continua apontando para a chave do YAML
     /// depois do rename (o hostname interno não acompanha o nome).
     #[tokio::test]
-    async fn renomear_servico_na_aba_general() {
+    async fn rename_service_in_general_tab() {
         let addr = spawn_static_server().await;
         let (browser, _handler) = launch().await;
         let page = open_page(&browser, addr).await;
@@ -569,7 +569,7 @@ mod headless_tests {
     /// só store + template, e um `cargo test` verde sem navegador não diria
     /// nada sobre ele.
     #[tokio::test]
-    async fn toasts_aparecem_empilham_e_expiram() {
+    async fn toasts_appear_stack_and_expire() {
         let addr = spawn_static_server().await;
         let (browser, _handler) = launch().await;
         let page = open_page(&browser, addr).await;
@@ -665,7 +665,7 @@ mod headless_tests {
     /// Servidor de banco compartilhado: a aba Databases só aparece no serviço
     /// `shared`, lista os databases e manda o `ManagedDatabaseCreate` certo.
     #[tokio::test]
-    async fn aba_databases_do_servidor_compartilhado() {
+    async fn shared_server_databases_tab() {
         let addr = spawn_static_server().await;
         let (browser, _handler) = launch().await;
         let page = open_page(&browser, addr).await;
@@ -730,7 +730,7 @@ mod headless_tests {
     /// Aba Migrar: só aparece num banco Compose não compartilhado, lista os
     /// destinos do mesmo projeto e manda o `MigrationStart` certo.
     #[tokio::test]
-    async fn aba_migrar_banco_antigo() {
+    async fn migrate_old_database_tab() {
         let addr = spawn_static_server().await;
         let (browser, _handler) = launch().await;
         let page = open_page(&browser, addr).await;

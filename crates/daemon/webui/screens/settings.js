@@ -2,7 +2,7 @@
 // Porta da seção `equals="settings"` de home.gv. Todo o estado editável mora
 // no store (app.js, x-model direto) — este módulo só formata os provedores
 // Git pra exibição.
-import { gitProviderRows } from "../fmt.js";
+import { gitProviderRows } from "../format.js";
 
 document.addEventListener("alpine:init", () => {
   Alpine.data("settings", () => ({

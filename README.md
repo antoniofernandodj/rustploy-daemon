@@ -80,7 +80,7 @@ make deb-gui                    # .deb para Linux (cargo-deb) — dist/*.deb
 make rustploy-gui-windows-dist   # .zip portável para Windows (cross via cargo-xwin) — dist/rustploy-gui-windows.zip
 ```
 
-Os dois embarcam a árvore `views/` inteira (templates + a camada Luau em `views/scripts/`, pacotes `fmt/`/`handlers/`/`net/` — ver `docs/luau-modularizacao-pacotes.md`), `styles/`, ícones e os blueprints de template (`assets/blueprint-logos/` (logos dos blueprints)). O release automático (`.github/workflows/release.yml` **do agregador**, disparado por tag `v*`, com checkout dos submodules) gera os pacotes (daemon Linux, `.deb` do GUI, `.zip` Windows do GUI).
+Os dois embarcam a árvore `views/` inteira (templates + a camada Luau em `views/scripts/`, pacotes `format/`/`handlers/`/`net/` — ver `docs/luau-modularizacao-pacotes.md`), `styles/`, ícones e os blueprints de template (`assets/blueprint-logos/` (logos dos blueprints)). O release automático (`.github/workflows/release.yml` **do agregador**, disparado por tag `v*`, com checkout dos submodules) gera os pacotes (daemon Linux, `.deb` do GUI, `.zip` Windows do GUI).
 
 ## Execução
 

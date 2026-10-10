@@ -4,7 +4,7 @@
 //
 //   <span x-icon="'rocket'"></span>             estático
 //   <span x-icon="cond ? 'check' : 'x'"></span> reativo
-const P = {
+const ICON_PATHS = {
   deploy: '<path d="M5 3l14 9-14 9V3z"/>',
   engine: '<path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/>',
   monitor: '<path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/>',
@@ -41,19 +41,19 @@ rocket: '<path d="M5 15c-1.5 1.3-2 5-2 5s3.7-.5 5-2c.7-.8.7-2.1-.1-2.9a2.2 2.2 0
 };
 
 export function iconSvg(name, size) {
-  const body = P[name] || P.inbox;
-  const s = size || 16;
+  const body = ICON_PATHS[name] || ICON_PATHS.inbox;
+  const iconSize = size || 16;
   return (
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" ` +
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${iconSize}" height="${iconSize}" viewBox="0 0 24 24" fill="none" ` +
     `stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`
   );
 }
 
 export function registerIcons(Alpine) {
-  Alpine.directive("icon", (el, { expression, modifiers }, { evaluateLater, effect }) => {
+  Alpine.directive("icon", (element, { expression, modifiers }, { evaluateLater, effect }) => {
     const get = evaluateLater(expression);
-    const size = Number(modifiers.find((m) => /^\d+$/.test(m))) || 16;
-    el.classList.add("ico");
-    effect(() => get((name) => (el.innerHTML = iconSvg(name, size))));
+    const size = Number(modifiers.find((modifier) => /^\d+$/.test(modifier))) || 16;
+    element.classList.add("ico");
+    effect(() => get((name) => (element.innerHTML = iconSvg(name, size))));
   });
 }

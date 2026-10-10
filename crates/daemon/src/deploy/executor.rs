@@ -72,7 +72,7 @@ fn is_embedded_registry_image(image: &str, port: u16, domain: Option<&str>) -> b
 /// Quebra a causa de um step falho nas linhas que vão para o `build_log`.
 ///
 /// Multi-linha vira VÁRIAS entradas, e não um registro só com `\n` dentro: o
-/// renderizador de log do cliente (`fmt/service_detail.luau`) trata cada
+/// renderizador de log do cliente (`format/service_detail.luau`) trata cada
 /// registro como uma linha, então um `\n` embutido sairia espremido numa linha
 /// só. Erro de `docker build` é multi-linha com frequência.
 ///

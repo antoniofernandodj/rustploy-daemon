@@ -2,7 +2,7 @@
 // vez), execução em andamento e histórico das últimas 24h. Porta da seção
 // `equals="deploy_engine"` de home.gv — tudo vem de `snap.engine`
 // (DeployEngineSummary), já anexado ao Snapshot pelo daemon (sem RPC extra).
-import { fmtUptime, deployEngineActiveRows, deployEngineQueuedRows, deployEngineRecentRows } from "../fmt.js";
+import { formatUptime, deployEngineActiveRows, deployEngineQueuedRows, deployEngineRecentRows } from "../format.js";
 
 document.addEventListener("alpine:init", () => {
   Alpine.data("deployEngine", () => ({
@@ -17,10 +17,10 @@ document.addEventListener("alpine:init", () => {
     // GUI): solta a linha A sobre a B e A passa a ficar antes de B.
     dragId: null,
     overId: null,
-    dragStart(ev, id) {
-      this.dragId = id;
-      ev.dataTransfer.effectAllowed = "move";
-      ev.dataTransfer.setData("text/plain", id);
+    dragStart(dragEvent, deploymentId) {
+      this.dragId = deploymentId;
+      dragEvent.dataTransfer.effectAllowed = "move";
+      dragEvent.dataTransfer.setData("text/plain", deploymentId);
     },
     dragEnd() {
       this.dragId = null;
@@ -30,7 +30,7 @@ document.addEventListener("alpine:init", () => {
       const from = this.dragId;
       this.dragEnd();
       if (!from || from === targetId) return;
-      const order = this.queued.map((q) => q.deploymentId).filter((x) => x !== from);
+      const order = this.queued.map((queuedItem) => queuedItem.deploymentId).filter((candidateId) => candidateId !== from);
       order.splice(order.indexOf(targetId), 0, from);
       await this.store.queueReorder(order);
     },
@@ -47,10 +47,10 @@ document.addEventListener("alpine:init", () => {
     // deploy terminar e sair de "Executando agora", o modal fecha.
     detailId: null,
     get detail() {
-      return this.detailId ? this.active.find((a) => a.serviceId === this.detailId) || null : null;
+      return this.detailId ? this.active.find((activeDeployment) => activeDeployment.serviceId === this.detailId) || null : null;
     },
-    openDetail(id) {
-      this.detailId = id;
+    openDetail(deploymentId) {
+      this.detailId = deploymentId;
     },
     closeDetail() {
       this.detailId = null;
@@ -65,7 +65,7 @@ document.addEventListener("alpine:init", () => {
       return !!this.engine?.paused;
     },
     get uptime() {
-      return this.engine ? fmtUptime(this.engine.uptime_secs) : "…";
+      return this.engine ? formatUptime(this.engine.uptime_secs) : "…";
     },
     get successCount() {
       return this.engine?.successful_24h ?? 0;

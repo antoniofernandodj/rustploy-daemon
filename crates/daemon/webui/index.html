@@ -93,14 +93,14 @@
           <text class="brand__sub">PRODUCTION CLUSTER</text>
         </column>
       </row>
-      <template x-for="g in groups" :key="g.title">
+      <template x-for="group in groups" :key="group.title">
         <column class="sidebar__group">
-          <text class="sidebar__section" x-text="g.title"></text>
-          <template x-for="it in g.items" :key="it.v">
-            <button type="button" :class="on(it) ? 'nav-item nav-item--active' : 'nav-item'" :title="it.label"
-                    @click="$store.app.nav(it.v)">
-              <span class="nav-item__icon" x-text="it.icon"></span>
-              <text class="nav-item__label" x-text="it.label"></text>
+          <text class="sidebar__section" x-text="group.title"></text>
+          <template x-for="navItem in group.items" :key="navItem.v">
+            <button type="button" :class="on(navItem) ? 'nav-item nav-item--active' : 'nav-item'" :title="navItem.label"
+                    @click="$store.app.nav(navItem.v)">
+              <span class="nav-item__icon" x-text="navItem.icon"></span>
+              <text class="nav-item__label" x-text="navItem.label"></text>
             </button>
           </template>
         </column>
@@ -176,17 +176,17 @@
 
           <column class="u-fill-all" x-show="!store.dataLoading">
             <column class="table__body">
-              <template x-for="d in rows" :key="d.service + d.start">
+              <template x-for="row in rows" :key="row.service + row.start">
                 <column class="list-row">
                   <row class="table__row">
-                    <text class="table__cell table__cell--key table__col-svc" x-text="d.service"></text>
-                    <text class="table__cell table__col-proj" x-text="d.project"></text>
-                    <row class="state-cell table__col-state" :class="'state-cell--' + d.stateKind">
+                    <text class="table__cell table__cell--key table__col-svc" x-text="row.service"></text>
+                    <text class="table__cell table__col-proj" x-text="row.project"></text>
+                    <row class="state-cell table__col-state" :class="'state-cell--' + row.stateKind">
                       <text class="status-dot">●</text>
-                      <text class="state-cell__label" x-text="d.stateLabel"></text>
+                      <text class="state-cell__label" x-text="row.stateLabel"></text>
                     </row>
-                    <text class="table__cell table__col-dur" x-text="d.duration"></text>
-                    <text class="u-muted table__col-start" x-text="d.start"></text>
+                    <text class="table__cell table__col-dur" x-text="row.duration"></text>
+                    <text class="u-muted table__col-start" x-text="row.start"></text>
                   </row>
                   <hr class="rule" />
                 </column>
@@ -254,16 +254,16 @@
             <text class="banner banner--warn" x-show="paused">Fila pausada — deploys esperam até você retomar.</text>
             <text class="empty-state" x-fallback="queued">Nenhum deploy na fila.</text>
             <column class="table__body">
-              <template x-for="q in queued" :key="q.deploymentId">
-                <column class="list-row" draggable="true" :class="{ drop_over: overId === q.deploymentId && dragId !== q.deploymentId, dragging: dragId === q.deploymentId }"
-                        @dragstart="dragStart($event, q.deploymentId)" @dragover.prevent="overId = q.deploymentId"
-                        @dragleave="overId === q.deploymentId && (overId = null)" @drop.prevent="dropOn(q.deploymentId)" @dragend="dragEnd()">
+              <template x-for="queuedDeployment in queued" :key="queuedDeployment.deploymentId">
+                <column class="list-row" draggable="true" :class="{ drop_over: overId === queuedDeployment.deploymentId && dragId !== queuedDeployment.deploymentId, dragging: dragId === queuedDeployment.deploymentId }"
+                        @dragstart="dragStart($event, queuedDeployment.deploymentId)" @dragover.prevent="overId = queuedDeployment.deploymentId"
+                        @dragleave="overId === queuedDeployment.deploymentId && (overId = null)" @drop.prevent="dropOn(queuedDeployment.deploymentId)" @dragend="dragEnd()">
                   <row class="table__row">
                     <span class="drag-grip" title="Arraste para reordenar">⠿</span>
-                    <text class="table__cell table__cell--key table__col-svc" x-text="q.pos + '. ' + q.service"></text>
-                    <text class="table__cell table__col-start" x-text="q.project"></text>
-                    <button class="btn btn--copy" type="button" @click="store.queuePromote(q.deploymentId)">↑ topo</button>
-                    <button class="env__del" type="button" @click="store.queueCancel(q.deploymentId)">✕</button>
+                    <text class="table__cell table__cell--key table__col-svc" x-text="queuedDeployment.pos + '. ' + queuedDeployment.service"></text>
+                    <text class="table__cell table__col-start" x-text="queuedDeployment.project"></text>
+                    <button class="btn btn--copy" type="button" @click="store.queuePromote(queuedDeployment.deploymentId)">↑ topo</button>
+                    <button class="env__del" type="button" @click="store.queueCancel(queuedDeployment.deploymentId)">✕</button>
                   </row>
                   <hr class="rule" />
                 </column>
@@ -288,27 +288,27 @@
             </row>
             <column class="table__body">
               <text class="empty-state" x-fallback="active">Nenhum deploy em andamento.</text>
-              <template x-for="a in active" :key="a.serviceId">
+              <template x-for="activeDeployment in active" :key="activeDeployment.serviceId">
                 <column class="list-row">
                   <row class="table__row">
-                    <text class="table__cell table__cell--key table__col-svc" x-text="a.service"></text>
-                    <text class="table__cell table__col-proj" x-text="a.project"></text>
-                    <row class="state-cell table__col-state" :class="'state-cell--' + a.stateKind">
+                    <text class="table__cell table__cell--key table__col-svc" x-text="activeDeployment.service"></text>
+                    <text class="table__cell table__col-proj" x-text="activeDeployment.project"></text>
+                    <row class="state-cell table__col-state" :class="'state-cell--' + activeDeployment.stateKind">
                       <text class="status-dot">●</text>
-                      <text class="state-cell__label" x-text="a.stateLabel"></text>
+                      <text class="state-cell__label" x-text="activeDeployment.stateLabel"></text>
                     </row>
-                    <text class="u-muted table__col-dur" x-text="a.total"></text>
-                    <text class="u-muted table__col-start" x-text="a.phase"></text>
+                    <text class="u-muted table__col-dur" x-text="activeDeployment.total"></text>
+                    <text class="u-muted table__col-start" x-text="activeDeployment.phase"></text>
                     <row class="table__col-act">
-                      <button class="btn btn--sm-ghost" type="button" @click="openDetail(a.serviceId)">Detalhes</button>
+                      <button class="btn btn--sm-ghost" type="button" @click="openDetail(activeDeployment.serviceId)">Detalhes</button>
                     </row>
                   </row>
                   <row class="stepper">
-                    <template x-for="(st, i) in a.steps" :key="st.label">
+                    <template x-for="(activeStep, index) in activeDeployment.steps" :key="activeStep.label">
                       <row class="stepper__item">
-                        <text class="stepper__sep" x-show="i > 0">›</text>
-                        <text class="stepper__step" :class="'stepper__step--' + st.status"
-                              x-text="(st.status === 'done' ? '✓ ' : st.status === 'failed' ? '✕ ' : st.status === 'current' ? '● ' : '○ ') + st.label"></text>
+                        <text class="stepper__sep" x-show="index > 0">›</text>
+                        <text class="stepper__step" :class="'stepper__step--' + activeStep.status"
+                              x-text="(activeStep.status === 'done' ? '✓ ' : activeStep.status === 'failed' ? '✕ ' : activeStep.status === 'current' ? '● ' : '○ ') + activeStep.label"></text>
                       </row>
                     </template>
                   </row>
@@ -340,18 +340,18 @@
           </row>
           <column class="section__scroll" x-show="recent.length > 0">
             <column class="table__body">
-              <template x-for="(r, i) in recent" :key="r.service + r.start + i">
+              <template x-for="(recentDeployment, index) in recent" :key="recentDeployment.service + recentDeployment.start + index">
                 <column class="list-row">
                   <row class="table__row">
-                    <text class="table__cell table__col-icon" x-text="r.icon"></text>
-                    <text class="table__cell table__cell--key table__col-svc" x-text="r.service"></text>
-                    <text class="table__cell table__col-proj" x-text="r.project"></text>
-                    <row class="state-cell table__col-state" :class="'state-cell--' + r.stateKind">
+                    <text class="table__cell table__col-icon" x-text="recentDeployment.icon"></text>
+                    <text class="table__cell table__cell--key table__col-svc" x-text="recentDeployment.service"></text>
+                    <text class="table__cell table__col-proj" x-text="recentDeployment.project"></text>
+                    <row class="state-cell table__col-state" :class="'state-cell--' + recentDeployment.stateKind">
                       <text class="status-dot">●</text>
-                      <text class="state-cell__label" x-text="r.stateLabel"></text>
+                      <text class="state-cell__label" x-text="recentDeployment.stateLabel"></text>
                     </row>
-                    <text class="u-muted table__col-dur" x-text="r.duration"></text>
-                    <text class="u-muted table__col-start" x-text="r.start"></text>
+                    <text class="u-muted table__col-dur" x-text="recentDeployment.duration"></text>
+                    <text class="u-muted table__col-start" x-text="recentDeployment.start"></text>
                   </row>
                   <hr class="rule" />
                 </column>
@@ -370,11 +370,11 @@
             </row>
             <column class="modal__body" x-show="detail">
               <row class="stepper">
-                <template x-for="(st, i) in (detail ? detail.steps : [])" :key="st.label">
+                <template x-for="(step, index) in (detail ? detail.steps : [])" :key="step.label">
                   <row class="stepper__item">
-                    <text class="stepper__sep" x-show="i > 0">›</text>
-                    <text class="stepper__step" :class="'stepper__step--' + st.status"
-                          x-text="(st.status === 'done' ? '✓ ' : st.status === 'failed' ? '✕ ' : st.status === 'current' ? '● ' : '○ ') + st.label"></text>
+                    <text class="stepper__sep" x-show="index > 0">›</text>
+                    <text class="stepper__step" :class="'stepper__step--' + step.status"
+                          x-text="(step.status === 'done' ? '✓ ' : step.status === 'failed' ? '✕ ' : step.status === 'current' ? '● ' : '○ ') + step.label"></text>
                   </row>
                 </template>
               </row>
@@ -383,12 +383,12 @@
                 <text class="table__head-cell table__col-dur">DURAÇÃO</text>
                 <text class="table__head-cell table__col-start">MENSAGEM</text>
               </row>
-              <template x-for="(d, i) in (detail ? detail.detail : [])" :key="i">
+              <template x-for="(detailRow, index) in (detail ? detail.detail : [])" :key="index">
                 <column class="list-row">
                   <row class="table__row">
-                    <text class="table__cell table__col-state" :class="'state-cell--' + d.kind" x-text="d.label"></text>
-                    <text class="u-muted table__col-dur" x-text="d.dur"></text>
-                    <text class="u-muted table__col-start stepper__msg" x-text="d.msg"></text>
+                    <text class="table__cell table__col-state" :class="'state-cell--' + detailRow.kind" x-text="detailRow.label"></text>
+                    <text class="u-muted table__col-dur" x-text="detailRow.dur"></text>
+                    <text class="u-muted table__col-start stepper__msg" x-text="detailRow.msg"></text>
                   </row>
                   <hr class="rule" />
                 </column>
@@ -436,15 +436,15 @@
           </row>
           <column class="u-fill-all">
             <column class="table__body">
-              <template x-for="m in rows" :key="m.name + m.project">
+              <template x-for="row in rows" :key="row.name + row.project">
                 <column class="list-row">
                   <row class="table__row">
-                    <text class="table__cell table__cell--key table__col-svc" x-text="m.name"></text>
-                    <text class="table__cell table__col-proj" x-text="m.project"></text>
-                    <text class="table__cell table__col-dur" x-text="m.cpu"></text>
-                    <text class="table__cell table__col-dur" x-text="m.mem"></text>
-                    <text class="u-muted table__col-dur" x-text="m.rx"></text>
-                    <text class="u-muted table__col-start" x-text="m.tx"></text>
+                    <text class="table__cell table__cell--key table__col-svc" x-text="row.name"></text>
+                    <text class="table__cell table__col-proj" x-text="row.project"></text>
+                    <text class="table__cell table__col-dur" x-text="row.cpu"></text>
+                    <text class="table__cell table__col-dur" x-text="row.mem"></text>
+                    <text class="u-muted table__col-dur" x-text="row.rx"></text>
+                    <text class="u-muted table__col-start" x-text="row.tx"></text>
                   </row>
                   <hr class="rule" />
                 </column>
@@ -484,13 +484,13 @@
           </row>
           <column class="u-fill-all">
             <column class="table__body">
-              <template x-for="i in routes" :key="i.domain">
+              <template x-for="route in routes" :key="route.domain">
                 <column class="list-row">
                   <row class="table__row">
-                    <text class="table__cell table__cell--key table__col-svc" x-text="i.domain"></text>
-                    <text class="table__cell table__col-proj" x-text="i.service"></text>
-                    <text class="table__cell table__col-dur" x-text="i.upstream"></text>
-                    <text class="u-muted table__col-start" x-text="i.tls"></text>
+                    <text class="table__cell table__cell--key table__col-svc" x-text="route.domain"></text>
+                    <text class="table__cell table__col-proj" x-text="route.service"></text>
+                    <text class="table__cell table__col-dur" x-text="route.upstream"></text>
+                    <text class="u-muted table__col-start" x-text="route.tls"></text>
                   </row>
                   <hr class="rule" />
                 </column>
@@ -509,13 +509,13 @@
             Nenhum serviço com porta de host configurada.
           </text>
           <column class="table__body">
-            <template x-for="hp in hostPorts" :key="hp.service">
+            <template x-for="hostPortEntry in hostPorts" :key="hostPortEntry.service">
               <column class="list-row">
                 <row class="table__row">
-                  <text class="table__cell table__cell--key table__col-svc" x-text="hp.service"></text>
-                  <text class="table__cell table__col-proj" x-text="hp.project"></text>
-                  <text class="table__cell table__col-dur" x-text="hp.hostPort"></text>
-                  <text class="u-muted table__col-start" x-text="hp.containerPort"></text>
+                  <text class="table__cell table__cell--key table__col-svc" x-text="hostPortEntry.service"></text>
+                  <text class="table__cell table__col-proj" x-text="hostPortEntry.project"></text>
+                  <text class="table__cell table__col-dur" x-text="hostPortEntry.hostPort"></text>
+                  <text class="u-muted table__col-start" x-text="hostPortEntry.containerPort"></text>
                 </row>
                 <hr class="rule" />
               </column>
@@ -580,19 +580,19 @@
           </row>
           <column class="u-fill-all">
             <column class="table__body">
-              <template x-for="c in containers" :key="c.idFull">
+              <template x-for="container in containers" :key="container.idFull">
                 <column class="list-row">
                   <row class="table__row">
-                    <text class="table__cell table__cell--key table__col-svc" x-text="c.name"></text>
-                    <text class="table__cell table__col-img" x-text="c.image"></text>
-                    <text class="u-muted table__col-state" x-text="c.owner"></text>
-                    <row class="state-cell table__col-dur" :class="'state-cell--' + c.stateKind">
+                    <text class="table__cell table__cell--key table__col-svc" x-text="container.name"></text>
+                    <text class="table__cell table__col-img" x-text="container.image"></text>
+                    <text class="u-muted table__col-state" x-text="container.owner"></text>
+                    <row class="state-cell table__col-dur" :class="'state-cell--' + container.stateKind">
                       <text class="status-dot">●</text>
-                      <text class="state-cell__label" x-text="c.stateLabel"></text>
+                      <text class="state-cell__label" x-text="container.stateLabel"></text>
                     </row>
                     <row class="table__col-act">
-                      <button class="btn btn--row-remove" type="button" x-show="c.canRemove"
-                              @click="store.dockerRemoveContainer(c.idFull)">Remover</button>
+                      <button class="btn btn--row-remove" type="button" x-show="container.canRemove"
+                              @click="store.dockerRemoveContainer(container.idFull)">Remover</button>
                     </row>
                   </row>
                   <hr class="rule" />
@@ -625,20 +625,20 @@
           </row>
           <column class="u-fill-all">
             <column class="table__body">
-              <template x-for="i in images" :key="i.idFull">
+              <template x-for="image in images" :key="image.idFull">
                 <column class="list-row">
                   <row class="table__row">
-                    <text class="table__cell table__cell--key table__col-svc" x-text="i.tags"></text>
-                    <text class="table__cell table__col-proj" x-text="i.owner"></text>
-                    <text class="u-muted table__col-dur" x-text="i.size"></text>
-                    <text class="u-muted table__col-dur" x-text="i.created"></text>
-                    <row class="state-cell table__col-state" :class="'state-cell--' + i.inUseKind">
+                    <text class="table__cell table__cell--key table__col-svc" x-text="image.tags"></text>
+                    <text class="table__cell table__col-proj" x-text="image.owner"></text>
+                    <text class="u-muted table__col-dur" x-text="image.size"></text>
+                    <text class="u-muted table__col-dur" x-text="image.created"></text>
+                    <row class="state-cell table__col-state" :class="'state-cell--' + image.inUseKind">
                       <text class="status-dot">●</text>
-                      <text class="state-cell__label" x-text="i.inUseLabel"></text>
+                      <text class="state-cell__label" x-text="image.inUseLabel"></text>
                     </row>
                     <row class="table__col-act">
-                      <button class="btn btn--row-remove" type="button" x-show="!i.inUse"
-                              @click="store.dockerRemoveImage(i.idFull)">Remover</button>
+                      <button class="btn btn--row-remove" type="button" x-show="!image.inUse"
+                              @click="store.dockerRemoveImage(image.idFull)">Remover</button>
                     </row>
                   </row>
                   <hr class="rule" />
@@ -670,19 +670,19 @@
           </row>
           <column class="u-fill-all">
             <column class="table__body">
-              <template x-for="v in volumes" :key="v.nameFull">
+              <template x-for="volume in volumes" :key="volume.nameFull">
                 <column class="list-row">
                   <row class="table__row">
-                    <text class="table__cell table__cell--key table__col-svc" x-text="v.name"></text>
-                    <text class="table__cell table__col-proj" x-text="v.driver"></text>
-                    <text class="u-muted table__col-dur" x-text="v.size"></text>
-                    <row class="state-cell table__col-state" :class="'state-cell--' + v.inUseKind">
+                    <text class="table__cell table__cell--key table__col-svc" x-text="volume.name"></text>
+                    <text class="table__cell table__col-proj" x-text="volume.driver"></text>
+                    <text class="u-muted table__col-dur" x-text="volume.size"></text>
+                    <row class="state-cell table__col-state" :class="'state-cell--' + volume.inUseKind">
                       <text class="status-dot">●</text>
-                      <text class="state-cell__label" x-text="v.inUseLabel"></text>
+                      <text class="state-cell__label" x-text="volume.inUseLabel"></text>
                     </row>
                     <row class="table__col-act">
-                      <button class="btn btn--row-remove" type="button" x-show="!v.inUse"
-                              @click="store.dockerRemoveVolume(v.nameFull)">Remover</button>
+                      <button class="btn btn--row-remove" type="button" x-show="!volume.inUse"
+                              @click="store.dockerRemoveVolume(volume.nameFull)">Remover</button>
                     </row>
                   </row>
                   <hr class="rule" />
@@ -712,20 +712,20 @@
           </row>
           <column class="u-fill-all">
             <column class="table__body">
-              <template x-for="n in networks" :key="n.idFull">
+              <template x-for="network in networks" :key="network.idFull">
                 <column class="list-row">
                   <row class="table__row">
-                    <text class="table__cell table__cell--key table__col-svc" x-text="n.name"></text>
-                    <text class="table__cell table__col-proj" x-text="n.project"></text>
-                    <text class="u-muted table__col-dur" x-text="n.driver"></text>
-                    <text class="u-muted table__col-dur" x-text="n.containers"></text>
-                    <row class="state-cell table__col-state" :class="'state-cell--' + n.inUseKind">
+                    <text class="table__cell table__cell--key table__col-svc" x-text="network.name"></text>
+                    <text class="table__cell table__col-proj" x-text="network.project"></text>
+                    <text class="u-muted table__col-dur" x-text="network.driver"></text>
+                    <text class="u-muted table__col-dur" x-text="network.containers"></text>
+                    <row class="state-cell table__col-state" :class="'state-cell--' + network.inUseKind">
                       <text class="status-dot">●</text>
-                      <text class="state-cell__label" x-text="n.inUseLabel"></text>
+                      <text class="state-cell__label" x-text="network.inUseLabel"></text>
                     </row>
                     <row class="table__col-act">
-                      <button class="btn btn--row-remove" type="button" x-show="!n.inUse"
-                              @click="store.dockerRemoveNetwork(n.idFull)">Remover</button>
+                      <button class="btn btn--row-remove" type="button" x-show="!network.inUse"
+                              @click="store.dockerRemoveNetwork(network.idFull)">Remover</button>
                     </row>
                   </row>
                   <hr class="rule" />
@@ -767,18 +767,18 @@
             </template>
             <column class="u-fill-all">
               <column class="table__body">
-                <template x-for="r in repos" :key="r.name">
+                <template x-for="repo in repos" :key="repo.name">
                   <column class="list-row">
                     <row class="table__row">
-                      <text class="table__cell table__cell--key table__col-svc" x-text="r.name"></text>
-                      <text class="table__cell table__col-proj" x-text="r.tagCount"></text>
-                      <text class="u-muted table__col-dur" x-text="r.size"></text>
-                      <text class="u-muted table__col-dur" x-text="r.created"></text>
+                      <text class="table__cell table__cell--key table__col-svc" x-text="repo.name"></text>
+                      <text class="table__cell table__col-proj" x-text="repo.tagCount"></text>
+                      <text class="u-muted table__col-dur" x-text="repo.size"></text>
+                      <text class="u-muted table__col-dur" x-text="repo.created"></text>
                       <row class="table__col-act-2">
                         <button class="btn btn--copy" type="button" title="Ver tags"
-                                @click="store.registryOpenRepo(r.name)">≡</button>
+                                @click="store.registryOpenRepo(repo.name)">≡</button>
                         <button class="env__del" type="button" title="Remover"
-                                @click="store.registryRemoveRepo(r.name)">✕</button>
+                                @click="store.registryRemoveRepo(repo.name)">✕</button>
                       </row>
                     </row>
                     <hr class="rule" />
@@ -803,15 +803,15 @@
               <text class="table__head-cell table__col-act">AÇÃO</text>
             </row>
             <column class="table__body">
-              <template x-for="tk in tokens" :key="tk.name">
+              <template x-for="token in tokens" :key="token.name">
                 <row class="table__row">
-                  <text class="table__cell table__cell--key table__col-svc" x-text="tk.name"></text>
-                  <text class="table__cell table__col-proj" x-text="tk.scope"></text>
-                  <text class="u-muted table__col-dur" x-text="tk.created"></text>
-                  <text class="u-muted table__col-dur" x-text="tk.lastUsed"></text>
+                  <text class="table__cell table__cell--key table__col-svc" x-text="token.name"></text>
+                  <text class="table__cell table__col-proj" x-text="token.scope"></text>
+                  <text class="u-muted table__col-dur" x-text="token.created"></text>
+                  <text class="u-muted table__col-dur" x-text="token.lastUsed"></text>
                   <row class="table__col-act">
                     <button class="env__del" type="button" title="Revogar"
-                            @click="store.registryRemoveToken(tk.name)">✕</button>
+                            @click="store.registryRemoveToken(token.name)">✕</button>
                   </row>
                 </row>
                 <hr class="rule" />
@@ -837,15 +837,15 @@
             </column>
             <column class="u-fill-all" x-show="!store.registryTagsLoading">
               <column class="table__body">
-                <template x-for="t in tags" :key="t.tag">
+                <template x-for="tagItem in tags" :key="tagItem.tag">
                   <column class="list-row">
                     <row class="table__row">
-                      <text class="table__cell table__cell--key table__col-svc" x-text="t.tag"></text>
-                      <text class="u-muted table__col-proj" x-text="t.digest"></text>
-                      <text class="u-muted table__col-dur" x-text="t.size"></text>
-                      <text class="u-muted table__col-dur" x-text="t.updated"></text>
+                      <text class="table__cell table__cell--key table__col-svc" x-text="tagItem.tag"></text>
+                      <text class="u-muted table__col-proj" x-text="tagItem.digest"></text>
+                      <text class="u-muted table__col-dur" x-text="tagItem.size"></text>
+                      <text class="u-muted table__col-dur" x-text="tagItem.updated"></text>
                       <row class="table__col-act">
-                        <button class="btn btn--row-remove" type="button" @click="store.registryRemoveTag(t.tag)">Remover</button>
+                        <button class="btn btn--row-remove" type="button" @click="store.registryRemoveTag(tagItem.tag)">Remover</button>
                       </row>
                     </row>
                     <hr class="rule" />
@@ -927,28 +927,28 @@
           <text class="u-muted" x-fallback="rows" style="padding:16px">Nenhum job cadastrado ainda.</text>
           <column class="u-fill-all">
             <column class="table__body">
-              <template x-for="j in rows" :key="j.id">
+              <template x-for="row in rows" :key="row.id">
                 <column class="list-row">
                   <row class="table__row">
-                    <text class="table__cell table__cell--key table__col-svc" x-text="j.name"></text>
-                    <text class="table__cell table__col-proj" x-text="j.owner"></text>
-                    <row class="state-cell table__col-state" :class="'state-cell--' + j.lastRunKind">
+                    <text class="table__cell table__cell--key table__col-svc" x-text="row.name"></text>
+                    <text class="table__cell table__col-proj" x-text="row.owner"></text>
+                    <row class="state-cell table__col-state" :class="'state-cell--' + row.lastRunKind">
                       <text class="status-dot">●</text>
-                      <text class="state-cell__label" x-text="j.lastRunLabel"></text>
+                      <text class="state-cell__label" x-text="row.lastRunLabel"></text>
                     </row>
-                    <text class="u-muted table__col-dur" x-text="j.recurrence"></text>
-                    <text class="u-muted table__col-dur" x-text="j.nextRunAt"></text>
+                    <text class="u-muted table__col-dur" x-text="row.recurrence"></text>
+                    <text class="u-muted table__col-dur" x-text="row.nextRunAt"></text>
                     <row class="table__col-act-5">
-                      <button class="btn btn--copy" type="button" title="Rodar agora" x-show="!j.running"
-                              @click="store.jobRunNow(j.id)">▶</button>
-                      <button class="env__del" type="button" title="Cancelar" x-show="j.running"
-                              @click="store.jobRunCancel(j.lastRunId)">■</button>
-                      <button class="btn btn--copy" type="button" title="Ver logs" x-show="j.lastRunId"
-                              @click="store.openJobLogs(j.lastRunId)">≡</button>
-                      <button class="btn btn--copy" type="button" :title="j.enabledLabel" @click="store.jobToggle(j.id)"
-                              x-text="j.enabled ? '‖' : '▶'"></button>
-                      <button class="btn btn--copy" type="button" title="Editar" @click="store.openEditJob(j.id)">✎</button>
-                      <button class="env__del" type="button" title="Remover" @click="store.jobDelete(j.id)">✕</button>
+                      <button class="btn btn--copy" type="button" title="Rodar agora" x-show="!row.running"
+                              @click="store.jobRunNow(row.id)">▶</button>
+                      <button class="env__del" type="button" title="Cancelar" x-show="row.running"
+                              @click="store.jobRunCancel(row.lastRunId)">■</button>
+                      <button class="btn btn--copy" type="button" title="Ver logs" x-show="row.lastRunId"
+                              @click="store.openJobLogs(row.lastRunId)">≡</button>
+                      <button class="btn btn--copy" type="button" :title="row.enabledLabel" @click="store.jobToggle(row.id)"
+                              x-text="row.enabled ? '‖' : '▶'"></button>
+                      <button class="btn btn--copy" type="button" title="Editar" @click="store.openEditJob(row.id)">✎</button>
+                      <button class="env__del" type="button" title="Remover" @click="store.jobDelete(row.id)">✕</button>
                     </row>
                   </row>
                   <hr class="rule" />
@@ -983,10 +983,10 @@
           <column class="modal__body">
             <!-- Passo 1: projeto -->
             <column class="grid" x-show="$store.app.newJobStep === 'pick_project'">
-              <template x-for="p in $store.app.newJobProjects" :key="p.id">
+              <template x-for="newJobProject in $store.app.newJobProjects" :key="newJobProject.id">
                 <column class="card">
-                  <text class="card__name" x-text="p.name"></text>
-                  <button class="card__action card__action--open" type="button" @click="$store.app.newJobPickProject(p.id, p.name)">Selecionar ›</button>
+                  <text class="card__name" x-text="newJobProject.name"></text>
+                  <button class="card__action card__action--open" type="button" @click="$store.app.newJobPickProject(newJobProject.id, newJobProject.name)">Selecionar ›</button>
                 </column>
               </template>
               <text class="u-muted" x-fallback="$store.app.newJobProjects" style="padding:16px">Nenhum projeto ainda.</text>
@@ -999,11 +999,11 @@
                 <text class="u-muted">Job sem serviço gatilho — só variáveis do projeto.</text>
                 <button class="card__action card__action--open" type="button" @click="$store.app.newJobPickNoService()">Selecionar ›</button>
               </column>
-              <template x-for="e in $store.app.newJobServicesFiltered" :key="e.service.id">
+              <template x-for="filteredService in $store.app.newJobServicesFiltered" :key="filteredService.service.id">
                 <column class="card">
-                  <text class="card__name" x-text="e.service.spec.name"></text>
+                  <text class="card__name" x-text="filteredService.service.spec.name"></text>
                   <button class="card__action card__action--open" type="button"
-                          @click="$store.app.newJobPickService(e.service.id, e.service.spec.name)">Selecionar ›</button>
+                          @click="$store.app.newJobPickService(filteredService.service.id, filteredService.service.spec.name)">Selecionar ›</button>
                 </column>
               </template>
             </column>
@@ -1045,8 +1045,8 @@
                   <select class="field__input" x-model="$store.app.newJobGitProviderId"
                           @change="$store.app.newJobGitProviderPick($event.target.value)">
                     <option value="">selecione a conta</option>
-                    <template x-for="p in $store.app.newJobGitProviders" :key="p.id">
-                      <option :value="p.id" x-text="p.name"></option>
+                    <template x-for="newJobGitProvider in $store.app.newJobGitProviders" :key="newJobGitProvider.id">
+                      <option :value="newJobGitProvider.id" x-text="newJobGitProvider.name"></option>
                     </template>
                   </select>
                   <text class="u-muted">Conecte contas em Settings → Git.</text>
@@ -1055,16 +1055,16 @@
                   <select class="field__input" x-model="$store.app.newJobGitRepoFullName"
                           @change="$store.app.newJobGitRepoPick($event.target.value)">
                     <option value="">selecione o repositório</option>
-                    <template x-for="r in $store.app.newJobGitRepos" :key="r.full_name">
-                      <option :value="r.full_name" x-text="r.full_name"></option>
+                    <template x-for="newJobGitRepo in $store.app.newJobGitRepos" :key="newJobGitRepo.full_name">
+                      <option :value="newJobGitRepo.full_name" x-text="newJobGitRepo.full_name"></option>
                     </template>
                   </select>
 
                   <text class="u-label-cap">BRANCH</text>
                   <select class="field__input" x-model="$store.app.newJobGitBranch">
                     <option value="">selecione a branch</option>
-                    <template x-for="b in $store.app.newJobGitBranches" :key="b.name">
-                      <option :value="b.name" x-text="b.name"></option>
+                    <template x-for="branch in $store.app.newJobGitBranches" :key="branch.name">
+                      <option :value="branch.name" x-text="branch.name"></option>
                     </template>
                   </select>
 
@@ -1145,10 +1145,10 @@
           <column class="modal__body log-panel">
             <column class="u-fill-all" x-follow>
               <column class="log-panel__body">
-                <template x-for="(l, i) in $store.app.jobLogLines" :key="i">
+                <template x-for="(jobLogLine, index) in $store.app.jobLogLines" :key="index">
                   <row class="log-panel__line">
-                    <text class="log-panel__time" x-text="$store.app.timeHms(l.timestamp)"></text>
-                    <text class="log-panel__text" :style="l.stream === 'Stderr' ? 'color:#F85149' : ''" x-text="l.line"></text>
+                    <text class="log-panel__time" x-text="$store.app.timeHms(jobLogLine.timestamp)"></text>
+                    <text class="log-panel__text" :style="jobLogLine.stream === 'Stderr' ? 'color:#F85149' : ''" x-text="jobLogLine.line"></text>
                   </row>
                 </template>
                 <text class="u-muted" x-fallback="$store.app.jobLogLines" style="padding:12px">
@@ -1217,13 +1217,13 @@
             <text class="u-label-cap" x-text="'CONTAS CONECTADAS (' + gitProviderRows.length + ')'"></text>
             <text class="u-muted" x-fallback="gitProviderRows">Nenhuma conta Git conectada ainda.</text>
             <column class="kv-list">
-              <template x-for="p in gitProviderRows" :key="p.id">
+              <template x-for="gitProviderRow in gitProviderRows" :key="gitProviderRow.id">
                 <row class="kv-list__row">
                   <column class="page-head__titles">
-                    <text class="env__key" x-text="p.name"></text>
-                    <text class="u-muted" x-text="p.kind + '  ·  ' + p.baseUrl + '  ·  ' + p.authMode + '  ·  ' + p.account"></text>
+                    <text class="env__key" x-text="gitProviderRow.name"></text>
+                    <text class="u-muted" x-text="gitProviderRow.kind + '  ·  ' + gitProviderRow.baseUrl + '  ·  ' + gitProviderRow.authMode + '  ·  ' + gitProviderRow.account"></text>
                   </column>
-                  <button class="btn btn--danger" type="button" @click="store.gitProviderDelete(p.id)">Remover</button>
+                  <button class="btn btn--danger" type="button" @click="store.gitProviderDelete(gitProviderRow.id)">Remover</button>
                 </row>
               </template>
             </column>
@@ -1364,8 +1364,8 @@
               <column>
                 <text class="u-label-cap">RESULTADO</text>
                 <column class="kv-list">
-                  <template x-for="(l, i) in store.manifestReportLines" :key="i">
-                    <row class="kv-list__row"><text class="u-muted" x-text="l"></text></row>
+                  <template x-for="(manifestReportLine, index) in store.manifestReportLines" :key="index">
+                    <row class="kv-list__row"><text class="u-muted" x-text="manifestReportLine"></text></row>
                   </template>
                 </column>
               </column>
@@ -1553,45 +1553,45 @@
         <!-- Serviços -->
         <column class="u-fill-all" x-show="projectTab === 'services'">
           <column class="grid">
-            <template x-for="s in services" :key="s.id">
+            <template x-for="service in services" :key="service.id">
               <column class="card">
                 <row class="card__head">
                   <row style="align-items:center; gap:6px">
-                    <text class="card__title" x-text="s.name"></text>
-                    <text class="card__port" x-text="':' + s.port"></text>
+                    <text class="card__title" x-text="service.name"></text>
+                    <text class="card__port" x-text="':' + service.port"></text>
                   </row>
                   <row class="badge">
-                    <text class="status-dot" :class="'state-cell--' + s.statusKind">●</text>
-                    <text class="badge__label" :class="'state-cell--' + s.statusKind" x-text="s.statusLabel"></text>
+                    <text class="status-dot" :class="'state-cell--' + service.statusKind">●</text>
+                    <text class="badge__label" :class="'state-cell--' + service.statusKind" x-text="service.statusLabel"></text>
                   </row>
                 </row>
                 <row class="card__container">
-                  <text class="u-muted" x-text="'name: ' + s.containerName"></text>
+                  <text class="u-muted" x-text="'name: ' + service.containerName"></text>
                 </row>
                 <row style="gap:6px">
-                  <text class="u-muted" x-text="'id: ' + s.containerId"></text>
-                  <text class="u-muted" x-show="s.containerExtra" x-text="'extra: ' + s.containerExtra"></text>
+                  <text class="u-muted" x-text="'id: ' + service.containerId"></text>
+                  <text class="u-muted" x-show="service.containerExtra" x-text="'extra: ' + service.containerExtra"></text>
                 </row>
                 <hr class="rule" />
                 <row class="card__stats">
                   <column class="card__stat">
                     <text class="u-label-cap">CPU</text>
-                    <text class="card__stat-num" x-text="s.cpu"></text>
+                    <text class="card__stat-num" x-text="service.cpu"></text>
                   </column>
                   <column class="card__stat">
                     <text class="u-label-cap">MEM</text>
-                    <text class="card__stat-num" x-text="s.mem"></text>
+                    <text class="card__stat-num" x-text="service.mem"></text>
                   </column>
                 </row>
                 <button class="card__action card__action--open" type="button" style="width:100%"
-                        @click="store.openService(s.id)">Abrir ›</button>
+                        @click="store.openService(service.id)">Abrir ›</button>
                 <row class="card__actions">
                   <button class="card__action card__action--icon" type="button" title="Parar" aria-label="Parar serviço"
-                          @click="store.stopService(s.id)">■</button>
+                          @click="store.stopService(service.id)">■</button>
                   <button class="card__action card__action--icon card__action--icon-danger" type="button" title="Remover" aria-label="Remover serviço"
-                          @click="store.stopAndDeleteService(s.id)">✕</button>
+                          @click="store.stopAndDeleteService(service.id)">✕</button>
                   <button class="card__action card__action--icon" type="button" title="Exportar serviço (arquivo para recriá-lo em outro servidor)"
-                          aria-label="Exportar serviço" @click="store.openExportWin(s.id)">⇪</button>
+                          aria-label="Exportar serviço" @click="store.openExportWin(service.id)">⇪</button>
                 </row>
               </column>
             </template>
@@ -1616,16 +1616,16 @@
                 <button class="btn btn--primary" type="button" @click="addEnvVar()">Adicionar</button>
               </row>
               <column class="kv-list">
-                <template x-for="e in envVars" :key="e.key">
+                <template x-for="envVar in envVars" :key="envVar.key">
                   <column style="width:100%">
-                    <row class="kv-list__row" x-show="e.isComment">
-                      <text class="u-muted" x-text="e.text"></text>
+                    <row class="kv-list__row" x-show="envVar.isComment">
+                      <text class="u-muted" x-text="envVar.text"></text>
                     </row>
-                    <row class="kv-list__row" x-show="!e.isComment">
-                      <button class="env__del" type="button" @click="deleteEnvVar(e.key)">✕</button>
+                    <row class="kv-list__row" x-show="!envVar.isComment">
+                      <button class="env__del" type="button" @click="deleteEnvVar(envVar.key)">✕</button>
                       <text class="env__sep"></text>
-                      <text class="env__key" x-text="e.key"></text>
-                      <text class="kv-list__val kv-list__val--compact" x-text="e.isSecret ? '(secret)' : e.value"></text>
+                      <text class="env__key" x-text="envVar.key"></text>
+                      <text class="kv-list__val kv-list__val--compact" x-text="envVar.isSecret ? '(secret)' : envVar.value"></text>
                     </row>
                   </column>
                 </template>
@@ -1659,11 +1659,11 @@
             <button class="btn btn--primary" type="button" @click="submitSecret()">Salvar secret</button>
           </row>
           <column class="kv-list">
-            <template x-for="s in secrets" :key="s.name">
+            <template x-for="secret in secrets" :key="secret.name">
               <row class="kv-list__row">
-                <button class="env__del" type="button" @click="store.deleteSecret(s.name)">✕</button>
+                <button class="env__del" type="button" @click="store.deleteSecret(secret.name)">✕</button>
                 <text class="env__sep"></text>
-                <text class="env__key" x-text="s.name"></text>
+                <text class="env__key" x-text="secret.name"></text>
                 <text class="kv-list__val kv-list__val--compact">cifrado</text>
               </row>
             </template>
@@ -1685,21 +1685,21 @@
             Nenhum job cadastrado ainda.
           </text>
           <column class="kv-list">
-            <template x-for="j in jobs" :key="j.id">
+            <template x-for="job in jobs" :key="job.id">
               <row class="kv-list__row">
-                <text class="env__key" x-text="j.name"></text>
-                <text class="u-muted table__col-dur" x-text="j.recurrence"></text>
-                <row class="state-cell" :class="'state-cell--' + j.lastRunKind">
+                <text class="env__key" x-text="job.name"></text>
+                <text class="u-muted table__col-dur" x-text="job.recurrence"></text>
+                <row class="state-cell" :class="'state-cell--' + job.lastRunKind">
                   <text class="status-dot">●</text>
-                  <text class="state-cell__label" x-text="j.lastRunLabel"></text>
+                  <text class="state-cell__label" x-text="job.lastRunLabel"></text>
                 </row>
-                <text class="u-muted kv-list__val kv-list__val--compact" x-text="'→ ' + j.nextRunAt"></text>
-                <button class="btn btn--copy" type="button" x-show="!j.running" @click="store.jobRunNow(j.id)">Rodar agora</button>
-                <button class="env__del" type="button" x-show="j.running" @click="store.jobRunCancel(j.lastRunId)">Cancelar</button>
-                <button class="btn btn--copy" type="button" x-show="j.lastRunId" @click="store.openJobLogs(j.lastRunId)">Ver logs</button>
-                <button class="btn btn--copy" type="button" @click="store.jobToggle(j.id)" x-text="j.enabledLabel"></button>
-                <button class="btn btn--copy" type="button" @click="store.openEditJob(j.id)">Editar</button>
-                <button class="env__del" type="button" @click="store.jobDelete(j.id)">✕</button>
+                <text class="u-muted kv-list__val kv-list__val--compact" x-text="'→ ' + job.nextRunAt"></text>
+                <button class="btn btn--copy" type="button" x-show="!job.running" @click="store.jobRunNow(job.id)">Rodar agora</button>
+                <button class="env__del" type="button" x-show="job.running" @click="store.jobRunCancel(job.lastRunId)">Cancelar</button>
+                <button class="btn btn--copy" type="button" x-show="job.lastRunId" @click="store.openJobLogs(job.lastRunId)">Ver logs</button>
+                <button class="btn btn--copy" type="button" @click="store.jobToggle(job.id)" x-text="job.enabledLabel"></button>
+                <button class="btn btn--copy" type="button" @click="store.openEditJob(job.id)">Editar</button>
+                <button class="env__del" type="button" @click="store.jobDelete(job.id)">✕</button>
               </row>
             </template>
           </column>
@@ -1814,27 +1814,27 @@
                 <!-- Avisos: o que não veio / o que merece atenção -->
                 <column style="gap:6px" x-show="report.warnings.length">
                   <text class="field__label">ATENÇÃO</text>
-                  <template x-for="w in report.warnings" :key="w.code">
-                    <text class="u-muted" x-text="'• ' + w.message"></text>
+                  <template x-for="warning in report.warnings" :key="warning.code">
+                    <text class="u-muted" x-text="'• ' + warning.message"></text>
                   </template>
                 </column>
 
                 <!-- Valores que o pacote não trouxe (exportado sem valores) -->
                 <column style="gap:6px" x-show="report.missing_service_vars.length">
                   <text class="field__label">VARIÁVEIS DO SERVIÇO SEM VALOR (obrigatório)</text>
-                  <template x-for="k in report.missing_service_vars" :key="k">
+                  <template x-for="missingServiceVar in report.missing_service_vars" :key="missingServiceVar">
                     <row class="var-row">
-                      <text class="var-row__key" x-text="k"></text>
-                      <input class="field__input" type="text" x-model="vars[k]" @change="analyze()" placeholder="valor" />
+                      <text class="var-row__key" x-text="missingServiceVar"></text>
+                      <input class="field__input" type="text" x-model="vars[missingServiceVar]" @change="analyze()" placeholder="valor" />
                     </row>
                   </template>
                 </column>
                 <column style="gap:6px" x-show="report.missing_project_vars.length">
                   <text class="field__label">VARIÁVEIS DO PROJETO SEM VALOR (obrigatório)</text>
-                  <template x-for="k in report.missing_project_vars" :key="k">
+                  <template x-for="missingProjectVar in report.missing_project_vars" :key="missingProjectVar">
                     <row class="var-row">
-                      <text class="var-row__key" x-text="k"></text>
-                      <input class="field__input" type="text" x-model="projectVars[k]" @change="analyze()" placeholder="valor" />
+                      <text class="var-row__key" x-text="missingProjectVar"></text>
+                      <input class="field__input" type="text" x-model="projectVars[missingProjectVar]" @change="analyze()" placeholder="valor" />
                     </row>
                   </template>
                 </column>
@@ -1843,10 +1843,10 @@
                 <column style="gap:6px" x-show="report.missing_secrets.length">
                   <text class="field__label">SECRETS QUE ESTE PROJETO NÃO TEM</text>
                   <text class="u-muted">Informe o valor para criá-los, ou deixe vazio para seguir sem (o serviço fica com a referência quebrada até você criar o secret).</text>
-                  <template x-for="n in report.missing_secrets" :key="n">
+                  <template x-for="missingSecret in report.missing_secrets" :key="missingSecret">
                     <row class="var-row">
-                      <text class="var-row__key" x-text="n"></text>
-                      <input class="field__input" type="password" x-model="secrets[n]" @change="analyze()" placeholder="valor do secret" autocomplete="off" />
+                      <text class="var-row__key" x-text="missingSecret"></text>
+                      <input class="field__input" type="password" x-model="secrets[missingSecret]" @change="analyze()" placeholder="valor do secret" autocomplete="off" />
                     </row>
                   </template>
                 </column>
@@ -1856,8 +1856,8 @@
                   <text class="field__label" x-text="'GIT PROVIDER \'' + report.missing_git_provider + '\' NÃO EXISTE AQUI'"></text>
                   <select class="field__input" x-model="gitProviderId" @change="analyze()">
                     <option value="">seguir sem provider</option>
-                    <template x-for="p in gitProviders" :key="p.id">
-                      <option :value="p.id" x-text="p.name"></option>
+                    <template x-for="gitProvider in gitProviders" :key="gitProvider.id">
+                      <option :value="gitProvider.id" x-text="gitProvider.name"></option>
                     </template>
                   </select>
                 </column>
@@ -1866,17 +1866,17 @@
                 <column style="gap:6px" x-show="report.project_env.length">
                   <text class="field__label">VARIÁVEIS DO PROJETO TRAZIDAS</text>
                   <text class="u-muted">Nada do projeto é sobrescrito sem você escolher.</text>
-                  <template x-for="s in report.project_env" :key="s.key">
+                  <template x-for="statusEntry in report.project_env" :key="statusEntry.key">
                     <row class="var-row">
-                      <text class="var-row__key" x-text="s.key"></text>
-                      <text class="u-muted" x-text="(s.is_secret ? 'secret · ' : '') + stateLabel(s.state)"></text>
-                      <select class="field__input" x-show="s.state !== 'Same'" :value="projectEnv[s.key] || s.choice"
-                              @change="chooseEnv(s.key, $event.target.value)">
-                        <template x-for="c in choicesFor(s)" :key="c">
-                          <option :value="c" :selected="(projectEnv[s.key] || s.choice) === c" x-text="choiceLabel(s, c)"></option>
+                      <text class="var-row__key" x-text="statusEntry.key"></text>
+                      <text class="u-muted" x-text="(statusEntry.is_secret ? 'secret · ' : '') + stateLabel(statusEntry.state)"></text>
+                      <select class="field__input" x-show="statusEntry.state !== 'Same'" :value="projectEnv[statusEntry.key] || statusEntry.choice"
+                              @change="chooseEnv(statusEntry.key, $event.target.value)">
+                        <template x-for="choice in choicesFor(statusEntry)" :key="choice">
+                          <option :value="choice" :selected="(projectEnv[statusEntry.key] || statusEntry.choice) === choice" x-text="choiceLabel(statusEntry, choice)"></option>
                         </template>
                       </select>
-                      <text class="u-muted" x-show="s.state === 'Same'">já existe igual — nada a fazer</text>
+                      <text class="u-muted" x-show="statusEntry.state === 'Same'">já existe igual — nada a fazer</text>
                     </row>
                   </template>
                 </column>
@@ -1953,13 +1953,13 @@
         <column class="form-panel" x-show="step === 'pick_db'">
           <text class="u-label-cap">ESCOLHA O BANCO DE DADOS</text>
           <column class="kv-list">
-            <template x-for="db in catalog.dbs" :key="db.id">
+            <template x-for="database in catalog.dbs" :key="database.id">
               <row class="kv-list__row">
                 <column class="page-head__titles">
-                  <text class="env__key" x-text="db.label"></text>
-                  <text class="u-muted" x-text="db.image"></text>
+                  <text class="env__key" x-text="database.label"></text>
+                  <text class="u-muted" x-text="database.image"></text>
                 </column>
-                <button class="btn btn--primary" type="button" @click="pickDatabase(db)">Selecionar ›</button>
+                <button class="btn btn--primary" type="button" @click="pickDatabase(database)">Selecionar ›</button>
               </row>
             </template>
           </column>
@@ -2000,13 +2000,13 @@
         <column class="form-panel" x-show="step === 'pick_broker'">
           <text class="u-label-cap">ESCOLHA O BROKER</text>
           <column class="kv-list">
-            <template x-for="b in catalog.brokers" :key="b.id">
+            <template x-for="broker in catalog.brokers" :key="broker.id">
               <row class="kv-list__row">
                 <column class="page-head__titles">
-                  <text class="env__key" x-text="b.label"></text>
-                  <text class="u-muted" x-text="b.image"></text>
+                  <text class="env__key" x-text="broker.label"></text>
+                  <text class="u-muted" x-text="broker.image"></text>
                 </column>
-                <button class="btn btn--primary" type="button" @click="pickBroker(b)">Selecionar ›</button>
+                <button class="btn btn--primary" type="button" @click="pickBroker(broker)">Selecionar ›</button>
               </row>
             </template>
           </column>
@@ -2035,13 +2035,13 @@
           <text class="u-label-cap">BUSCAR</text>
           <input class="field__input" type="text" x-model="templateSearch" placeholder="buscar templates…" />
           <column class="kv-list" style="margin-top:14px">
-            <template x-for="t in filteredTemplates" :key="t.id">
+            <template x-for="filteredTemplate in filteredTemplates" :key="filteredTemplate.id">
               <row class="kv-list__row">
                 <column class="page-head__titles">
-                  <text class="env__key" x-text="t.name"></text>
-                  <text class="u-muted" x-show="t.description" x-text="t.description"></text>
+                  <text class="env__key" x-text="filteredTemplate.name"></text>
+                  <text class="u-muted" x-show="filteredTemplate.description" x-text="filteredTemplate.description"></text>
                 </column>
-                <button class="btn btn--primary" type="button" @click="pickTemplate(t)">Escolher ›</button>
+                <button class="btn btn--primary" type="button" @click="pickTemplate(filteredTemplate)">Escolher ›</button>
               </row>
             </template>
             <text class="u-muted" x-fallback="filteredTemplates" style="padding:16px">
@@ -2054,10 +2054,10 @@
           <text class="u-label-cap" x-text="(selectedTemplate ? selectedTemplate.name : '') + ' — CONFIGURAR'"></text>
           <text class="u-label-cap" style="margin-top:8px">NOME DO SERVIÇO</text>
           <input class="field__input" type="text" x-model="templateServiceName" :placeholder="selectedTemplate ? selectedTemplate.name : ''" />
-          <template x-for="(v, i) in (selectedTemplate ? selectedTemplate.vars : [])" :key="v.idx">
+          <template x-for="(variable, index) in (selectedTemplate ? selectedTemplate.vars : [])" :key="variable.idx">
             <column style="margin-top:8px">
-              <text class="u-label-cap" x-text="v.label"></text>
-              <input class="field__input" type="text" x-model="templateValues[i]" :placeholder="v.placeholder" />
+              <text class="u-label-cap" x-text="variable.label"></text>
+              <input class="field__input" type="text" x-model="templateValues[index]" :placeholder="variable.placeholder" />
             </column>
           </template>
           <row class="env__add" style="margin-top:14px">
@@ -2120,8 +2120,8 @@
                   <text class="field__label" x-text="'VARIÁVEIS DO SERVIÇO (' + plan.service_env.length + ') — todas vão'"></text>
                   <text class="u-muted" x-show="!plan.service_env.length">Este serviço não tem variáveis próprias.</text>
                   <row class="chip-row">
-                    <template x-for="v in plan.service_env" :key="v.key">
-                      <text class="chip" x-text="v.key + (v.is_secret ? ' 🔒' : '')"></text>
+                    <template x-for="envVar in plan.service_env" :key="envVar.key">
+                      <text class="chip" x-text="envVar.key + (envVar.is_secret ? ' 🔒' : '')"></text>
                     </template>
                   </row>
                 </column>
@@ -2139,12 +2139,12 @@
                     <button class="btn btn--sm-ghost" type="button" @click="pickNone()">Nenhuma</button>
                   </row>
                   <text class="u-muted" x-show="!plan.project_env.length">O projeto não tem variáveis.</text>
-                  <template x-for="v in projectVars" :key="v.key">
+                  <template x-for="projectVar in projectVars" :key="projectVar.key">
                     <label class="check-row">
-                      <input type="checkbox" x-model="picked[v.key]" />
-                      <span x-text="v.key"></span>
-                      <span class="u-muted" x-show="v.is_secret">· secret</span>
-                      <span class="u-muted" x-show="v.suggested">· citada pelo serviço</span>
+                      <input type="checkbox" x-model="picked[projectVar.key]" />
+                      <span x-text="projectVar.key"></span>
+                      <span class="u-muted" x-show="projectVar.is_secret">· secret</span>
+                      <span class="u-muted" x-show="projectVar.suggested">· citada pelo serviço</span>
                     </label>
                   </template>
                 </column>
@@ -2182,10 +2182,10 @@
           <column class="modal__body log-panel" style="border:none; border-radius:0">
             <column class="u-fill-all" x-follow>
               <column class="log-panel__body">
-                <template x-for="(l, i) in $store.app.serviceLogLines" :key="i">
+                <template x-for="(serviceLogLine, index) in $store.app.serviceLogLines" :key="index">
                   <row class="log-panel__line">
-                    <text class="log-panel__time" x-text="$store.app.timeHms(l.timestamp)"></text>
-                    <text class="log-panel__text" :style="l.stream === 'Stderr' ? 'color:#F85149' : ''" x-text="l.line"></text>
+                    <text class="log-panel__time" x-text="$store.app.timeHms(serviceLogLine.timestamp)"></text>
+                    <text class="log-panel__text" :style="serviceLogLine.stream === 'Stderr' ? 'color:#F85149' : ''" x-text="serviceLogLine.line"></text>
                   </row>
                 </template>
                 <text class="u-muted" x-fallback="$store.app.serviceLogLines" style="padding:12px">Aguardando linhas de log…</text>
@@ -2399,23 +2399,23 @@
                       <text class="u-label-cap">CONTA CONECTADA</text>
                       <select class="field__input" x-model="giteaProviderId" @change="giteaProviderPick($event.target.value)">
                         <option value="">selecione a conta</option>
-                        <template x-for="p in giteaProviders" :key="p.id">
-                          <option :value="p.id" x-text="p.name"></option>
+                        <template x-for="giteaProvider in giteaProviders" :key="giteaProvider.id">
+                          <option :value="giteaProvider.id" x-text="giteaProvider.name"></option>
                         </template>
                       </select>
                       <text class="u-muted">Conecte contas em Settings → Git.</text>
                       <text class="u-label-cap">REPOSITÓRIO</text>
                       <select class="field__input" x-model="giteaRepoFullName" @change="giteaRepoPick($event.target.value)">
                         <option value="">selecione o repositório</option>
-                        <template x-for="r in giteaRepos" :key="r.full_name">
-                          <option :value="r.full_name" x-text="r.full_name"></option>
+                        <template x-for="giteaRepo in giteaRepos" :key="giteaRepo.full_name">
+                          <option :value="giteaRepo.full_name" x-text="giteaRepo.full_name"></option>
                         </template>
                       </select>
                       <text class="u-label-cap">BRANCH</text>
                       <select class="field__input" x-model="serviceFormBranch">
                         <option value="">selecione a branch</option>
-                        <template x-for="b in giteaBranches" :key="b.name">
-                          <option :value="b.name" x-text="b.name"></option>
+                        <template x-for="giteaBranch in giteaBranches" :key="giteaBranch.name">
+                          <option :value="giteaBranch.name" x-text="giteaBranch.name"></option>
                         </template>
                       </select>
                       <text class="u-label-cap">SELEÇÃO ATUAL</text>
@@ -2507,10 +2507,10 @@
               <text class="u-label-cap" x-text="'CONTAINERS (' + liveContainers.length + ')'"></text>
               <text class="u-muted" x-fallback="liveContainers">Nenhum container em execução.</text>
               <row class="kv-list__row" x-show="liveContainers.length > 0" style="flex-wrap:wrap">
-                <template x-for="c in liveContainers" :key="c.id">
+                <template x-for="liveContainer in liveContainers" :key="liveContainer.id">
                   <row class="badge" style="margin-right:18px">
-                    <text class="status-dot" :class="'state-cell--' + c.kind">●</text>
-                    <text class="kv-list__val kv-list__val--compact" x-text="c.name + '  ' + c.idShort"></text>
+                    <text class="status-dot" :class="'state-cell--' + liveContainer.kind">●</text>
+                    <text class="kv-list__val kv-list__val--compact" x-text="liveContainer.name + '  ' + liveContainer.idShort"></text>
                   </row>
                 </template>
               </row>
@@ -2535,16 +2535,16 @@
                     secret:NOME como valor. O secret é criado na aba Secrets do projeto.
                   </text>
                   <column class="kv-list">
-                    <template x-for="e in envVars" :key="e.key">
+                    <template x-for="envVar in envVars" :key="envVar.key">
                       <column style="width:100%">
-                        <row class="kv-list__row" x-show="e.isComment">
-                          <text class="u-muted" x-text="e.text"></text>
+                        <row class="kv-list__row" x-show="envVar.isComment">
+                          <text class="u-muted" x-text="envVar.text"></text>
                         </row>
-                        <row class="kv-list__row" x-show="!e.isComment">
-                          <button class="env__del" type="button" @click="deleteEnvVar(e.key)">✕</button>
+                        <row class="kv-list__row" x-show="!envVar.isComment">
+                          <button class="env__del" type="button" @click="deleteEnvVar(envVar.key)">✕</button>
                           <text class="env__sep"></text>
-                          <text class="env__key" x-text="e.key"></text>
-                          <text class="kv-list__val kv-list__val--compact" x-text="e.isSecret ? '(secret)' : e.value"></text>
+                          <text class="env__key" x-text="envVar.key"></text>
+                          <text class="kv-list__val kv-list__val--compact" x-text="envVar.isSecret ? '(secret)' : envVar.value"></text>
                         </row>
                       </column>
                     </template>
@@ -2573,12 +2573,12 @@
                 <button class="btn btn--primary" type="button" @click="addDomain()">Adicionar</button>
               </row>
               <column class="kv-list">
-                <template x-for="d in domains" :key="d.domain">
+                <template x-for="domain in domains" :key="domain.domain">
                   <row class="kv-list__row">
-                    <button class="env__del" type="button" @click="deleteDomain(d.domain)">✕</button>
+                    <button class="env__del" type="button" @click="deleteDomain(domain.domain)">✕</button>
                     <text class="env__sep"></text>
-                    <text class="env__key" x-text="d.domain"></text>
-                    <text class="kv-list__val kv-list__val--compact" x-text="(d.tls ? 'https' : 'http') + ' → :' + d.port"></text>
+                    <text class="env__key" x-text="domain.domain"></text>
+                    <text class="kv-list__val kv-list__val--compact" x-text="(domain.tls ? 'https' : 'http') + ' → :' + domain.port"></text>
                   </row>
                 </template>
                 <text class="u-muted" x-fallback="domains" style="padding:12px">
@@ -2596,7 +2596,7 @@
               <text class="u-label-cap">DESTINO</text>
               <select class="form-select" x-model="serviceFormMigration.dest">
                 <option value="">database de destino...</option>
-                <template x-for="d in migrationDestinations" :key="d.id"><option :value="d.id" x-text="d.name"></option></template>
+                <template x-for="migrationDestination in migrationDestinations" :key="migrationDestination.id"><option :value="migrationDestination.id" x-text="migrationDestination.name"></option></template>
               </select>
               <text class="u-label-cap">ENV VAR A TROCAR</text>
               <input class="field__input" x-model="serviceFormMigration.env" placeholder="padrão DATABASE_URL / MONGODB_URI" />
@@ -2608,11 +2608,11 @@
                 <column>
                   <text class="u-label-cap" x-text="'ANDAMENTO — ' + mig.status"></text>
                   <column class="kv-list">
-                    <template x-for="s in migrationSteps" :key="s.name">
+                    <template x-for="migrationStep in migrationSteps" :key="migrationStep.name">
                       <row class="kv-list__row">
-                        <text class="env__key" x-text="s.icon"></text>
-                        <text class="kv-list__val kv-list__val--compact" x-text="s.name"></text>
-                        <text class="u-muted" x-text="s.detail"></text>
+                        <text class="env__key" x-text="migrationStep.icon"></text>
+                        <text class="kv-list__val kv-list__val--compact" x-text="migrationStep.name"></text>
+                        <text class="u-muted" x-text="migrationStep.detail"></text>
                       </row>
                     </template>
                   </column>
@@ -2633,12 +2633,12 @@
               <text class="u-label-cap" x-text="'DATABASES (' + mdbs.length + ')'"></text>
               <text class="u-muted">Cada database tem usuário próprio, sem acesso aos demais. O projeto consumidor recebe a connection string numa env var.</text>
               <column class="kv-list">
-                <template x-for="d in mdbs" :key="d.id">
+                <template x-for="sharedDatabase in mdbs" :key="sharedDatabase.id">
                   <row class="kv-list__row">
-                    <button class="env__del" type="button" @click="deleteSharedDatabase(d)">✕</button>
-                    <button class="tabs__tab" type="button" @click="showSharedDatabase(d)" x-text="d.name"></button>
-                    <text class="kv-list__val kv-list__val--compact" x-text="'→ ' + d.project"></text>
-                    <text class="u-muted" x-text="d.envVar"></text>
+                    <button class="env__del" type="button" @click="deleteSharedDatabase(sharedDatabase)">✕</button>
+                    <button class="tabs__tab" type="button" @click="showSharedDatabase(sharedDatabase)" x-text="sharedDatabase.name"></button>
+                    <text class="kv-list__val kv-list__val--compact" x-text="'→ ' + sharedDatabase.project"></text>
+                    <text class="u-muted" x-text="sharedDatabase.envVar"></text>
                   </row>
                 </template>
               </column>
@@ -2651,7 +2651,7 @@
               <input class="field__input" x-model="serviceFormSharedDatabase.name" placeholder="nome (a-z, 0-9, _)" />
               <select class="form-select" x-model="serviceFormSharedDatabase.project">
                 <option value="">projeto consumidor...</option>
-                <template x-for="p in sharedDatabaseProjects" :key="p.id"><option :value="p.id" x-text="p.name"></option></template>
+                <template x-for="sharedDatabaseProject in sharedDatabaseProjects" :key="sharedDatabaseProject.id"><option :value="sharedDatabaseProject.id" x-text="sharedDatabaseProject.name"></option></template>
               </select>
               <input class="field__input" x-model="serviceFormSharedDatabase.env" placeholder="env var (padrão DATABASE_URL / MONGODB_URI)" />
               <input class="field__input" x-model="serviceFormSharedDatabase.limit" placeholder="limite de conexões (opcional; não vale no Mongo)" />
@@ -2696,19 +2696,19 @@
                 <text class="table__head-cell table__col-act-2">AÇÃO</text>
               </row>
               <column class="table__body">
-                <template x-for="d in deployments" :key="d.id">
+                <template x-for="deployment in deployments" :key="deployment.id">
                   <column class="list-row">
                     <row class="table__row">
-                      <row class="state-cell table__col-state" :class="'state-cell--' + d.stateKind">
+                      <row class="state-cell table__col-state" :class="'state-cell--' + deployment.stateKind">
                         <text class="status-dot">●</text>
-                        <text class="state-cell__label" x-text="d.stateLabel"></text>
+                        <text class="state-cell__label" x-text="deployment.stateLabel"></text>
                       </row>
-                      <text class="table__cell table__col-dur" x-text="d.duration"></text>
-                      <text class="u-muted table__col-start" x-text="d.start"></text>
+                      <text class="table__cell table__col-dur" x-text="deployment.duration"></text>
+                      <text class="u-muted table__col-start" x-text="deployment.start"></text>
                       <row class="deployments__actions table__col-act-2">
-                        <button class="btn btn--dep-logs" type="button" @click="viewBuildLog(d.id)" title="Ver build log">↗</button>
-                        <button class="btn btn--dep-logs" type="button" x-show="!d.terminal" @click="abortDeployment(d.id)" title="Cancelar">⏹</button>
-                        <button class="btn btn--dep-del" type="button" x-show="d.terminal" @click="removeDeployment(d.id)" title="Remover">✕</button>
+                        <button class="btn btn--dep-logs" type="button" @click="viewBuildLog(deployment.id)" title="Ver build log">↗</button>
+                        <button class="btn btn--dep-logs" type="button" x-show="!deployment.terminal" @click="abortDeployment(deployment.id)" title="Cancelar">⏹</button>
+                        <button class="btn btn--dep-del" type="button" x-show="deployment.terminal" @click="removeDeployment(deployment.id)" title="Remover">✕</button>
                       </row>
                     </row>
                     <hr class="rule" />
@@ -2770,10 +2770,10 @@
               </row>
               <column class="u-fill-all" x-follow>
                 <column class="log-panel__body">
-                  <template x-for="(l, i) in store.serviceLogLines" :key="i">
+                  <template x-for="(serviceLogLine, index) in store.serviceLogLines" :key="index">
                     <row class="log-panel__line">
-                      <text class="log-panel__time" x-text="timeHms(l.timestamp)"></text>
-                      <text class="log-panel__text" :style="l.stream === 'Stderr' ? 'color:#F85149' : ''" x-text="l.line"></text>
+                      <text class="log-panel__time" x-text="timeHms(serviceLogLine.timestamp)"></text>
+                      <text class="log-panel__text" :style="serviceLogLine.stream === 'Stderr' ? 'color:#F85149' : ''" x-text="serviceLogLine.line"></text>
                     </row>
                   </template>
                   <text class="u-muted" x-fallback="store.serviceLogLines" style="padding:12px">
@@ -2804,14 +2804,14 @@
                 rodam. Cadastre jobs em Schedules.
               </text>
               <column class="kv-list">
-                <template x-for="(c, i) in preDeployChecks" :key="c.id">
+                <template x-for="(preDeployCheck, index) in preDeployChecks" :key="preDeployCheck.id">
                   <row class="kv-list__row">
-                    <button class="env__del" type="button" @click="preDeployCheckDelete(c.id)">✕</button>
+                    <button class="env__del" type="button" @click="preDeployCheckDelete(preDeployCheck.id)">✕</button>
                     <text class="env__sep"></text>
-                    <text class="env__key" x-text="c.index + '.'"></text>
-                    <text class="kv-list__val kv-list__val--compact" x-text="c.name"></text>
-                    <button class="btn btn--ghost" type="button" :disabled="i === 0" @click="preDeployCheckMove(c.id, -1)">↑</button>
-                    <button class="btn btn--ghost" type="button" :disabled="i === preDeployChecks.length - 1" @click="preDeployCheckMove(c.id, 1)">↓</button>
+                    <text class="env__key" x-text="preDeployCheck.index + '.'"></text>
+                    <text class="kv-list__val kv-list__val--compact" x-text="preDeployCheck.name"></text>
+                    <button class="btn btn--ghost" type="button" :disabled="index === 0" @click="preDeployCheckMove(preDeployCheck.id, -1)">↑</button>
+                    <button class="btn btn--ghost" type="button" :disabled="index === preDeployChecks.length - 1" @click="preDeployCheckMove(preDeployCheck.id, 1)">↓</button>
                   </row>
                 </template>
                 <text class="u-muted" x-fallback="preDeployChecks" style="padding:12px">
@@ -2823,8 +2823,8 @@
               <row class="env__add">
                 <select class="field__input" x-model="advancedPreDeployCheckAddJobId">
                   <option value="">escolher job...</option>
-                  <template x-for="j in preDeployAvailableJobs" :key="j.id">
-                    <option :value="j.id" x-text="j.name"></option>
+                  <template x-for="preDeployAvailableJob in preDeployAvailableJobs" :key="preDeployAvailableJob.id">
+                    <option :value="preDeployAvailableJob.id" x-text="preDeployAvailableJob.name"></option>
                   </template>
                 </select>
                 <button class="btn btn--primary" type="button" @click="preDeployCheckAdd()">Adicionar à fila</button>
@@ -2855,13 +2855,13 @@
   <!-- Toasts: fora do shell de propósito, para sobreviverem a qualquer troca
        de tela (inclusive um logout no meio de uma ação). -->
   <column class="toast-wrap" aria-live="polite" aria-atomic="false">
-    <template x-for="t in $store.app.toasts" :key="t.id">
-      <row class="toast" :class="'toast--' + t.kind" role="status" :style="'--ms:' + t.ms + 'ms'">
+    <template x-for="toast in $store.app.toasts" :key="toast.id">
+      <row class="toast" :class="'toast--' + toast.kind" role="status" :style="'--ms:' + toast.ms + 'ms'">
         <text class="toast__icon" aria-hidden="true"
-              x-text="({ info: 'ℹ', success: '✓', warning: '⚠', error: '✕' })[t.kind] || 'ℹ'"></text>
-        <text class="toast__msg" x-text="t.message"></text>
+              x-text="({ info: 'ℹ', success: '✓', warning: '⚠', error: '✕' })[toast.kind] || 'ℹ'"></text>
+        <text class="toast__msg" x-text="toast.message"></text>
         <button class="toast__close" type="button" aria-label="Fechar"
-                @click="$store.app.dismissToast(t.id)">&times;</button>
+                @click="$store.app.dismissToast(toast.id)">&times;</button>
         <span class="toast__bar"></span>
       </row>
     </template>

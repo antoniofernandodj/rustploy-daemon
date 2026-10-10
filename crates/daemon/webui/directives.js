@@ -15,31 +15,31 @@
 // TypeError quando a lista ainda não era array, e repetia a condição em cada
 // tela. Aqui há um só lugar que decide o que é "vazio".
 export function registerDirectives(Alpine) {
-  Alpine.directive("fallback", (el, { expression }, { evaluateLater, effect }) => {
+  Alpine.directive("fallback", (element, { expression }, { evaluateLater, effect }) => {
     const lista = evaluateLater(expression);
     effect(() => {
-      lista((v) => {
-        el.style.display = Array.isArray(v) && v.length > 0 ? "none" : "";
+      lista((items) => {
+        element.style.display = Array.isArray(items) && items.length > 0 ? "none" : "";
       });
     });
   });
 
   // `x-follow`: "tail -f" — mantém a rolagem no fim enquanto chegam linhas, mas
   // só se o usuário já estava no fim (rolou pra cima pra ler = não puxa de volta).
-  Alpine.directive("follow", (el, _d, { cleanup }) => {
+  Alpine.directive("follow", (element, _directive, { cleanup }) => {
     let stick = true;
-    const atEnd = () => el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+    const atEnd = () => element.scrollHeight - element.scrollTop - element.clientHeight < 24;
     const onScroll = () => {
       stick = atEnd();
     };
-    el.addEventListener("scroll", onScroll, { passive: true });
-    const mo = new MutationObserver(() => {
-      if (stick) el.scrollTop = el.scrollHeight;
+    element.addEventListener("scroll", onScroll, { passive: true });
+    const mutationObserver = new MutationObserver(() => {
+      if (stick) element.scrollTop = element.scrollHeight;
     });
-    mo.observe(el, { childList: true, subtree: true });
+    mutationObserver.observe(element, { childList: true, subtree: true });
     cleanup(() => {
-      el.removeEventListener("scroll", onScroll);
-      mo.disconnect();
+      element.removeEventListener("scroll", onScroll);
+      mutationObserver.disconnect();
     });
   });
 }

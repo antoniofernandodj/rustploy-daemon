@@ -8,7 +8,7 @@ use shared::Response as RpResponse;
 use shared::wizard::{self, WizardCreateReq};
 
 /// Catálogos de bancos/brokers/templates prontos como JSON para o contexto do
-/// cliente (`ns_dbs`/`ns_brokers`/`ns_templates`). `search` filtra os templates.
+/// cliente (`new_service_databases`/`new_service_brokers`/`new_service_templates`). `search` filtra os templates.
 pub async fn catalog(search: String) -> RpResponse {
     RpResponse::WizardCatalog {
         dbs: wizard::db_rows_json(),

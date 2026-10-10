@@ -12,7 +12,7 @@ import {
   registryRepoRows,
   registryTagRows,
   registryTokenRows,
-} from "../fmt.js";
+} from "../format.js";
 
 document.addEventListener("alpine:init", () => {
   Alpine.data("docker", () => ({
@@ -25,15 +25,15 @@ document.addEventListener("alpine:init", () => {
     },
     get images() {
       const rows = dockerImageRows(this.store.snap?.docker_images, this.store.search);
-      return this.store.onlyUsedImages ? rows.filter((r) => r.inUse) : rows;
+      return this.store.onlyUsedImages ? rows.filter((row) => row.inUse) : rows;
     },
     get volumes() {
       const rows = dockerVolumeRows(this.store.snap?.docker_volumes, this.store.search);
-      return this.store.onlyUsedVolumes ? rows.filter((r) => r.inUse) : rows;
+      return this.store.onlyUsedVolumes ? rows.filter((row) => row.inUse) : rows;
     },
     get networks() {
       const rows = dockerNetworkRows(this.store.snap?.docker_networks, this.store.search);
-      return this.store.onlyUsedNetworks ? rows.filter((r) => r.inUse) : rows;
+      return this.store.onlyUsedNetworks ? rows.filter((row) => row.inUse) : rows;
     },
     get repos() {
       return registryRepoRows(this.store.snap?.registry_repos, this.store.search);
@@ -45,14 +45,14 @@ document.addEventListener("alpine:init", () => {
       return registryTokenRows(this.store.registryTokens);
     },
     get registryHost() {
-      const rs = this.store.snap?.registry_status;
-      if (!rs) return "127.0.0.1:5100";
-      return rs.domain && rs.domain.trim() ? rs.domain : `127.0.0.1:${rs.port}`;
+      const registryStatus = this.store.snap?.registry_status;
+      if (!registryStatus) return "127.0.0.1:5100";
+      return registryStatus.domain && registryStatus.domain.trim() ? registryStatus.domain : `127.0.0.1:${registryStatus.port}`;
     },
     get registryStatusLabel() {
-      const rs = this.store.snap?.registry_status;
-      if (!rs) return "desabilitado";
-      return rs.enabled ? `ativo em ${this.registryHost}` : "desabilitado";
+      const registryStatus = this.store.snap?.registry_status;
+      if (!registryStatus) return "desabilitado";
+      return registryStatus.enabled ? `ativo em ${this.registryHost}` : "desabilitado";
     },
 
     // ── Modal "novo token" ───────────────────────────────────────────────
@@ -80,12 +80,12 @@ document.addEventListener("alpine:init", () => {
         return;
       }
       this.newRegistryTokenError = "";
-      const r = await this.store.registryCreateToken(this.newRegistryTokenName.trim(), this.newRegistryTokenScope);
-      if (!r.ok) {
-        this.newRegistryTokenError = r.error;
+      const registryCreateTokenResult = await this.store.registryCreateToken(this.newRegistryTokenName.trim(), this.newRegistryTokenScope);
+      if (!registryCreateTokenResult.ok) {
+        this.newRegistryTokenError = registryCreateTokenResult.error;
         return;
       }
-      this.newRegistryTokenLoginCommand = `docker login ${this.registryHost} -u ${this.newRegistryTokenName.trim()} -p ${r.secret}`;
+      this.newRegistryTokenLoginCommand = `docker login ${this.registryHost} -u ${this.newRegistryTokenName.trim()} -p ${registryCreateTokenResult.secret}`;
       this.newRegistryTokenStep = "reveal";
     },
   }));

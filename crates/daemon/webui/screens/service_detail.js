@@ -10,8 +10,8 @@ import {
   serviceStatusLabelKind,
   sourceSummary,
   looksLikeGitUrl,
-  dateDmHms,
-  fmtDuration,
+  dateDayMonthHourMinuteSecond,
+  formatDuration,
   stateLabelKind,
   dotenvFromVars,
   parseDotenv,
@@ -22,7 +22,7 @@ import {
   composeHost,
   externalUrl,
   envRowsWithComments,
-} from "../fmt.js";
+} from "../format.js";
 
 document.addEventListener("alpine:init", () => {
   Alpine.data("serviceDetail", () => ({
@@ -68,21 +68,21 @@ document.addEventListener("alpine:init", () => {
     },
     async loadWebhook() {
       this.webhookUrl = "";
-      const id = this.store.selectedServiceId;
-      if (!id || !this.webhookSupported) return;
-      const r = await this.store.api.rpc({ GetWebhookUrl: { service_id: id } });
-      if (r.ok && typeof r.value?.WebhookUrl === "string") this.webhookUrl = r.value.WebhookUrl;
+      const serviceId = this.store.selectedServiceId;
+      if (!serviceId || !this.webhookSupported) return;
+      const getWebhookUrlResponse = await this.store.api.rpc({ GetWebhookUrl: { service_id: serviceId } });
+      if (getWebhookUrlResponse.ok && typeof getWebhookUrlResponse.value?.WebhookUrl === "string") this.webhookUrl = getWebhookUrlResponse.value.WebhookUrl;
     },
     async regenWebhook() {
       if (!confirm("Regenerar o token do webhook? A URL anterior deixa de funcionar na hora.")) return;
       this.webhookBusy = true;
-      const r = await this.store.api.rpcChecked({ RegenerateWebhookToken: { service_id: this.store.selectedServiceId } });
+      const regenerateWebhookTokenResponse = await this.store.api.rpcChecked({ RegenerateWebhookToken: { service_id: this.store.selectedServiceId } });
       this.webhookBusy = false;
-      if (r.ok && typeof r.value?.WebhookUrl === "string") {
-        this.webhookUrl = r.value.WebhookUrl;
+      if (regenerateWebhookTokenResponse.ok && typeof regenerateWebhookTokenResponse.value?.WebhookUrl === "string") {
+        this.webhookUrl = regenerateWebhookTokenResponse.value.WebhookUrl;
         this.store.toastOk("token do webhook regenerado");
       } else {
-        this.store.toastError("erro: " + (r.error || "resposta inesperada"));
+        this.store.toastError("erro: " + (regenerateWebhookTokenResponse.error || "resposta inesperada"));
       }
     },
 
@@ -98,7 +98,7 @@ document.addEventListener("alpine:init", () => {
     },
     get migrationSteps() {
       const icon = { ok: "✓", running: "…", failed: "✗", skipped: "–", pending: "·" };
-      return (this.mig?.steps || []).map((s) => ({ ...s, icon: icon[s.state] || "·" }));
+      return (this.mig?.steps || []).map((step) => ({ ...step, icon: icon[step.state] || "·" }));
     },
     async loadMigration() {
       clearTimeout(this.migrationTimer);
@@ -108,23 +108,23 @@ document.addEventListener("alpine:init", () => {
         return;
       }
       const spec = this.svc.spec;
-      const id = this.svc.id;
+      const serviceId = this.svc.id;
       if (!this.serviceFormMigration.db) {
         // Serviço primeiro, depois o projeto (mesma precedência do deploy).
-        const projectEnv = (this.store.snap?.projects || []).find((p) => p.id === spec.project_id)?.env_vars || [];
-        const get = (k) => [spec.env_vars || [], projectEnv].map((vs) => vs.find((e) => e.key === k)?.value?.Plain).find(Boolean);
+        const projectEnv = (this.store.snap?.projects || []).find((project) => project.id === spec.project_id)?.env_vars || [];
+        const get = (key) => [spec.env_vars || [], projectEnv].map((envVars) => envVars.find((v) => v.key === key)?.value?.Plain).find(Boolean);
         this.serviceFormMigration.db = get("POSTGRES_DB") || get("MYSQL_DATABASE") || "";
       }
-      const [d, m] = await Promise.all([
+      const [destinationsResponse, migrationsResponse] = await Promise.all([
         this.store.api.rpc("ManagedDatabaseListAll"),
         this.store.api.rpc({ MigrationList: { project_id: spec.project_id } }),
       ]);
-      this.migrationDestinations = (d.ok ? d.value?.ManagedDatabases || [] : [])
-        .filter((x) => x.project_id === spec.project_id)
-        .map((x) => ({ id: x.id, name: `${x.name} (${x.env_var})` }));
-      this.mig = (m.ok ? m.value?.Migrations || [] : []).find((x) => x.source_service_id === id) || null;
+      this.migrationDestinations = (destinationsResponse.ok ? destinationsResponse.value?.ManagedDatabases || [] : [])
+        .filter((database) => database.project_id === spec.project_id)
+        .map((database) => ({ id: database.id, name: `${database.name} (${database.env_var})` }));
+      this.mig = (migrationsResponse.ok ? migrationsResponse.value?.Migrations || [] : []).find((migration) => migration.source_service_id === serviceId) || null;
       if (this.mig?.status === "Running") {
-        this.migrationTimer = setTimeout(() => this.svc?.id === id && this.loadMigration(), 3000);
+        this.migrationTimer = setTimeout(() => this.svc?.id === serviceId && this.loadMigration(), 3000);
       }
     },
     async startMigration() {
@@ -133,7 +133,7 @@ document.addEventListener("alpine:init", () => {
         return;
       }
       if (!confirm("Os serviços do projeto que usam este banco serão parados durante o dump/restore e subirão de novo no banco novo. O banco antigo é mantido (parado) para rollback. Iniciar?")) return;
-      const r = await this.store.api.rpcChecked({
+      const migrationStartResponse = await this.store.api.rpcChecked({
         MigrationStart: {
           source_service_id: this.svc.id,
           source_database: this.serviceFormMigration.db.trim(),
@@ -141,8 +141,8 @@ document.addEventListener("alpine:init", () => {
           env_var: this.serviceFormMigration.env.trim(),
         },
       });
-      if (!r.ok) {
-        this.store.toastError(r.error);
+      if (!migrationStartResponse.ok) {
+        this.store.toastError(migrationStartResponse.error);
         return;
       }
       this.store.toastOk("Migração iniciada");
@@ -150,15 +150,15 @@ document.addEventListener("alpine:init", () => {
     },
     async rollbackMigration() {
       if (!confirm("A app volta ao banco antigo. O que foi escrito no banco novo depois da migração se perde. Reverter?")) return;
-      const r = await this.store.api.rpcChecked({ MigrationRollback: { id: this.mig.id } });
-      if (!r.ok) this.store.toastError(r.error);
+      const migrationRollbackResponse = await this.store.api.rpcChecked({ MigrationRollback: { id: this.mig.id } });
+      if (!migrationRollbackResponse.ok) this.store.toastError(migrationRollbackResponse.error);
       await this.loadMigration();
     },
     async discardOldDatabase() {
       if (!confirm("O serviço do banco antigo é removido, com os dados dele. Sem volta. Descartar?")) return;
-      const r = await this.store.api.rpcChecked({ MigrationDiscard: { id: this.mig.id } });
-      if (!r.ok) {
-        this.store.toastError(r.error);
+      const migrationDiscardResponse = await this.store.api.rpcChecked({ MigrationDiscard: { id: this.mig.id } });
+      if (!migrationDiscardResponse.ok) {
+        this.store.toastError(migrationDiscardResponse.error);
         return;
       }
       this.store.toastOk("Banco antigo descartado");
@@ -175,9 +175,9 @@ document.addEventListener("alpine:init", () => {
     sharedDatabaseLabel: "",
     serviceFormSharedDatabase: { name: "", project: "", env: "", limit: "", timeout: "", overwrite: false, skipEnv: false },
     get canShare() {
-      const k = (this.svc?.spec?.db_kind || "").toLowerCase();
+      const normalizedKind = (this.svc?.spec?.db_kind || "").toLowerCase();
       return (
-        ["postgres", "postgresql", "mysql", "mariadb", "mongodb", "mongo"].includes(k) &&
+        ["postgres", "postgresql", "mysql", "mariadb", "mongodb", "mongo"].includes(normalizedKind) &&
         !!this.svc?.spec?.source?.Compose
       );
     },
@@ -190,20 +190,20 @@ document.addEventListener("alpine:init", () => {
         if (this.store.serviceTab === "databases") this.store.setServiceTab("general");
         return;
       }
-      const id = this.svc.id;
-      const [p, d] = await Promise.all([
+      const serviceId = this.svc.id;
+      const [projectsResponse, databasesResponse] = await Promise.all([
         this.store.api.rpc("ProjectList"),
-        this.store.api.rpc({ ManagedDatabaseList: { server_service_id: id } }),
+        this.store.api.rpc({ ManagedDatabaseList: { server_service_id: serviceId } }),
       ]);
-      const projects = p.ok ? p.value?.Projects || [] : [];
-      this.sharedDatabaseProjects = projects.map((x) => ({ id: x.id, name: x.name }));
-      const names = Object.fromEntries(projects.map((x) => [x.id, x.name]));
-      this.mdbs = (d.ok ? d.value?.ManagedDatabases || [] : []).map((x) => ({
-        id: x.id,
-        name: x.name,
-        project: names[x.project_id] || x.project_id,
-        envVar: x.env_var,
-        url: x.connection_url,
+      const projects = projectsResponse.ok ? projectsResponse.value?.Projects || [] : [];
+      this.sharedDatabaseProjects = projects.map((project) => ({ id: project.id, name: project.name }));
+      const names = Object.fromEntries(projects.map((project) => [project.id, project.name]));
+      this.mdbs = (databasesResponse.ok ? databasesResponse.value?.ManagedDatabases || [] : []).map((database) => ({
+        id: database.id,
+        name: database.name,
+        project: names[database.project_id] || database.project_id,
+        envVar: database.env_var,
+        url: database.connection_url,
       }));
     },
     async setShared(on) {
@@ -216,42 +216,42 @@ document.addEventListener("alpine:init", () => {
       else delete spec.shared;
       await this.store.saveServiceSpec(spec, on ? "servidor compartilhado" : "compartilhamento desligado");
     },
-    showSharedDatabase(d) {
-      this.sharedDatabaseUrl = d.url;
-      this.sharedDatabaseLabel = `${d.name} → ${d.envVar}`;
+    showSharedDatabase(database) {
+      this.sharedDatabaseUrl = database.url;
+      this.sharedDatabaseLabel = `${database.name} → ${database.envVar}`;
     },
     async createSharedDatabase() {
-      const f = this.serviceFormSharedDatabase;
-      if (!f.name.trim() || !f.project) {
+      const form = this.serviceFormSharedDatabase;
+      if (!form.name.trim() || !form.project) {
         this.store.toastError("Informe o nome e o projeto consumidor");
         return;
       }
-      const num = (v) => (String(v).trim() === "" ? null : Number(v));
-      const r = await this.store.api.rpcChecked({
+      const toNumberOrNull = (value) => (String(value).trim() === "" ? null : Number(value));
+      const managedDatabaseCreateResponse = await this.store.api.rpcChecked({
         ManagedDatabaseCreate: {
           server_service_id: this.svc.id,
-          project_id: f.project,
-          name: f.name.trim(),
-          env_var: f.env.trim(),
-          overwrite_env: !!f.overwrite,
-          skip_env: !!f.skipEnv,
-          connection_limit: num(f.limit),
-          statement_timeout_ms: num(f.timeout),
+          project_id: form.project,
+          name: form.name.trim(),
+          env_var: form.env.trim(),
+          overwrite_env: !!form.overwrite,
+          skip_env: !!form.skipEnv,
+          connection_limit: toNumberOrNull(form.limit),
+          statement_timeout_ms: toNumberOrNull(form.timeout),
         },
       });
-      if (!r.ok) {
-        this.store.toastError(r.error);
+      if (!managedDatabaseCreateResponse.ok) {
+        this.store.toastError(managedDatabaseCreateResponse.error);
         return;
       }
       this.store.toastOk("Database criado");
       this.serviceFormSharedDatabase.name = "";
       await this.loadSharedState();
     },
-    async deleteSharedDatabase(d) {
+    async deleteSharedDatabase(database) {
       if (!confirm("Remover o database e o usuário do servidor, com todos os dados? Irreversível.")) return;
-      const r = await this.store.api.rpcChecked({ ManagedDatabaseDelete: { id: d.id } });
-      if (!r.ok) {
-        this.store.toastError(r.error);
+      const managedDatabaseDeleteResponse = await this.store.api.rpcChecked({ ManagedDatabaseDelete: { id: database.id } });
+      if (!managedDatabaseDeleteResponse.ok) {
+        this.store.toastError(managedDatabaseDeleteResponse.error);
         return;
       }
       this.sharedDatabaseUrl = "";
@@ -262,11 +262,11 @@ document.addEventListener("alpine:init", () => {
     // serviço, usuário/senha/database — não é mais montada aqui.
     connectionUrl: "",
     async loadConnectionUrl() {
-      const id = this.svc?.id;
-      if (!id) return;
+      const serviceId = this.svc?.id;
+      if (!serviceId) return;
       try {
-        const r = await this.store.api.rpc({ ServiceConnectionInfo: { service_id: id } });
-        if (this.svc?.id === id) this.connectionUrl = r.ok ? r.value?.ConnectionInfo?.internal_url || "" : "";
+        const serviceConnectionInfoResponse = await this.store.api.rpc({ ServiceConnectionInfo: { service_id: serviceId } });
+        if (this.svc?.id === serviceId) this.connectionUrl = serviceConnectionInfoResponse.ok ? serviceConnectionInfoResponse.value?.ConnectionInfo?.internal_url || "" : "";
       } catch (_) {
         this.connectionUrl = "";
       }
@@ -276,9 +276,9 @@ document.addEventListener("alpine:init", () => {
       return this.store.serviceDetail;
     },
     get projectName() {
-      const id = this.svc && this.svc.spec.project_id;
-      const p = ((this.store.snap && this.store.snap.projects) || []).find((e) => e.id === id);
-      return p ? p.name : "Voltar";
+      const projectId = this.svc && this.svc.spec.project_id;
+      const project = ((this.store.snap && this.store.snap.projects) || []).find((project) => project.id === projectId);
+      return project ? project.name : "Voltar";
     },
     get statusLabel() {
       return this.svc ? serviceStatusLabelKind(this.svc.status)[0] : "";
@@ -387,8 +387,8 @@ document.addEventListener("alpine:init", () => {
       if (name === this.svc.spec.name) return;
       const spec = JSON.parse(JSON.stringify(this.svc.spec));
       spec.name = name;
-      const r = await this.store.saveServiceSpec(spec, "serviço renomeado");
-      if (r.ok) this.editName = name;
+      const saveServiceSpecResult = await this.store.saveServiceSpec(spec, "serviço renomeado");
+      if (saveServiceSpecResult.ok) this.editName = name;
     },
 
     async saveCompose() {
@@ -404,9 +404,9 @@ document.addEventListener("alpine:init", () => {
       this.providerTab = tab;
       if (tab === "gitea" && this.giteaProviders.length === 0) {
         this.giteaMessage = "carregando contas…";
-        const r = await this.store.api.rpc("GitProviderList");
-        if (r.ok && r.value?.GitProviders) {
-          this.giteaProviders = r.value.GitProviders;
+        const gitProviderListResponse = await this.store.api.rpc("GitProviderList");
+        if (gitProviderListResponse.ok && gitProviderListResponse.value?.GitProviders) {
+          this.giteaProviders = gitProviderListResponse.value.GitProviders;
           this.giteaMessage = "";
         } else {
           this.giteaMessage = "";
@@ -415,17 +415,17 @@ document.addEventListener("alpine:init", () => {
       }
     },
 
-    async giteaProviderPick(id) {
-      this.giteaProviderId = id || "";
+    async giteaProviderPick(providerId) {
+      this.giteaProviderId = providerId || "";
       this.giteaRepoFullName = "";
       this.giteaRepos = [];
       this.giteaBranches = [];
       if (!this.giteaProviderId) return;
       this.giteaMessage = "carregando repositórios…";
-      const r = await this.store.api.rpc({ GitRepoList: { provider_id: this.giteaProviderId } });
-      if (r.ok && r.value?.GitRepos) {
-        this.giteaRepos = r.value.GitRepos;
-        this.giteaMessage = `${r.value.GitRepos.length} repositório(s)`;
+      const gitRepoListResponse = await this.store.api.rpc({ GitRepoList: { provider_id: this.giteaProviderId } });
+      if (gitRepoListResponse.ok && gitRepoListResponse.value?.GitRepos) {
+        this.giteaRepos = gitRepoListResponse.value.GitRepos;
+        this.giteaMessage = `${gitRepoListResponse.value.GitRepos.length} repositório(s)`;
       } else {
         this.giteaMessage = "";
         this.store.toastError("erro ao listar repositórios");
@@ -435,17 +435,17 @@ document.addEventListener("alpine:init", () => {
     async giteaRepoPick(fullName) {
       if (!fullName) return;
       this.giteaRepoFullName = fullName;
-      const repo = this.giteaRepos.find((r) => r.full_name === fullName);
+      const repo = this.giteaRepos.find((giteaRepo) => giteaRepo.full_name === fullName);
       if (repo?.clone_url) this.serviceFormRepoUrl = repo.clone_url;
       if (repo?.default_branch) this.serviceFormBranch = repo.default_branch;
       this.giteaBranches = [];
       if (!this.giteaProviderId) return;
       this.giteaMessage = "carregando branches…";
-      const r = await this.store.api.rpc({
+      const gitBranchListResponse = await this.store.api.rpc({
         GitBranchList: { provider_id: this.giteaProviderId, repo_full_name: fullName },
       });
-      if (r.ok && r.value?.GitBranches) {
-        this.giteaBranches = r.value.GitBranches;
+      if (gitBranchListResponse.ok && gitBranchListResponse.value?.GitBranches) {
+        this.giteaBranches = gitBranchListResponse.value.GitBranches;
         this.giteaMessage = "";
       } else {
         this.giteaMessage = "";
@@ -462,7 +462,7 @@ document.addEventListener("alpine:init", () => {
       const repo = this.serviceFormRepoUrl.trim();
       const watch = this.serviceFormWatchPaths
         .split(",")
-        .map((s) => s.trim())
+        .map((part) => part.trim())
         .filter(Boolean);
       const git = {
         Git: {
@@ -497,8 +497,8 @@ document.addEventListener("alpine:init", () => {
         return;
       }
       this.archiveMessage = "enviando zip…";
-      const r = await this.store.api.uploadArchive(this.svc.id, this.archiveFile);
-      if (r.ok) {
+      const uploadArchiveResult = await this.store.api.uploadArchive(this.svc.id, this.archiveFile);
+      if (uploadArchiveResult.ok) {
         this.archiveMessage = "";
         this.archiveFile = null;
         this.store.toastOk("zip enviado");
@@ -506,7 +506,7 @@ document.addEventListener("alpine:init", () => {
         await this.store.refreshNow();
       } else {
         this.archiveMessage = "";
-        this.store.toastError("erro: " + r.error);
+        this.store.toastError("erro: " + uploadArchiveResult.error);
       }
       if (this.serviceFormArchivePort) {
         const spec = JSON.parse(JSON.stringify(this.svc.spec));
@@ -534,27 +534,27 @@ document.addEventListener("alpine:init", () => {
      * (ManagedContainer[], anexado por http_api.rs::snapshot), não no
      * `Service` cru de `ServiceGet` — daí o cross-reference pelo id. */
     get liveContainers() {
-      const s = this.store;
-      const entry = ((s.snap && s.snap.services) || []).find((e) => e.service.id === this.svc?.id);
+      const store = this.store;
+      const entry = ((store.snap && store.snap.services) || []).find((serviceEntry) => serviceEntry.service.id === this.svc?.id);
       const list = entry?.service.containers || [];
       const colorFor = (state) => {
         if (state === "running") return "ok";
         if (state === "restarting" || state === "created" || state === "paused") return "warn";
         return "muted";
       };
-      return list.map((c) => ({
-        id: c.id,
-        idShort: (c.id || "").slice(0, 12),
-        name: c.name || "—",
-        state: c.state || "—",
-        kind: colorFor(c.state),
+      return list.map((item) => ({
+        id: item.id,
+        idShort: (item.id || "").slice(0, 12),
+        name: item.name || "—",
+        state: item.state || "—",
+        kind: colorFor(item.state),
       }));
     },
 
     get connectionInfo() {
-      const svc = this.svc;
-      if (!svc) return null;
-      const spec = svc.spec;
+      const service = this.svc;
+      if (!service) return null;
+      const spec = service.spec;
       const domain = spec.domains?.[0]?.domain || spec.domain || "";
       const tls = spec.domains?.[0]?.tls ?? spec.tls_enabled ?? false;
       const safe = safeName(spec.name);
@@ -570,9 +570,9 @@ document.addEventListener("alpine:init", () => {
     },
 
     get envVars() {
-      const svc = this.svc;
-      if (!svc) return [];
-      return envRowsWithComments(svc.spec.env_vars, svc.spec.env_comments);
+      const service = this.svc;
+      if (!service) return [];
+      return envRowsWithComments(service.spec.env_vars, service.spec.env_comments);
     },
 
     async addEnvVar() {
@@ -583,10 +583,10 @@ document.addEventListener("alpine:init", () => {
       // reatividade de forma segura, já que o ServiceSpec é sempre dados
       // planos (sem funções/Date/referências circulares).
       const spec = JSON.parse(JSON.stringify(this.svc.spec));
-      spec.env_vars = spec.env_vars.filter((e) => e.key !== this.newEnvKey.trim());
+      spec.env_vars = spec.env_vars.filter((envVar) => envVar.key !== this.newEnvKey.trim());
       spec.env_vars.push({ key: this.newEnvKey.trim(), value: { Plain: this.newEnvValue } });
-      const r = await this.store.saveServiceSpec(spec, "variável salva");
-      if (r.ok) {
+      const saveServiceSpecResult = await this.store.saveServiceSpec(spec, "variável salva");
+      if (saveServiceSpecResult.ok) {
         this.newEnvKey = "";
         this.newEnvValue = "";
       }
@@ -599,7 +599,7 @@ document.addEventListener("alpine:init", () => {
       // reatividade de forma segura, já que o ServiceSpec é sempre dados
       // planos (sem funções/Date/referências circulares).
       const spec = JSON.parse(JSON.stringify(this.svc.spec));
-      spec.env_vars = spec.env_vars.filter((e) => e.key !== key);
+      spec.env_vars = spec.env_vars.filter((envVar) => envVar.key !== key);
       await this.store.saveServiceSpec(spec, "variável removida");
     },
 
@@ -623,17 +623,17 @@ document.addEventListener("alpine:init", () => {
       const spec = JSON.parse(JSON.stringify(this.svc.spec));
       spec.env_vars = vars;
       spec.env_comments = comments;
-      const r = await this.store.saveServiceSpec(spec, "variáveis salvas");
-      if (r.ok) this.envTextOpen = false;
+      const saveServiceSpecResult = await this.store.saveServiceSpec(spec, "variáveis salvas");
+      if (saveServiceSpecResult.ok) this.envTextOpen = false;
     },
 
     get domains() {
-      const svc = this.svc;
-      if (!svc) return [];
-      return (svc.spec.domains || []).map((d) => ({
-        domain: d.domain,
-        port: d.port ?? svc.spec.port,
-        tls: !!d.tls,
+      const service = this.svc;
+      if (!service) return [];
+      return (service.spec.domains || []).map((domain) => ({
+        domain: domain.domain,
+        port: domain.port ?? service.spec.port,
+        tls: !!domain.tls,
       }));
     },
 
@@ -651,8 +651,8 @@ document.addEventListener("alpine:init", () => {
         port: this.newDomainPort ? Number(this.newDomainPort) : null,
         tls: this.newDomainTls,
       });
-      const r = await this.store.saveServiceSpec(spec, "domínio adicionado");
-      if (r.ok) {
+      const saveServiceSpecResult = await this.store.saveServiceSpec(spec, "domínio adicionado");
+      if (saveServiceSpecResult.ok) {
         this.newDomain = "";
         this.newDomainPort = "";
         this.newDomainTls = false;
@@ -666,7 +666,7 @@ document.addEventListener("alpine:init", () => {
       // reatividade de forma segura, já que o ServiceSpec é sempre dados
       // planos (sem funções/Date/referências circulares).
       const spec = JSON.parse(JSON.stringify(this.svc.spec));
-      spec.domains = (spec.domains || []).filter((d) => d.domain !== domain);
+      spec.domains = (spec.domains || []).filter((route) => route.domain !== domain);
       await this.store.saveServiceSpec(spec, "domínio removido");
     },
 
@@ -683,19 +683,19 @@ document.addEventListener("alpine:init", () => {
      * (o form é editável, não reativo direto ao spec, então precisa de um
      * ponto explícito de sincronização). */
     initHealthcheckForm() {
-      const hc = this.svc?.spec?.healthcheck;
-      if (!hc) return;
-      if (typeof hc.kind === "string") {
-        this.healthcheckKind = hc.kind === "DockerNative" ? "docker" : hc.kind.toLowerCase();
-      } else if (hc.kind?.Http) {
+      const healthcheck = this.svc?.spec?.healthcheck;
+      if (!healthcheck) return;
+      if (typeof healthcheck.kind === "string") {
+        this.healthcheckKind = healthcheck.kind === "DockerNative" ? "docker" : healthcheck.kind.toLowerCase();
+      } else if (healthcheck.kind?.Http) {
         this.healthcheckKind = "http";
-        this.healthcheckPath = hc.kind.Http.path;
-        this.healthcheckStatus = String(hc.kind.Http.expected_status);
+        this.healthcheckPath = healthcheck.kind.Http.path;
+        this.healthcheckStatus = String(healthcheck.kind.Http.expected_status);
       }
-      this.healthcheckInterval = String(hc.interval_secs);
-      this.healthcheckTimeout = String(hc.timeout_secs);
-      this.healthcheckRetries = String(hc.retries);
-      this.healthcheckStart = String(hc.start_period_secs);
+      this.healthcheckInterval = String(healthcheck.interval_secs);
+      this.healthcheckTimeout = String(healthcheck.timeout_secs);
+      this.healthcheckRetries = String(healthcheck.retries);
+      this.healthcheckStart = String(healthcheck.start_period_secs);
     },
 
     async saveHealthcheck() {
@@ -709,14 +709,14 @@ document.addEventListener("alpine:init", () => {
       } else {
         kind = "None";
       }
-      const cur = this.svc.spec.healthcheck;
+      const currentHealthcheck = this.svc.spec.healthcheck;
       const spec = JSON.parse(JSON.stringify(this.svc.spec));
       spec.healthcheck = {
         kind,
-        interval_secs: Number(this.healthcheckInterval) || cur.interval_secs,
-        timeout_secs: Number(this.healthcheckTimeout) || cur.timeout_secs,
-        retries: Number(this.healthcheckRetries) || cur.retries,
-        start_period_secs: Number(this.healthcheckStart) || cur.start_period_secs,
+        interval_secs: Number(this.healthcheckInterval) || currentHealthcheck.interval_secs,
+        timeout_secs: Number(this.healthcheckTimeout) || currentHealthcheck.timeout_secs,
+        retries: Number(this.healthcheckRetries) || currentHealthcheck.retries,
+        start_period_secs: Number(this.healthcheckStart) || currentHealthcheck.start_period_secs,
       };
       await this.store.saveServiceSpec(spec, "healthcheck salvo");
     },
@@ -740,11 +740,11 @@ document.addEventListener("alpine:init", () => {
 
     async saveAdvanced() {
       const spec = JSON.parse(JSON.stringify(this.svc.spec));
-      let r = Number(this.advancedReplicas) || 1;
-      if (r < 1) r = 1;
-      spec.replicas = Math.floor(r);
-      const rc = this.advancedRunCommand.trim();
-      spec.run_command = rc || null;
+      let replicas = Number(this.advancedReplicas) || 1;
+      if (replicas < 1) replicas = 1;
+      spec.replicas = Math.floor(replicas);
+      const runCommand = this.advancedRunCommand.trim();
+      spec.run_command = runCommand || null;
       await this.store.saveServiceSpec(spec, "advanced salvo");
     },
 
@@ -771,12 +771,12 @@ document.addEventListener("alpine:init", () => {
     // "(job removido)" em vez de sumir, pra dar pra removê-lo da fila.
     get preDeployChecks() {
       const byId = new Map(
-        (this.store.snap?.jobs || []).map((s) => [s.job.id, s.job.name])
+        (this.store.snap?.jobs || []).map((job) => [job.job.id, job.job.name])
       );
-      return this.preDeployQueueIds.map((id, i) => ({
-        id,
-        index: i + 1,
-        name: byId.get(id) || `(job removido: ${id})`,
+      return this.preDeployQueueIds.map((preDeployQueueId, index) => ({
+        id: preDeployQueueId,
+        index: index + 1,
+        name: byId.get(preDeployQueueId) || `(job removido: ${preDeployQueueId})`,
       }));
     },
 
@@ -787,8 +787,8 @@ document.addEventListener("alpine:init", () => {
       if (!projectId) return [];
       const inQueue = new Set(this.preDeployQueueIds);
       return (this.store.snap?.jobs || [])
-        .filter((s) => s.job.project_id === projectId && !inQueue.has(s.job.id))
-        .map((s) => ({ id: s.job.id, name: s.job.name }));
+        .filter((job) => job.job.project_id === projectId && !inQueue.has(job.job.id))
+        .map((job) => ({ id: job.job.id, name: job.job.name }));
     },
 
     advancedPreDeployCheckAddJobId: "",
@@ -796,18 +796,18 @@ document.addEventListener("alpine:init", () => {
     async preDeployCheckAdd() {
       const jobId = this.advancedPreDeployCheckAddJobId;
       if (!jobId) return;
-      const ids = this.preDeployQueueIds.slice();
-      if (!ids.includes(jobId)) ids.push(jobId);
+      const jobIds = this.preDeployQueueIds.slice();
+      if (!jobIds.includes(jobId)) jobIds.push(jobId);
       const spec = JSON.parse(JSON.stringify(this.svc.spec));
-      spec.pre_deploy_job_ids = ids;
+      spec.pre_deploy_job_ids = jobIds;
       spec.pre_deploy_job_id = null;
-      const r = await this.store.saveServiceSpec(spec, "check adicionado à fila");
-      if (r.ok) this.advancedPreDeployCheckAddJobId = "";
+      const saveServiceSpecResult = await this.store.saveServiceSpec(spec, "check adicionado à fila");
+      if (saveServiceSpecResult.ok) this.advancedPreDeployCheckAddJobId = "";
     },
 
     async preDeployCheckDelete(jobId) {
       const spec = JSON.parse(JSON.stringify(this.svc.spec));
-      spec.pre_deploy_job_ids = this.preDeployQueueIds.filter((id) => id !== jobId);
+      spec.pre_deploy_job_ids = this.preDeployQueueIds.filter((preDeployQueueId) => preDeployQueueId !== jobId);
       spec.pre_deploy_job_id = null;
       await this.store.saveServiceSpec(spec, "check removido da fila");
     },
@@ -815,38 +815,38 @@ document.addEventListener("alpine:init", () => {
     // Sem drag-and-drop na web UI (sem lib de DnD): reordena com botões
     // mover-pra-cima/baixo — mesmo resultado final do arraste na GUI iced.
     async preDeployCheckMove(jobId, delta) {
-      const ids = this.preDeployQueueIds.slice();
-      const i = ids.indexOf(jobId);
-      const j = i + delta;
-      if (i < 0 || j < 0 || j >= ids.length) return;
-      [ids[i], ids[j]] = [ids[j], ids[i]];
+      const jobIds = this.preDeployQueueIds.slice();
+      const fromIndex = jobIds.indexOf(jobId);
+      const toIndex = fromIndex + delta;
+      if (fromIndex < 0 || toIndex < 0 || toIndex >= jobIds.length) return;
+      [jobIds[fromIndex], jobIds[toIndex]] = [jobIds[toIndex], jobIds[fromIndex]];
       const spec = JSON.parse(JSON.stringify(this.svc.spec));
-      spec.pre_deploy_job_ids = ids;
+      spec.pre_deploy_job_ids = jobIds;
       spec.pre_deploy_job_id = null;
       await this.store.saveServiceSpec(spec, "fila reordenada");
     },
 
     get deployments() {
-      return (this.store.serviceDeployments || []).map((d) => {
-        const [label, kind] = stateLabelKind(d.state);
+      return (this.store.serviceDeployments || []).map((serviceDeployment) => {
+        const [label, kind] = stateLabelKind(serviceDeployment.state);
         return {
-          id: d.id,
-          image: d.image,
+          id: serviceDeployment.id,
+          image: serviceDeployment.image,
           stateLabel: label,
           stateKind: kind,
-          duration: fmtDuration(d),
-          start: dateDmHms(d.started_at),
-          terminal: d.state === "Live" || d.state === "Failed" || d.state === "Stopped",
+          duration: formatDuration(serviceDeployment),
+          start: dateDayMonthHourMinuteSecond(serviceDeployment.started_at),
+          terminal: serviceDeployment.state === "Live" || serviceDeployment.state === "Failed" || serviceDeployment.state === "Stopped",
         };
       });
     },
 
     async viewBuildLog(deploymentId) {
-      const r = await this.store.api.rpc({ GetBuildLogs: { deployment_id: deploymentId } });
-      if (r.ok && r.value?.BuildLogs) {
+      const getBuildLogsResponse = await this.store.api.rpc({ GetBuildLogs: { deployment_id: deploymentId } });
+      if (getBuildLogsResponse.ok && getBuildLogsResponse.value?.BuildLogs) {
         // `docker build` também manda cores ANSI — mesmo tratamento dos logs
         // de runtime (ver app.js::cleanLogEntry).
-        this.buildLogText = r.value.BuildLogs.map((l) => stripAnsi(l.line)).join("\n");
+        this.buildLogText = getBuildLogsResponse.value.BuildLogs.map((buildLog) => stripAnsi(buildLog.line)).join("\n");
         this.buildLogFor = deploymentId;
       }
     },

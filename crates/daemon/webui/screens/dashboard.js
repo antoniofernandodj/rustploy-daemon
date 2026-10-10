@@ -1,7 +1,7 @@
 // screens/dashboard.js — tela "Deployments" (view padrão do shell). Porta de
-// fmt.deployments (crates/rustploy-gui/views/scripts/fmt/dashboard.luau) +
+// format.deployments (crates/rustploy-gui/views/scripts/format/dashboard.luau) +
 // da seção `equals="deployments"` de shell.gv.
-import { dateDmHms, fmtDuration, stateLabelKind } from "../fmt.js";
+import { dateDayMonthHourMinuteSecond, formatDuration, stateLabelKind } from "../format.js";
 
 document.addEventListener("alpine:init", () => {
   Alpine.data("dashboard", () => ({
@@ -11,9 +11,9 @@ document.addEventListener("alpine:init", () => {
 
     /** Linhas formatadas da tabela, filtradas pelo termo de busca da topbar. */
     get rows() {
-      const s = this.store;
-      const term = (s.search || "").toLowerCase();
-      const list = (s.snap && s.snap.deployments) || [];
+      const store = this.store;
+      const term = (store.search || "").toLowerCase();
+      const list = (store.snap && store.snap.deployments) || [];
       return list
         .filter((entry) => {
           if (!term) return true;
@@ -23,15 +23,15 @@ document.addEventListener("alpine:init", () => {
           );
         })
         .map((entry) => {
-          const d = entry.deployment;
-          const [label, kind] = stateLabelKind(d.state);
+          const deployment = entry.deployment;
+          const [label, kind] = stateLabelKind(deployment.state);
           return {
             service: entry.service_name,
             project: entry.project_name,
             stateLabel: label,
             stateKind: kind,
-            duration: fmtDuration(d),
-            start: dateDmHms(d.started_at),
+            duration: formatDuration(deployment),
+            start: dateDayMonthHourMinuteSecond(deployment.started_at),
           };
         });
     },

@@ -2,7 +2,7 @@
 // por container. Porta da seção `equals="monitoring"` de home.gv. As
 // métricas por serviço só existem depois do primeiro evento `ContainerMetrics`
 // (ver app.js::applyBusEvent) — o snapshot periódico não as carrega.
-import { pairList, monitoringRows } from "../fmt.js";
+import { servicePairList, monitoringRows } from "../format.js";
 
 document.addEventListener("alpine:init", () => {
   Alpine.data("monitoring", () => ({
@@ -11,7 +11,7 @@ document.addEventListener("alpine:init", () => {
     },
 
     get rows() {
-      const pairs = pairList(this.store.snap?.services);
+      const pairs = servicePairList(this.store.snap?.services);
       return monitoringRows(pairs, this.store.metricsById);
     },
   }));

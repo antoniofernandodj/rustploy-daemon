@@ -12,16 +12,16 @@ const UPLOAD_TIMEOUT_MS = 10 * 60_000;
 
 /** `fetch` com timeout cobrindo cabeçalho E corpo; o erro de timeout vira
  * mensagem legível. Devolve `{ ok, status, json() }` com o corpo já lido. */
-async function fetchTimeout(url, init, ms) {
-  const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), ms);
+async function fetchTimeout(url, init, timeoutMs) {
+  const abortController = new AbortController();
+  const timer = setTimeout(() => abortController.abort(), timeoutMs);
   try {
-    const res = await fetch(url, { ...init, signal: ctl.signal });
-    const text = await res.text();
-    return { ok: res.ok, status: res.status, json: async () => JSON.parse(text) };
-  } catch (e) {
-    if (ctl.signal.aborted) throw new Error("tempo esgotado (" + Math.round(ms / 1000) + "s) sem resposta do daemon");
-    throw e;
+    const httpResponse = await fetch(url, { ...init, signal: abortController.signal });
+    const text = await httpResponse.text();
+    return { ok: httpResponse.ok, status: httpResponse.status, json: async () => JSON.parse(text) };
+  } catch (error) {
+    if (abortController.signal.aborted) throw new Error("tempo esgotado (" + Math.round(timeoutMs / 1000) + "s) sem resposta do daemon");
+    throw error;
   } finally {
     clearTimeout(timer);
   }
@@ -34,29 +34,29 @@ export class Api {
   }
 
   headers() {
-    const h = { "Content-Type": "application/json" };
-    if (this.token) h["Authorization"] = "Bearer " + this.token;
-    return h;
+    const headers = { "Content-Type": "application/json" };
+    if (this.token) headers["Authorization"] = "Bearer " + this.token;
+    return headers;
   }
 
   /** Executa um Command. Retorna { ok: true, value } ou { ok: false, error }. */
-  async rpc(cmd) {
-    let res;
+  async rpc(command) {
+    let httpResponse;
     try {
-      res = await fetchTimeout(
+      httpResponse = await fetchTimeout(
         this.baseUrl + "/api/rpc",
-        { method: "POST", headers: this.headers(), body: JSON.stringify(cmd) },
+        { method: "POST", headers: this.headers(), body: JSON.stringify(command) },
         RPC_TIMEOUT_MS,
       );
-    } catch (e) {
-      return { ok: false, error: e && e.message ? e.message : "falha de rede" };
+    } catch (error) {
+      return { ok: false, error: error && error.message ? error.message : "falha de rede" };
     }
-    if (!res.ok) {
-      return { ok: false, error: "HTTP " + res.status };
+    if (!httpResponse.ok) {
+      return { ok: false, error: "HTTP " + httpResponse.status };
     }
     let decoded;
     try {
-      decoded = await res.json();
+      decoded = await httpResponse.json();
     } catch {
       return { ok: false, error: "resposta inválida do daemon" };
     }
@@ -64,39 +64,39 @@ export class Api {
   }
 
   /** Como rpc(), mas trata `Response::Err { code, message }` como falha. */
-  async rpcChecked(cmd) {
-    const r = await this.rpc(cmd);
-    if (!r.ok) return r;
-    const v = r.value;
-    if (v && typeof v === "object" && v.Err) {
-      return { ok: false, error: v.Err.message || v.Err.code || "erro" };
+  async rpcChecked(command) {
+    const rpcResponse = await this.rpc(command);
+    if (!rpcResponse.ok) return rpcResponse;
+    const decoded = rpcResponse.value;
+    if (decoded && typeof decoded === "object" && decoded.Err) {
+      return { ok: false, error: decoded.Err.message || decoded.Err.code || "erro" };
     }
-    return r;
+    return rpcResponse;
   }
 
   /** `POST /api/services/<id>/archive` — corpo binário cru (não é RPC JSON).
    * Porta de net/api.luau::upload_archive; aqui o `File` já traz os bytes
    * (sem o round-trip por base64 que o Luau precisa pro `fetch("file://…")`). */
   async uploadArchive(serviceId, file) {
-    let res;
+    let httpResponse;
     try {
-      const h = { "Content-Type": "application/zip" };
-      if (this.token) h["Authorization"] = "Bearer " + this.token;
-      h["X-Rustploy-Filename"] = file.name || "archive.zip";
-      res = await fetchTimeout(
+      const headers = { "Content-Type": "application/zip" };
+      if (this.token) headers["Authorization"] = "Bearer " + this.token;
+      headers["X-Rustploy-Filename"] = file.name || "archive.zip";
+      httpResponse = await fetchTimeout(
         `${this.baseUrl}/api/services/${serviceId}/archive`,
-        { method: "POST", headers: h, body: file },
+        { method: "POST", headers: headers, body: file },
         UPLOAD_TIMEOUT_MS,
       );
-    } catch (e) {
-      return { ok: false, error: e && e.message ? e.message : "falha de rede" };
+    } catch (error) {
+      return { ok: false, error: error && error.message ? error.message : "falha de rede" };
     }
-    if (!res.ok) {
-      return { ok: false, error: "HTTP " + res.status };
+    if (!httpResponse.ok) {
+      return { ok: false, error: "HTTP " + httpResponse.status };
     }
     let decoded;
     try {
-      decoded = await res.json();
+      decoded = await httpResponse.json();
     } catch {
       return { ok: false, error: "resposta inválida do daemon" };
     }

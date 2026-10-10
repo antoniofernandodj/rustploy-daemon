@@ -26,7 +26,7 @@ document.addEventListener("alpine:init", () => {
     copyMessage: "",
 
     init() {
-      this.$watch("$store.app.exportWin", (w) => (w ? this.load(w.serviceId) : this.reset()));
+      this.$watch("$store.app.exportWin", (exportWindow) => (exportWindow ? this.load(exportWindow.serviceId) : this.reset()));
     },
 
     reset() {
@@ -42,33 +42,33 @@ document.addEventListener("alpine:init", () => {
     async load(serviceId) {
       this.reset();
       this.loading = true;
-      const r = await this.store.api.rpcChecked({ ServiceExportPlan: { service_id: serviceId } });
+      const serviceExportPlanResponse = await this.store.api.rpcChecked({ ServiceExportPlan: { service_id: serviceId } });
       this.loading = false;
-      if (!r.ok || !r.value?.ServiceExportPlan) {
-        this.error = r.ok ? "resposta inesperada do daemon" : r.error;
+      if (!serviceExportPlanResponse.ok || !serviceExportPlanResponse.value?.ServiceExportPlan) {
+        this.error = serviceExportPlanResponse.ok ? "resposta inesperada do daemon" : serviceExportPlanResponse.error;
         return;
       }
-      this.plan = r.value.ServiceExportPlan;
+      this.plan = serviceExportPlanResponse.value.ServiceExportPlan;
       this.pickSuggested();
     },
 
     get projectVars() {
-      const t = this.filter.trim().toLowerCase();
+      const filterText = this.filter.trim().toLowerCase();
       const all = this.plan?.project_env || [];
-      return t ? all.filter((v) => v.key.toLowerCase().includes(t)) : all;
+      return filterText ? all.filter((item) => item.key.toLowerCase().includes(filterText)) : all;
     },
     get pickedKeys() {
-      return (this.plan?.project_env || []).filter((v) => this.picked[v.key]).map((v) => v.key);
+      return (this.plan?.project_env || []).filter((envVar) => this.picked[envVar.key]).map((envVar) => envVar.key);
     },
     pickSuggested() {
-      const p = {};
-      for (const v of this.plan?.project_env || []) p[v.key] = !!v.suggested;
-      this.picked = p;
+      const pickedMap = {};
+      for (const envVar of this.plan?.project_env || []) pickedMap[envVar.key] = !!envVar.suggested;
+      this.picked = pickedMap;
     },
     pickAll() {
-      const p = {};
-      for (const v of this.plan?.project_env || []) p[v.key] = true;
-      this.picked = p;
+      const pickedMap = {};
+      for (const envVar of this.plan?.project_env || []) pickedMap[envVar.key] = true;
+      this.picked = pickedMap;
     },
     pickNone() {
       this.picked = {};
@@ -77,39 +77,39 @@ document.addEventListener("alpine:init", () => {
     /** Pede o pacote ao daemon com as escolhas da tela. */
     async generate() {
       this.error = "";
-      const r = await this.store.api.rpcChecked({
+      const serviceExportResponse = await this.store.api.rpcChecked({
         ServiceExport: {
           service_id: this.store.exportWin.serviceId,
           include_values: this.includeValues,
           project_env_keys: this.pickedKeys,
         },
       });
-      if (!r.ok || !r.value?.ServiceBundleYaml) {
-        this.error = r.ok ? "resposta inesperada do daemon" : r.error;
+      if (!serviceExportResponse.ok || !serviceExportResponse.value?.ServiceBundleYaml) {
+        this.error = serviceExportResponse.ok ? "resposta inesperada do daemon" : serviceExportResponse.error;
         return null;
       }
-      return r.value.ServiceBundleYaml;
+      return serviceExportResponse.value.ServiceBundleYaml;
     },
 
     async download() {
-      const b = await this.generate();
-      if (!b) return;
-      const url = URL.createObjectURL(new Blob([b.yaml], { type: "text/yaml" }));
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = b.filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
+      const bundle = await this.generate();
+      if (!bundle) return;
+      const url = URL.createObjectURL(new Blob([bundle.yaml], { type: "text/yaml" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = bundle.filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-      this.store.toastOk(`arquivo gerado: ${b.filename}`);
+      this.store.toastOk(`arquivo gerado: ${bundle.filename}`);
     },
 
     async copy() {
-      const b = await this.generate();
-      if (!b) return;
+      const bundle = await this.generate();
+      if (!bundle) return;
       try {
-        await navigator.clipboard.writeText(b.yaml);
+        await navigator.clipboard.writeText(bundle.yaml);
         this.store.toastOk("pacote copiado como texto");
       } catch {
         this.error = "o navegador não deixou copiar; use \"Baixar .yml\"";
@@ -145,11 +145,11 @@ document.addEventListener("alpine:init", () => {
     projectEnv: {}, // chave de variável do projeto → "Keep" | "Overwrite" | "ServiceOnly" | "Ignore"
     gitProviders: [],
 
-    async pickFile(ev) {
-      const f = ev.target.files && ev.target.files[0];
-      if (!f) return;
-      this.fileName = f.name;
-      this.text = await f.text();
+    async pickFile(changeEvent) {
+      const file = changeEvent.target.files && changeEvent.target.files[0];
+      if (!file) return;
+      this.fileName = file.name;
+      this.text = await file.text();
       await this.analyze(true);
     },
 
@@ -170,7 +170,7 @@ document.addEventListener("alpine:init", () => {
 
     nonEmpty(map) {
       const out = {};
-      for (const [k, v] of Object.entries(map)) if (v !== "") out[k] = v;
+      for (const [key, value] of Object.entries(map)) if (value !== "") out[key] = value;
       return out;
     },
 
@@ -201,22 +201,22 @@ document.addEventListener("alpine:init", () => {
       this.error = "";
       const mine = ++this.seq;
       this.analyzing = true;
-      const r = await this.store.api.rpcChecked({ ServiceImport: this.buildReq(true) });
+      const serviceImportResponse = await this.store.api.rpcChecked({ ServiceImport: this.buildReq(true) });
       if (mine !== this.seq) return;
       this.analyzing = false;
-      if (!r.ok || !r.value?.ServiceImportReport) {
+      if (!serviceImportResponse.ok || !serviceImportResponse.value?.ServiceImportReport) {
         this.report = null;
-        this.error = r.ok ? "resposta inesperada do daemon" : r.error;
+        this.error = serviceImportResponse.ok ? "resposta inesperada do daemon" : serviceImportResponse.error;
         return;
       }
-      this.report = r.value.ServiceImportReport;
+      this.report = serviceImportResponse.value.ServiceImportReport;
       if (first || !this.name) this.name = this.report.service_name;
-      for (const s of this.report.project_env) {
-        if (!this.projectEnv[s.key]) this.projectEnv[s.key] = s.choice;
+      for (const statusEntry of this.report.project_env) {
+        if (!this.projectEnv[statusEntry.key]) this.projectEnv[statusEntry.key] = statusEntry.choice;
       }
       if (this.report.missing_git_provider && this.gitProviders.length === 0) {
-        const g = await this.store.api.rpc("GitProviderList");
-        this.gitProviders = (g.ok && g.value?.GitProviders) || [];
+        const gitProviderListResponse = await this.store.api.rpc("GitProviderList");
+        this.gitProviders = (gitProviderListResponse.ok && gitProviderListResponse.value?.GitProviders) || [];
       }
     },
 
@@ -231,36 +231,36 @@ document.addEventListener("alpine:init", () => {
     },
 
     get hasMissing() {
-      const r = this.report;
-      return !!r && (r.missing_service_vars.length > 0 || r.missing_project_vars.length > 0);
+      const report = this.report;
+      return !!report && (report.missing_service_vars.length > 0 || report.missing_project_vars.length > 0);
     },
     get canCreate() {
       return !!this.report && !this.report.name_conflict && !this.hasMissing && !this.analyzing;
     },
 
-    stateLabel(s) {
-      return { New: "nova", Same: "igual", Conflict: "em conflito" }[s] || s;
+    stateLabel(state) {
+      return { New: "nova", Same: "igual", Conflict: "em conflito" }[state] || state;
     },
-    choiceLabel(s, choice) {
-      if (choice === "Keep") return s.state === "New" ? "criar no projeto" : "manter a do projeto";
+    choiceLabel(statusEntry, choice) {
+      if (choice === "Keep") return statusEntry.state === "New" ? "criar no projeto" : "manter a do projeto";
       return { Overwrite: "sobrescrever a do projeto", ServiceOnly: "só neste serviço", Ignore: "não trazer" }[choice];
     },
-    choicesFor(s) {
-      return s.state === "Conflict" ? ["Keep", "Overwrite", "ServiceOnly", "Ignore"] : ["Keep", "ServiceOnly", "Ignore"];
+    choicesFor(statusEntry) {
+      return statusEntry.state === "Conflict" ? ["Keep", "Overwrite", "ServiceOnly", "Ignore"] : ["Keep", "ServiceOnly", "Ignore"];
     },
 
     async create() {
       this.error = "";
       this.creating = true;
-      const r = await this.store.api.rpcChecked({ ServiceImport: this.buildReq(false) });
+      const serviceImportResponse = await this.store.api.rpcChecked({ ServiceImport: this.buildReq(false) });
       this.creating = false;
-      if (!r.ok || !r.value?.ServiceImportReport) {
-        this.error = r.ok ? "resposta inesperada do daemon" : r.error;
+      if (!serviceImportResponse.ok || !serviceImportResponse.value?.ServiceImportReport) {
+        this.error = serviceImportResponse.ok ? "resposta inesperada do daemon" : serviceImportResponse.error;
         return;
       }
-      const done = r.value.ServiceImportReport;
+      const done = serviceImportResponse.value.ServiceImportReport;
       this.store.toastOk(`serviço '${done.service_name}' criado`);
-      for (const w of done.warnings.filter((x) => x.code === "deploy_not_started")) this.store.toastWarn(w.message);
+      for (const warning of done.warnings.filter((warning) => warning.code === "deploy_not_started")) this.store.toastWarn(warning.message);
       await this.store.refreshNow();
       this.store.closeNewService();
       if (done.service_id) this.store.openService(done.service_id);

@@ -747,7 +747,7 @@ fn sse_frame(event: &str, data: &str) -> Bytes {
 /// Envia um lote coalescido de eventos de log como uma única frame SSE
 /// `bus_batch` (ver o produtor em [`events`]): `{ "kind":"bus_batch",
 /// "events":[<Event>,…] }`. O cliente (Luau `on_state`) itera `events` chamando
-/// `apply_bus` para cada um. `Err(())` só quando o canal fechou (cliente saiu),
+/// `apply_bus_event` para cada um. `Err(())` só quando o canal fechou (cliente saiu),
 /// sinalizando o produtor a encerrar; um lote que falha ao serializar é
 /// descartado sem derrubar o stream.
 async fn send_log_batch(

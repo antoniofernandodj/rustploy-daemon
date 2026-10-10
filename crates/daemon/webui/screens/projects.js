@@ -1,6 +1,6 @@
 // screens/projects.js — tela "Projects": grid de cards + criar/editar/
-// remover. Porta de fmt.project_rows (crates/rustploy-gui/views/scripts/
-// fmt/dashboard.luau) e handlers/projects.luau (create/edit/delete), sem o
+// remover. Porta de format.project_rows (crates/rustploy-gui/views/scripts/
+// format/dashboard.luau) e handlers/projects.luau (create/edit/delete), sem o
 // grid em N-colunas do client iced (aqui é CSS grid nativo, ver .grid em
 // app.css) nem a janela separada de criação (o browser não tem multi-janela
 // — o form fica inline, mesma tela).
@@ -22,16 +22,16 @@ document.addEventListener("alpine:init", () => {
     },
 
     get rows() {
-      const s = this.store;
-      const services = (s.snap && s.snap.services) || [];
-      return ((s.snap && s.snap.projects) || []).map((p) => {
-        const svcs = services.filter((e) => e.service.spec.project_id === p.id);
+      const store = this.store;
+      const services = (store.snap && store.snap.services) || [];
+      return ((store.snap && store.snap.projects) || []).map((project) => {
+        const svcs = services.filter((service) => service.service.spec.project_id === project.id);
         return {
-          id: p.id,
-          name: p.name,
-          description: p.description || "",
+          id: project.id,
+          name: project.name,
+          description: project.description || "",
           serviceCount: svcs.length,
-          runningCount: svcs.filter((e) => e.service.status === "Running").length,
+          runningCount: svcs.filter((svc) => svc.service.status === "Running").length,
           canDelete: svcs.length === 0,
         };
       });
@@ -39,13 +39,13 @@ document.addEventListener("alpine:init", () => {
 
     async submitNew() {
       this.newError = "";
-      const r = await this.store.createProject(this.newName, this.newDescription);
-      if (r.ok) {
+      const createProjectResult = await this.store.createProject(this.newName, this.newDescription);
+      if (createProjectResult.ok) {
         this.newName = "";
         this.newDescription = "";
         this.showNewForm = false;
       } else {
-        this.newError = r.error;
+        this.newError = createProjectResult.error;
       }
     },
 
@@ -58,8 +58,8 @@ document.addEventListener("alpine:init", () => {
       this.editingId = null;
     },
     async saveEdit() {
-      const r = await this.store.updateProject(this.editingId, this.editName, this.editDescription);
-      if (r.ok) this.editingId = null;
+      const updateProjectResult = await this.store.updateProject(this.editingId, this.editName, this.editDescription);
+      if (updateProjectResult.ok) this.editingId = null;
     },
   }));
 
@@ -79,10 +79,10 @@ document.addEventListener("alpine:init", () => {
     init() {
       this.$watch(
         () => this.store.projectWin,
-        (w) => {
-          if (!w) return;
-          this.name = w.name || "";
-          this.desc = w.description || "";
+        (windowState) => {
+          if (!windowState) return;
+          this.name = windowState.name || "";
+          this.desc = windowState.description || "";
           this.error = "";
           this.busy = false;
         }
@@ -91,13 +91,13 @@ document.addEventListener("alpine:init", () => {
     async submit() {
       this.error = "";
       this.busy = true;
-      const w = this.store.projectWin;
-      const r = w && w.id
-        ? await this.store.updateProject(w.id, this.name, this.desc)
+      const windowState = this.store.projectWin;
+      const saveResult = windowState && windowState.id
+        ? await this.store.updateProject(windowState.id, this.name, this.desc)
         : await this.store.createProject(this.name, this.desc);
       this.busy = false;
-      if (r.ok) this.store.closeProjectWin();
-      else this.error = r.error;
+      if (saveResult.ok) this.store.closeProjectWin();
+      else this.error = saveResult.error;
     },
   }));
 });

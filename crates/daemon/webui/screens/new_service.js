@@ -59,10 +59,10 @@ document.addEventListener("alpine:init", () => {
     templateServiceName: "",
     templateValues: [],
     get filteredTemplates() {
-      const t = this.templateSearch.trim().toLowerCase();
-      if (!t) return this.catalog.templates;
+      const searchTerm = this.templateSearch.trim().toLowerCase();
+      if (!searchTerm) return this.catalog.templates;
       return this.catalog.templates.filter(
-        (x) => x.name.toLowerCase().includes(t) || x.description.toLowerCase().includes(t)
+        (template) => template.name.toLowerCase().includes(searchTerm) || template.description.toLowerCase().includes(searchTerm)
       );
     },
 
@@ -88,10 +88,10 @@ document.addEventListener("alpine:init", () => {
       await this.ensureCatalog();
       this.step = "pick_db";
     },
-    pickDatabase(db) {
-      this.selectedDatabase = db;
-      this.databaseUser = db.user;
-      this.databaseImage = db.image;
+    pickDatabase(database) {
+      this.selectedDatabase = database;
+      this.databaseUser = database.user;
+      this.databaseImage = database.image;
       this.databaseName = "";
       this.databasePassword = "";
       this.databaseRootPassword = "";
@@ -104,10 +104,10 @@ document.addEventListener("alpine:init", () => {
       await this.ensureCatalog();
       this.step = "pick_broker";
     },
-    pickBroker(b) {
-      this.selectedBroker = b;
-      this.brokerUser = b.user;
-      this.brokerImage = b.image;
+    pickBroker(broker) {
+      this.selectedBroker = broker;
+      this.brokerUser = broker.user;
+      this.brokerImage = broker.image;
       this.brokerPassword = "";
       this.brokerServiceName = "";
       this.step = "broker_form";
@@ -117,9 +117,9 @@ document.addEventListener("alpine:init", () => {
       await this.ensureCatalog();
       this.step = "pick_template";
     },
-    pickTemplate(t) {
-      this.selectedTemplate = t;
-      this.templateValues = t.vars.map(() => "");
+    pickTemplate(template) {
+      this.selectedTemplate = template;
+      this.templateValues = template.vars.map(() => "");
       this.templateServiceName = "";
       this.step = "template_form";
     },
@@ -130,7 +130,7 @@ document.addEventListener("alpine:init", () => {
 
     /** Janela reaberta: volta ao passo 1 sem lixo do uso anterior (o catálogo
      * dos bancos/brokers/templates fica em cache, não precisa refazer). */
-    reset(ev) {
+    reset(resetEvent) {
       this.step = "pick_type";
       this.error = "";
       this.submitting = false;
@@ -141,14 +141,14 @@ document.addEventListener("alpine:init", () => {
       this.composeName = "";
       this.composeDomain = "";
       this.templateSearch = "";
-      if (ev?.detail?.step === "import") this.gotoImport();
+      if (resetEvent?.detail?.step === "import") this.gotoImport();
     },
 
     // ── Submissões ────────────────────────────────────────────────────
-    baseReq(kind, id) {
+    baseReq(kind, selectedId) {
       return {
         kind,
-        id,
+        id: selectedId,
         project_id: this.store.selectedProjectId,
         name: "",
         app_name: "",
@@ -198,9 +198,9 @@ document.addEventListener("alpine:init", () => {
         source = { Registry: { image: this.registryImage.trim() } };
       }
       this.submitting = true;
-      const r = await this.store.createServiceDirect(this.appName, source, this.appPort, this.appDomain);
+      const createServiceDirectResult = await this.store.createServiceDirect(this.appName, source, this.appPort, this.appDomain);
       this.submitting = false;
-      if (!r.ok) this.error = r.error;
+      if (!createServiceDirectResult.ok) this.error = createServiceDirectResult.error;
     },
 
     async submitCompose() {
@@ -219,19 +219,19 @@ document.addEventListener("alpine:init", () => {
       // fazemos com Application (mais direto pro usuário).
       const source = { Compose: { content: this.composeText } };
       this.submitting = true;
-      const r = await this.store.createServiceDirect(this.composeName, source, this.composePort, this.composeDomain);
+      const createServiceDirectResult = await this.store.createServiceDirect(this.composeName, source, this.composePort, this.composeDomain);
       this.submitting = false;
-      if (!r.ok) this.error = r.error;
+      if (!createServiceDirectResult.ok) this.error = createServiceDirectResult.error;
     },
 
     async submitDatabase() {
       this.error = "";
-      const db = this.selectedDatabase;
-      if (db.has_db_name && !this.databaseName.trim()) {
+      const database = this.selectedDatabase;
+      if (database.has_db_name && !this.databaseName.trim()) {
         this.error = "nome do banco obrigatório";
         return;
       }
-      if (db.has_user && !this.databaseUser.trim()) {
+      if (database.has_user && !this.databaseUser.trim()) {
         this.error = "usuário obrigatório";
         return;
       }
@@ -239,47 +239,47 @@ document.addEventListener("alpine:init", () => {
         this.error = "senha obrigatória";
         return;
       }
-      const req = this.baseReq("database", db.id);
-      req.name = this.databaseServiceName;
-      req.db_name = this.databaseName;
-      req.user = this.databaseUser;
-      req.password = this.databasePassword;
-      req.root_password = this.databaseRootPassword;
-      req.image = this.databaseImage;
-      req.use_replica = this.databaseUseReplica;
+      const createRequest = this.baseReq("database", database.id);
+      createRequest.name = this.databaseServiceName;
+      createRequest.db_name = this.databaseName;
+      createRequest.user = this.databaseUser;
+      createRequest.password = this.databasePassword;
+      createRequest.root_password = this.databaseRootPassword;
+      createRequest.image = this.databaseImage;
+      createRequest.use_replica = this.databaseUseReplica;
       this.submitting = true;
-      const r = await this.store.wizardCreate(req);
+      const wizardCreateResult = await this.store.wizardCreate(createRequest);
       this.submitting = false;
-      if (!r.ok) this.error = r.error;
+      if (!wizardCreateResult.ok) this.error = wizardCreateResult.error;
     },
 
     async submitBroker() {
       this.error = "";
-      const b = this.selectedBroker;
-      if (b.has_user && !this.brokerUser.trim()) {
+      const broker = this.selectedBroker;
+      if (broker.has_user && !this.brokerUser.trim()) {
         this.error = "usuário obrigatório";
         return;
       }
-      const req = this.baseReq("broker", b.id);
-      req.name = this.brokerServiceName;
-      req.user = this.brokerUser;
-      req.password = this.brokerPassword;
-      req.image = this.brokerImage;
+      const createRequest = this.baseReq("broker", broker.id);
+      createRequest.name = this.brokerServiceName;
+      createRequest.user = this.brokerUser;
+      createRequest.password = this.brokerPassword;
+      createRequest.image = this.brokerImage;
       this.submitting = true;
-      const r = await this.store.wizardCreate(req);
+      const wizardCreateResult = await this.store.wizardCreate(createRequest);
       this.submitting = false;
-      if (!r.ok) this.error = r.error;
+      if (!wizardCreateResult.ok) this.error = wizardCreateResult.error;
     },
 
     async submitTemplate() {
       this.error = "";
-      const req = this.baseReq("template", this.selectedTemplate.id);
-      req.name = this.templateServiceName;
-      req.template_values = this.templateValues;
+      const createRequest = this.baseReq("template", this.selectedTemplate.id);
+      createRequest.name = this.templateServiceName;
+      createRequest.template_values = this.templateValues;
       this.submitting = true;
-      const r = await this.store.wizardCreate(req);
+      const wizardCreateResult = await this.store.wizardCreate(createRequest);
       this.submitting = false;
-      if (!r.ok) this.error = r.error;
+      if (!wizardCreateResult.ok) this.error = wizardCreateResult.error;
     },
   }));
 });

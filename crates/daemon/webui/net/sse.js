@@ -24,24 +24,24 @@ export function openStream(baseUrl, token, path, handlers) {
   let closedByUs = false;
 
   (async () => {
-    let res;
+    let httpResponse;
     try {
-      res = await fetch(baseUrl.replace(/\/+$/, "") + path, {
+      httpResponse = await fetch(baseUrl.replace(/\/+$/, "") + path, {
         headers: token ? { Authorization: "Bearer " + token } : {},
         signal: controller.signal,
       });
-    } catch (e) {
-      if (!closedByUs) handlers.onError?.(e && e.message ? e.message : "falha ao conectar");
+    } catch (error) {
+      if (!closedByUs) handlers.onError?.(error && error.message ? error.message : "falha ao conectar");
       handlers.onClose?.();
       return;
     }
-    if (!res.ok || !res.body) {
-      handlers.onError?.("HTTP " + res.status);
+    if (!httpResponse.ok || !httpResponse.body) {
+      handlers.onError?.("HTTP " + httpResponse.status);
       handlers.onClose?.();
       return;
     }
 
-    const reader = res.body.getReader();
+    const reader = httpResponse.body.getReader();
     const decoder = new TextDecoder("utf-8");
     let buf = "";
     try {
@@ -69,8 +69,8 @@ export function openStream(baseUrl, token, path, handlers) {
           }
         }
       }
-    } catch (e) {
-      if (!closedByUs) handlers.onError?.(e && e.message ? e.message : "stream interrompida");
+    } catch (error) {
+      if (!closedByUs) handlers.onError?.(error && error.message ? error.message : "stream interrompida");
     }
     if (!closedByUs) handlers.onClose?.();
   })();

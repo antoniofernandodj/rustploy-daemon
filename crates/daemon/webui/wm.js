@@ -33,9 +33,9 @@ function lsGet(key) {
     return null;
   }
 }
-function lsSet(key, v) {
+function lsSet(key, value) {
   try {
-    localStorage.setItem(LS_PREFIX + key, JSON.stringify(v));
+    localStorage.setItem(LS_PREFIX + key, JSON.stringify(value));
   } catch {
     /* modo privado / cota: perde só a memória da posição */
   }
@@ -48,15 +48,15 @@ function bringToFront(layer) {
 /** Mantém a janela alcançável: ao menos a barra de título dentro da tela. */
 function clamp(box) {
   if (box.classList.contains("win--max")) return;
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
-  const r = box.getBoundingClientRect();
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  const boxRect = box.getBoundingClientRect();
   if (!box.style.left) return;
-  const w = Math.min(r.width, vw - MARGIN * 2);
-  let x = Math.min(Math.max(r.left, MARGIN - w + 120), vw - 120);
-  let y = Math.min(Math.max(r.top, 0), vh - 40);
-  box.style.left = x + "px";
-  box.style.top = y + "px";
+  const boxWidth = Math.min(boxRect.width, viewportWidth - MARGIN * 2);
+  let left = Math.min(Math.max(boxRect.left, MARGIN - boxWidth + 120), viewportWidth - 120);
+  let top = Math.min(Math.max(boxRect.top, 0), viewportHeight - 40);
+  box.style.left = left + "px";
+  box.style.top = top + "px";
 }
 
 /** Fixa a janela em coordenadas. Sem posição lembrada, nasce centralizada
@@ -65,19 +65,19 @@ function clamp(box) {
 let cascade = 0;
 function pin(box) {
   if (box.style.left) return;
-  const w = parseFloat(box.style.width) || box.offsetWidth;
-  const h = parseFloat(box.style.height) || box.offsetHeight;
+  const boxWidth = parseFloat(box.style.width) || box.offsetWidth;
+  const boxHeight = parseFloat(box.style.height) || box.offsetHeight;
   const off = (cascade++ % 5) * 26;
   box.style.position = "fixed";
-  box.style.left = Math.max(MARGIN, (window.innerWidth - w) / 2 + off - 52) + "px";
-  box.style.top = Math.max(MARGIN, (window.innerHeight - h) / 2 + off - 52) + "px";
+  box.style.left = Math.max(MARGIN, (window.innerWidth - boxWidth) / 2 + off - 52) + "px";
+  box.style.top = Math.max(MARGIN, (window.innerHeight - boxHeight) / 2 + off - 52) + "px";
   box.style.margin = "0";
 }
 
 export function registerWindows(Alpine) {
   // Esc fecha a janela visível mais à frente.
-  document.addEventListener("keydown", (e) => {
-    if (e.key !== "Escape" || e.defaultPrevented) return;
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || event.defaultPrevented) return;
     let best = null;
     for (const layer of document.querySelectorAll(".modal__backdrop")) {
       if (layer.style.display === "none" || !layer.firstElementChild) continue;
@@ -86,7 +86,7 @@ export function registerWindows(Alpine) {
     }
     const close = best && best.querySelector(".win__dot--close");
     if (close) {
-      e.preventDefault();
+      event.preventDefault();
       close.click();
     }
   });
@@ -105,9 +105,9 @@ export function registerWindows(Alpine) {
     layer.classList.add("win__layer");
 
     // ── Barra de título: pontos de controle à esquerda ─────────────────
-    const closeBtn = [...head.querySelectorAll("button")].find((b) => b.textContent.trim() === "Fechar");
-    const ctl = document.createElement("div");
-    ctl.className = "win__ctls";
+    const closeBtn = [...head.querySelectorAll("button")].find((button) => button.textContent.trim() === "Fechar");
+    const controls = document.createElement("div");
+    controls.className = "win__ctls";
     const dClose = document.createElement("button");
     dClose.type = "button";
     dClose.className = "win__dot win__dot--close";
@@ -118,8 +118,8 @@ export function registerWindows(Alpine) {
     dMax.className = "win__dot win__dot--max";
     dMax.title = "Maximizar / restaurar";
     dMax.setAttribute("aria-label", "Maximizar janela");
-    ctl.append(dClose, dMax);
-    head.prepend(ctl);
+    controls.append(dClose, dMax);
+    head.prepend(controls);
     // O "Fechar" do markup continua visível, agora como ✕ à direita da barra
     // (o ponto vermelho de 12px sozinho passava despercebido).
     if (closeBtn) {
@@ -134,13 +134,13 @@ export function registerWindows(Alpine) {
     });
 
     // ── Tamanho / posição iniciais ─────────────────────────────────────
-    const dw = Number(box.dataset.w) || 900;
-    const dh = Number(box.dataset.h) || 640;
+    const defaultWidth = Number(box.dataset.w) || 900;
+    const defaultHeight = Number(box.dataset.h) || 640;
     const saved = key ? lsGet(key) : null;
-    const vw = () => window.innerWidth;
-    const vh = () => window.innerHeight;
-    box.style.width = Math.min(saved?.w || dw, vw() - MARGIN * 2) + "px";
-    box.style.height = Math.min(saved?.h || dh, vh() - MARGIN * 2) + "px";
+    const viewportWidth = () => window.innerWidth;
+    const viewportHeight = () => window.innerHeight;
+    box.style.width = Math.min(saved?.w || defaultWidth, viewportWidth() - MARGIN * 2) + "px";
+    box.style.height = Math.min(saved?.h || defaultHeight, viewportHeight() - MARGIN * 2) + "px";
     if (saved && Number.isFinite(saved.x)) {
       box.style.position = "fixed";
       box.style.left = saved.x + "px";
@@ -150,27 +150,27 @@ export function registerWindows(Alpine) {
 
     const persist = () => {
       if (!key || !box.style.left || box.classList.contains("win--max")) return;
-      const r = box.getBoundingClientRect();
-      if (r.width < 50) return; // oculta
-      lsSet(key, { x: r.left, y: r.top, w: r.width, h: r.height });
+      const boxRect = box.getBoundingClientRect();
+      if (boxRect.width < 50) return; // oculta
+      lsSet(key, { x: boxRect.left, y: boxRect.top, w: boxRect.width, h: boxRect.height });
     };
 
     // ── Aparecer: traz à frente, ajusta e foca o 1º campo ──────────────
     let wasShown = false;
-    const mo = new MutationObserver(() => {
+    const mutationObserver = new MutationObserver(() => {
       const shown = layer.style.display !== "none";
       if (shown && !wasShown) {
         bringToFront(layer);
         pin(box);
         requestAnimationFrame(() => {
           clamp(box);
-          const f = box.querySelector(".modal__body input:not([type=checkbox]):not([type=hidden]), .modal__body textarea");
-          if (f && !box.contains(document.activeElement)) f.focus({ preventScroll: true });
+          const firstField = box.querySelector(".modal__body input:not([type=checkbox]):not([type=hidden]), .modal__body textarea");
+          if (firstField && !box.contains(document.activeElement)) firstField.focus({ preventScroll: true });
         });
       }
       wasShown = shown;
     });
-    mo.observe(layer, { attributes: true, attributeFilter: ["style"] });
+    mutationObserver.observe(layer, { attributes: true, attributeFilter: ["style"] });
     wasShown = layer.style.display !== "none";
     if (wasShown) bringToFront(layer);
 
@@ -178,17 +178,17 @@ export function registerWindows(Alpine) {
     box.addEventListener("pointerdown", () => bringToFront(layer), true);
 
     // ── Arrastar pela barra ────────────────────────────────────────────
-    head.addEventListener("pointerdown", (e) => {
-      if (e.button !== 0 || e.target.closest("button, input, select, textarea, a")) return;
+    head.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0 || event.target.closest("button, input, select, textarea, a")) return;
       if (box.classList.contains("win--max") || window.matchMedia("(max-width: 700px)").matches) return;
       pin(box);
-      const sx = e.clientX - box.offsetLeft;
-      const sy = e.clientY - box.offsetTop;
-      head.setPointerCapture(e.pointerId);
+      const grabOffsetX = event.clientX - box.offsetLeft;
+      const grabOffsetY = event.clientY - box.offsetTop;
+      head.setPointerCapture(event.pointerId);
       box.classList.add("win--dragging");
-      const move = (ev) => {
-        box.style.left = ev.clientX - sx + "px";
-        box.style.top = ev.clientY - sy + "px";
+      const move = (moveEvent) => {
+        box.style.left = moveEvent.clientX - grabOffsetX + "px";
+        box.style.top = moveEvent.clientY - grabOffsetY + "px";
       };
       const up = () => {
         head.removeEventListener("pointermove", move);
@@ -214,21 +214,21 @@ export function registerWindows(Alpine) {
       }
     };
     dMax.addEventListener("click", toggleMax);
-    head.addEventListener("dblclick", (e) => {
-      if (!e.target.closest("button, input, select, textarea, a")) toggleMax();
+    head.addEventListener("dblclick", (event) => {
+      if (!event.target.closest("button, input, select, textarea, a")) toggleMax();
     });
 
     // ── Redimensionar (alça nativa) → persiste ao parar ────────────────
-    let t = 0;
-    const ro = new ResizeObserver(() => {
-      clearTimeout(t);
-      t = setTimeout(persist, 250);
+    let persistTimer = 0;
+    const resizeObserver = new ResizeObserver(() => {
+      clearTimeout(persistTimer);
+      persistTimer = setTimeout(persist, 250);
     });
-    ro.observe(box);
+    resizeObserver.observe(box);
 
     cleanup(() => {
-      mo.disconnect();
-      ro.disconnect();
+      mutationObserver.disconnect();
+      resizeObserver.disconnect();
     });
   });
 }
