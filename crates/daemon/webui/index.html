@@ -128,7 +128,7 @@
           <input class="topbar__search" type="text" placeholder="Search deployments, nodes…"
                  x-model="$store.app.search" @input="$store.app.searchChanged($event.target.value)" />
         </row>
-        <text class="u-muted topbar__status" x-text="'● daemon v' + $store.app.daemonVersion"></text>
+        <text class="u-muted topbar__status" :title="location.origin" x-text="'● ' + location.host + ' · daemon v' + $store.app.daemonVersion"></text>
         <button class="btn btn--danger btn-icon" type="button" @click="$store.app.stopAll()" title="Para todos os containers gerenciados">
           <text>Stop All</text>
         </button>
@@ -1203,6 +1203,16 @@
             <text class="u-muted">
               Endereço do servidor + token numa string só. É o que se cola no login da GUI e da webui,
               e o que um agente de IA usa em POST /api/login. Vale tanto quanto o token: não compartilhe à toa.
+            </text>
+
+            <text class="u-label-cap" style="margin-top:14px">CONECTAR UM AGENTE (CLAUDE CODE)</text>
+            <row class="kv-list__row">
+              <text class="kv-list__val kv-list__val--compact">claude mcp add … rustploy …/mcp</text>
+              <button class="btn btn--copy" type="button" @click="navigator.clipboard.writeText(store.serverMcpCommand)">Copiar</button>
+            </row>
+            <text class="u-muted">
+              Copia o comando que registra o MCP deste servidor no Claude Code, já com o token. Cole num
+              terminal e abra uma sessão nova do Claude Code; confira com /mcp. Contém o token: não cole em lugar público.
             </text>
 
             <text class="u-label-cap" style="margin-top:14px">E-MAIL LET'S ENCRYPT (HTTPS AUTOMÁTICO)</text>

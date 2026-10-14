@@ -37,6 +37,9 @@ claude mcp add --transport http rustploy https://SERVIDOR:PORTA/mcp \
   --header "Authorization: Bearer <access_token>"
 ```
 
+Atalho para humanos: na GUI ou na webui, Settings → Web Server → "Conectar
+um agente (Claude Code)" → Copiar já dá esse comando com o token resolvido.
+
 As ferramentas aparecem com descrição e esquema. Este manual é também as
 `instructions` do handshake e o recurso `rustploy://manual`.
 

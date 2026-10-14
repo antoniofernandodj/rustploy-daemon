@@ -87,6 +87,8 @@ document.addEventListener("alpine:init", () => {
     rememberAccessKey: !!prefs.rememberAccessKey,
     // A chave deste servidor, para Settings → copiar (GET /api/access-key).
     serverAccessKey: "",
+    // O `claude mcp add …` deste servidor, com o token, para Settings → copiar.
+    serverMcpCommand: "",
 
     // ── Sessão ativa ─────────────────────────────────────────────────
     api: null,
@@ -1419,6 +1421,9 @@ document.addEventListener("alpine:init", () => {
       // GUI — não do `public_base_url` do daemon, que pode não ser o endereço
       // pelo qual este navegador chega.
       this.serverAccessKey = this.api.token ? encodeAccessKey(this.api.baseUrl, this.api.token) : "";
+      this.serverMcpCommand =
+        "claude mcp add --transport http --scope user rustploy " + this.api.baseUrl + "/mcp" +
+        (this.api.token ? ' --header "Authorization: Bearer ' + this.api.token + '"' : "");
       await this.gitProviderRefresh();
       await this.dockerCleanupLoad();
     },

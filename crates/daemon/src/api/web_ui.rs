@@ -346,6 +346,11 @@ mod headless_tests {
         // A chave para copiar em Settings é montada da sessão (origem + token).
         let chave = eval_str(&page, "Alpine.store('app').serverAccessKey").await;
         assert!(chave.starts_with("rpk1_"), "{chave}");
+        let comando = eval_str(&page, "Alpine.store('app').serverMcpCommand").await;
+        assert!(
+            comando.contains("/mcp") && comando.contains("Bearer x"),
+            "{comando}"
+        );
         assert_eq!(
             errors(&page).await,
             Vec::<String>::new(),
