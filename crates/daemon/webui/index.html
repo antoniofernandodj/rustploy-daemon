@@ -302,6 +302,8 @@
                     <text class="u-muted table__col-start" x-text="activeDeployment.phase"></text>
                     <row class="table__col-act">
                       <button class="btn btn--sm-ghost" type="button" @click="openDetail(activeDeployment.serviceId)">Detalhes</button>
+                      <button class="env__del" type="button" title="Abortar deploy"
+                              @click="store.queueCancel(activeDeployment.deploymentId)">■</button>
                     </row>
                   </row>
                   <row class="stepper">

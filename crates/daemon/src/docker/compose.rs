@@ -281,6 +281,9 @@ pub async fn up(
         .current_dir(build_dir)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
+        // Abortar o deploy derruba a task; sem isto o `compose up --build`
+        // seguiria vivo no host.
+        .kill_on_drop(true)
         .spawn()
         .map_err(|e| anyhow!("falha ao iniciar docker compose: {e}"))?;
 

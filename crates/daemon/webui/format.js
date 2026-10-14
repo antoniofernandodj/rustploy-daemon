@@ -597,6 +597,7 @@ export function deployEngineActiveRows(active) {
       total: formatSeconds(info.elapsed_secs),
       phase: formatSeconds(info.current_state_secs),
       serviceId: info.service_id,
+      deploymentId: info.deployment_id,
     };
   });
 }

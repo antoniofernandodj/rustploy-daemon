@@ -15,6 +15,8 @@ pub async fn handle(state: AppState, deployment_id: String) -> RpResponse {
         return RpResponse::err("InvalidState", "deployment already finished");
     }
 
+    let mut aborted_running = false;
+
     // Estava só esperando na fila (nunca rodou): remove da fila e devolve o
     // serviço ao repouso (Stopped) — não há task de executor para abortar.
     if state.deploy_queue.remove_queued(&deployment_id) {
@@ -35,7 +37,19 @@ pub async fn handle(state: AppState, deployment_id: String) -> RpResponse {
         // stream do Docker build).
         if let Some(handle) = map.remove(&deployment_id) {
             handle.abort();
+            aborted_running = true;
         }
+    }
+
+    // Task abortada no meio do caminho: ninguém mais atualiza o serviço, que
+    // ficaria preso em "Deploying". Marca erro (o redeploy sai desse estado).
+    if aborted_running {
+        let status = ServiceStatus::Error("deploy aborted by user".into());
+        let _ = crate::db::services::update_status(&state.db, &dep.service_id, &status, None).await;
+        state.bus.publish(Event::ServiceStatusChanged {
+            service_id: dep.service_id.clone(),
+            status,
+        });
     }
 
     match crate::db::deployments::transition(
