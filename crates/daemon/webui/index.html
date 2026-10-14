@@ -1717,12 +1717,12 @@
                   <text class="state-cell__label" x-text="job.lastRunLabel"></text>
                 </row>
                 <text class="u-muted kv-list__val kv-list__val--compact" x-text="'→ ' + job.nextRunAt"></text>
-                <button class="btn btn--copy" type="button" x-show="!job.running" @click="store.jobRunNow(job.id)">Rodar agora</button>
-                <button class="env__del" type="button" x-show="job.running" @click="store.jobRunCancel(job.lastRunId)">Cancelar</button>
-                <button class="btn btn--copy" type="button" x-show="job.lastRunId" @click="store.openJobLogs(job.lastRunId)">Ver logs</button>
-                <button class="btn btn--copy" type="button" @click="store.jobToggle(job.id)" x-text="job.enabledLabel"></button>
-                <button class="btn btn--copy" type="button" @click="store.openEditJob(job.id)">Editar</button>
-                <button class="env__del" type="button" @click="store.jobDelete(job.id)">✕</button>
+                <button class="btn btn--copy" type="button" title="Rodar agora" x-show="!job.running" @click="store.jobRunNow(job.id)">▶</button>
+                <button class="env__del" type="button" title="Cancelar" x-show="job.running" @click="store.jobRunCancel(job.lastRunId)">■</button>
+                <button class="btn btn--copy" type="button" title="Ver logs" x-show="job.lastRunId" @click="store.openJobLogs(job.lastRunId)">≡</button>
+                <button class="btn btn--copy" type="button" :title="job.enabledLabel" @click="store.jobToggle(job.id)" x-text="job.enabled ? '‖' : '▶'"></button>
+                <button class="btn btn--copy" type="button" title="Editar" @click="store.openEditJob(job.id)">✎</button>
+                <button class="env__del" type="button" title="Remover" @click="store.jobDelete(job.id)">✕</button>
               </row>
             </template>
           </column>
