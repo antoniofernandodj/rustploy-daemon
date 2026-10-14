@@ -27,20 +27,13 @@ async function fetchTimeout(url, init, timeoutMs) {
   }
 }
 
-// Chave de acesso (ver api/agent/access_key.rs no daemon): base64url sem
-// padding de `host:porta::token`. O esquema só vai na chave quando não dá
-// para deduzi-lo — porta 443 (ou nenhuma) é https, qualquer outra é http.
+// Token de conexão (ver api/agent/access_key.rs no daemon): base64 padrão,
+// com padding, de `host:porta::token` — sem esquema.
 const ACCESS_KEY_SEPARATOR = "::";
 
-function impliedScheme(authority) {
-  const afterHost = authority.includes("]") ? authority.slice(authority.lastIndexOf("]")) : authority;
-  const colon = afterHost.lastIndexOf(":");
-  return colon >= 0 && afterHost.slice(colon + 1) !== "443" ? "http" : "https";
-}
-
-/** Decodifica a chave em `{ url, token }`, ou `null` se a string não estiver
- * nesse formato. Só para exibir/conferir o servidor: quem valida a chave é o
- * `POST /api/login`. Aceita também o base64 padrão, com padding. */
+/** Decodifica o token de conexão em `{ address, token }` (`address` =
+ * `host:porta`), ou `null` se a string não estiver nesse formato. Aceita
+ * também o alfabeto url-safe e a falta de padding. */
 export function decodeAccessKey(accessKey) {
   const trimmed = (accessKey || "").trim();
   if (!trimmed) return null;
@@ -57,23 +50,28 @@ export function decodeAccessKey(accessKey) {
   const searchFrom = text[authorityStart] === "[" ? text.indexOf("]", authorityStart) : authorityStart;
   const at = searchFrom < 0 ? -1 : text.indexOf(ACCESS_KEY_SEPARATOR, searchFrom);
   if (at < 0) return null;
-  const address = text.slice(0, at).trim().replace(/\/+$/, "");
+  // Um esquema posto à mão não faz parte do formato: descartado.
+  const address = text.slice(authorityStart, at).trim().replace(/\/+$/, "");
   const token = text.slice(at + ACCESS_KEY_SEPARATOR.length).trim();
-  if (!address || !token) return null;
-  return { url: address.includes("://") ? address : impliedScheme(address) + "://" + address, token };
+  return address && token ? { address, token } : null;
 }
 
-/** Monta a chave de um par endereço + token (o inverso de `decodeAccessKey`).
+/** Monta o token de conexão de um endereço (URL ou `host:porta`) + token da
+ * API — o inverso de `decodeAccessKey`. A porta sempre vai, mesmo a padrão.
  * O token é ASCII (hex/base64url), então `btoa` direto basta. */
 export function encodeAccessKey(url, token) {
-  const trimmedUrl = url.replace(/\/+$/, "");
-  const schemeEnd = trimmedUrl.indexOf("://");
-  const authority = schemeEnd >= 0 ? trimmedUrl.slice(schemeEnd + 3) : trimmedUrl;
-  const address = schemeEnd >= 0 && impliedScheme(authority) === trimmedUrl.slice(0, schemeEnd) ? authority : trimmedUrl;
-  return btoa(address + ACCESS_KEY_SEPARATOR + token).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  let address = url.replace(/\/+$/, "");
+  try {
+    const parsed = new URL(address.includes("://") ? address : "http://" + address);
+    address = parsed.hostname + ":" + (parsed.port || (parsed.protocol === "https:" ? "443" : "80"));
+  } catch {
+    // não é URL: segue como veio
+  }
+  return btoa(address + ACCESS_KEY_SEPARATOR + token);
 }
 
-/** `POST /api/login`: troca a chave pelo token de acesso. Devolve
+/** `POST /api/login`: troca o token de conexão pelo token da API. A webui não
+ * usa mais (decodifica e usa o token direto); fica para depuração/agentes. Devolve
  * `{ ok: true, token }` ou `{ ok: false, error }` com a explicação do daemon. */
 export async function login(baseUrl, accessKey) {
   let httpResponse;

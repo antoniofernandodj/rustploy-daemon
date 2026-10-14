@@ -42,7 +42,7 @@ use tracing_subscriber::EnvFilter;
 async fn main() -> Result<()> {
     let config = RustployConfig::global();
 
-    // `rustployd access-key`: imprime a chave de acesso (endereço + token) e sai,
+    // `rustployd access-key`: imprime o token de conexão (endereço + token) e sai,
     // sem subir nada. Ver api::agent e docs/plano-chave-de-acesso-e-mcp.md.
     if std::env::args().nth(1).as_deref() == Some("access-key") {
         api::agent::print_access_key_and_exit(config);
@@ -401,9 +401,16 @@ async fn main() -> Result<()> {
         tokio::spawn(async move {
             api::http_api::run(state2, api_cfg, Some(tls2)).await;
         });
-        // A chave em si não vai para o log: é o token, e o journal é lido por
-        // mais gente do que o config.toml.
-        info!("chave de acesso (GUI, webui e agentes): rode `rustployd access-key`");
+        // O token de conexão não vai para o log: ele contém o token, e o
+        // journal é lido por mais gente do que o config.toml. Vai para o
+        // próprio config.toml, abaixo do `token` de `[api]`.
+        if let Err(e) = api::agent::write_connection_token(config) {
+            warn!(error = %e, "não deu para gravar o token de conexão no config.toml");
+        }
+        info!(
+            "token de conexão (GUI, webui e agentes): [api].connection_token no config.toml, \
+             ou `rustployd access-key`"
+        );
     }
 
     // Registry OCI embutido — Fase 1: loopback only, sem auth, sem ingress

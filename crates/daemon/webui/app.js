@@ -25,7 +25,7 @@ import "./screens/new_service.js";
 import "./screens/service_detail.js";
 import "./screens/service_bundle.js";
 import Alpine from "https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/module.esm.js";
-import { Api, encodeAccessKey, login } from "./net/api.js";
+import { Api, decodeAccessKey, encodeAccessKey } from "./net/api.js";
 import { openStream } from "./net/sse.js";
 import { registerDirectives } from "./directives.js";
 import { registerWindows } from "./wm.js";
@@ -80,7 +80,7 @@ document.addEventListener("alpine:init", () => {
     error: "",
 
     // ── Formulário de login ───────────────────────────────────────────
-    // Um campo só: a chave de acesso (endereço + token). O endereço dentro
+    // Um campo só: o token de conexão (endereço + token). O endereço dentro
     // dela não é usado para conectar — a webui é sempre servida pelo próprio
     // daemon, então o servidor é a própria origem da página.
     accessKey: prefs.rememberAccessKey && prefs.accessKey ? prefs.accessKey : "",
@@ -337,15 +337,17 @@ document.addEventListener("alpine:init", () => {
       this.statusLine = "conectando…";
       this.error = "";
 
-      const loginResponse = await login(base, this.accessKey);
-      if (!loginResponse.ok) {
-        this.error = loginResponse.error;
+      // O token de conexão é `host:porta::token` em base64: o token da API sai
+      // dele e vai direto como Bearer — sem `/api/login` no meio.
+      const decodedKey = decodeAccessKey(this.accessKey);
+      if (!decodedKey) {
+        this.error = "isso não é um token de conexão — cole o token de conexão inteiro (base64 de host:porta::token), não só o token da API";
         this.statusLine = "falha na conexão";
         this.connected = false;
         return;
       }
 
-      const client = new Api(base, loginResponse.token);
+      const client = new Api(base, decodedKey.token);
       const daemonStatusResponse = await client.rpc("DaemonStatus");
       if (!daemonStatusResponse.ok) {
         this.error = daemonStatusResponse.error;

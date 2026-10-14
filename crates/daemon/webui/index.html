@@ -42,10 +42,10 @@
       <form @submit.prevent="submit()">
         <column class="field">
           <row class="field__row">
-            <text class="field__label" style="flex:1">ACCESS KEY</text>
+            <text class="field__label" style="flex:1">CONNECTION TOKEN</text>
             <text class="field__label">SECURE</text>
           </row>
-          <input class="field__input" type="password" placeholder="cole a chave de acesso"
+          <input class="field__input" type="password" placeholder="cole o token de conexão"
                  x-model="$store.app.accessKey" />
           <text class="u-muted" x-show="otherServerWarning" x-text="otherServerWarning"></text>
         </column>
@@ -1194,15 +1194,16 @@
               do callback OAuth (mesma porta da API). Para mudá-la, configure api.domain e reinicie o daemon.
             </text>
 
-            <text class="u-label-cap" style="margin-top:14px">CHAVE DE ACESSO</text>
+            <text class="u-label-cap" style="margin-top:14px">TOKEN DE CONEXÃO</text>
             <row class="kv-list__row">
               <text class="kv-list__val kv-list__val--compact" x-text="store.serverAccessKey ? store.serverAccessKey.slice(0, 12) + '…' + store.serverAccessKey.slice(-6) : '—'"></text>
               <button class="btn btn--copy" type="button" :disabled="!store.serverAccessKey"
                       @click="navigator.clipboard.writeText(store.serverAccessKey)">Copiar</button>
             </row>
             <text class="u-muted">
-              Endereço do servidor + token numa string só. É o que se cola no login da GUI e da webui,
-              e o que um agente de IA usa em POST /api/login. Vale tanto quanto o token: não compartilhe à toa.
+              base64 de host:porta::token — endereço do servidor + token numa string só. É o que se cola
+              no login da GUI e da webui, e o que um agente de IA usa em POST /api/login. O daemon também
+              o deixa no config.toml, em [api].connection_token. Vale tanto quanto o token: não compartilhe à toa.
             </text>
 
             <text class="u-label-cap" style="margin-top:14px">CONECTAR UM AGENTE (CLAUDE CODE)</text>

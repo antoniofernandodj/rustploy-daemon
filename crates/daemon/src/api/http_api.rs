@@ -216,10 +216,16 @@ async fn handle(
                 ),
             ));
         }
-        // Login por chave de acesso — público por natureza (é ele que entrega o
+        // Login por token de conexão — público por natureza (é ele que entrega o
         // token). Ver `agent::login` e docs/plano-chave-de-acesso-e-mcp.md.
         (&Method::POST, "/api/login") => {
-            return Ok(login(req, token.as_deref(), peer).await);
+            // Com `[api].domain` o listener termina TLS (ver `ApiConfig::domain`).
+            let scheme = if state.api.domain.as_deref().is_some_and(|d| !d.trim().is_empty()) {
+                "https"
+            } else {
+                "http"
+            };
+            return Ok(login(req, token.as_deref(), peer, scheme).await);
         }
         (&Method::GET, p) => {
             // Web UI/PWA (crates/daemon/webui/): HTML/CSS/JS/ícones
@@ -275,8 +281,10 @@ async fn handle(
             .body(Full::new(Bytes::from_static(agent::MANUAL.as_bytes())).boxed())
             .unwrap(),
         (&Method::GET, "/api/access-key") => {
-            let chave =
-                agent::access_key_for(&state.public_base_url(), token.as_deref());
+            let chave = agent::access_key_for(
+                &agent::public_address(&state.api, &super::outbound_ip()),
+                token.as_deref(),
+            );
             json_value(StatusCode::OK, &serde_json::json!({ "key": chave }))
         }
         (&Method::GET, "/api/events") => events(state),
@@ -323,11 +331,12 @@ async fn handle(
     })
 }
 
-/// `POST /api/login`: troca a chave de acesso pelo token (ver `agent::login`).
+/// `POST /api/login`: troca o token de conexão pelo token da API (ver `agent::login`).
 async fn login(
     req: Request<Incoming>,
     expected: Option<&str>,
     peer: std::net::SocketAddr,
+    scheme: &str,
 ) -> Response<ApiBody> {
     let host = req
         .headers()
@@ -338,7 +347,7 @@ async fn login(
         Ok(c) => c.to_bytes(),
         Err(_) => return text(StatusCode::BAD_REQUEST, "erro ao ler o corpo"),
     };
-    let (status, resposta) = agent::login(&body, expected, host.as_deref());
+    let (status, resposta) = agent::login(&body, expected, host.as_deref(), scheme);
     if status == StatusCode::UNAUTHORIZED {
         warn!(peer = %peer, "API: login com chave de outra instalação — recusado");
     }

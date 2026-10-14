@@ -279,9 +279,9 @@ mod headless_tests {
             .unwrap_or_default()
     }
 
-    /// Login por chave de acesso: `connect()` manda a chave a `POST /api/login`,
-    /// usa o `access_token` devolvido como Bearer nas chamadas seguintes e, numa
-    /// recusa, mostra a explicação que o daemon deu. O `fetch` é substituído na
+    /// Login por token de conexão: `connect()` decodifica o base64 de
+    /// `host:porta::token` e usa o token da API direto como Bearer — sem
+    /// `/api/login`; o que não decodifica vira erro na tela. O `fetch` é substituído na
     /// página (o servidor de teste só serve estáticos); o SSE fica pendurado
     /// para a sessão não cair de volta no login.
     #[tokio::test]
@@ -299,12 +299,6 @@ mod headless_tests {
                     window.__requests.push({ path, body: init.body || null,
                         auth: (init.headers || {})["Authorization"] || null });
                     const reply = (status, body) => Promise.resolve(new Response(JSON.stringify(body), { status }));
-                    if (path === "/api/login") {
-                        const { key } = JSON.parse(init.body);
-                        return key === "MTI3LjAuMC4xOjk6Ong"
-                            ? reply(200, { access_token: "x", token_type: "Bearer" })
-                            : reply(400, { error: { code: "missing_separator", message: "a chave decodificada não tem o formato host:porta::token" } });
-                    }
                     if (path === "/api/events") return new Promise(() => {});
                     if (path === "/api/rpc") return reply(200, { DaemonStatus: { version: "t" } });
                     return reply(404, {});
@@ -322,7 +316,7 @@ mod headless_tests {
         .await;
         assert_eq!(
             eval_str(&page, "Alpine.store('app').error").await,
-            "a chave decodificada não tem o formato host:porta::token"
+            "isso não é um token de conexão — cole o token de conexão inteiro (base64 de host:porta::token), não só o token da API"
         );
         assert_eq!(eval_str(&page, "Alpine.store('app').screen").await, "login");
 
@@ -330,7 +324,7 @@ mod headless_tests {
         eval_str(
             &page,
             r#"(async () => { const s = Alpine.store('app');
-                s.accessKey = 'MTI3LjAuMC4xOjk6Ong';
+                s.accessKey = 'MTI3LjAuMC4xOjk6Ong=';
                 await s.connect(); return 'ok'; })()"#,
         )
         .await;
@@ -343,13 +337,19 @@ mod headless_tests {
             .await,
             "Bearer x"
         );
-        // A chave para copiar em Settings é montada da sessão (origem + token).
+        assert!(
+            !eval_str(&page, "JSON.stringify(window.__requests.map(r => r.path))")
+                .await
+                .contains("/api/login"),
+            "a webui não passa mais pelo /api/login"
+        );
+        // O token de conexão para copiar em Settings é montado da sessão (origem + token).
         let chave = eval_str(&page, "Alpine.store('app').serverAccessKey").await;
         {
             use base64::Engine;
-            let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            let payload = base64::engine::general_purpose::STANDARD
                 .decode(&chave)
-                .expect("chave em base64url sem padding");
+                .expect("token de conexão em base64 padrão");
             assert_eq!(String::from_utf8(payload).unwrap(), format!("{addr}::x"));
         }
         let comando = eval_str(&page, "Alpine.store('app').serverMcpCommand").await;

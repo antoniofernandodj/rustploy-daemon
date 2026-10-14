@@ -7,25 +7,27 @@ você vai usar aqui — não existe porta dos fundos que só humanos alcançam.
 
 ## 1. Entrar
 
-Você recebeu uma **chave de acesso**: o base64 de `host:porta::token`
-(decodifique e você tem o endereço do servidor). Porta 443 ou sem porta é
-`https`, outra é `http`; quando isso não vale, o esquema vem dentro da chave
-(`https://host:9797::token`). Troque a chave pelo token:
+Você recebeu um **token de conexão**: o base64 de `host:porta::token`, sem
+esquema. Decodifique e você tem o endereço do servidor e o token da API —
+`echo '<token de conexão>' | base64 -d`. Esse token da API já é o Bearer;
+se preferir, o `/api/login` faz a troca e devolve as URLs do MCP e do manual:
 
 ```bash
-curl -s http://SERVIDOR:PORTA/api/login -d '{"key":"<chave>"}'
+curl -s https://HOST:PORTA/api/login -d '{"key":"<token de conexão>"}'
 ```
 
 ```json
-{"access_token":"…","token_type":"Bearer","server":"https://SERVIDOR:PORTA", "ai_agent":{…}}
+{"access_token":"…","token_type":"Bearer","server":"https://HOST:PORTA", "ai_agent":{…}}
 ```
+
+O esquema não está no token: tente `https` e, se o TLS falhar, `http`.
 
 Guarde `access_token` e mande em **toda** chamada seguinte:
 `Authorization: Bearer <access_token>`. Ele não expira; trocar o token exige
 editar o `config.toml` do daemon.
 
-Se a chave estiver malformada, o `/api/login` responde `400` dizendo qual parte
-falhou e qual é o formato certo. Token errado → `401`.
+Se o token de conexão estiver malformado, o `/api/login` responde `400` dizendo
+qual parte falhou e qual é o formato certo. Token errado → `401`.
 
 ## 2. Duas portas para as mesmas ferramentas
 
@@ -127,7 +129,7 @@ Todas com o mesmo `Authorization: Bearer`.
 | `GET /api/deployments/<id>/build-logs` | SSE: build ao vivo |
 | `GET /api/jobs/runs/<id>/logs` | SSE: saída de uma execução de job |
 | `GET /api/agent/manual` | este manual |
-| `GET /api/access-key` | a chave de acesso deste servidor (para repassar o acesso) |
+| `GET /api/access-key` | o token de conexão deste servidor (para repassar o acesso) |
 | `GET /api/version` | versão em texto puro (sem token) |
 
 Upload de zip:
@@ -212,6 +214,6 @@ existente primeiro (`ServiceGet`, `JobListAll`) e use-o de molde.
 - **Sem escopo.** O token é o de administrador: não existe modo
   somente-leitura. Comandos destrutivos (`ServiceDelete`, `Prune*`,
   `Remove*`, `StopAllManaged`, `RegistryRepoDelete`) não pedem confirmação —
-  peça a quem te deu a chave antes de usá-los.
+  peça a quem te deu o token de conexão antes de usá-los.
 - **Rotas erradas dão `404`**; corpo que não é um `Command` válido dá `400`
   com a causa do serde.
