@@ -41,6 +41,13 @@ use tracing_subscriber::EnvFilter;
 #[tokio::main]
 async fn main() -> Result<()> {
     let config = RustployConfig::global();
+
+    // `rustployd access-key`: imprime a chave `rpk1_…` (endereço + token) e sai,
+    // sem subir nada. Ver api::agent e docs/plano-chave-de-acesso-e-mcp.md.
+    if std::env::args().nth(1).as_deref() == Some("access-key") {
+        api::agent::print_access_key_and_exit(config);
+    }
+
     init_logging(&config.daemon.log_level);
 
     // rustls pulls in both `ring` and `aws-lc-rs` providers transitively, so it
@@ -394,6 +401,9 @@ async fn main() -> Result<()> {
         tokio::spawn(async move {
             api::http_api::run(state2, api_cfg, Some(tls2)).await;
         });
+        // A chave em si não vai para o log: é o token, e o journal é lido por
+        // mais gente do que o config.toml.
+        info!("chave de acesso (GUI, webui e agentes): rode `rustployd access-key`");
     }
 
     // Registry OCI embutido — Fase 1: loopback only, sem auth, sem ingress

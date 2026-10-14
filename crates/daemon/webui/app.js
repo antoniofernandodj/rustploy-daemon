@@ -25,7 +25,7 @@ import "./screens/new_service.js";
 import "./screens/service_detail.js";
 import "./screens/service_bundle.js";
 import Alpine from "https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/module.esm.js";
-import { Api } from "./net/api.js";
+import { Api, encodeAccessKey, login } from "./net/api.js";
 import { openStream } from "./net/sse.js";
 import { registerDirectives } from "./directives.js";
 import { registerWindows } from "./wm.js";
@@ -80,10 +80,13 @@ document.addEventListener("alpine:init", () => {
     error: "",
 
     // ── Formulário de login ───────────────────────────────────────────
-    // Sem campo de servidor: a webui é sempre servida pelo próprio daemon
-    // (ver net/api.js), então o servidor é a própria origem da página.
-    token: prefs.rememberToken && prefs.token ? prefs.token : "",
-    rememberToken: !!prefs.rememberToken,
+    // Um campo só: a chave `rpk1_…` (endereço + token). O endereço dentro
+    // dela não é usado para conectar — a webui é sempre servida pelo próprio
+    // daemon, então o servidor é a própria origem da página.
+    accessKey: prefs.rememberAccessKey && prefs.accessKey ? prefs.accessKey : "",
+    rememberAccessKey: !!prefs.rememberAccessKey,
+    // A chave deste servidor, para Settings → copiar (GET /api/access-key).
+    serverAccessKey: "",
 
     // ── Sessão ativa ─────────────────────────────────────────────────
     api: null,
@@ -319,8 +322,8 @@ document.addEventListener("alpine:init", () => {
 
     persistPrefs() {
       savePrefs({
-        rememberToken: this.rememberToken,
-        token: this.rememberToken ? this.token : undefined,
+        rememberAccessKey: this.rememberAccessKey,
+        accessKey: this.rememberAccessKey ? this.accessKey : undefined,
       });
     },
 
@@ -332,7 +335,15 @@ document.addEventListener("alpine:init", () => {
       this.statusLine = "conectando…";
       this.error = "";
 
-      const client = new Api(base, this.token);
+      const loginResponse = await login(base, this.accessKey);
+      if (!loginResponse.ok) {
+        this.error = loginResponse.error;
+        this.statusLine = "falha na conexão";
+        this.connected = false;
+        return;
+      }
+
+      const client = new Api(base, loginResponse.token);
       const daemonStatusResponse = await client.rpc("DaemonStatus");
       if (!daemonStatusResponse.ok) {
         this.error = daemonStatusResponse.error;
@@ -1404,6 +1415,10 @@ document.addEventListener("alpine:init", () => {
         this.serverSettingsEmail = settings.acme_email || "";
         this.serverSettingsRegistryDomain = settings.registry_domain || "";
       }
+      // Montada da sessão (origem + token que acabaram de funcionar), igual à
+      // GUI — não do `public_base_url` do daemon, que pode não ser o endereço
+      // pelo qual este navegador chega.
+      this.serverAccessKey = this.api.token ? encodeAccessKey(this.api.baseUrl, this.api.token) : "";
       await this.gitProviderRefresh();
       await this.dockerCleanupLoad();
     },

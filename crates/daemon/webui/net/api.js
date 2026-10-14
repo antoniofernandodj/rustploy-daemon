@@ -27,6 +27,56 @@ async function fetchTimeout(url, init, timeoutMs) {
   }
 }
 
+/** Prefixo da chave de acesso (ver api/agent/access_key.rs no daemon). */
+const ACCESS_KEY_PREFIX = "rpk1_";
+
+/** Decodifica `rpk1_<base64url de {"u","t"}>` em `{ url, token }`, ou `null`
+ * se a string não estiver nesse formato. Só para exibir/conferir o servidor:
+ * quem valida a chave é o `POST /api/login`. */
+export function decodeAccessKey(accessKey) {
+  const trimmed = (accessKey || "").trim();
+  if (!trimmed.startsWith(ACCESS_KEY_PREFIX)) return null;
+  try {
+    const base64 = trimmed.slice(ACCESS_KEY_PREFIX.length).replace(/-/g, "+").replace(/_/g, "/");
+    const decoded = JSON.parse(atob(base64 + "===".slice((base64.length + 3) % 4)));
+    return decoded && decoded.u && decoded.t ? { url: decoded.u, token: decoded.t } : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Monta a chave de um par endereço + token (o inverso de `decodeAccessKey`).
+ * O token é ASCII (hex/base64url), então `btoa` direto basta. */
+export function encodeAccessKey(url, token) {
+  const base64 = btoa(JSON.stringify({ u: url, t: token }));
+  return ACCESS_KEY_PREFIX + base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+/** `POST /api/login`: troca a chave pelo token de acesso. Devolve
+ * `{ ok: true, token }` ou `{ ok: false, error }` com a explicação do daemon. */
+export async function login(baseUrl, accessKey) {
+  let httpResponse;
+  try {
+    httpResponse = await fetchTimeout(
+      baseUrl.replace(/\/+$/, "") + "/api/login",
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: accessKey.trim() }) },
+      RPC_TIMEOUT_MS,
+    );
+  } catch (error) {
+    return { ok: false, error: error && error.message ? error.message : "falha de rede" };
+  }
+  let decoded;
+  try {
+    decoded = await httpResponse.json();
+  } catch {
+    return { ok: false, error: "HTTP " + httpResponse.status };
+  }
+  if (!httpResponse.ok) {
+    return { ok: false, error: decoded?.error?.message || "HTTP " + httpResponse.status };
+  }
+  return { ok: true, token: decoded.access_token };
+}
+
 export class Api {
   constructor(baseUrl, token) {
     this.baseUrl = baseUrl.replace(/\/+$/, "");

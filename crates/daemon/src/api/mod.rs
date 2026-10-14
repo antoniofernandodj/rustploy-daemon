@@ -1,6 +1,7 @@
 //! API do daemon: `AppState` (estado compartilhado por todos os handlers) e os
 //! caches do inventário Docker.
 
+pub mod agent;
 pub mod handlers;
 pub mod http_api;
 pub mod public_routes;
@@ -198,7 +199,7 @@ impl AppState {
 /// Detecta o IP de saída da máquina conectando um socket UDP em 8.8.8.8:80
 /// (sem enviar dados) e lendo o endereço local escolhido pelo kernel. Usado só
 /// como host de fallback quando `api.domain` não está configurado.
-fn outbound_ip() -> String {
+pub(crate) fn outbound_ip() -> String {
     use std::net::UdpSocket;
     UdpSocket::bind("0.0.0.0:0")
         .and_then(|s| {

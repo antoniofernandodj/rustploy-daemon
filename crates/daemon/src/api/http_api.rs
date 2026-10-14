@@ -34,6 +34,7 @@ use shared::{ApiConfig, Command, Event, Response as RpResponse};
 use tracing::{error, info, warn};
 
 use super::AppState;
+use super::agent;
 use super::public_routes;
 use super::routes::dispatch;
 use super::web_ui;
@@ -215,6 +216,11 @@ async fn handle(
                 ),
             ));
         }
+        // Login por chave `rpk1_…` — público por natureza (é ele que entrega o
+        // token). Ver `agent::login` e docs/plano-chave-de-acesso-e-mcp.md.
+        (&Method::POST, "/api/login") => {
+            return Ok(login(req, token.as_deref(), peer).await);
+        }
         (&Method::GET, p) => {
             // Web UI/PWA (crates/daemon/webui/): HTML/CSS/JS/ícones
             // estáticos, sem dado nenhum — servidos fora do gate de token de
@@ -259,6 +265,20 @@ async fn handle(
 
     Ok(match (req.method(), req.uri().path()) {
         (&Method::POST, "/api/rpc") => rpc(req, state).await,
+        (&Method::POST, "/mcp") => mcp(req, state).await,
+        // Sem stream SSE servidor→cliente no MCP: o spec manda 405 no GET.
+        (&Method::GET | &Method::DELETE, "/mcp") => {
+            text(StatusCode::METHOD_NOT_ALLOWED, "use POST /mcp")
+        }
+        (&Method::GET, "/api/agent/manual") => Response::builder()
+            .header(hyper::header::CONTENT_TYPE, "text/markdown; charset=utf-8")
+            .body(Full::new(Bytes::from_static(agent::MANUAL.as_bytes())).boxed())
+            .unwrap(),
+        (&Method::GET, "/api/access-key") => {
+            let chave =
+                agent::access_key_for(&state.public_base_url(), token.as_deref());
+            json_value(StatusCode::OK, &serde_json::json!({ "key": chave }))
+        }
         (&Method::GET, "/api/events") => events(state),
         (&Method::GET, "/api/health") => text(StatusCode::OK, "ok"),
         // SSE dedicado de logs de runtime de um serviço: `/api/services/<id>/logs`.
@@ -301,6 +321,59 @@ async fn handle(
         }
         _ => text(StatusCode::NOT_FOUND, "not found"),
     })
+}
+
+/// `POST /api/login`: troca a chave `rpk1_…` pelo token (ver `agent::login`).
+async fn login(
+    req: Request<Incoming>,
+    expected: Option<&str>,
+    peer: std::net::SocketAddr,
+) -> Response<ApiBody> {
+    let host = req
+        .headers()
+        .get(hyper::header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_owned);
+    let body = match req.into_body().collect().await {
+        Ok(c) => c.to_bytes(),
+        Err(_) => return text(StatusCode::BAD_REQUEST, "erro ao ler o corpo"),
+    };
+    let (status, resposta) = agent::login(&body, expected, host.as_deref());
+    if status == StatusCode::UNAUTHORIZED {
+        warn!(peer = %peer, "API: login com chave de outra instalação — recusado");
+    }
+    json_value(status, &resposta)
+}
+
+/// `POST /mcp`: o servidor MCP do agente (ver `agent::mcp`).
+async fn mcp(req: Request<Incoming>, state: AppState) -> Response<ApiBody> {
+    let body = match req.into_body().collect().await {
+        Ok(c) => c.to_bytes(),
+        Err(_) => return text(StatusCode::BAD_REQUEST, "erro ao ler o corpo"),
+    };
+    match agent::mcp::handle(&state, &body).await {
+        Some((status, resposta)) => json_value(status, &resposta),
+        None => Response::builder()
+            .status(StatusCode::ACCEPTED)
+            .body(Full::new(Bytes::new()).boxed())
+            .unwrap(),
+    }
+}
+
+fn json_value(status: StatusCode, body: &serde_json::Value) -> Response<ApiBody> {
+    Response::builder()
+        .status(status)
+        .header(
+            hyper::header::CONTENT_TYPE,
+            "application/json; charset=utf-8",
+        )
+        .body(
+            Full::new(Bytes::from(
+                serde_json::to_vec_pretty(body).unwrap_or_default(),
+            ))
+            .boxed(),
+        )
+        .unwrap()
 }
 
 async fn service_archive_upload(
@@ -861,7 +934,7 @@ fn gzip(data: &[u8]) -> std::io::Result<Vec<u8>> {
 
 /// Short-circuits on length mismatch but is otherwise constant-time over the
 /// compared bytes. Adequate for a static admin token.
-fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+pub(super) fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {
         return false;
     }

@@ -279,6 +279,80 @@ mod headless_tests {
             .unwrap_or_default()
     }
 
+    /// Login por chave `rpk1_…`: `connect()` manda a chave a `POST /api/login`,
+    /// usa o `access_token` devolvido como Bearer nas chamadas seguintes e, numa
+    /// recusa, mostra a explicação que o daemon deu. O `fetch` é substituído na
+    /// página (o servidor de teste só serve estáticos); o SSE fica pendurado
+    /// para a sessão não cair de volta no login.
+    #[tokio::test]
+    async fn login_with_access_key() {
+        let addr = spawn_static_server().await;
+        let (browser, _handler) = launch().await;
+        let page = open_page(&browser, addr).await;
+        wait_alpine_ready(&page).await;
+
+        page.evaluate(
+            r#"(() => {
+                window.__requests = [];
+                window.fetch = (url, init = {}) => {
+                    const path = new URL(url, location.origin).pathname;
+                    window.__requests.push({ path, body: init.body || null,
+                        auth: (init.headers || {})["Authorization"] || null });
+                    const reply = (status, body) => Promise.resolve(new Response(JSON.stringify(body), { status }));
+                    if (path === "/api/login") {
+                        const { key } = JSON.parse(init.body);
+                        return key === "rpk1_eyJ1IjoiaHR0cDovLzEyNy4wLjAuMTo5IiwidCI6IngifQ"
+                            ? reply(200, { access_token: "x", token_type: "Bearer" })
+                            : reply(400, { error: { code: "missing_prefix", message: "a chave não começa com rpk1_" } });
+                    }
+                    if (path === "/api/events") return new Promise(() => {});
+                    if (path === "/api/rpc") return reply(200, { DaemonStatus: { version: "t" } });
+                    return reply(404, {});
+                };
+            })()"#,
+        )
+        .await
+        .expect("stub do fetch");
+
+        // Recusa: a mensagem do daemon chega ao usuário, a tela não muda.
+        eval_str(
+            &page,
+            r#"(async () => { const s = Alpine.store('app'); s.accessKey = 'segredo'; await s.connect(); return 'ok'; })()"#,
+        )
+        .await;
+        assert_eq!(
+            eval_str(&page, "Alpine.store('app').error").await,
+            "a chave não começa com rpk1_"
+        );
+        assert_eq!(eval_str(&page, "Alpine.store('app').screen").await, "login");
+
+        // Sucesso: o token devolvido vira o Bearer das chamadas seguintes.
+        eval_str(
+            &page,
+            r#"(async () => { const s = Alpine.store('app');
+                s.accessKey = 'rpk1_eyJ1IjoiaHR0cDovLzEyNy4wLjAuMTo5IiwidCI6IngifQ';
+                await s.connect(); return 'ok'; })()"#,
+        )
+        .await;
+        assert_eq!(eval_str(&page, "Alpine.store('app').screen").await, "shell");
+        assert_eq!(
+            eval_str(
+                &page,
+                "window.__requests.find(r => r.path === '/api/rpc').auth"
+            )
+            .await,
+            "Bearer x"
+        );
+        // A chave para copiar em Settings é montada da sessão (origem + token).
+        let chave = eval_str(&page, "Alpine.store('app').serverAccessKey").await;
+        assert!(chave.starts_with("rpk1_"), "{chave}");
+        assert_eq!(
+            errors(&page).await,
+            Vec::<String>::new(),
+            "sem erros de JS no console"
+        );
+    }
+
     /// Varre as telas de nível superior (equivalente ao loop `for view in
     /// [...]` de `templates_render.rs::all_screens_and_service_tabs_render`)
     /// e confirma que cada uma monta (`x-data` fica visível) sem erro de JS.
