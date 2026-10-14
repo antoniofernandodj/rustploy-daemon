@@ -47,11 +47,14 @@ pub async fn handle(state: AppState) -> RpResponse {
             Err(_) => None,
         };
 
+        let warm = crate::jobs::warm::status(&state, &job).await;
+
         summaries.push(JobSummary {
             job,
             project_name,
             trigger_service_name,
             last_run,
+            warm,
         });
     }
 

@@ -134,6 +134,9 @@ pub struct AppState {
     pub active_deploys: ActiveDeploys,
     /// Ver [`ActiveJobs`].
     pub active_jobs: ActiveJobs,
+    /// Jobs com aquecimento em andamento (ou esperando a vaga da fila) — ver
+    /// `jobs::warm`.
+    pub warming_jobs: Arc<Mutex<std::collections::HashSet<String>>>,
     /// Fila global de deploys (um por vez). `deploy_start` enfileira aqui e o
     /// worker (`crate::deploy::queue::run_worker`) puxa serialmente.
     pub deploy_queue: Arc<crate::deploy::queue::DeployQueue>,
@@ -180,6 +183,7 @@ impl AppState {
             oauth_states: Arc::new(Mutex::new(HashMap::new())),
             active_deploys: Arc::new(Mutex::new(HashMap::new())),
             active_jobs: Arc::new(Mutex::new(HashMap::new())),
+            warming_jobs: Arc::new(Mutex::new(std::collections::HashSet::new())),
             deploy_queue: crate::deploy::queue::DeployQueue::new(),
             docker_cache: Arc::new(DockerCache::new()),
             registry_storage,

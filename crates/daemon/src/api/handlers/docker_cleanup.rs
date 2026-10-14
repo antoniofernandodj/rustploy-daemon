@@ -31,7 +31,8 @@ pub async fn set_config(state: AppState, mut config: DockerCleanupConfig) -> RpR
 /// os recursos marcados atualmente — independente do interruptor geral
 /// `enabled` (é um botão de teste, não liga o agendamento). Roda em
 /// background, igual `Command::JobRunNow`: a tela acompanha o resultado pelo
-/// `Event::DockerCleanupCompleted`, não pela resposta deste RPC.
+/// `Event::DockerCleanupCompleted`, não pela resposta deste RPC. Espera a
+/// vez na fila de deploy, como a limpeza agendada.
 pub async fn run_now(state: AppState) -> RpResponse {
     let config = match maintenance::run::load_config(&state).await {
         Ok(c) => c,
@@ -44,7 +45,8 @@ pub async fn run_now(state: AppState) -> RpResponse {
         );
     }
     tokio::spawn(async move {
-        maintenance::run::run(&state, config).await;
+        let permit = state.deploy_queue.acquire_job_slot().await;
+        maintenance::run::run_holding_slot(&state, config, permit).await;
     });
     RpResponse::Ok
 }

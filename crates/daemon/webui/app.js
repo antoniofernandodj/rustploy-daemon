@@ -45,6 +45,8 @@ import {
   shortReason,
   hourMinuteJoin,
   hourMinuteSplit,
+  jobSummaryRows,
+  retentionHours,
 } from "./format.js";
 
 window.Alpine = Alpine;
@@ -140,6 +142,9 @@ document.addEventListener("alpine:init", () => {
     // handlers/jobs.luau::open_new_job_window e a aba do projeto). Modal
     // renderizado uma vez em index.html, fora do escopo de qualquer tela.
     showNewJob: false,
+    // Janela "Ações do job" (wm.js): todas as ações de uma linha de job num só
+    // lugar, porque a lista de botões não cabia na linha. "" = fechada.
+    jobActionsJobId: "",
     // Janelas (wm.js) "Novo projeto/Editar projeto" e "Novo serviço": estado no
     // store porque várias telas as abrem (grid de projetos, tela do projeto).
     // `projectWin` = null (fechada) | {} (novo) | {id,name,description} (editar).
@@ -235,6 +240,8 @@ document.addEventListener("alpine:init", () => {
     dockerCleanupVolumesAll: false,
     dockerCleanupNetworks: false,
     dockerCleanupBuildCache: false,
+    dockerCleanupBuildCacheOlderThanHours: "168",
+    dockerCleanupImagesOlderThanHours: "168",
     dockerCleanupNextRunLabel: "—",
     dockerCleanupLastRunAtRaw: null,
     dockerCleanupLastRunText: "ainda não rodou",
@@ -412,7 +419,15 @@ document.addEventListener("alpine:init", () => {
         return;
       }
       if (!busEvent || typeof busEvent !== "object") return;
-      if (busEvent.DockerCleanupCompleted) {
+      if (busEvent.JobWarmChanged) {
+        const warmEvent = busEvent.JobWarmChanged;
+        if (!warmEvent.warming) {
+          const warmedJobName = this.jobsById[warmEvent.job_id]?.name || "job";
+          if (warmEvent.success) this.toastOk(`${warmedJobName} aquecido`);
+          else this.toastError(`${warmedJobName}: falha ao aquecer${warmEvent.error ? ` — ${warmEvent.error}` : ""}`);
+        }
+        this.refreshNow();
+      } else if (busEvent.DockerCleanupCompleted) {
         const cleanupEvent = busEvent.DockerCleanupCompleted;
         this.dockerCleanupRunning = false;
         this.dockerCleanupLastRunText = dockerCleanupLastRunSummary({ at: cleanupEvent.at, results: cleanupEvent.results });
@@ -1063,6 +1078,32 @@ document.addEventListener("alpine:init", () => {
       await this.refreshNow();
     },
 
+    /** Aquece o job (baixa as imagens que faltam e popula o cache de build) sem
+     * executá-lo. Já quente: o daemon não dispara nada e só avisa. O fim do
+     * aquecimento chega depois, em `Event::JobWarmChanged`. */
+    async jobWarm(jobId) {
+      const jobWarmResponse = await this.api.rpcChecked({ JobWarm: { job_id: jobId } });
+      if (!this.toastResult(jobWarmResponse)) return;
+      if (jobWarmResponse.value.JobWarmRequested.already_warm) this.toastOk("job já está aquecido");
+      else this.toastOk("aquecimento iniciado");
+      await this.refreshNow();
+    },
+
+    openJobActions(jobId) {
+      this.jobActionsJobId = jobId;
+    },
+    closeJobActions() {
+      this.jobActionsJobId = "";
+    },
+    /** A linha do job aberto em "Ações do job", sempre a do snapshot atual (o
+     * estado quente/frio muda sem a janela fechar). */
+    get jobActionsRow() {
+      if (!this.jobActionsJobId) return null;
+      return (
+        jobSummaryRows(this.snap?.jobs, "", this.jobsInflight).find((row) => row.id === this.jobActionsJobId) || null
+      );
+    },
+
     /** `payload` = { project_id, trigger_service_id, name, compose,
      * main_service, recurrence }. */
     async jobCreate(payload) {
@@ -1634,6 +1675,8 @@ document.addEventListener("alpine:init", () => {
       this.dockerCleanupVolumesAll = !!config.volumes_all;
       this.dockerCleanupNetworks = !!config.networks;
       this.dockerCleanupBuildCache = !!config.build_cache;
+      this.dockerCleanupBuildCacheOlderThanHours = String(config.build_cache_older_than_hours ?? 168);
+      this.dockerCleanupImagesOlderThanHours = String(config.images_older_than_hours ?? 168);
       const recurrence = config.recurrence;
       if (recurrence && recurrence.IntervalHours != null) {
         this.dockerCleanupKind = "interval";
@@ -1696,6 +1739,8 @@ document.addEventListener("alpine:init", () => {
             volumes_all: this.dockerCleanupVolumesAll,
             networks: this.dockerCleanupNetworks,
             build_cache: this.dockerCleanupBuildCache,
+            build_cache_older_than_hours: retentionHours(this.dockerCleanupBuildCacheOlderThanHours),
+            images_older_than_hours: retentionHours(this.dockerCleanupImagesOlderThanHours),
             last_run_at: this.dockerCleanupLastRunAtRaw,
           },
         },

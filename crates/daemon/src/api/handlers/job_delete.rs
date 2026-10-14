@@ -1,5 +1,5 @@
-//! `Command::JobDelete`: apaga um job e limpa o `pre_deploy_job_id` dos
-//! serviços que o usavam como gate.
+//! `Command::JobDelete`: apaga um job (e o registro de aquecimento dele) e limpa
+//! o `pre_deploy_job_id` dos serviços que o usavam como gate.
 
 use crate::api::AppState;
 use shared::Response as RpResponse;
@@ -15,6 +15,7 @@ pub async fn handle(state: AppState, id: String) -> RpResponse {
             if let Err(e) = crate::db::services::clear_pre_deploy_job(&state.db, &id).await {
                 warn!(job_id = %id, error = %e, "job_delete: falha ao limpar pre_deploy_job_id órfão em serviços");
             }
+            crate::jobs::warm::forget(&state.db, &id).await;
             RpResponse::Ok
         }
         Ok(false) => RpResponse::err("NotFound", "job not found"),

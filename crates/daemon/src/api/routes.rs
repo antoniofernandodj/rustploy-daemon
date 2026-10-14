@@ -68,6 +68,8 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         Command::JobRunCancel { .. } => "JobRunCancel",
         Command::JobRunHistory { .. } => "JobRunHistory",
         Command::GetJobLogs { .. } => "GetJobLogs",
+        Command::JobWarm { .. } => "JobWarm",
+        Command::JobWarmStatus { .. } => "JobWarmStatus",
         Command::PruneContainers => "PruneContainers",
         Command::PruneVolumes { .. } => "PruneVolumes",
         Command::PruneImages { .. } => "PruneImages",
@@ -344,6 +346,8 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         Command::GetJobLogs { job_run_id } => {
             handlers::get_job_logs::handle(state, job_run_id).await
         }
+        Command::JobWarmStatus { job_id } => handlers::job_warm_status::handle(state, job_id).await,
+        Command::JobWarm { job_id } => handlers::job_warm::handle(state, job_id).await,
         Command::GitProviderList => handlers::git_provider_list::handle(state).await,
         Command::GitProviderCreate {
             kind,

@@ -198,28 +198,16 @@ impl JobRunner {
         // pra aparecer ao vivo em "Ver logs" igual o resto da execução.
         let build_source = match &job.git_source {
             Some(git) => {
-                let (token, username) = crate::deploy::git::resolve_clone_credentials(
-                    &self.db,
-                    &self.secrets,
-                    git.provider_id.as_deref(),
-                    git.credentials.as_deref(),
-                    git.username.as_deref(),
-                    &job.project_id,
-                )
-                .await;
-
                 let bus = self.bus.clone();
                 let db_handle = self.db.clone();
                 let jid = job.id.clone();
                 let rid = run_id.to_string();
-                crate::deploy::git::clone(
-                    crate::deploy::git::CloneOptions {
-                        url: &git.url,
-                        branch: &git.branch,
-                        token: token.as_deref(),
-                        username: username.as_deref(),
-                        dir: &build_dir,
-                    },
+                super::source::clone_git_source(
+                    &self.db,
+                    &self.secrets,
+                    job,
+                    git,
+                    &build_dir,
                     move |p| {
                         let ts = Utc::now();
                         bus.publish(Event::JobLogLine {
@@ -257,8 +245,8 @@ impl JobRunner {
         // interrompido no meio — só checado depois); sem isso, o job
         // seguiria pra subir containers mesmo já tendo sido cancelado.
         let already_cancelled = cancel_rx.as_ref().map(|rx| *rx.borrow()).unwrap_or(false);
-        let exit_code = if already_cancelled {
-            docker::compose::CANCELLED_EXIT_CODE
+        let (exit_code, images) = if already_cancelled {
+            (docker::compose::CANCELLED_EXIT_CODE, None)
         } else {
             docker::compose::run_once(
                 build_source,
@@ -279,6 +267,10 @@ impl JobRunner {
         };
 
         db::job_run::finish(&self.db, run_id, exit_code).await?;
+
+        if let Some(images) = images {
+            super::warm::record(&self.db, job, &images).await;
+        }
 
         if let Err(e) = tokio::fs::remove_dir_all(&build_dir).await {
             warn!(run_id = %run_id, error = %e, "job_runner: falha ao limpar build_dir (best-effort)");

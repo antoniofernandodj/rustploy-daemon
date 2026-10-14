@@ -174,7 +174,9 @@ Comandos, por área (campos entre chaves):
   `ServiceImport(…)`
 - **Jobs one-shot**: `JobListAll` · `JobList{project_id}` · `JobCreate{…}` ·
   `JobUpdate{…}` · `JobDelete{id}` · `JobRunNow{id}` · `JobRunCancel{job_run_id}` ·
-  `JobRunHistory{job_id, limit}` · `GetJobLogs{job_run_id}`
+  `JobRunHistory{job_id, limit}` · `GetJobLogs{job_run_id}` ·
+  `JobWarmStatus{job_id}` (o job está quente? o cache e as imagens já estão no host) ·
+  `JobWarm{job_id}` (aquece sem executar; o fim chega em `Event::JobWarmChanged`)
 - **Bancos compartilhados**: `SharedAccessList{server_service_id}` ·
   `SharedAccessGrant{server_service_id, project_id}` ·
   `SharedAccessRevoke{…}` · `ManagedDatabaseList{server_service_id}` ·

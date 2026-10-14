@@ -803,6 +803,23 @@ export function jobRunStateLabel(run) {
   return run.success ? ["ok", "ok"] : ["falhou", "bad"];
 }
 
+/** Horas de retenção da limpeza do Docker, do formulário → inteiro >= 0. Vazio
+ * ou inválido volta ao padrão (168 = uma semana); `0` é um valor válido (sem
+ * filtro de idade). */
+export function retentionHours(text) {
+  const hours = Number.parseInt(String(text ?? "").trim(), 10);
+  if (Number.isNaN(hours)) return 168;
+  return Math.max(0, hours);
+}
+
+/** Rótulo/cor do aquecimento de um job. `warm` é o `JobWarmStatus` do daemon
+ * (fonte única da verdade: aqui só se formata, nunca se deduz). */
+export function jobWarmLabel(warm) {
+  if (warm?.warming) return ["aquecendo…", "warn"];
+  if (warm?.warm) return ["quente", "ok"];
+  return ["frio", "muted"];
+}
+
 /** Tela global "Schedules": uma linha por job, de todos os projetos.
  * `inflight` (opcional): `store.jobsInflight` — job_id → true entre o click
  * em "Rodar agora" e a confirmação do servidor (ver app.js::jobRunNow). Sem
@@ -818,6 +835,7 @@ export function jobSummaryRows(list, term, inflight) {
     const job = item.job;
     if (!matchesTerm(searchTerm, [job.name, item.project_name, item.trigger_service_name || ""])) continue;
     const [lastRunLabel, lastRunKind] = jobRunStateLabel(item.last_run);
+    const [warmLabel, warmKind] = jobWarmLabel(item.warm);
     rows.push({
       id: job.id,
       name: job.name,
@@ -835,6 +853,12 @@ export function jobSummaryRows(list, term, inflight) {
       running: lastRunKind === "warn" || !!(inflight && inflight[job.id]),
       lastRunId: item.last_run ? item.last_run.id : "",
       nextRunAt: job.next_run_at ? dateDayMonthHourMinute(job.next_run_at) : "—",
+      isWarm: !!item.warm?.warm,
+      isWarming: !!item.warm?.warming,
+      warmLabel,
+      warmKind,
+      warmReason: item.warm?.reason || "",
+      warmedAtLabel: item.warm?.warmed_at ? dateDayMonthHourMinute(item.warm.warmed_at) : "",
     });
   }
   return rows;

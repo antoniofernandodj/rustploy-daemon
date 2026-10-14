@@ -44,3 +44,8 @@ pub const KEY_REGISTRY_DOMAIN: &str = "registry_domain";
 pub const KEY_DOCKER_CLEANUP_CONFIG: &str = "docker_cleanup_config";
 /// JSON de `shared::DockerCleanupLastRun`, ausente até a primeira execução.
 pub const KEY_DOCKER_CLEANUP_LAST_RUN: &str = "docker_cleanup_last_run";
+/// JSON de `BuildCachePrune`: quando o cache de build foi limpo pela última vez
+/// e com qual corte de idade.
+pub const KEY_BUILD_CACHE_LAST_PRUNE: &str = "build_cache_last_prune";
+/// Prefixo das chaves `job_warm:<job_id>` (JSON de `jobs::warm::WarmRecord`).
+pub const KEY_JOB_WARM_PREFIX: &str = "job_warm:";

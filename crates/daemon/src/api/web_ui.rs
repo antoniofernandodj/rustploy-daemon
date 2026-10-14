@@ -881,4 +881,120 @@ mod headless_tests {
 
         assert_eq!(errors(&page).await, Vec::<String>::new(), "sem erros de JS no console");
     }
+    /// A janela "Ações do job" (a lista de botões da linha não cabia): o estado
+    /// quente/frio vem do daemon, o "⋯" abre a janela com as ações certas para o
+    /// estado do job, e "Aquecer" num job já quente só avisa — sem disparar nada.
+    #[tokio::test]
+    async fn job_actions_window_lists_actions_and_warm_status() {
+        let addr = spawn_static_server().await;
+        let (browser, _handler) = launch().await;
+        let page = open_page(&browser, addr).await;
+        seed_connected(&page).await;
+
+        let seeded = eval_str(
+            &page,
+            &format!(
+                r#"(() => {{
+                    const s = Alpine.store('app');
+                    const snapshot = {SNAPSHOT_JS};
+                    const job = {{ id: 'job_1', project_id: 'prj_1', trigger_service_id: 'svc_1', name: 'migrator',
+                        compose: 'services: {{}}', main_service: 'main', env_vars: [], env_comments: [], enabled: true,
+                        recurrence: null, last_run_at: null, next_run_at: null }};
+                    snapshot.jobs = [{{ job, project_name: 'acme', trigger_service_name: 'api', last_run: null,
+                        warm: {{ job_id: 'job_1', warm: false, warming: false, reason: 'nunca aquecido', warmed_at: null }} }}];
+                    s.applySnapshot(snapshot);
+                    window.__commands = [];
+                    s.api.rpcChecked = async (command) => {{
+                        window.__commands.push(command);
+                        return {{ ok: true, value: {{ JobWarmRequested: {{ already_warm: true }} }} }};
+                    }};
+                    s.view = 'schedules';
+                    return 'ok';
+                }})()"#
+            ),
+        )
+        .await;
+        assert_eq!(seeded, "ok");
+
+        assert!(
+            visible(&page, ".table__col-warm.state-cell--muted").await,
+            "a linha deveria mostrar o job frio, com o estado vindo do daemon"
+        );
+        assert!(
+            !visible(&page, ".job-actions").await,
+            "a janela de ações começa fechada"
+        );
+
+        eval_str(
+            &page,
+            "(() => { document.querySelector('[title=\"Ações do job\"]').click(); return 'ok'; })()",
+        )
+        .await;
+        assert!(
+            visible(&page, ".job-actions").await,
+            "o ⋯ da linha deveria abrir a janela de ações"
+        );
+        let items = eval_str(
+            &page,
+            "JSON.stringify([...document.querySelectorAll('.job-actions__item')].filter(el => el.offsetParent !== null).map(el => el.textContent.trim()))",
+        )
+        .await;
+        assert_eq!(
+            items,
+            r#"["▶ Rodar agora","◐ Aquecer","‖ Pausar","✎ Editar","✕ Remover"]"#,
+            "job parado e sem execução: sem cancelar nem logs"
+        );
+        assert!(
+            eval_str(&page, "document.querySelector('.job-actions__status').textContent")
+                .await
+                .contains("nunca aquecido"),
+            "a janela mostra por que o job está frio"
+        );
+
+        // Quente: "Aquecer" só avisa — o daemon respondeu `already_warm`, e a tela mostra o aviso.
+        eval_str(
+            &page,
+            r#"(() => { Alpine.store('app').snap.jobs[0].warm = { job_id: 'job_1', warm: true, warming: false, reason: null, warmed_at: new Date().toISOString() }; return 'ok'; })()"#,
+        )
+        .await;
+        assert!(
+            visible(&page, ".job-actions .state-cell--ok").await,
+            "a janela relê o estado do snapshot ao vivo"
+        );
+        eval_str(
+            &page,
+            "(() => { [...document.querySelectorAll('.job-actions__item')].find(el => el.textContent.includes('Aquecer')).click(); return 'ok'; })()",
+        )
+        .await;
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert_eq!(
+            eval_str(&page, "JSON.stringify(window.__commands)").await,
+            r#"[{"JobWarm":{"job_id":"job_1"}}]"#
+        );
+        assert!(
+            eval_str(&page, "JSON.stringify(Alpine.store('app').toasts.map(t => t.message))")
+                .await
+                .contains("job já está aquecido"),
+            "job quente: o toast avisa que já estava aquecido"
+        );
+
+        // Em execução: cancelar no lugar de rodar, e os logs da última execução.
+        eval_str(
+            &page,
+            r#"(() => { Alpine.store('app').snap.jobs[0].last_run = { id: 'jrun_1', success: null }; return 'ok'; })()"#,
+        )
+        .await;
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let items = eval_str(
+            &page,
+            "JSON.stringify([...document.querySelectorAll('.job-actions__item')].filter(el => el.offsetParent !== null).map(el => el.textContent.trim()))",
+        )
+        .await;
+        assert_eq!(
+            items,
+            r#"["■ Cancelar execução","◐ Aquecer","≡ Ver logs","‖ Pausar","✎ Editar","✕ Remover"]"#
+        );
+
+        assert_eq!(errors(&page).await, Vec::<String>::new(), "sem erros de JS no console");
+    }
 }

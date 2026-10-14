@@ -9,7 +9,57 @@ use crate::api::handlers::docker_prune::{self, PruneStat};
 use crate::db::daemon_settings;
 use chrono::Utc;
 use shared::{DockerCleanupConfig, DockerCleanupLastRun, DockerCleanupResourceResult, Event};
+use std::time::Duration;
+use tokio::sync::OwnedSemaphorePermit;
 use tracing::{info, warn};
+
+/// Teto de uma limpeza inteira: ela segura a vaga única da fila de deploy, e
+/// uma limpeza pendurada travaria todos os deploys.
+const RUN_TIMEOUT: Duration = Duration::from_secs(900);
+
+/// Roda a limpeza segurando a vaga única da fila (`permit`): enquanto ela
+/// executa, nenhum deploy, pre-deploy nem job avulso compete por CPU/disco, e
+/// ela nunca apaga cache no meio de um build. A vaga solta ao fim.
+pub async fn run_holding_slot(
+    state: &AppState,
+    config: DockerCleanupConfig,
+    permit: OwnedSemaphorePermit,
+) -> DockerCleanupConfig {
+    let fallback = config.clone();
+    let outcome = tokio::time::timeout(RUN_TIMEOUT, run(state, config)).await;
+    drop(permit);
+    match outcome {
+        Ok(config) => config,
+        Err(_) => finish_timed_out(state, fallback).await,
+    }
+}
+
+async fn finish_timed_out(
+    state: &AppState,
+    mut config: DockerCleanupConfig,
+) -> DockerCleanupConfig {
+    let message = format!(
+        "a limpeza passou de {}s e foi interrompida",
+        RUN_TIMEOUT.as_secs()
+    );
+    warn!("maintenance: {message}");
+    let now = Utc::now();
+    config.last_run_at = Some(now);
+    config.recompute_next_run(now);
+    if let Err(e) = save_config(state, &config).await {
+        warn!(error = %e, "maintenance: falha ao persistir config após timeout");
+    }
+    state.bus.publish(Event::DockerCleanupCompleted {
+        at: now,
+        results: vec![DockerCleanupResourceResult {
+            resource: "cleanup".to_string(),
+            count: 0,
+            reclaimed_bytes: 0,
+            error: Some(message),
+        }],
+    });
+    config
+}
 
 /// Ordem importa: containers primeiro (libera imagens/redes em uso por eles),
 /// depois imagens, depois volumes/redes que só ficam "sem uso" após isso.
@@ -25,7 +75,12 @@ pub async fn run(state: &AppState, mut config: DockerCleanupConfig) -> DockerCle
     if config.images {
         results.push(record(
             "images",
-            docker_prune::prune_images_core(state, config.images_all).await,
+            docker_prune::prune_images_core(
+                state,
+                config.images_all,
+                config.images_older_than_hours,
+            )
+            .await,
         ));
     }
     if config.volumes {
@@ -43,7 +98,7 @@ pub async fn run(state: &AppState, mut config: DockerCleanupConfig) -> DockerCle
     if config.build_cache {
         results.push(record(
             "build_cache",
-            docker_prune::prune_build_cache_core().await,
+            docker_prune::prune_build_cache_core(state, config.build_cache_older_than_hours).await,
         ));
     }
 

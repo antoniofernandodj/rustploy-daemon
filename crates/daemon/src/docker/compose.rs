@@ -401,34 +401,36 @@ async fn wait_for_cancel(rx: &mut tokio::sync::watch::Receiver<bool>) {
     }
 }
 
-/// Executa um job uma vez: prepara o compose (colado ou do repositório git) com
-/// a rede do projeto, roda `run_once_up` e sempre desmonta a stack no fim,
-/// mesmo se falhou.
-pub async fn run_once(
+/// Arquivos de um job escritos em `build_dir`: o compose (com a rede do projeto
+/// injetada, no mesmo lugar do original) e o `.env`.
+struct JobFiles {
+    compose_rel_path: String,
+    /// Compose já com a rede do projeto — o que o `down` recebe.
+    content: String,
+    env_file_path: std::path::PathBuf,
+    compose_file_path: std::path::PathBuf,
+}
+
+impl JobFiles {
+    async fn remove(&self) {
+        let _ = remove_file(&self.env_file_path).await;
+        let _ = remove_file(&self.compose_file_path).await;
+    }
+}
+
+/// Prepara o compose (colado ou do repositório git) com a rede do projeto e
+/// grava o `.env`. O compose é reescrito no MESMO lugar após
+/// `inject_project_network` — nunca movido, pra `build:` relativo no compose do
+/// usuário continuar resolvendo certo (o Compose resolve contexto de build
+/// relativo à posição do arquivo `-f`, não do cwd).
+async fn write_job_files(
     source: JobBuildSource<'_>,
-    project_name: &str,
     network_name: &str,
-    main_service: &str,
-    job_id: &str,
-    job_run_id: &str,
-    bus: &Arc<EventBus>,
-    db: &Arc<Db>,
     env_vars: &[(String, String)],
     build_dir: &Path,
-    registry_internal_token: Option<Arc<str>>,
-    mirror_deployment: Option<(String, String)>,
-    cancel_rx: Option<tokio::sync::watch::Receiver<bool>>,
-) -> Result<i32> {
-    info!(project = %project_name, job_id = %job_id, "compose_run_once: iniciando job one-shot");
-
+) -> Result<JobFiles> {
     tokio::fs::create_dir_all(build_dir).await?;
 
-    // Path relativo (ao `build_dir`) do compose de verdade — fixo pro modo
-    // colado; configurável no modo Git (repo pode ter o compose num
-    // subdiretório). O conteúdo lido/colado é reescrito no MESMO lugar após
-    // `inject_project_network` — nunca movido, pra `build:` relativo no
-    // compose do usuário continuar resolvendo certo (o Compose resolve
-    // contexto de build relativo à posição do arquivo `-f`, não do cwd).
     let (raw_content, compose_rel_path): (String, String) = match source {
         JobBuildSource::Compose(content) => (content.to_string(), "docker-compose.yml".to_string()),
         JobBuildSource::Git { compose_rel_path } => {
@@ -457,7 +459,199 @@ pub async fn run_once(
     let mut compose_file = File::create(&compose_file_path).await?;
     compose_file.write_all(content.as_bytes()).await?;
     compose_file.flush().await?;
-    drop(compose_file);
+
+    Ok(JobFiles {
+        compose_rel_path,
+        content,
+        env_file_path,
+        compose_file_path,
+    })
+}
+
+/// O que o compose de um job precisa ter no host para rodar sem baixar nem
+/// compilar do zero.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ComposeImages {
+    /// Imagens de serviços sem `build:`, que o compose baixa de um registry.
+    pub pulled_images: Vec<String>,
+    /// Algum serviço tem `build:` — depende do cache de build.
+    pub has_build: bool,
+}
+
+/// Extrai `ComposeImages` da saída de `docker compose config --format json`
+/// (já com variáveis interpoladas).
+fn parse_compose_images(config_json: &str) -> Result<ComposeImages> {
+    let config: serde_json::Value = serde_json::from_str(config_json)
+        .map_err(|e| anyhow!("saída de docker compose config inválida: {e}"))?;
+    let mut images = ComposeImages::default();
+    if let Some(services) = config.get("services").and_then(|v| v.as_object()) {
+        for service in services.values() {
+            if service.get("build").is_some() {
+                images.has_build = true;
+            } else if let Some(image) = service.get("image").and_then(|v| v.as_str()) {
+                images.pulled_images.push(image.to_string());
+            }
+        }
+    }
+    images.pulled_images.sort();
+    images.pulled_images.dedup();
+    Ok(images)
+}
+
+async fn resolve_compose_images(
+    project_name: &str,
+    compose_rel_path: &str,
+    build_dir: &Path,
+) -> Result<ComposeImages> {
+    let output = Command::new("docker")
+        .args([
+            "compose",
+            "-p",
+            project_name,
+            "-f",
+            compose_rel_path,
+            "--env-file",
+            ".env",
+            "config",
+            "--format",
+            "json",
+        ])
+        .current_dir(build_dir)
+        .kill_on_drop(true)
+        .output()
+        .await
+        .map_err(|e| anyhow!("falha ao iniciar docker compose config: {e}"))?;
+    if !output.status.success() {
+        return Err(anyhow!(
+            "docker compose config falhou: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    parse_compose_images(&String::from_utf8_lossy(&output.stdout))
+}
+
+/// Última parte da saída de erro de um subprocesso, para a mensagem de falha.
+fn stderr_tail(stderr: &[u8]) -> String {
+    let text = String::from_utf8_lossy(stderr);
+    let text = text.trim();
+    let start = text.len().saturating_sub(600);
+    let start = (start..=text.len())
+        .find(|&i| text.is_char_boundary(i))
+        .unwrap_or(text.len());
+    text[start..].to_string()
+}
+
+/// Aquece um job sem executá-lo: baixa as imagens de registry que faltam
+/// (`docker pull`, só das ausentes) e roda `docker compose build` para popular o
+/// cache de build. Devolve o que o job precisa ter no host, para registrar o
+/// aquecimento. Os filhos morrem se a tarefa for abortada (`kill_on_drop`).
+#[allow(clippy::too_many_arguments)]
+pub async fn warm(
+    source: JobBuildSource<'_>,
+    project_name: &str,
+    network_name: &str,
+    env_vars: &[(String, String)],
+    build_dir: &Path,
+    registry_internal_token: Option<Arc<str>>,
+    docker: &Docker,
+) -> Result<ComposeImages> {
+    info!(project = %project_name, "compose_warm: iniciando aquecimento");
+    let files = write_job_files(source, network_name, env_vars, build_dir).await?;
+
+    if let Some(token) = &registry_internal_token {
+        if let Err(e) = registry_login(token).await {
+            tracing::warn!(error = %e, project = %project_name, "compose_warm: falha ao autenticar no registry embutido, pull vai falhar se a imagem for de lá");
+        }
+    }
+
+    let result = warm_images(project_name, &files.compose_rel_path, build_dir, docker).await;
+
+    if registry_internal_token.is_some() {
+        if let Err(e) = registry_logout().await {
+            tracing::warn!(error = %e, project = %project_name, "compose_warm: falha ao deslogar do registry embutido (best-effort)");
+        }
+    }
+    files.remove().await;
+    result
+}
+
+async fn warm_images(
+    project_name: &str,
+    compose_rel_path: &str,
+    build_dir: &Path,
+    docker: &Docker,
+) -> Result<ComposeImages> {
+    let images = resolve_compose_images(project_name, compose_rel_path, build_dir).await?;
+
+    for image in &images.pulled_images {
+        if docker.inspect_image(image).await.is_ok() {
+            continue;
+        }
+        let output = Command::new("docker")
+            .args(["pull", image])
+            .kill_on_drop(true)
+            .output()
+            .await
+            .map_err(|e| anyhow!("falha ao iniciar docker pull: {e}"))?;
+        if !output.status.success() {
+            return Err(anyhow!(
+                "docker pull {image} falhou: {}",
+                stderr_tail(&output.stderr)
+            ));
+        }
+    }
+
+    if images.has_build {
+        let output = Command::new("docker")
+            .args([
+                "compose",
+                "-p",
+                project_name,
+                "-f",
+                compose_rel_path,
+                "--env-file",
+                ".env",
+                "build",
+            ])
+            .current_dir(build_dir)
+            .kill_on_drop(true)
+            .output()
+            .await
+            .map_err(|e| anyhow!("falha ao iniciar docker compose build: {e}"))?;
+        if !output.status.success() {
+            return Err(anyhow!(
+                "docker compose build falhou: {}",
+                stderr_tail(&output.stderr)
+            ));
+        }
+    }
+    Ok(images)
+}
+
+/// Executa um job uma vez: prepara o compose (colado ou do repositório git) com
+/// a rede do projeto, roda `run_once_up` e sempre desmonta a stack no fim,
+/// mesmo se falhou. Além do exit code, devolve as imagens do compose quando o
+/// job terminou com sucesso (a execução baixou e compilou tudo, ou seja, o job
+/// ficou aquecido).
+#[allow(clippy::too_many_arguments)]
+pub async fn run_once(
+    source: JobBuildSource<'_>,
+    project_name: &str,
+    network_name: &str,
+    main_service: &str,
+    job_id: &str,
+    job_run_id: &str,
+    bus: &Arc<EventBus>,
+    db: &Arc<Db>,
+    env_vars: &[(String, String)],
+    build_dir: &Path,
+    registry_internal_token: Option<Arc<str>>,
+    mirror_deployment: Option<(String, String)>,
+    cancel_rx: Option<tokio::sync::watch::Receiver<bool>>,
+) -> Result<(i32, Option<ComposeImages>)> {
+    info!(project = %project_name, job_id = %job_id, "compose_run_once: iniciando job one-shot");
+
+    let files = write_job_files(source, network_name, env_vars, build_dir).await?;
 
     if let Some(token) = &registry_internal_token {
         if let Err(e) = registry_login(token).await {
@@ -467,7 +661,7 @@ pub async fn run_once(
 
     let up_result = run_once_up(
         project_name,
-        &compose_rel_path,
+        &files.compose_rel_path,
         main_service,
         job_id,
         job_run_id,
@@ -485,15 +679,22 @@ pub async fn run_once(
         }
     }
 
+    let images = if matches!(up_result, Ok(0)) {
+        resolve_compose_images(project_name, &files.compose_rel_path, build_dir)
+            .await
+            .ok()
+    } else {
+        None
+    };
+
     // Sempre desmonta o stack, mesmo se o up falhou — nunca deixa
     // containers/redes zumbis do job pra trás.
-    if let Err(e) = down(&content, project_name, network_name, env_vars).await {
+    if let Err(e) = down(&files.content, project_name, network_name, env_vars).await {
         tracing::warn!(project = %project_name, job_id = %job_id, error = %e, "compose_run_once: down falhou (limpeza best-effort)");
     }
-    let _ = remove_file(&env_file_path).await;
-    let _ = remove_file(&compose_file_path).await;
+    files.remove().await;
 
-    up_result
+    up_result.map(|exit_code| (exit_code, images))
 }
 
 /// Quantas linhas do próprio `docker compose` (build, pull, erros de
@@ -941,5 +1142,34 @@ mod tests {
         )
         .await
         .expect("wait_for_cancel não deveria travar com o sender derrubado");
+    }
+
+    #[test]
+    fn compose_images_separate_pulled_images_from_built_services() {
+        let config = r#"{"services":{
+            "db":{"image":"postgres:18"},
+            "cache":{"image":"postgres:18"},
+            "app":{"image":"app:latest","build":{"context":"."}},
+            "worker":{"build":{"context":"worker"}}
+        }}"#;
+        let images = parse_compose_images(config).unwrap();
+        assert_eq!(
+            images.pulled_images,
+            ["postgres:18"],
+            "dedup, e `build:` nunca é baixado"
+        );
+        assert!(images.has_build);
+    }
+
+    #[test]
+    fn compose_images_without_build_services_do_not_depend_on_build_cache() {
+        let images = parse_compose_images(r#"{"services":{"db":{"image":"mysql:8"}}}"#).unwrap();
+        assert_eq!(images.pulled_images, ["mysql:8"]);
+        assert!(!images.has_build);
+    }
+
+    #[test]
+    fn compose_images_reject_garbage_output() {
+        assert!(parse_compose_images("not json").is_err());
     }
 }

@@ -360,6 +360,13 @@ hr, .rule   { width: 100%; height: 1px; border: none; background: var(--border);
 .table__col-act-4    { width: 170px; justify-content: flex-end; gap: 8px; }
 /* Mesma linha de job acima, +1 controle (editar). */
 .table__col-act-5    { width: 210px; justify-content: flex-end; gap: 8px; }
+.table__col-warm     { width: 130px; }
+
+/* ── Janela "Ações do job" ──────────────────────────────────────────── */
+.job-actions { gap: 8px; }
+.job-actions__status { gap: 4px; padding-bottom: 8px; flex-shrink: 0; }
+.job-actions__item { width: 100%; justify-content: flex-start; text-align: left; flex-shrink: 0; }
+.job-actions__item--danger { color: var(--error); }
 
 /* ── Logs (aba Logs do serviço) ─────────────────────────────────────── */
 .log-panel { width: 100%; flex: 1 1 auto; min-height: 0; background: var(--surface); border-radius: 6px; border: 1px solid var(--border); padding: 14px 16px; gap: 8px; }

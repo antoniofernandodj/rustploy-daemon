@@ -8,7 +8,7 @@ use crate::api::AppState;
 use chrono::Utc;
 use std::time::Duration;
 use tokio::time::MissedTickBehavior;
-use tracing::warn;
+use tracing::{info, warn};
 
 const TICK_SECS: u64 = 60;
 
@@ -30,8 +30,18 @@ pub async fn scheduler_loop(state: AppState) {
             Some(next) => Utc::now() >= next,
             None => false,
         };
-        if due {
-            super::run::run(&state, config).await;
+        if !due {
+            continue;
         }
+        // Só roda com a vaga única da fila livre: sem isso a limpeza poderia
+        // apagar o cache de um build em andamento. Ocupada ou pausada, o
+        // `next_run_at` continua vencido e o próximo tick tenta de novo.
+        let Some(permit) = state.deploy_queue.try_job_slot_now() else {
+            info!(
+                "maintenance: limpeza adiada, há deploy ou job em execução (ou a fila está pausada)"
+            );
+            continue;
+        };
+        super::run::run_holding_slot(&state, config, permit).await;
     }
 }

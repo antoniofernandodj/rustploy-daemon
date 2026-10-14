@@ -925,7 +925,8 @@
             <text class="table__head-cell table__col-state">ÚLTIMA EXECUÇÃO</text>
             <text class="table__head-cell table__col-dur">RECORRÊNCIA</text>
             <text class="table__head-cell table__col-dur">PRÓXIMA EXECUÇÃO</text>
-            <text class="table__head-cell table__col-act-5">AÇÕES</text>
+            <text class="table__head-cell table__col-warm">AQUECIMENTO</text>
+            <text class="table__head-cell table__col-act-2">AÇÕES</text>
           </row>
           <text class="u-muted" x-fallback="rows" style="padding:16px">Nenhum job cadastrado ainda.</text>
           <column class="u-fill-all">
@@ -941,17 +942,13 @@
                     </row>
                     <text class="u-muted table__col-dur" x-text="row.recurrence"></text>
                     <text class="u-muted table__col-dur" x-text="row.nextRunAt"></text>
-                    <row class="table__col-act-5">
-                      <button class="btn btn--copy" type="button" title="Rodar agora" x-show="!row.running"
-                              @click="store.jobRunNow(row.id)">▶</button>
-                      <button class="env__del" type="button" title="Cancelar" x-show="row.running"
-                              @click="store.jobRunCancel(row.lastRunId)">■</button>
-                      <button class="btn btn--copy" type="button" title="Ver logs" x-show="row.lastRunId"
-                              @click="store.openJobLogs(row.lastRunId)">≡</button>
-                      <button class="btn btn--copy" type="button" :title="row.enabledLabel" @click="store.jobToggle(row.id)"
-                              x-text="row.enabled ? '‖' : '▶'"></button>
-                      <button class="btn btn--copy" type="button" title="Editar" @click="store.openEditJob(row.id)">✎</button>
-                      <button class="env__del" type="button" title="Remover" @click="store.jobDelete(row.id)">✕</button>
+                    <row class="state-cell table__col-warm" :class="'state-cell--' + row.warmKind" :title="row.warmReason">
+                      <text class="status-dot">●</text>
+                      <text class="state-cell__label" x-text="row.warmLabel"></text>
+                    </row>
+                    <row class="table__col-act-2">
+                      <button class="btn btn--copy" type="button" title="Ações do job"
+                              @click="store.openJobActions(row.id)">⋯</button>
                     </row>
                   </row>
                   <hr class="rule" />
@@ -967,6 +964,49 @@
            "Jobs" do projeto (screens/project_detail.js) abrem o MESMO
            wizard/modal — por isso o estado mora no store (app.js), não num
            x-data local, e a marcação só referencia $store.app.*. -->
+
+      <!-- Janela "Ações do job": todas as ações de uma linha de job, nas duas
+           entradas (tela "Schedules" e aba "Jobs" do projeto). O estado
+           quente/frio vem do `JobWarmStatus` do daemon, nunca deduzido aqui. -->
+      <column class="modal__backdrop" x-show="$store.app.jobActionsJobId !== ''">
+        <column class="modal__box" x-win="'job_actions'" data-w="380" data-h="460">
+          <row class="modal__head">
+            <text class="u-label-cap" x-text="$store.app.jobActionsRow ? $store.app.jobActionsRow.name : 'JOB'"></text>
+            <button class="btn btn--ghost" type="button" @click="$store.app.closeJobActions()">Fechar</button>
+          </row>
+          <column class="modal__body job-actions" x-show="$store.app.jobActionsRow">
+            <column class="job-actions__status">
+              <row class="state-cell" :class="'state-cell--' + $store.app.jobActionsRow?.warmKind">
+                <text class="status-dot">●</text>
+                <text class="state-cell__label" x-text="$store.app.jobActionsRow?.warmLabel"></text>
+              </row>
+              <text class="u-muted" x-show="$store.app.jobActionsRow?.warmReason"
+                    x-text="$store.app.jobActionsRow?.warmReason"></text>
+              <text class="u-muted" x-show="$store.app.jobActionsRow?.isWarm"
+                    x-text="'aquecido em ' + $store.app.jobActionsRow?.warmedAtLabel"></text>
+            </column>
+            <button class="btn btn--ghost job-actions__item" type="button"
+                    x-show="!$store.app.jobActionsRow?.running"
+                    @click="$store.app.jobRunNow($store.app.jobActionsRow.id); $store.app.closeJobActions()">▶ Rodar agora</button>
+            <button class="btn btn--ghost job-actions__item job-actions__item--danger" type="button"
+                    x-show="$store.app.jobActionsRow?.running"
+                    @click="$store.app.jobRunCancel($store.app.jobActionsRow.lastRunId); $store.app.closeJobActions()">■ Cancelar execução</button>
+            <button class="btn btn--ghost job-actions__item" type="button"
+                    :disabled="$store.app.jobActionsRow?.isWarming"
+                    @click="$store.app.jobWarm($store.app.jobActionsRow.id)">◐ Aquecer</button>
+            <button class="btn btn--ghost job-actions__item" type="button"
+                    x-show="$store.app.jobActionsRow?.lastRunId"
+                    @click="$store.app.openJobLogs($store.app.jobActionsRow.lastRunId); $store.app.closeJobActions()">≡ Ver logs</button>
+            <button class="btn btn--ghost job-actions__item" type="button"
+                    @click="$store.app.jobToggle($store.app.jobActionsRow.id); $store.app.closeJobActions()"
+                    x-text="$store.app.jobActionsRow?.enabled ? '‖ Pausar' : '▶ Ativar'"></button>
+            <button class="btn btn--ghost job-actions__item" type="button"
+                    @click="$store.app.openEditJob($store.app.jobActionsRow.id); $store.app.closeJobActions()">✎ Editar</button>
+            <button class="btn btn--ghost job-actions__item job-actions__item--danger" type="button"
+                    @click="$store.app.jobDelete($store.app.jobActionsRow.id); $store.app.closeJobActions()">✕ Remover</button>
+          </column>
+        </column>
+      </column>
 
       <!-- Modal "novo job": wizard de 3 passos (projeto → serviço → form),
            equivalente ao new_job_window do cliente iced. Projetos/serviços
@@ -1465,6 +1505,13 @@
             <label class="check-row" x-show="store.dockerCleanupImages" style="margin-left:20px">
               <input type="checkbox" x-model="store.dockerCleanupImagesAll" /><span>incluir todas as não usadas (não só as sem tag)</span>
             </label>
+            <row class="healthcheck__grid" x-show="store.dockerCleanupImages" style="margin-left:20px">
+              <column class="healthcheck__field">
+                <text class="u-label-cap">SÓ IMAGENS CRIADAS HÁ MAIS DE (HORAS)</text>
+                <input class="field__input" type="number" min="0" max="8760" x-model="store.dockerCleanupImagesOlderThanHours" placeholder="168" />
+                <text class="u-muted">0 não filtra por idade. O Docker olha a data de criação da imagem, não a do último uso: as imagens base antigas continuam elegíveis.</text>
+              </column>
+            </row>
 
             <label class="check-row">
               <input type="checkbox" x-model="store.dockerCleanupNetworks" /><span>Redes sem uso</span>
@@ -1473,6 +1520,13 @@
             <label class="check-row">
               <input type="checkbox" x-model="store.dockerCleanupBuildCache" /><span>Cache de build</span>
             </label>
+            <row class="healthcheck__grid" x-show="store.dockerCleanupBuildCache" style="margin-left:20px">
+              <column class="healthcheck__field">
+                <text class="u-label-cap">MANTER O CACHE USADO NAS ÚLTIMAS (HORAS)</text>
+                <input class="field__input" type="number" min="0" max="8760" x-model="store.dockerCleanupBuildCacheOlderThanHours" placeholder="168" />
+                <text class="u-muted">0 remove todo o cache sem uso. Com um prazo, o cache de um job ou deploy recente sobrevive e o próximo build não recomeça do zero.</text>
+              </column>
+            </row>
 
             <hr class="rule" />
             <text class="u-label-cap u-error">VOLUMES — CUIDADO</text>
@@ -1719,12 +1773,11 @@
                   <text class="state-cell__label" x-text="job.lastRunLabel"></text>
                 </row>
                 <text class="u-muted kv-list__val kv-list__val--compact" x-text="'→ ' + job.nextRunAt"></text>
-                <button class="btn btn--copy" type="button" title="Rodar agora" x-show="!job.running" @click="store.jobRunNow(job.id)">▶</button>
-                <button class="env__del" type="button" title="Cancelar" x-show="job.running" @click="store.jobRunCancel(job.lastRunId)">■</button>
-                <button class="btn btn--copy" type="button" title="Ver logs" x-show="job.lastRunId" @click="store.openJobLogs(job.lastRunId)">≡</button>
-                <button class="btn btn--copy" type="button" :title="job.enabledLabel" @click="store.jobToggle(job.id)" x-text="job.enabled ? '‖' : '▶'"></button>
-                <button class="btn btn--copy" type="button" title="Editar" @click="store.openEditJob(job.id)">✎</button>
-                <button class="env__del" type="button" title="Remover" @click="store.jobDelete(job.id)">✕</button>
+                <row class="state-cell" :class="'state-cell--' + job.warmKind" :title="job.warmReason">
+                  <text class="status-dot">●</text>
+                  <text class="state-cell__label" x-text="job.warmLabel"></text>
+                </row>
+                <button class="btn btn--copy" type="button" title="Ações do job" @click="store.openJobActions(job.id)">⋯</button>
               </row>
             </template>
           </column>
