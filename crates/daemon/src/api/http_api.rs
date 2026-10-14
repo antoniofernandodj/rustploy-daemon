@@ -356,11 +356,20 @@ async fn login(
 
 /// `POST /mcp`: o servidor MCP do agente (ver `agent::mcp`).
 async fn mcp(req: Request<Incoming>, state: AppState) -> Response<ApiBody> {
+    // A qual servidor o agente está ligado (ver `agent::mcp::handle`).
+    let server = req
+        .headers()
+        .get(hyper::header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .map(str::trim)
+        .filter(|h| !h.is_empty())
+        .map(str::to_owned)
+        .unwrap_or_else(|| agent::public_address(&state.api, &super::outbound_ip()));
     let body = match req.into_body().collect().await {
         Ok(c) => c.to_bytes(),
         Err(_) => return text(StatusCode::BAD_REQUEST, "erro ao ler o corpo"),
     };
-    match agent::mcp::handle(&state, &body).await {
+    match agent::mcp::handle(&state, &body, &server).await {
         Some((status, resposta)) => json_value(status, &resposta),
         None => Response::builder()
             .status(StatusCode::ACCEPTED)

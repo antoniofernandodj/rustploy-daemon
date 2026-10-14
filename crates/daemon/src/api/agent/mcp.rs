@@ -19,7 +19,12 @@ const MANUAL_URI: &str = "rustploy://manual";
 
 /// Atende um corpo de `POST /mcp`. `None` = era notificação/resposta, que o
 /// transporte responde com `202` sem corpo.
-pub async fn handle(state: &AppState, body: &[u8]) -> Option<(StatusCode, Value)> {
+///
+/// `server` é o `host:porta` deste daemon (o header `Host` pelo qual o agente
+/// chegou, ou o endereço público): vai no `serverInfo` e no topo das
+/// `instructions`, para um agente com vários rustploy registrados saber em
+/// qual está mexendo — todos se chamam `rustploy` e servem o mesmo manual.
+pub async fn handle(state: &AppState, body: &[u8], server: &str) -> Option<(StatusCode, Value)> {
     let msg: Value = match serde_json::from_slice(body) {
         Ok(v) => v,
         Err(e) => {
@@ -50,7 +55,7 @@ pub async fn handle(state: &AppState, body: &[u8]) -> Option<(StatusCode, Value)
     let params = msg.get("params").cloned().unwrap_or(Value::Null);
 
     let resultado = match method {
-        "initialize" => Ok(initialize(&params)),
+        "initialize" => Ok(initialize(&params, server)),
         "ping" => Ok(json!({})),
         "tools/list" => Ok(tools_list()),
         "tools/call" => tools_call(state, &params).await,
@@ -84,7 +89,7 @@ fn error(id: Value, code: i64, message: impl Into<String>) -> Value {
     })
 }
 
-fn initialize(params: &Value) -> Value {
+fn initialize(params: &Value, server: &str) -> Value {
     // Ecoa a versão do cliente quando a conhecemos; senão, a nossa mais nova
     // (o cliente decide se aceita).
     let pedida = params.get("protocolVersion").and_then(Value::as_str);
@@ -100,10 +105,14 @@ fn initialize(params: &Value) -> Value {
         },
         "serverInfo": {
             "name": "rustploy",
-            "title": "Rustploy daemon",
+            "title": format!("Rustploy daemon em {server}"),
             "version": env!("CARGO_PKG_VERSION"),
         },
-        "instructions": MANUAL,
+        "instructions": format!(
+            "Este servidor MCP é o daemon rustploy em **{server}**. Se houver mais de \
+             um rustploy registrado, confirme que é este o que o usuário pediu antes \
+             de qualquer ação que altere algo.\n\n{MANUAL}"
+        ),
     })
 }
 
@@ -179,11 +188,15 @@ mod tests {
 
     #[test]
     fn initialize_ecoa_versao_conhecida_e_manda_o_manual() {
-        let r = initialize(&json!({ "protocolVersion": "2025-03-26" }));
+        let r = initialize(&json!({ "protocolVersion": "2025-03-26" }), "rp.exemplo.com:9797");
         assert_eq!(r["protocolVersion"], "2025-03-26");
-        assert_eq!(r["instructions"], MANUAL);
+        let instructions = r["instructions"].as_str().unwrap();
+        assert!(instructions.ends_with(MANUAL));
+        assert!(instructions.starts_with("Este servidor MCP é o daemon rustploy em **rp.exemplo.com:9797**"));
+        assert_eq!(r["serverInfo"]["name"], "rustploy");
+        assert_eq!(r["serverInfo"]["title"], "Rustploy daemon em rp.exemplo.com:9797");
 
-        let r = initialize(&json!({ "protocolVersion": "1999-01-01" }));
+        let r = initialize(&json!({ "protocolVersion": "1999-01-01" }), "x:1");
         assert_eq!(r["protocolVersion"], PROTOCOL_VERSIONS[0]);
     }
 
