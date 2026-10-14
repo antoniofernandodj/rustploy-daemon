@@ -53,7 +53,8 @@ export function decodeAccessKey(accessKey) {
   // Um esquema posto à mão não faz parte do formato: descartado.
   const address = text.slice(authorityStart, at).trim().replace(/\/+$/, "");
   const token = text.slice(at + ACCESS_KEY_SEPARATOR.length).trim();
-  return address && token ? { address, token } : null;
+  // Token vazio vale: é o de um daemon sem `[api].token` (API aberta).
+  return address ? { address, token } : null;
 }
 
 /** Monta o token de conexão de um endereço (URL ou `host:porta`) + token da
