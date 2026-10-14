@@ -42,7 +42,7 @@ use tracing_subscriber::EnvFilter;
 async fn main() -> Result<()> {
     let config = RustployConfig::global();
 
-    // `rustployd access-key`: imprime a chave `rpk1_…` (endereço + token) e sai,
+    // `rustployd access-key`: imprime a chave de acesso (endereço + token) e sai,
     // sem subir nada. Ver api::agent e docs/plano-chave-de-acesso-e-mcp.md.
     if std::env::args().nth(1).as_deref() == Some("access-key") {
         api::agent::print_access_key_and_exit(config);

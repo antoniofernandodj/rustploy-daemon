@@ -1,4 +1,4 @@
-//! Acesso de agente servido pelo próprio daemon: a chave `rpk1_…`, o
+//! Acesso de agente servido pelo próprio daemon: a chave de acesso, o
 //! `POST /api/login`, o manual e o servidor MCP em `POST /mcp`.
 //!
 //! Substituiu a ponte HTTP local que morava no app GUI
@@ -18,9 +18,9 @@ use access_key::{AccessKey, KeyFormatError};
 /// nas `instructions` do MCP e no recurso `rustploy://manual`.
 pub const MANUAL: &str = include_str!("manual.md");
 
-/// `POST /api/login`: troca a chave `rpk1_…` pelo token de acesso.
+/// `POST /api/login`: troca a chave de acesso pelo token.
 ///
-/// Aceita `{"key":"rpk1_…"}`, uma string JSON ou a chave crua no corpo. O token
+/// Aceita `{"key":"<chave>"}`, uma string JSON ou a chave crua no corpo. O token
 /// devolvido é o próprio `[api].token` (decisão A do plano): o daemon não tem
 /// sessões, e emitir uma por cima não daria garantia nova enquanto o token-mestre
 /// valer para tudo.
@@ -95,7 +95,7 @@ fn extract_key(body: &[u8]) -> Result<String, KeyFormatError> {
             .and_then(Value::as_str)
             .map(str::to_owned)
             .ok_or(KeyFormatError::Empty),
-        // Não é JSON: o corpo É a chave (`curl -d rpk1_…`).
+        // Não é JSON: o corpo É a chave (`curl -d <chave>`).
         _ => Ok(texto.into_owned()),
     }
 }
@@ -110,9 +110,12 @@ fn format_error(fail: &KeyFormatError) -> Value {
             "expected": {
                 "method": "POST",
                 "path": "/api/login",
-                "body": { "key": "rpk1_<base64url de {\"u\":\"https://host:porta\",\"t\":\"<token>\"}>" },
+                "body": { "key": "<base64 de host:porta::token>" },
+                "key_format": "base64 (url-safe sem padding, ou o padrão) de `host:porta::token`; \
+                               porta 443 ou sem porta = https, outra = http; para fugir \
+                               dessa regra, ponha o esquema: `https://host:9797::token`",
                 "also_accepted": "a chave crua como corpo (Content-Type qualquer)",
-                "example": "curl -s https://host:porta/api/login -d '{\"key\":\"rpk1_…\"}'",
+                "example": "curl -s https://host:porta/api/login -d '{\"key\":\"<chave>\"}'",
                 "where_to_get_one": "na VPS: `rustployd access-key`; numa sessão já aberta: \
                                      Configurações → Copiar chave de acesso (GUI ou webui)",
             }
@@ -186,7 +189,7 @@ mod tests {
     fn formato_errado_explica_o_formato_certo() {
         let (status, resp) = login(br#"{"key":"segredo"}"#, Some("segredo"), None);
         assert_eq!(status, StatusCode::BAD_REQUEST);
-        assert_eq!(resp["error"]["code"], "missing_prefix");
+        assert_eq!(resp["error"]["code"], "missing_separator");
         assert_eq!(resp["error"]["expected"]["path"], "/api/login");
 
         let (status, resp) = login(br#"{"token":"x"}"#, Some("segredo"), None);

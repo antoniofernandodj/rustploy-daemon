@@ -216,7 +216,7 @@ async fn handle(
                 ),
             ));
         }
-        // Login por chave `rpk1_…` — público por natureza (é ele que entrega o
+        // Login por chave de acesso — público por natureza (é ele que entrega o
         // token). Ver `agent::login` e docs/plano-chave-de-acesso-e-mcp.md.
         (&Method::POST, "/api/login") => {
             return Ok(login(req, token.as_deref(), peer).await);
@@ -323,7 +323,7 @@ async fn handle(
     })
 }
 
-/// `POST /api/login`: troca a chave `rpk1_…` pelo token (ver `agent::login`).
+/// `POST /api/login`: troca a chave de acesso pelo token (ver `agent::login`).
 async fn login(
     req: Request<Incoming>,
     expected: Option<&str>,

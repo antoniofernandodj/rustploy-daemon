@@ -279,7 +279,7 @@ mod headless_tests {
             .unwrap_or_default()
     }
 
-    /// Login por chave `rpk1_…`: `connect()` manda a chave a `POST /api/login`,
+    /// Login por chave de acesso: `connect()` manda a chave a `POST /api/login`,
     /// usa o `access_token` devolvido como Bearer nas chamadas seguintes e, numa
     /// recusa, mostra a explicação que o daemon deu. O `fetch` é substituído na
     /// página (o servidor de teste só serve estáticos); o SSE fica pendurado
@@ -301,9 +301,9 @@ mod headless_tests {
                     const reply = (status, body) => Promise.resolve(new Response(JSON.stringify(body), { status }));
                     if (path === "/api/login") {
                         const { key } = JSON.parse(init.body);
-                        return key === "rpk1_eyJ1IjoiaHR0cDovLzEyNy4wLjAuMTo5IiwidCI6IngifQ"
+                        return key === "MTI3LjAuMC4xOjk6Ong"
                             ? reply(200, { access_token: "x", token_type: "Bearer" })
-                            : reply(400, { error: { code: "missing_prefix", message: "a chave não começa com rpk1_" } });
+                            : reply(400, { error: { code: "missing_separator", message: "a chave decodificada não tem o formato host:porta::token" } });
                     }
                     if (path === "/api/events") return new Promise(() => {});
                     if (path === "/api/rpc") return reply(200, { DaemonStatus: { version: "t" } });
@@ -322,7 +322,7 @@ mod headless_tests {
         .await;
         assert_eq!(
             eval_str(&page, "Alpine.store('app').error").await,
-            "a chave não começa com rpk1_"
+            "a chave decodificada não tem o formato host:porta::token"
         );
         assert_eq!(eval_str(&page, "Alpine.store('app').screen").await, "login");
 
@@ -330,7 +330,7 @@ mod headless_tests {
         eval_str(
             &page,
             r#"(async () => { const s = Alpine.store('app');
-                s.accessKey = 'rpk1_eyJ1IjoiaHR0cDovLzEyNy4wLjAuMTo5IiwidCI6IngifQ';
+                s.accessKey = 'MTI3LjAuMC4xOjk6Ong';
                 await s.connect(); return 'ok'; })()"#,
         )
         .await;
@@ -345,7 +345,13 @@ mod headless_tests {
         );
         // A chave para copiar em Settings é montada da sessão (origem + token).
         let chave = eval_str(&page, "Alpine.store('app').serverAccessKey").await;
-        assert!(chave.starts_with("rpk1_"), "{chave}");
+        {
+            use base64::Engine;
+            let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD
+                .decode(&chave)
+                .expect("chave em base64url sem padding");
+            assert_eq!(String::from_utf8(payload).unwrap(), format!("{addr}::x"));
+        }
         let comando = eval_str(&page, "Alpine.store('app').serverMcpCommand").await;
         assert!(
             comando.contains("/mcp") && comando.contains("Bearer x"),

@@ -27,29 +27,50 @@ async function fetchTimeout(url, init, timeoutMs) {
   }
 }
 
-/** Prefixo da chave de acesso (ver api/agent/access_key.rs no daemon). */
-const ACCESS_KEY_PREFIX = "rpk1_";
+// Chave de acesso (ver api/agent/access_key.rs no daemon): base64url sem
+// padding de `host:porta::token`. O esquema só vai na chave quando não dá
+// para deduzi-lo — porta 443 (ou nenhuma) é https, qualquer outra é http.
+const ACCESS_KEY_SEPARATOR = "::";
 
-/** Decodifica `rpk1_<base64url de {"u","t"}>` em `{ url, token }`, ou `null`
- * se a string não estiver nesse formato. Só para exibir/conferir o servidor:
- * quem valida a chave é o `POST /api/login`. */
+function impliedScheme(authority) {
+  const afterHost = authority.includes("]") ? authority.slice(authority.lastIndexOf("]")) : authority;
+  const colon = afterHost.lastIndexOf(":");
+  return colon >= 0 && afterHost.slice(colon + 1) !== "443" ? "http" : "https";
+}
+
+/** Decodifica a chave em `{ url, token }`, ou `null` se a string não estiver
+ * nesse formato. Só para exibir/conferir o servidor: quem valida a chave é o
+ * `POST /api/login`. Aceita também o base64 padrão, com padding. */
 export function decodeAccessKey(accessKey) {
   const trimmed = (accessKey || "").trim();
-  if (!trimmed.startsWith(ACCESS_KEY_PREFIX)) return null;
+  if (!trimmed) return null;
+  let text;
   try {
-    const base64 = trimmed.slice(ACCESS_KEY_PREFIX.length).replace(/-/g, "+").replace(/_/g, "/");
-    const decoded = JSON.parse(atob(base64 + "===".slice((base64.length + 3) % 4)));
-    return decoded && decoded.u && decoded.t ? { url: decoded.u, token: decoded.t } : null;
+    const base64 = trimmed.replace(/=+$/, "").replace(/-/g, "+").replace(/_/g, "/");
+    const binary = atob(base64 + "===".slice((base64.length + 3) % 4));
+    text = new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.from(binary, (c) => c.charCodeAt(0)));
   } catch {
     return null;
   }
+  // O primeiro `::` fora do endereço: um IPv6 (`[::1]:9797`) tem os seus.
+  const authorityStart = text.includes("://") ? text.indexOf("://") + 3 : 0;
+  const searchFrom = text[authorityStart] === "[" ? text.indexOf("]", authorityStart) : authorityStart;
+  const at = searchFrom < 0 ? -1 : text.indexOf(ACCESS_KEY_SEPARATOR, searchFrom);
+  if (at < 0) return null;
+  const address = text.slice(0, at).trim().replace(/\/+$/, "");
+  const token = text.slice(at + ACCESS_KEY_SEPARATOR.length).trim();
+  if (!address || !token) return null;
+  return { url: address.includes("://") ? address : impliedScheme(address) + "://" + address, token };
 }
 
 /** Monta a chave de um par endereço + token (o inverso de `decodeAccessKey`).
  * O token é ASCII (hex/base64url), então `btoa` direto basta. */
 export function encodeAccessKey(url, token) {
-  const base64 = btoa(JSON.stringify({ u: url, t: token }));
-  return ACCESS_KEY_PREFIX + base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const trimmedUrl = url.replace(/\/+$/, "");
+  const schemeEnd = trimmedUrl.indexOf("://");
+  const authority = schemeEnd >= 0 ? trimmedUrl.slice(schemeEnd + 3) : trimmedUrl;
+  const address = schemeEnd >= 0 && impliedScheme(authority) === trimmedUrl.slice(0, schemeEnd) ? authority : trimmedUrl;
+  return btoa(address + ACCESS_KEY_SEPARATOR + token).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
 /** `POST /api/login`: troca a chave pelo token de acesso. Devolve

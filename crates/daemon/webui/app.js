@@ -80,7 +80,7 @@ document.addEventListener("alpine:init", () => {
     error: "",
 
     // ── Formulário de login ───────────────────────────────────────────
-    // Um campo só: a chave `rpk1_…` (endereço + token). O endereço dentro
+    // Um campo só: a chave de acesso (endereço + token). O endereço dentro
     // dela não é usado para conectar — a webui é sempre servida pelo próprio
     // daemon, então o servidor é a própria origem da página.
     accessKey: prefs.rememberAccessKey && prefs.accessKey ? prefs.accessKey : "",

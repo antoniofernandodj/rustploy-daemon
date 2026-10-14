@@ -7,11 +7,13 @@ você vai usar aqui — não existe porta dos fundos que só humanos alcançam.
 
 ## 1. Entrar
 
-Você recebeu uma **chave de acesso** `rpk1_…`. Ela carrega o endereço do
-servidor e o token. Troque-a pelo token:
+Você recebeu uma **chave de acesso**: o base64 de `host:porta::token`
+(decodifique e você tem o endereço do servidor). Porta 443 ou sem porta é
+`https`, outra é `http`; quando isso não vale, o esquema vem dentro da chave
+(`https://host:9797::token`). Troque a chave pelo token:
 
 ```bash
-curl -s https://SERVIDOR:PORTA/api/login -d '{"key":"rpk1_…"}'
+curl -s http://SERVIDOR:PORTA/api/login -d '{"key":"<chave>"}'
 ```
 
 ```json
@@ -125,7 +127,7 @@ Todas com o mesmo `Authorization: Bearer`.
 | `GET /api/deployments/<id>/build-logs` | SSE: build ao vivo |
 | `GET /api/jobs/runs/<id>/logs` | SSE: saída de uma execução de job |
 | `GET /api/agent/manual` | este manual |
-| `GET /api/access-key` | a chave `rpk1_…` deste servidor (para repassar o acesso) |
+| `GET /api/access-key` | a chave de acesso deste servidor (para repassar o acesso) |
 | `GET /api/version` | versão em texto puro (sem token) |
 
 Upload de zip:
