@@ -16,6 +16,7 @@ const APP_SHELL = [
   "/directives.js",
   "/busy.js",
   "/wm.js",
+  "/zip.js",
   "/icons.js",
   "/net/api.js",
   "/net/sse.js",

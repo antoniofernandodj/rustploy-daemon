@@ -31,6 +31,7 @@ import { registerDirectives } from "./directives.js";
 import { registerWindows } from "./wm.js";
 import { registerIcons } from "./icons.js";
 import { registerBusy } from "./busy.js";
+import { buildManifestZip, readManifestZip } from "./zip.js";
 import {
   formatUptime,
   formatBytes,
@@ -215,6 +216,7 @@ document.addEventListener("alpine:init", () => {
     manifestExportMessage: "",
     manifestImportYaml: "",
     manifestImportDotenv: "",
+    manifestZipName: "", // nome do .zip escolhido para importar ("" = texto colado à mão)
     manifestPrune: false,
     manifestDeploy: false,
     manifestHasMissing: false,
@@ -1583,23 +1585,58 @@ document.addEventListener("alpine:init", () => {
       await this.gitProviderRefresh();
     },
 
+    /** O manifesto é um `.zip` com `rustploy.yml` + `rustploy.vars.toml`, como no
+     * app desktop (handlers/settings.luau::manifest_export). O texto continua
+     * visível abaixo para conferir ou copiar. */
     async manifestExport() {
       this.manifestExportMessage = "exportando…";
       const manifestExportAllResponse = await this.api.rpcChecked("ManifestExportAll");
       if (!manifestExportAllResponse.ok || !manifestExportAllResponse.value?.ManifestBundle) {
-        this.manifestExportMessage = "";
-        this.toastError("erro: " + (manifestExportAllResponse.ok ? "resposta inesperada" : manifestExportAllResponse.error));
+        const reason = manifestExportAllResponse.ok ? "resposta inesperada" : manifestExportAllResponse.error;
+        this.manifestExportMessage = "erro: " + reason;
+        this.toastError("erro: " + reason);
         return;
       }
-      this.manifestYaml = manifestExportAllResponse.value.ManifestBundle.yaml;
-      this.manifestDotenv = manifestExportAllResponse.value.ManifestBundle.dotenv;
+      const bundle = manifestExportAllResponse.value.ManifestBundle;
+      this.manifestYaml = bundle.yaml || "";
+      this.manifestDotenv = bundle.dotenv || "";
       this.manifestHasExport = true;
-      this.manifestExportMessage = "";
-      this.toastOk("manifesto exportado");
+
+      const zipName = "rustploy-infra.zip";
+      const zipUrl = URL.createObjectURL(buildManifestZip(this.manifestYaml, this.manifestDotenv));
+      const link = document.createElement("a");
+      link.href = zipUrl;
+      link.download = zipName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(zipUrl), 10000);
+
+      this.manifestExportMessage = "baixado como " + zipName;
+      this.toastOk("Infra as Code exportado");
+    },
+
+    /** "Importar de um .zip…": lê e VALIDA o zip (exatamente um .yml e um .toml
+     * na raiz, nada mais — mesmas regras do desktop) e preenche os dois campos. */
+    async manifestPickZip(event) {
+      const input = event.target;
+      const file = input.files?.[0];
+      input.value = ""; // permite escolher o mesmo arquivo de novo
+      if (!file) return;
+      const zipManifest = await readManifestZip(file);
+      if (!zipManifest.ok) {
+        this.manifestImportMessage = "zip inválido: " + zipManifest.error.replace(/^zip inválido: /, "");
+        this.toastError(zipManifest.error.replace(/^zip inválido: /, ""));
+        return;
+      }
+      this.manifestImportYaml = zipManifest.yaml;
+      this.manifestImportDotenv = zipManifest.toml;
+      this.manifestZipName = file.name;
+      this.manifestImportMessage = "zip lido: " + file.name + " — confira as opções e clique em Importar";
     },
 
     /** 3 formas de resposta possíveis (mesma distinção de handlers/
-     * settings.luau::iac_import): MissingEnvVars (nada aplicado), Err
+     * settings.luau::manifest_import): MissingEnvVars (nada aplicado), Err
      * (rpc-level), ou ManifestReport (sucesso). */
     async manifestImport() {
       this.manifestHasMissing = false;
@@ -1609,22 +1646,34 @@ document.addEventListener("alpine:init", () => {
 
       const yaml = this.manifestImportYaml || "";
       if (!yaml.trim()) {
-        this.toastWarn("cole o YAML do manifesto");
+        this.toastWarn("escolha o .zip do manifesto (ou cole o YAML)");
+        return;
+      }
+      const dotenv = this.manifestImportDotenv || "";
+      const prune = this.manifestPrune;
+      const deploy = this.manifestDeploy;
+
+      // Prune remove serviços: o usuário vê o que marcou antes de aplicar
+      // (o desktop abre a mesma confirmação, destrutiva quando prune está ligado).
+      const origin = this.manifestZipName ? "Do zip " + this.manifestZipName + ": " : "";
+      const confirmed = confirm(
+        "Aplicar este manifesto?\n\n" +
+          origin + yaml.length + " B de YAML + " + dotenv.length + " B de TOML.\n\n" +
+          "• Remover serviços ausentes (prune): " + (prune ? "SIM" : "não") + "\n" +
+          "• Disparar deploy dos alterados: " + (deploy ? "SIM" : "não")
+      );
+      if (!confirmed) {
+        this.manifestImportMessage = "cancelado";
         return;
       }
 
       this.manifestImportMessage = "importando…";
       const manifestImportResponse = await this.api.rpc({
-        ManifestImport: {
-          yaml,
-          dotenv: this.manifestImportDotenv || "",
-          prune: this.manifestPrune,
-          deploy: this.manifestDeploy,
-        },
+        ManifestImport: { yaml, dotenv, prune, deploy },
       });
       if (!manifestImportResponse.ok) {
-        this.manifestImportMessage = "";
-        this.toastError("erro: " + manifestImportResponse.error);
+        this.manifestImportMessage = "erro: " + manifestImportResponse.error;
+        this.toastError(manifestImportResponse.error);
         return;
       }
       const applyResult = manifestImportResponse.value;
@@ -1632,29 +1681,38 @@ document.addEventListener("alpine:init", () => {
         this.manifestHasMissing = true;
         this.manifestMissingVars = applyResult.MissingEnvVars.join(", ");
         this.manifestImportMessage = "faltam variáveis — nada foi aplicado";
-        this.toastError("faltam variáveis — nada foi aplicado");
+        this.toastError("Faltam variáveis no TOML: " + this.manifestMissingVars);
         return;
       }
       if (applyResult?.Err) {
-        this.manifestImportMessage = "";
-        this.toastError(`erro: ${applyResult.Err.code}: ${applyResult.Err.message}`);
+        this.manifestImportMessage = `erro: ${applyResult.Err.code}: ${applyResult.Err.message}`;
+        this.toastError(applyResult.Err.message);
         return;
       }
       if (!applyResult?.ManifestReport) {
-        this.manifestImportMessage = "";
-        this.toastError("resposta inesperada do daemon");
+        this.manifestImportMessage = "resposta inesperada do daemon";
         return;
       }
-      const lines = (applyResult.ManifestReport.actions || []).map(
-        (action) => `[${action.action}] ${action.kind} ${action.name}`
-      );
-      if ((applyResult.ManifestReport.deployed || []).length > 0) {
-        lines.push("deploy disparado: " + applyResult.ManifestReport.deployed.join(", "));
+      const actions = applyResult.ManifestReport.actions || [];
+      const lines = actions.map((action) => `[${action.action}] ${action.kind} ${action.name}`);
+      // O `ApplyReport` não tem lista própria de removidos: o prune aparece em
+      // `actions` com o verbo Deleted.
+      const pruned = actions.filter((action) => action.action === "Deleted").map((action) => action.name);
+      if (pruned.length > 0) {
+        lines.push("removidos (prune): " + pruned.join(", "));
+      } else if (prune) {
+        lines.push("prune ligado — nenhum serviço ausente para remover");
+      }
+      const deployed = applyResult.ManifestReport.deployed || [];
+      if (deployed.length > 0) {
+        lines.push("deploy disparado: " + deployed.join(", "));
+      } else if (deploy) {
+        lines.push("deploy ligado — nada mudou para disparar");
       }
       this.manifestReportLines = lines;
       this.manifestHasReport = true;
-      this.manifestImportMessage = "";
-      this.toastOk("import concluído");
+      this.manifestImportMessage = "import concluído ✓";
+      this.toastOk("Infra as Code importado");
       await this.refreshNow();
     },
 

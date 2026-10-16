@@ -997,4 +997,144 @@ mod headless_tests {
 
         assert_eq!(errors(&page).await, Vec::<String>::new(), "sem erros de JS no console");
     }
+
+    /// Settings → Infra as Code, no mesmo fluxo do app desktop: exportar BAIXA um
+    /// `.zip` com `rustploy.yml` + `rustploy.vars.toml`, escolher um `.zip` valida
+    /// (exatamente um .yml e um .toml na raiz) e preenche os campos, e importar
+    /// confirma antes de aplicar e mostra o prune (verbo `Deleted` nas ações).
+    #[tokio::test]
+    async fn iac_zip_export_import() {
+        let addr = spawn_static_server().await;
+        let (browser, _handler) = launch().await;
+        let page = open_page(&browser, addr).await;
+        seed_connected(&page).await;
+
+        eval_str(
+            &page,
+            r#"(async () => {
+                const s = Alpine.store('app');
+                window.__confirms = [];
+                window.confirm = (m) => { window.__confirms.push(m); return true; };
+                window.__downloads = [];
+                const click = HTMLAnchorElement.prototype.click;
+                HTMLAnchorElement.prototype.click = function () {
+                    if (this.download) { window.__downloads.push({ name: this.download, href: this.href }); return; }
+                    return click.call(this);
+                };
+                s.api = { baseUrl: location.origin, token: 't',
+                    rpcChecked: async (cmd) => cmd === 'ManifestExportAll'
+                        ? { ok: true, value: { ManifestBundle: { yaml: 'projects: []', dotenv: '# vars' } } }
+                        : { ok: false, error: 'stub' },
+                    rpc: async (cmd) => { window.__import = cmd.ManifestImport;
+                        return { ok: true, value: window.__importReply }; } };
+                s.refreshNow = async () => {};
+                s.view = 'settings'; s.settingsTab = 'iac';
+                return 'ok';
+            })()"#,
+        )
+        .await;
+        assert!(visible(&page, "input[type=file][accept*='zip']").await, "a aba IaC tem o seletor de .zip");
+
+        // Exportar: um download rustploy-infra.zip cujo conteúdo é o par yml/toml.
+        let exported = eval_str(
+            &page,
+            r#"(async () => {
+                await Alpine.store('app').manifestExport();
+                const d = window.__downloads[0];
+                const { readManifestZip } = await import('/zip.js');
+                const blob = await (await fetch(d.href)).blob();
+                const r = await readManifestZip(blob);
+                return JSON.stringify({ name: d.name, ok: r.ok, yaml: r.yaml, toml: r.toml,
+                    msg: Alpine.store('app').manifestExportMessage });
+            })()"#,
+        )
+        .await;
+        assert_eq!(
+            exported,
+            r##"{"name":"rustploy-infra.zip","ok":true,"yaml":"projects: []","toml":"# vars","msg":"baixado como rustploy-infra.zip"}"##
+        );
+
+        // Escolher um zip inválido (arquivo sobrando) é recusado; um válido preenche os campos.
+        let picked = eval_str(
+            &page,
+            r#"(async () => {
+                const s = Alpine.store('app');
+                const { buildManifestZip } = await import('/zip.js');
+                const good = new File([buildManifestZip('a: 1', 'b = 2')], 'infra.zip');
+                await s.manifestPickZip({ target: { files: [new File(['isto nao e um zip'], 'x.zip')], value: '' } });
+                const bad = s.manifestImportMessage;
+                await s.manifestPickZip({ target: { files: [good], value: '' } });
+                return JSON.stringify({ bad, yaml: s.manifestImportYaml, toml: s.manifestImportDotenv, zip: s.manifestZipName });
+            })()"#,
+        )
+        .await;
+        assert_eq!(
+            picked,
+            r##"{"bad":"zip inválido: não achei o fim do arquivo (não é um .zip?)","yaml":"a: 1","toml":"b = 2","zip":"infra.zip"}"##
+        );
+
+        // Importar com prune: confirma antes, manda o pedido certo e mostra o que foi removido.
+        let imported = eval_str(
+            &page,
+            r#"(async () => {
+                const s = Alpine.store('app');
+                window.__importReply = { ManifestReport: { deployed: [],
+                    actions: [{ kind: 'Service', name: 'loja/web', action: 'Updated' },
+                              { kind: 'Service', name: 'loja/velho', action: 'Deleted' }] } };
+                s.manifestPrune = true; s.manifestDeploy = true;
+                await s.manifestImport();
+                return JSON.stringify({ req: window.__import, confirm: window.__confirms[0],
+                    lines: s.manifestReportLines, msg: s.manifestImportMessage });
+            })()"#,
+        )
+        .await;
+        let imported: serde_json::Value = serde_json::from_str(&imported).expect("json");
+        assert_eq!(
+            imported["req"],
+            serde_json::json!({"yaml":"a: 1","dotenv":"b = 2","prune":true,"deploy":true})
+        );
+        let confirm = imported["confirm"].as_str().unwrap();
+        assert!(confirm.contains("Do zip infra.zip") && confirm.contains("prune): SIM"), "{confirm}");
+        assert_eq!(
+            imported["lines"],
+            serde_json::json!([
+                "[Updated] Service loja/web",
+                "[Deleted] Service loja/velho",
+                "removidos (prune): loja/velho",
+                "deploy ligado — nada mudou para disparar"
+            ])
+        );
+        assert_eq!(imported["msg"], "import concluído ✓");
+
+        // Variável sem valor: nada é aplicado e a lista aparece.
+        let missing = eval_str(
+            &page,
+            r#"(async () => {
+                const s = Alpine.store('app');
+                window.__importReply = { MissingEnvVars: ['loja/web: APP_PORT'] };
+                await s.manifestImport();
+                return JSON.stringify({ has: s.manifestHasMissing, vars: s.manifestMissingVars, msg: s.manifestImportMessage });
+            })()"#,
+        )
+        .await;
+        assert_eq!(
+            missing,
+            r##"{"has":true,"vars":"loja/web: APP_PORT","msg":"faltam variáveis — nada foi aplicado"}"##
+        );
+
+        // Cancelar na confirmação não manda nada.
+        let cancelled = eval_str(
+            &page,
+            r#"(async () => {
+                const s = Alpine.store('app');
+                window.confirm = () => false; window.__import = null;
+                await s.manifestImport();
+                return JSON.stringify({ sent: window.__import, msg: s.manifestImportMessage });
+            })()"#,
+        )
+        .await;
+        assert_eq!(cancelled, r##"{"sent":null,"msg":"cancelado"}"##);
+
+        assert_eq!(errors(&page).await, Vec::<String>::new(), "sem erros de JS no console");
+    }
 }
