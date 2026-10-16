@@ -1034,6 +1034,16 @@ mod headless_tests {
         )
         .await;
         assert!(visible(&page, "input[type=file][accept*='zip']").await, "a aba IaC tem o seletor de .zip");
+        // O botão nativo do seletor de arquivo segue o tema escuro (não o branco do navegador).
+        assert_eq!(
+            eval_str(
+                &page,
+                r#"getComputedStyle(document.querySelector("input[type=file][accept*='zip']"), '::file-selector-button').backgroundColor"#
+            )
+            .await,
+            "rgb(33, 38, 45)",
+            "botão do seletor de arquivo usa a cor do tema"
+        );
 
         // Exportar: um download rustploy-infra.zip cujo conteúdo é o par yml/toml.
         let exported = eval_str(
