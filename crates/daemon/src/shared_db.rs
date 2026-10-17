@@ -9,7 +9,7 @@
 
 use anyhow::{Result, anyhow, bail};
 use std::process::Stdio;
-use tokio::{io::AsyncWriteExt, process::Command};
+use tokio::io::AsyncWriteExt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Engine {
@@ -188,7 +188,7 @@ pub async fn exec(e: Engine, container: &str, script: &str) -> Result<String> {
 
 /// Como [`exec`], com o comando `sh -c` escolhido por quem chama.
 pub async fn exec_sh(e: Engine, container: &str, sh: &str, script: &str) -> Result<String> {
-    let mut child = Command::new("docker")
+    let mut child = crate::docker::cli()
         .args(["exec", "-i", container, "sh", "-c", sh])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

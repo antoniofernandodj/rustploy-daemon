@@ -12,7 +12,6 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use tokio::fs::{File, remove_file};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::Command;
 use tracing::info;
 
 const PROJECT_NET_ALIAS: &str = "rp_project_net";
@@ -26,7 +25,7 @@ const PROJECT_NET_ALIAS: &str = "rp_project_net";
 /// pull depois, com erro visível nos logs, se a imagem realmente for da lá).
 async fn registry_login(token: &str) -> Result<()> {
     let port = RustployConfig::global().registry.port;
-    let mut child = Command::new("docker")
+    let mut child = crate::docker::cli()
         .args([
             "login",
             &format!("127.0.0.1:{port}"),
@@ -61,7 +60,7 @@ async fn registry_login(token: &str) -> Result<()> {
 /// `registry_login` foi tentado, mesmo se o `up` falhou).
 async fn registry_logout() -> Result<()> {
     let port = RustployConfig::global().registry.port;
-    let status = Command::new("docker")
+    let status = crate::docker::cli()
         .args(["logout", &format!("127.0.0.1:{port}")])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -264,7 +263,7 @@ pub async fn up(
         }
     }
 
-    let mut child = Command::new("docker")
+    let mut child = crate::docker::cli()
         .args([
             "compose",
             "-p",
@@ -503,7 +502,7 @@ async fn resolve_compose_images(
     compose_rel_path: &str,
     build_dir: &Path,
 ) -> Result<ComposeImages> {
-    let output = Command::new("docker")
+    let output = crate::docker::cli()
         .args([
             "compose",
             "-p",
@@ -587,7 +586,7 @@ async fn warm_images(
         if docker.inspect_image(image).await.is_ok() {
             continue;
         }
-        let output = Command::new("docker")
+        let output = crate::docker::cli()
             .args(["pull", image])
             .kill_on_drop(true)
             .output()
@@ -602,7 +601,7 @@ async fn warm_images(
     }
 
     if images.has_build {
-        let output = Command::new("docker")
+        let output = crate::docker::cli()
             .args([
                 "compose",
                 "-p",
@@ -842,7 +841,7 @@ async fn run_once_up(
     mirror_deployment: Option<(String, String)>,
     cancel_rx: Option<tokio::sync::watch::Receiver<bool>>,
 ) -> Result<i32> {
-    let mut child = Command::new("docker")
+    let mut child = crate::docker::cli()
         .args([
             "compose",
             "-p",
@@ -975,7 +974,7 @@ pub async fn down(
     env_vars: &[(String, String)],
 ) -> Result<()> {
     info!(project = %project_name, "compose_down: iniciando");
-    let mut child = Command::new("docker")
+    let mut child = crate::docker::cli()
         .args([
             "compose",
             "-p",

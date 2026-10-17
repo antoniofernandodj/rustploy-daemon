@@ -153,7 +153,16 @@ fn image_prune_filters(
 }
 
 fn build_cache_prune_args(older_than_hours: u32) -> Vec<String> {
-    let mut args = vec!["builder".to_string(), "prune".to_string(), "-f".to_string()];
+    build_cache_prune_args_for(crate::docker::engine(), older_than_hours)
+}
+
+/// O Podman não tem `builder prune`: o cache do Buildah sai por
+/// `system prune --build`.
+fn build_cache_prune_args_for(engine: crate::docker::Engine, older_than_hours: u32) -> Vec<String> {
+    let mut args = match engine {
+        crate::docker::Engine::Docker => vec!["builder".to_string(), "prune".to_string(), "-f".to_string()],
+        crate::docker::Engine::Podman => vec!["system".to_string(), "prune".to_string(), "-f".to_string(), "--build".to_string()],
+    };
     if older_than_hours > 0 {
         args.push("--filter".to_string());
         args.push(format!("until={older_than_hours}h"));
@@ -171,7 +180,7 @@ pub(crate) async fn prune_build_cache_core(
 ) -> Result<PruneStat, String> {
     let output = tokio::time::timeout(
         BUILD_CACHE_PRUNE_TIMEOUT,
-        tokio::process::Command::new("docker")
+        crate::docker::cli()
             .args(build_cache_prune_args(older_than_hours))
             .kill_on_drop(true)
             .output(),
@@ -277,6 +286,15 @@ pub(crate) async fn prune_networks_core(state: &AppState) -> Result<PruneStat, S
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn build_cache_prune_podman_usa_system_prune() {
+        use crate::docker::Engine;
+        assert_eq!(
+            build_cache_prune_args_for(Engine::Podman, 24),
+            ["system", "prune", "-f", "--build", "--filter", "until=24h"]
+        );
+    }
 
     #[test]
     fn zero_hours_prunes_all_build_cache() {

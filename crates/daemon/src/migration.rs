@@ -17,7 +17,6 @@ use anyhow::{Result, anyhow, bail};
 use chrono::Utc;
 use shared::{Migration, MigrationStep, Service};
 use std::{collections::HashMap, process::Stdio};
-use tokio::process::Command;
 use tracing::{info, warn};
 use ulid::Ulid;
 
@@ -274,7 +273,7 @@ async fn docker_run_pipe(
     destino: &Side,
     destino_db: &str,
 ) -> Result<String> {
-    let mut cmd = Command::new("docker");
+    let mut cmd = crate::docker::cli();
     cmd.args(["run", "--rm", "--network", network]);
     let vars = [
         ("ORIGEM_HOST", origem.host.clone()),

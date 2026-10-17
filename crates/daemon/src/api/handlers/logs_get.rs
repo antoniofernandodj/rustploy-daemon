@@ -111,9 +111,8 @@ async fn compose_logs(
     tail: usize,
     env_vars: &[(String, String)],
 ) -> RpResponse {
-    use tokio::process::Command;
 
-    let mut child = match Command::new("docker")
+    let mut child = match crate::docker::cli()
         .args([
             "compose",
             "-p",
