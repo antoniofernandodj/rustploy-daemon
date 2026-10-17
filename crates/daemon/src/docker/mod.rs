@@ -51,12 +51,19 @@ pub fn engine() -> Engine {
     ENGINE.get().map_or(Engine::Docker, |(e, _)| *e)
 }
 
-/// `Command` do CLI do motor ativo, já apontado para o socket configurado
-/// (`DOCKER_HOST`, que o `docker`, o `podman compose` e o provider
-/// `docker-compose` respeitam). Use no lugar de `Command::new("docker")`.
+/// `Command` do CLI do motor ativo, já apontado para o socket configurado.
+/// Use no lugar de `Command::new("docker")`.
+///
+/// Docker: `DOCKER_HOST`. Podman: o `podman` local ignora o `DOCKER_HOST` e
+/// usaria o storage do usuário que roda o daemon (rootless), não o do socket
+/// — por isso `--remote --url`, que também vale para o `podman compose`
+/// (o provider `docker-compose` herda o `DOCKER_HOST`).
 pub fn cli() -> Command {
     let mut cmd = Command::new(engine().binary());
-    if let Some((_, socket)) = ENGINE.get() {
+    if let Some((engine, socket)) = ENGINE.get() {
+        if *engine == Engine::Podman {
+            cmd.args(["--remote", "--url", &format!("unix://{socket}")]);
+        }
         cmd.env("DOCKER_HOST", format!("unix://{socket}"));
     }
     cmd
