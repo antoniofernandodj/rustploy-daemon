@@ -1,7 +1,9 @@
 [Unit]
 Description=Rustploy PaaS Daemon
+# Só a ORDEM em relação ao Docker (se ele estiver ativo, sobe antes). Sem `Wants=`: o rustploy não
+# deve puxar o Docker, senão `--engine podman` ligaria um dockerd que não é usado. O motor Podman
+# acrescenta `podman.socket` por drop-in (install.sh --engine podman).
 After=network.target docker.service
-Wants=docker.service
 
 [Service]
 Type=simple

@@ -126,7 +126,9 @@ pub async fn build(
         ..Default::default()
     };
 
-    let mut stream = docker.build_image(options, None, Some(tar_gz.into()));
+    // `Some(vazio)` e não `None`: sem credenciais o bollard manda `X-Registry-Config:` em
+    // branco, que o Docker tolera mas o Podman recusa (400 "unexpected end of JSON input").
+    let mut stream = docker.build_image(options, Some(std::collections::HashMap::new()), Some(tar_gz.into()));
     while let Some(item) = stream.next().await {
         match item {
             Ok(output) => {
