@@ -1,10 +1,42 @@
-//! `Command::ServiceDelete`: apaga um serviço, tira suas rotas do ingress e
-//! fecha a porta externa no firewall.
+//! `Command::ServiceDelete`: para e REMOVE os containers do serviço (ou a stack
+//! Compose), apaga o serviço, tira suas rotas do ingress e fecha a porta
+//! externa no firewall. Volumes nomeados e imagens ficam (dados do usuário).
 
-use crate::api::AppState;
-use shared::Response as RpResponse;
+use crate::{api::AppState, docker::containers};
+use shared::{Response as RpResponse, ServiceSource};
+
+/// Containers do serviço: para (réplicas, ou `compose down`, que já os remove) e
+/// remove o que sobrar, inclusive staging e parados. Idempotente: sem container
+/// algum, é um no-op. Falha de motor = erro (o serviço não é apagado; dá para repetir).
+async fn remove_containers(state: &AppState, id: &str) -> Result<(), RpResponse> {
+    let Ok(Some(svc)) = crate::db::services::get(&state.db, id).await else {
+        return Ok(());
+    };
+    // Reaproveita o ServiceStop: Application para as réplicas; Compose roda `compose down`
+    // (que remove os containers e a rede, mas NÃO os volumes).
+    if let err @ RpResponse::Err { .. } =
+        crate::api::handlers::service_stop::handle(state.clone(), id.to_string()).await
+    {
+        return Err(err);
+    }
+    if !matches!(svc.spec.source, ServiceSource::Compose(_)) {
+        let ids = containers::find_all_by_service_id(&state.docker.inner, id)
+            .await
+            .map_err(|e| RpResponse::err("DockerError", e.to_string()))?;
+        for cid in ids {
+            containers::remove(&state.docker.inner, &cid)
+                .await
+                .map_err(|e| RpResponse::err("DockerError", e.to_string()))?;
+        }
+    }
+    Ok(())
+}
 
 pub async fn handle(state: AppState, id: String) -> RpResponse {
+    // Primeiro os containers: se o motor falhar, nada mudou (rotas, registro) e dá para tentar de novo.
+    if let Err(e) = remove_containers(&state, &id).await {
+        return e;
+    }
     let mut host_port = None;
     if let Ok(Some(svc)) = crate::db::services::get(&state.db, &id).await {
         state.ingress.remove_domains(&svc.spec);
