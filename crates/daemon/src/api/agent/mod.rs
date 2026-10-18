@@ -45,20 +45,20 @@ pub fn login(
         Err(fail) => return (StatusCode::BAD_REQUEST, format_error(&fail)),
     };
 
-    if let Some(expected) = expected {
-        if !super::http_api::constant_time_eq(key.token.as_bytes(), expected.as_bytes()) {
-            return (
-                StatusCode::UNAUTHORIZED,
-                json!({
-                    "error": {
-                        "code": "invalid_key",
-                        "message": "o token de conexão está bem formado, mas o token da API \
-                                    dentro dele não é o deste servidor — ele é de outra \
-                                    instalação, ou o token foi trocado no config.toml",
-                    }
-                }),
-            );
-        }
+    if let Some(expected) = expected
+        && !super::http_api::constant_time_eq(key.token.as_bytes(), expected.as_bytes())
+    {
+        return (
+            StatusCode::UNAUTHORIZED,
+            json!({
+                "error": {
+                    "code": "invalid_key",
+                    "message": "o token de conexão está bem formado, mas o token da API \
+                                dentro dele não é o deste servidor — ele é de outra \
+                                instalação, ou o token foi trocado no config.toml",
+                }
+            }),
+        );
     }
 
     let authority = host
@@ -336,9 +336,11 @@ mod tests {
 
     #[test]
     fn endereco_publico_sempre_leva_a_porta() {
-        let mut api = shared::ApiConfig::default();
-        api.port = 443;
-        api.domain = Some("rp.exemplo.com".into());
+        let mut api = shared::ApiConfig {
+            port: 443,
+            domain: Some("rp.exemplo.com".into()),
+            ..Default::default()
+        };
         assert_eq!(public_address(&api, "10.0.0.5"), "rp.exemplo.com:443");
         api.domain = None;
         api.port = 9797;

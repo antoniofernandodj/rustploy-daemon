@@ -96,12 +96,11 @@ async fn main() -> Result<()> {
         let mut acme = config.ingress.acme.clone();
         if let Ok(Some(email)) =
             db::daemon_settings::get(&db, db::daemon_settings::KEY_ACME_EMAIL).await
+            && !email.trim().is_empty()
         {
-            if !email.trim().is_empty() {
-                info!(email = %email, "ACME: usando email do banco de dados");
-                acme.email = Some(email);
-                acme.enabled = true;
-            }
+            info!(email = %email, "ACME: usando email do banco de dados");
+            acme.email = Some(email);
+            acme.enabled = true;
         }
         acme
     };
@@ -217,10 +216,9 @@ async fn main() -> Result<()> {
         let mut registry_domain = config.registry.domain.clone();
         if let Ok(Some(d)) =
             db::daemon_settings::get(&db, db::daemon_settings::KEY_REGISTRY_DOMAIN).await
+            && !d.trim().is_empty()
         {
-            if !d.trim().is_empty() {
-                registry_domain = Some(d);
-            }
+            registry_domain = Some(d);
         }
         if let Some(domain) = registry_domain {
             let port = config.registry.port;

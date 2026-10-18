@@ -33,7 +33,7 @@ impl SecretsManager {
     }
 
     pub fn encrypt(&self, plaintext: &str) -> Result<String> {
-        let secret = SecretString::new(self.passphrase.clone().into());
+        let secret = SecretString::new(self.passphrase.clone());
         let encryptor = age::Encryptor::with_user_passphrase(secret);
         let mut encrypted = Vec::new();
         {
@@ -50,7 +50,7 @@ impl SecretsManager {
             Decryptor::Passphrase(d) => d,
             _ => return Err(anyhow!("unexpected decryptor type")),
         };
-        let secret = SecretString::new(self.passphrase.clone().into());
+        let secret = SecretString::new(self.passphrase.clone());
         let mut decrypted = Vec::new();
         let mut reader = decryptor.decrypt(&secret, None)?;
         reader.read_to_end(&mut decrypted)?;

@@ -20,11 +20,9 @@ pub async fn handle(state: AppState) -> RpResponse {
         Err(e) => return RpResponse::err("DatabaseError", e.to_string()),
     };
 
-    let (total_24h, successful_24h, failed_24h) =
-        match crate::db::deployments::stats_last_24h(db).await {
-            Ok(s) => s,
-            Err(_) => (0, 0, 0),
-        };
+    let (total_24h, successful_24h, failed_24h) = crate::db::deployments::stats_last_24h(db)
+        .await
+        .unwrap_or_default();
 
     // Cache service+project name lookups.
     let mut svc_cache: HashMap<String, (String, String)> = HashMap::new();

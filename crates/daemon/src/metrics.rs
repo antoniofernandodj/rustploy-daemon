@@ -66,7 +66,7 @@ fn collect_system_metrics(sys: &mut System) -> SystemMetricsPoint {
         let disks = Disks::new_with_refreshed_list();
         disks
             .iter()
-            .max_by_key(|d| d.total_space() as u64)
+            .max_by_key(|d| d.total_space())
             .map(|d| (d.total_space() - d.available_space(), d.total_space()))
             .unwrap_or((0u64, 0u64))
     };

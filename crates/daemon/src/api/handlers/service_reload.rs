@@ -37,27 +37,26 @@ pub async fn handle(state: AppState, service_id: String) -> RpResponse {
     }
 
     // Se o deployment estava Stopped, volta para Live.
-    if let Ok(history) = crate::db::deployments::list_for_service(&state.db, &service_id, 1).await {
-        if let Some(dep) = history
+    if let Ok(history) = crate::db::deployments::list_for_service(&state.db, &service_id, 1).await
+        && let Some(dep) = history
             .into_iter()
             .find(|d| d.state == DeployState::Stopped)
-        {
-            let _ = crate::db::deployments::transition(
-                &state.db,
-                &dep.id,
-                &DeployState::Stopped,
-                DeployState::Live,
-                None,
-            )
-            .await;
-            state.bus.publish(Event::DeployStateChanged {
-                deployment_id: dep.id,
-                service_id: service_id.clone(),
-                state: DeployState::Live,
-                timestamp: Utc::now(),
-                message: None,
-            });
-        }
+    {
+        let _ = crate::db::deployments::transition(
+            &state.db,
+            &dep.id,
+            &DeployState::Stopped,
+            DeployState::Live,
+            None,
+        )
+        .await;
+        state.bus.publish(Event::DeployStateChanged {
+            deployment_id: dep.id,
+            service_id: service_id.clone(),
+            state: DeployState::Live,
+            timestamp: Utc::now(),
+            message: None,
+        });
     }
 
     state.bus.publish(Event::ServiceStatusChanged {

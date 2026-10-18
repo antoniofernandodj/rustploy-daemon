@@ -106,15 +106,15 @@ async fn handle_http(
 
     // ── ACME HTTP-01 challenge ────────────────────────────────────────────────
     if let Some(token) = path.strip_prefix("/.well-known/acme-challenge/") {
-        if let Some(store) = &challenges {
-            if let Some(key_auth) = store.lock().unwrap().get(token).cloned() {
-                debug!(token = %token, "ACME: servindo challenge");
-                return Ok(Response::builder()
-                    .status(StatusCode::OK)
-                    .header("content-type", "text/plain")
-                    .body(text_body(key_auth))
-                    .unwrap());
-            }
+        if let Some(store) = &challenges
+            && let Some(key_auth) = store.lock().unwrap().get(token).cloned()
+        {
+            debug!(token = %token, "ACME: servindo challenge");
+            return Ok(Response::builder()
+                .status(StatusCode::OK)
+                .header("content-type", "text/plain")
+                .body(text_body(key_auth))
+                .unwrap());
         }
         return Ok(status_response(StatusCode::NOT_FOUND));
     }

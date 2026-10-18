@@ -181,11 +181,11 @@ fn minify(src: &str, is_html: bool) -> String {
     let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
     let mut i = 0;
     while i < bytes.len() {
-        if bytes[i..].starts_with(b"<!--") {
-            if let Some(end) = src[i..].find("-->") {
-                i += end + 3;
-                continue;
-            }
+        if bytes[i..].starts_with(b"<!--")
+            && let Some(end) = src[i..].find("-->")
+        {
+            i += end + 3;
+            continue;
         }
         out.push(bytes[i]);
         i += 1;

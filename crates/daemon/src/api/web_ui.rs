@@ -178,10 +178,9 @@ mod headless_tests {
             if let Ok(r) = page
                 .evaluate("typeof window.Alpine !== 'undefined' && !!Alpine.store('app')")
                 .await
+                && r.into_value::<bool>().unwrap_or(false)
             {
-                if r.into_value::<bool>().unwrap_or(false) {
-                    return;
-                }
+                return;
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
         }

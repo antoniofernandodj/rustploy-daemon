@@ -217,6 +217,7 @@ pub async fn ensure_external_volumes(docker: &Docker, content: &str) -> Result<(
 /// Sobe (ou atualiza) a stack Compose de um serviço: grava `.env` e
 /// `docker-compose.yml` com a rede do projeto injetada e roda `docker compose
 /// up -d`, com o progresso no log de build.
+#[allow(clippy::too_many_arguments)]
 pub async fn up(
     docker: &Docker,
     content: &str,
@@ -257,10 +258,10 @@ pub async fn up(
     compose_file.flush().await?;
     drop(compose_file);
 
-    if let Some(token) = &registry_internal_token {
-        if let Err(e) = registry_login(token).await {
-            tracing::warn!(error = %e, project = %project_name, "compose_up: falha ao autenticar no registry embutido, pull vai falhar se a imagem for de lá");
-        }
+    if let Some(token) = &registry_internal_token
+        && let Err(e) = registry_login(token).await
+    {
+        tracing::warn!(error = %e, project = %project_name, "compose_up: falha ao autenticar no registry embutido, pull vai falhar se a imagem for de lá");
     }
 
     let mut child = crate::docker::cli()
@@ -336,10 +337,10 @@ pub async fn up(
         .await
         .map_err(|e| anyhow!("falha ao aguardar: {e}"))?;
 
-    if registry_internal_token.is_some() {
-        if let Err(e) = registry_logout().await {
-            tracing::warn!(error = %e, project = %project_name, "compose_up: falha ao deslogar do registry embutido (best-effort)");
-        }
+    if registry_internal_token.is_some()
+        && let Err(e) = registry_logout().await
+    {
+        tracing::warn!(error = %e, project = %project_name, "compose_up: falha ao deslogar do registry embutido (best-effort)");
     }
 
     // Limpeza
@@ -557,18 +558,18 @@ pub async fn warm(
     info!(project = %project_name, "compose_warm: iniciando aquecimento");
     let files = write_job_files(source, network_name, env_vars, build_dir).await?;
 
-    if let Some(token) = &registry_internal_token {
-        if let Err(e) = registry_login(token).await {
-            tracing::warn!(error = %e, project = %project_name, "compose_warm: falha ao autenticar no registry embutido, pull vai falhar se a imagem for de lá");
-        }
+    if let Some(token) = &registry_internal_token
+        && let Err(e) = registry_login(token).await
+    {
+        tracing::warn!(error = %e, project = %project_name, "compose_warm: falha ao autenticar no registry embutido, pull vai falhar se a imagem for de lá");
     }
 
     let result = warm_images(project_name, &files.compose_rel_path, build_dir, docker).await;
 
-    if registry_internal_token.is_some() {
-        if let Err(e) = registry_logout().await {
-            tracing::warn!(error = %e, project = %project_name, "compose_warm: falha ao deslogar do registry embutido (best-effort)");
-        }
+    if registry_internal_token.is_some()
+        && let Err(e) = registry_logout().await
+    {
+        tracing::warn!(error = %e, project = %project_name, "compose_warm: falha ao deslogar do registry embutido (best-effort)");
     }
     files.remove().await;
     result
@@ -652,10 +653,10 @@ pub async fn run_once(
 
     let files = write_job_files(source, network_name, env_vars, build_dir).await?;
 
-    if let Some(token) = &registry_internal_token {
-        if let Err(e) = registry_login(token).await {
-            tracing::warn!(error = %e, project = %project_name, job_id = %job_id, "compose_run_once: falha ao autenticar no registry embutido, pull vai falhar se a imagem for de lá");
-        }
+    if let Some(token) = &registry_internal_token
+        && let Err(e) = registry_login(token).await
+    {
+        tracing::warn!(error = %e, project = %project_name, job_id = %job_id, "compose_run_once: falha ao autenticar no registry embutido, pull vai falhar se a imagem for de lá");
     }
 
     let up_result = run_once_up(
@@ -672,10 +673,10 @@ pub async fn run_once(
     )
     .await;
 
-    if registry_internal_token.is_some() {
-        if let Err(e) = registry_logout().await {
-            tracing::warn!(error = %e, project = %project_name, job_id = %job_id, "compose_run_once: falha ao deslogar do registry embutido (best-effort)");
-        }
+    if registry_internal_token.is_some()
+        && let Err(e) = registry_logout().await
+    {
+        tracing::warn!(error = %e, project = %project_name, job_id = %job_id, "compose_run_once: falha ao deslogar do registry embutido (best-effort)");
     }
 
     let images = if matches!(up_result, Ok(0)) {
@@ -829,6 +830,7 @@ async fn read_compose_output<R: tokio::io::AsyncRead + Unpin>(
 /// Roda o `docker compose up` de um job até o `main_service` sair, transmitindo
 /// stdout/stderr para o log e matando o processo se chegar o sinal de
 /// cancelamento.
+#[allow(clippy::too_many_arguments)]
 async fn run_once_up(
     project_name: &str,
     compose_rel_path: &str,

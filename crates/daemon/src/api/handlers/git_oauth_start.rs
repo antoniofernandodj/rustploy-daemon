@@ -36,20 +36,18 @@ pub async fn handle(state: AppState, provider_id: String) -> Response {
     // Se já há um access token armazenado, tenta garantir que a redirect URI
     // atual está registrada no provider — auto-cura após mudança de domínio/porta
     // (no-op no GitHub, que não permite editar a callback URL via API).
-    if let Some(enc) = &provider.access_token_enc {
-        if let Ok(token) = state.secrets.decrypt(enc) {
-            if let Err(e) = crate::git_providers::ensure_redirect_uri(
-                kind,
-                &provider.base_url,
-                &token,
-                &client_id,
-                &redirect_uri,
-            )
-            .await
-            {
-                warn!(error = %e, "oauth: falha ao pré-sincronizar redirect URI (continuando)");
-            }
-        }
+    if let Some(enc) = &provider.access_token_enc
+        && let Ok(token) = state.secrets.decrypt(enc)
+        && let Err(e) = crate::git_providers::ensure_redirect_uri(
+            kind,
+            &provider.base_url,
+            &token,
+            &client_id,
+            &redirect_uri,
+        )
+        .await
+    {
+        warn!(error = %e, "oauth: falha ao pré-sincronizar redirect URI (continuando)");
     }
 
     let csrf = Ulid::new().to_string();

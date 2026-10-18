@@ -146,24 +146,24 @@ async fn finish_stop(state: &AppState, service_id: &str, container_id: Option<&s
         return RpResponse::err("DatabaseError", e.to_string());
     }
 
-    if let Ok(history) = crate::db::deployments::list_for_service(&state.db, service_id, 1).await {
-        if let Some(dep) = history.into_iter().find(|d| d.state == DeployState::Live) {
-            let _ = crate::db::deployments::transition(
-                &state.db,
-                &dep.id,
-                &DeployState::Live,
-                DeployState::Stopped,
-                None,
-            )
-            .await;
-            state.bus.publish(Event::DeployStateChanged {
-                deployment_id: dep.id,
-                service_id: service_id.to_string(),
-                state: DeployState::Stopped,
-                timestamp: Utc::now(),
-                message: None,
-            });
-        }
+    if let Ok(history) = crate::db::deployments::list_for_service(&state.db, service_id, 1).await
+        && let Some(dep) = history.into_iter().find(|d| d.state == DeployState::Live)
+    {
+        let _ = crate::db::deployments::transition(
+            &state.db,
+            &dep.id,
+            &DeployState::Live,
+            DeployState::Stopped,
+            None,
+        )
+        .await;
+        state.bus.publish(Event::DeployStateChanged {
+            deployment_id: dep.id,
+            service_id: service_id.to_string(),
+            state: DeployState::Stopped,
+            timestamp: Utc::now(),
+            message: None,
+        });
     }
 
     state.bus.publish(Event::ServiceStatusChanged {

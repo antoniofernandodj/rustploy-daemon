@@ -215,11 +215,11 @@ fn inject_token(url: &str, token: Option<&str>, username: Option<&str>) -> Strin
 
 /// Returns the URL with any embedded credentials replaced by `***`.
 fn redact_url(url: &str) -> String {
-    if let Some(rest) = url.strip_prefix("https://") {
-        if let Some((creds, host_path)) = rest.split_once('@') {
-            let user = creds.split(':').next().unwrap_or("user");
-            return format!("https://{user}:***@{host_path}");
-        }
+    if let Some(rest) = url.strip_prefix("https://")
+        && let Some((creds, host_path)) = rest.split_once('@')
+    {
+        let user = creds.split(':').next().unwrap_or("user");
+        return format!("https://{user}:***@{host_path}");
     }
     url.to_string()
 }

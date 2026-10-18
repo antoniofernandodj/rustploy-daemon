@@ -58,7 +58,8 @@ pub async fn upsert_internal(db: &Db, token_sha256: &str) -> Result<()> {
 }
 
 pub async fn list(db: &Db) -> Result<Vec<TokenInfo>> {
-    let rows: Vec<(String, String, DateTime<Utc>, Option<DateTime<Utc>>)> = sqlx::query_as(
+    type Row = (String, String, DateTime<Utc>, Option<DateTime<Utc>>);
+    let rows: Vec<Row> = sqlx::query_as(
         "SELECT name, scope, created_at, last_used_at FROM registry_tokens WHERE name != 'rp-internal' ORDER BY name ASC",
     )
     .fetch_all(db)

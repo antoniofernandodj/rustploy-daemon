@@ -61,10 +61,10 @@ fn is_embedded_registry_image(image: &str, port: u16, domain: Option<&str>) -> b
     if image.starts_with(&format!("localhost:{port}/")) {
         return true;
     }
-    if let Some(d) = domain {
-        if image.starts_with(&format!("{d}/")) {
-            return true;
-        }
+    if let Some(d) = domain
+        && image.starts_with(&format!("{d}/"))
+    {
+        return true;
     }
     false
 }
@@ -1095,7 +1095,7 @@ impl DeployExecutor {
                         "step[RollingBack]: derrubando compose stack"
                     );
                     let network_name = self.network_name(&svc.spec.project_id).await?;
-                    let env_vars = self.resolve_env(&svc).await.unwrap_or_default();
+                    let env_vars = self.resolve_env(svc).await.unwrap_or_default();
                     let _ = docker::compose::down(
                         &compose.content,
                         &project_name,
@@ -1199,7 +1199,7 @@ impl DeployExecutor {
                     "step[ComposingUp]: executando docker compose up"
                 );
                 let network_name = self.network_name(&svc.spec.project_id).await?;
-                let env_vars = self.resolve_env(&svc).await.unwrap_or_default();
+                let env_vars = self.resolve_env(svc).await.unwrap_or_default();
                 docker::compose::up(
                     &self.docker.inner,
                     &compose.content,
@@ -1220,7 +1220,7 @@ impl DeployExecutor {
                 // projetos autorizados — reconecta já, sem esperar o reconcile.
                 if svc.spec.shared.is_some() {
                     let n =
-                        crate::deploy::shared_net::sync_server(&self.db, &self.docker, &svc).await;
+                        crate::deploy::shared_net::sync_server(&self.db, &self.docker, svc).await;
                     self.log_step(
                         &dep.id,
                         &svc.id,
@@ -1242,22 +1242,21 @@ impl DeployExecutor {
                 .ok()
                 .flatten();
 
-                if let Some(cid) = &live_container_id {
-                    if let Ok(ip) =
+                if let Some(cid) = &live_container_id
+                    && let Ok(ip) =
                         containers::get_container_ip(&self.docker.inner, cid, &network_name).await
-                    {
-                        self.wait_compose_healthcheck(&ip, svc, dep).await;
-                        let ips = vec![ip];
-                        if !svc.spec.domain_routes().is_empty() {
-                            info!(deployment_id = %dep.id, ?ips, "ComposingUp: registrando rotas de domínio");
-                            self.ingress.register_domains(&svc.spec, &ips, &svc.id);
-                        }
-                        if let Some(host_port) = svc.spec.host_port {
-                            let backend = format!("{}:{}", ips[0], svc.spec.port);
-                            info!(deployment_id = %dep.id, host_port, backend, "ComposingUp: registrando rota de porta");
-                            self.ingress.upsert_port_route(host_port, vec![backend]);
-                            self.ensure_firewall(&dep.id, &svc.id, host_port).await;
-                        }
+                {
+                    self.wait_compose_healthcheck(&ip, svc, dep).await;
+                    let ips = vec![ip];
+                    if !svc.spec.domain_routes().is_empty() {
+                        info!(deployment_id = %dep.id, ?ips, "ComposingUp: registrando rotas de domínio");
+                        self.ingress.register_domains(&svc.spec, &ips, &svc.id);
+                    }
+                    if let Some(host_port) = svc.spec.host_port {
+                        let backend = format!("{}:{}", ips[0], svc.spec.port);
+                        info!(deployment_id = %dep.id, host_port, backend, "ComposingUp: registrando rota de porta");
+                        self.ingress.upsert_port_route(host_port, vec![backend]);
+                        self.ensure_firewall(&dep.id, &svc.id, host_port).await;
                     }
                 }
 
@@ -1413,7 +1412,7 @@ impl DeployExecutor {
                 );
                 // Captura as últimas linhas do container antes do rollback removê-lo
                 let crash_logs =
-                    containers::get_container_logs(&self.docker.inner, &container_id, 50).await;
+                    containers::get_container_logs(&self.docker.inner, container_id, 50).await;
                 if crash_logs.is_empty() {
                     self.log_step(&dep.id, &svc.id, "  [sem output do container]")
                         .await;
@@ -1615,10 +1614,9 @@ impl DeployExecutor {
             crate::db::daemon_settings::KEY_REGISTRY_DOMAIN,
         )
         .await
+            && !d.trim().is_empty()
         {
-            if !d.trim().is_empty() {
-                domain = Some(d);
-            }
+            domain = Some(d);
         }
 
         if is_embedded_registry_image(image, port, domain.as_deref()) {

@@ -103,6 +103,7 @@ pub async fn _exists(docker: &Docker, image: &str) -> bool {
     docker.inspect_image(image).await.is_ok()
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn build(
     docker: &Docker,
     db: &Arc<Db>,

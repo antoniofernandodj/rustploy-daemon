@@ -49,9 +49,7 @@ pub async fn handle(state: &AppState, body: &[u8], server: &str) -> Option<(Stat
     // Sem `id` = notificação (`notifications/initialized`, `…/cancelled`); sem
     // `method` = resposta a algo que nunca pedimos. Nos dois casos, só 202.
     let id = msg.get("id").cloned()?;
-    let Some(method) = msg.get("method").and_then(Value::as_str) else {
-        return None;
-    };
+    let method = msg.get("method").and_then(Value::as_str)?;
     let params = msg.get("params").cloned().unwrap_or(Value::Null);
 
     let resultado = match method {

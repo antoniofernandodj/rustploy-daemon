@@ -89,10 +89,10 @@ impl DeployQueue {
     /// Move um enfileirado para o início da fila ("furar fila").
     pub fn promote(&self, dep_id: &str) {
         let mut g = self.inner.lock().unwrap();
-        if let Some(pos) = g.queued.iter().position(|d| d == dep_id) {
-            if let Some(d) = g.queued.remove(pos) {
-                g.queued.push_front(d);
-            }
+        if let Some(pos) = g.queued.iter().position(|d| d == dep_id)
+            && let Some(d) = g.queued.remove(pos)
+        {
+            g.queued.push_front(d);
         }
     }
 
@@ -103,10 +103,10 @@ impl DeployQueue {
         let mut remaining: VecDeque<String> = std::mem::take(&mut g.queued);
         let mut next = VecDeque::with_capacity(remaining.len());
         for id in order {
-            if let Some(pos) = remaining.iter().position(|d| d == id) {
-                if let Some(d) = remaining.remove(pos) {
-                    next.push_back(d);
-                }
+            if let Some(pos) = remaining.iter().position(|d| d == id)
+                && let Some(d) = remaining.remove(pos)
+            {
+                next.push_back(d);
             }
         }
         next.extend(remaining);

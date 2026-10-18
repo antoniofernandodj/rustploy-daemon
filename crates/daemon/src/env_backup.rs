@@ -5,7 +5,11 @@ use crate::db::Db;
 use chrono::{Datelike, Utc};
 use serde::{Deserialize, Serialize};
 use shared::{EnvComment, EnvVar, EnvVarValue};
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
+};
 use tokio::time::interval;
 use tracing::{info, warn};
 
@@ -133,11 +137,7 @@ pub async fn list_snapshots(backup_dir: &PathBuf) -> anyhow::Result<Vec<String>>
 
 // ── Restaurar snapshot ────────────────────────────────────────────────────────
 
-pub async fn restore_snapshot(
-    db: &Db,
-    backup_dir: &PathBuf,
-    snapshot: &str,
-) -> anyhow::Result<usize> {
+pub async fn restore_snapshot(db: &Db, backup_dir: &Path, snapshot: &str) -> anyhow::Result<usize> {
     // Valida que o nome não contém traversal
     anyhow::ensure!(
         !snapshot.contains('/') && !snapshot.contains('\\'),

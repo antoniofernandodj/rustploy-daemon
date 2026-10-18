@@ -16,6 +16,7 @@ use tracing::{info, warn};
 /// Recuperação no boot: devolve os deployments que estavam só na fila (para
 /// re-enfileirar), aborta os que tinham começado (limpando stagings) e restaura
 /// rotas e certificados dos serviços no ar.
+#[allow(clippy::too_many_arguments)]
 pub async fn recover(
     db: Arc<Db>,
     docker: Arc<DockerClient>,
@@ -231,10 +232,10 @@ pub async fn reconcile(
 
         let mut ips = containers::live_replica_ips(&docker.inner, &svc.id, &net, replicas).await;
 
-        if ips.is_empty() {
-            if let Some(ip) = compose_ingress_ip(docker, &svc, &net).await {
-                ips.push(ip);
-            }
+        if ips.is_empty()
+            && let Some(ip) = compose_ingress_ip(docker, &svc, &net).await
+        {
+            ips.push(ip);
         }
 
         let is_running = !ips.is_empty();
@@ -362,10 +363,10 @@ async fn restore_routes(
         let mut ips = containers::live_replica_ips(&docker.inner, &svc.id, &net, replicas).await;
 
         // Fallback para Compose: o container da stack que atende o ingress.
-        if ips.is_empty() {
-            if let Some(ip) = compose_ingress_ip(docker, &svc, &net).await {
-                ips.push(ip);
-            }
+        if ips.is_empty()
+            && let Some(ip) = compose_ingress_ip(docker, &svc, &net).await
+        {
+            ips.push(ip);
         }
 
         if ips.is_empty() {

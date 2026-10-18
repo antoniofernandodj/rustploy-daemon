@@ -196,19 +196,17 @@ async fn apply_one(
             );
         }
         let existing_match = existing_services.iter().find(|s| s.spec.name == svc_name);
-        if let Some(s) = existing_match {
-            if let (ServiceSource::Git(old_g), ServiceSource::Git(new_g)) =
+        if let Some(s) = existing_match
+            && let (ServiceSource::Git(old_g), ServiceSource::Git(new_g)) =
                 (&s.spec.source, &spec.source)
-            {
-                if old_g.provider_id != new_g.provider_id {
-                    warn!(
-                        service = %label,
-                        old_provider_id = ?old_g.provider_id,
-                        new_provider_id = ?new_g.provider_id,
-                        "manifest_apply: provider_id do serviço git VAI MUDAR nesta atualização"
-                    );
-                }
-            }
+            && old_g.provider_id != new_g.provider_id
+        {
+            warn!(
+                service = %label,
+                old_provider_id = ?old_g.provider_id,
+                new_provider_id = ?new_g.provider_id,
+                "manifest_apply: provider_id do serviço git VAI MUDAR nesta atualização"
+            );
         }
         let (action, changed_id) = match existing_match {
             Some(s) if &s.spec == spec => {

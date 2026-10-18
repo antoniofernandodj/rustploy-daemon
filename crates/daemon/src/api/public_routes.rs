@@ -63,20 +63,19 @@ pub async fn webhook(req: Request<Incoming>, state: AppState) -> Response<Full<B
         Ok(c) => c.to_bytes(),
         Err(_) => Bytes::new(),
     };
-    if let Some(payload_branch) = extract_push_branch(&body) {
-        if let Ok(Some(service)) = crate::db::services::get(&state.db, &service_id).await {
-            if let shared::ServiceSource::Git(git) = &service.spec.source {
-                if !git.branch.is_empty() && git.branch != payload_branch {
-                    info!(
-                        service_id = %service_id,
-                        configured = %git.branch,
-                        received = %payload_branch,
-                        "webhook: branch do payload não confere com a configurada, deploy ignorado"
-                    );
-                    return resp(StatusCode::OK, "skipped: branch mismatch");
-                }
-            }
-        }
+    if let Some(payload_branch) = extract_push_branch(&body)
+        && let Ok(Some(service)) = crate::db::services::get(&state.db, &service_id).await
+        && let shared::ServiceSource::Git(git) = &service.spec.source
+        && !git.branch.is_empty()
+        && git.branch != payload_branch
+    {
+        info!(
+            service_id = %service_id,
+            configured = %git.branch,
+            received = %payload_branch,
+            "webhook: branch do payload não confere com a configurada, deploy ignorado"
+        );
+        return resp(StatusCode::OK, "skipped: branch mismatch");
     }
 
     info!(service_id = %service_id, "webhook: disparando deploy");

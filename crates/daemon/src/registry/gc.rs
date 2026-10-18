@@ -90,7 +90,7 @@ mod tests {
             &repo.id,
             "application/json",
             manifest.size as i64,
-            &[vivo.digest.clone()],
+            std::slice::from_ref(&vivo.digest),
         )
         .await
         .unwrap();
@@ -138,7 +138,7 @@ mod tests {
             &repo.id,
             "application/json",
             manifest.size as i64,
-            &[blob.digest.clone()],
+            std::slice::from_ref(&blob.digest),
         )
         .await
         .unwrap();

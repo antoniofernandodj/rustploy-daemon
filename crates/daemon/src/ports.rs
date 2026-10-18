@@ -68,10 +68,10 @@ async fn used_ports(db: &Db, exclude_id: Option<&str>) -> Result<Vec<u16>, Strin
         if Some(s.id.as_str()) == exclude_id {
             continue;
         }
-        if let Some(p) = s.spec.host_port {
-            if p != AUTO_PORT {
-                used.push(p);
-            }
+        if let Some(p) = s.spec.host_port
+            && p != AUTO_PORT
+        {
+            used.push(p);
         }
     }
     Ok(used)

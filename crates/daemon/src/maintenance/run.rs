@@ -114,16 +114,15 @@ pub async fn run(state: &AppState, mut config: DockerCleanupConfig) -> DockerCle
         at: now,
         results: results.clone(),
     };
-    if let Ok(json) = serde_json::to_string(&last_run) {
-        if let Err(e) = daemon_settings::set(
+    if let Ok(json) = serde_json::to_string(&last_run)
+        && let Err(e) = daemon_settings::set(
             &state.db,
             daemon_settings::KEY_DOCKER_CLEANUP_LAST_RUN,
             &json,
         )
         .await
-        {
-            warn!(error = %e, "maintenance: falha ao persistir resumo da execução");
-        }
+    {
+        warn!(error = %e, "maintenance: falha ao persistir resumo da execução");
     }
 
     info!(count = results.len(), "maintenance: limpeza concluída");

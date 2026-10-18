@@ -42,10 +42,9 @@ pub async fn handle(state: AppState) -> RpResponse {
             }),
         };
 
-        let last_run = match crate::db::job_run::latest_for_job(&state.db, &job.id).await {
-            Ok(r) => r,
-            Err(_) => None,
-        };
+        let last_run = crate::db::job_run::latest_for_job(&state.db, &job.id)
+            .await
+            .unwrap_or_default();
 
         let warm = crate::jobs::warm::status(&state, &job).await;
 

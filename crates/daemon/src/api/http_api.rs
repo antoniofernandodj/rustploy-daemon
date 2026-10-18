@@ -59,13 +59,13 @@ pub async fn run(state: AppState, cfg: ApiConfig, tls: Option<Arc<TlsManager>>) 
     // certo e leva 401 — com a diferença invisível dos dois lados. Feito ANTES
     // do guard de bind público: um token só de espaços tem que contar como
     // ausente ali também, senão o guard passa e a porta abre sem auth.
-    if let Some(t) = cfg.token.as_deref() {
-        if t != t.trim() {
-            warn!(
-                "API: api.token tem espaço/quebra de linha em volta — ignorados \
+    if let Some(t) = cfg.token.as_deref()
+        && t != t.trim()
+    {
+        warn!(
+            "API: api.token tem espaço/quebra de linha em volta — ignorados \
                  na comparação, mas vale limpar a config"
-            );
-        }
+        );
     }
     let token = cfg
         .token
@@ -245,16 +245,16 @@ async fn handle(
     }
 
     // Bearer-token auth (constant-time), only when a token is configured.
-    if let Some(expected) = token.as_ref() {
-        if let Err(motivo) = auth_check(&req, expected) {
-            warn!(
-                peer = %peer,
-                path = %req.uri().path(),
-                motivo = %motivo,
-                "API: 401 — requisição recusada"
-            );
-            return Ok(text(StatusCode::UNAUTHORIZED, "unauthorized"));
-        }
+    if let Some(expected) = token.as_ref()
+        && let Err(motivo) = auth_check(&req, expected)
+    {
+        warn!(
+            peer = %peer,
+            path = %req.uri().path(),
+            motivo = %motivo,
+            "API: 401 — requisição recusada"
+        );
+        return Ok(text(StatusCode::UNAUTHORIZED, "unauthorized"));
     }
 
     // Upload de zip: `POST /api/services/<id>/archive`. Tratado antes do `match`
@@ -505,11 +505,10 @@ fn events(state: AppState) -> Response<ApiBody> {
                         // `event:` line is dropped), so tag the payload with
                         // `kind:"bus"` and nest the event under `event`.
                         let wrapped = serde_json::json!({ "kind": "bus", "event": ev });
-                        if let Ok(js) = serde_json::to_string(&wrapped) {
-                            if tx.send(sse_frame("bus", &js)).await.is_err() {
+                        if let Ok(js) = serde_json::to_string(&wrapped)
+                            && tx.send(sse_frame("bus", &js)).await.is_err() {
                                 break;
                             }
-                        }
                     }
                     // Slow consumer dropped events: skip and carry on.
                     Err(RecvError::Lagged(_)) => continue,
@@ -738,13 +737,12 @@ pub(crate) async fn snapshot(state: &AppState) -> String {
                 },
             )
             .await
+                && let Value::Object(m) = &mut pv
             {
-                if let Value::Object(m) = &mut pv {
-                    m.insert(
-                        "secrets".into(),
-                        serde_json::to_value(names).unwrap_or(Value::Null),
-                    );
-                }
+                m.insert(
+                    "secrets".into(),
+                    serde_json::to_value(names).unwrap_or(Value::Null),
+                );
             }
             projects_json.push(pv);
 
@@ -934,15 +932,16 @@ fn accepts_gzip(req: &Request<Incoming>) -> bool {
 /// baixo, então comprimimos mesmo assim em vez de detectar o par. Falha ao
 /// comprimir (rara) → cai no corpo sem comprimir.
 fn json_response(bytes: Vec<u8>, accept_gzip: bool) -> Response<ApiBody> {
-    if accept_gzip && bytes.len() >= GZIP_MIN {
-        if let Ok(gz) = gzip(&bytes) {
-            return Response::builder()
-                .status(StatusCode::OK)
-                .header(hyper::header::CONTENT_TYPE, "application/json")
-                .header(hyper::header::CONTENT_ENCODING, "gzip")
-                .body(Full::new(Bytes::from(gz)).boxed())
-                .unwrap();
-        }
+    if accept_gzip
+        && bytes.len() >= GZIP_MIN
+        && let Ok(gz) = gzip(&bytes)
+    {
+        return Response::builder()
+            .status(StatusCode::OK)
+            .header(hyper::header::CONTENT_TYPE, "application/json")
+            .header(hyper::header::CONTENT_ENCODING, "gzip")
+            .body(Full::new(Bytes::from(gz)).boxed())
+            .unwrap();
     }
     json_ok(bytes)
 }

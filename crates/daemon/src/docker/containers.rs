@@ -395,7 +395,7 @@ pub async fn create_staging(
     };
 
     let opts = CreateContainerOptions {
-        name: name,
+        name,
         platform: None,
     };
     let response = docker.create_container(Some(opts), config).await?;
@@ -565,7 +565,7 @@ pub async fn inspect(
         .inspect_container(container_id, None::<InspectContainerOptions>)
         .await?;
     let running = resp.state.as_ref().and_then(|s| s.running).unwrap_or(false);
-    let status = resp.state.as_ref().and_then(|s| s.status.clone());
+    let status = resp.state.as_ref().and_then(|s| s.status);
     debug!(
         container_id = %format!(
             "...{}",

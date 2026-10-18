@@ -23,7 +23,7 @@ pub async fn write_sql_file(path: &str, data: &TransformedData) -> Result<()> {
         ));
     }
 
-    sql.push_str("\n");
+    sql.push('\n');
 
     for s in &data.services {
         let spec = serde_json::to_string(&s.spec)?;
@@ -87,7 +87,7 @@ pub async fn write_to_db(data: &TransformedData) -> Result<()> {
             .bind(&p.name)
             .bind(&p.description)
             .bind(&env_vars)
-            .bind(&p.created_at.to_rfc3339())
+            .bind(p.created_at.to_rfc3339())
             .execute(&pool)
             .await?;
             p.id.clone()
@@ -118,8 +118,8 @@ pub async fn write_to_db(data: &TransformedData) -> Result<()> {
         .bind(project_id)
         .bind(&spec)
         .bind("Stopped")
-        .bind(&s.created_at.to_rfc3339())
-        .bind(&s.updated_at.to_rfc3339())
+        .bind(s.created_at.to_rfc3339())
+        .bind(s.updated_at.to_rfc3339())
         .execute(&pool)
         .await?;
     }

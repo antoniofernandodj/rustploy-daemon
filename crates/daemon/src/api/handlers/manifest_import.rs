@@ -239,10 +239,10 @@ async fn check_git_provider_refs(
     let mut referenced: Vec<&str> = Vec::new();
     for m in projects {
         for s in &m.services {
-            if let Some(name) = s.source.git.as_ref().and_then(|g| g.provider.as_deref()) {
-                if !referenced.contains(&name) {
-                    referenced.push(name);
-                }
+            if let Some(name) = s.source.git.as_ref().and_then(|g| g.provider.as_deref())
+                && !referenced.contains(&name)
+            {
+                referenced.push(name);
             }
         }
     }
