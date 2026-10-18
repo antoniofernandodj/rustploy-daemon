@@ -16,8 +16,8 @@ mod ingress;
 mod jobs;
 mod logs;
 mod maintenance;
-mod migration;
 mod metrics;
+mod migration;
 mod ports;
 mod registry;
 mod secrets;
@@ -305,7 +305,10 @@ async fn main() -> Result<()> {
     if let Ok(n) = db::migration::fail_orphans(&state.db).await
         && n > 0
     {
-        tracing::warn!(n, "migrações interrompidas pelo restart marcadas como Failed");
+        tracing::warn!(
+            n,
+            "migrações interrompidas pelo restart marcadas como Failed"
+        );
     }
 
     // Watchdog: detecta containers parados/removidos, tenta restart e redeploy

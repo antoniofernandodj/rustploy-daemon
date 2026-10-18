@@ -786,7 +786,11 @@ mod headless_tests {
         .expect("abre o servidor compartilhado");
 
         assert!(
-            visible(&page, "[x-data=\"serviceDetail\"] input[x-model=\"serviceFormSharedDatabase.name\"]").await,
+            visible(
+                &page,
+                "[x-data=\"serviceDetail\"] input[x-model=\"serviceFormSharedDatabase.name\"]"
+            )
+            .await,
             "a aba Databases deveria mostrar o formulário"
         );
         let d = "Alpine.$data(document.querySelector('[x-data=\"serviceDetail\"]'))";
@@ -809,7 +813,11 @@ mod headless_tests {
         assert!(v["statement_timeout_ms"].is_null(), "vazio vira null");
         assert_eq!(v["overwrite_env"], true);
 
-        assert_eq!(errors(&page).await, Vec::<String>::new(), "sem erros de JS no console");
+        assert_eq!(
+            errors(&page).await,
+            Vec::<String>::new(),
+            "sem erros de JS no console"
+        );
     }
 
     /// Aba Migrar: só aparece num banco Compose não compartilhado, lista os
@@ -860,12 +868,15 @@ mod headless_tests {
         )
         .await;
         assert_eq!(
-            loaded,
-            r#"{"dests":["mdb_1"],"db":"meu_db","st":"Completed","steps":"✓✓"}"#,
+            loaded, r#"{"dests":["mdb_1"],"db":"meu_db","st":"Completed","steps":"✓✓"}"#,
             "só destinos do mesmo projeto; origem preenchida do POSTGRES_DB"
         );
         assert!(
-            visible(&page, "[x-data=\"serviceDetail\"] input[x-model=\"serviceFormMigration.db\"]").await,
+            visible(
+                &page,
+                "[x-data=\"serviceDetail\"] input[x-model=\"serviceFormMigration.db\"]"
+            )
+            .await,
             "a aba Migrar deveria mostrar o formulário"
         );
         let sent = eval_str(
@@ -879,7 +890,11 @@ mod headless_tests {
         assert_eq!(v["dest_database_id"], "mdb_1");
         assert_eq!(v["env_var"], "URL_BANCO", "a env var é aparada");
 
-        assert_eq!(errors(&page).await, Vec::<String>::new(), "sem erros de JS no console");
+        assert_eq!(
+            errors(&page).await,
+            Vec::<String>::new(),
+            "sem erros de JS no console"
+        );
     }
     /// A janela "Ações do job" (a lista de botões da linha não cabia): o estado
     /// quente/frio vem do daemon, o "⋯" abre a janela com as ações certas para o
@@ -940,14 +955,16 @@ mod headless_tests {
         )
         .await;
         assert_eq!(
-            items,
-            r#"["▶ Rodar agora","◐ Aquecer","‖ Pausar","✎ Editar","✕ Remover"]"#,
+            items, r#"["▶ Rodar agora","◐ Aquecer","‖ Pausar","✎ Editar","✕ Remover"]"#,
             "job parado e sem execução: sem cancelar nem logs"
         );
         assert!(
-            eval_str(&page, "document.querySelector('.job-actions__status').textContent")
-                .await
-                .contains("nunca aquecido"),
+            eval_str(
+                &page,
+                "document.querySelector('.job-actions__status').textContent"
+            )
+            .await
+            .contains("nunca aquecido"),
             "a janela mostra por que o job está frio"
         );
 
@@ -972,9 +989,12 @@ mod headless_tests {
             r#"[{"JobWarm":{"job_id":"job_1"}}]"#
         );
         assert!(
-            eval_str(&page, "JSON.stringify(Alpine.store('app').toasts.map(t => t.message))")
-                .await
-                .contains("job já está aquecido"),
+            eval_str(
+                &page,
+                "JSON.stringify(Alpine.store('app').toasts.map(t => t.message))"
+            )
+            .await
+            .contains("job já está aquecido"),
             "job quente: o toast avisa que já estava aquecido"
         );
 
@@ -995,7 +1015,11 @@ mod headless_tests {
             r#"["■ Cancelar execução","◐ Aquecer","≡ Ver logs","‖ Pausar","✎ Editar","✕ Remover"]"#
         );
 
-        assert_eq!(errors(&page).await, Vec::<String>::new(), "sem erros de JS no console");
+        assert_eq!(
+            errors(&page).await,
+            Vec::<String>::new(),
+            "sem erros de JS no console"
+        );
     }
 
     /// Settings → Infra as Code, no mesmo fluxo do app desktop: exportar BAIXA um
@@ -1033,7 +1057,10 @@ mod headless_tests {
             })()"#,
         )
         .await;
-        assert!(visible(&page, "input[type=file][accept*='zip']").await, "a aba IaC tem o seletor de .zip");
+        assert!(
+            visible(&page, "input[type=file][accept*='zip']").await,
+            "a aba IaC tem o seletor de .zip"
+        );
         // O botão nativo do seletor de arquivo segue o tema escuro (não o branco do navegador).
         assert_eq!(
             eval_str(
@@ -1104,7 +1131,10 @@ mod headless_tests {
             serde_json::json!({"yaml":"a: 1","dotenv":"b = 2","prune":true,"deploy":true})
         );
         let confirm = imported["confirm"].as_str().unwrap();
-        assert!(confirm.contains("Do zip infra.zip") && confirm.contains("prune): SIM"), "{confirm}");
+        assert!(
+            confirm.contains("Do zip infra.zip") && confirm.contains("prune): SIM"),
+            "{confirm}"
+        );
         assert_eq!(
             imported["lines"],
             serde_json::json!([
@@ -1145,6 +1175,10 @@ mod headless_tests {
         .await;
         assert_eq!(cancelled, r##"{"sent":null,"msg":"cancelado"}"##);
 
-        assert_eq!(errors(&page).await, Vec::<String>::new(), "sem erros de JS no console");
+        assert_eq!(
+            errors(&page).await,
+            Vec::<String>::new(),
+            "sem erros de JS no console"
+        );
     }
 }

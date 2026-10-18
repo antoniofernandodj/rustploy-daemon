@@ -188,13 +188,22 @@ mod tests {
 
     #[test]
     fn initialize_ecoa_versao_conhecida_e_manda_o_manual() {
-        let r = initialize(&json!({ "protocolVersion": "2025-03-26" }), "rp.exemplo.com:9797");
+        let r = initialize(
+            &json!({ "protocolVersion": "2025-03-26" }),
+            "rp.exemplo.com:9797",
+        );
         assert_eq!(r["protocolVersion"], "2025-03-26");
         let instructions = r["instructions"].as_str().unwrap();
         assert!(instructions.ends_with(MANUAL));
-        assert!(instructions.starts_with("Este servidor MCP é o daemon rustploy em **rp.exemplo.com:9797**"));
+        assert!(
+            instructions
+                .starts_with("Este servidor MCP é o daemon rustploy em **rp.exemplo.com:9797**")
+        );
         assert_eq!(r["serverInfo"]["name"], "rustploy");
-        assert_eq!(r["serverInfo"]["title"], "Rustploy daemon em rp.exemplo.com:9797");
+        assert_eq!(
+            r["serverInfo"]["title"],
+            "Rustploy daemon em rp.exemplo.com:9797"
+        );
 
         let r = initialize(&json!({ "protocolVersion": "1999-01-01" }), "x:1");
         assert_eq!(r["protocolVersion"], PROTOCOL_VERSIONS[0]);

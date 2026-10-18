@@ -158,7 +158,10 @@ mod tests {
     #[test]
     fn ipv6_e_token_com_dois_pontos_duplos() {
         let chave = key("[::1]:9797", "x::y").encode();
-        assert_eq!(AccessKey::decode(&chave).unwrap(), key("[::1]:9797", "x::y"));
+        assert_eq!(
+            AccessKey::decode(&chave).unwrap(),
+            key("[::1]:9797", "x::y")
+        );
     }
 
     #[test]

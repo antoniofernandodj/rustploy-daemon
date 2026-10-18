@@ -160,8 +160,15 @@ fn build_cache_prune_args(older_than_hours: u32) -> Vec<String> {
 /// `system prune --build`.
 fn build_cache_prune_args_for(engine: crate::docker::Engine, older_than_hours: u32) -> Vec<String> {
     let mut args = match engine {
-        crate::docker::Engine::Docker => vec!["builder".to_string(), "prune".to_string(), "-f".to_string()],
-        crate::docker::Engine::Podman => vec!["system".to_string(), "prune".to_string(), "-f".to_string(), "--build".to_string()],
+        crate::docker::Engine::Docker => {
+            vec!["builder".to_string(), "prune".to_string(), "-f".to_string()]
+        }
+        crate::docker::Engine::Podman => vec![
+            "system".to_string(),
+            "prune".to_string(),
+            "-f".to_string(),
+            "--build".to_string(),
+        ],
     };
     if older_than_hours > 0 {
         args.push("--filter".to_string());

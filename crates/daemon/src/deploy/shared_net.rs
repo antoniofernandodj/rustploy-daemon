@@ -168,7 +168,9 @@ pub async fn sync_server(db: &Db, docker: &DockerClient, svc: &Service) -> usize
     for p in projects {
         match connect_to_project(db, docker, svc, &cid, &p).await {
             Ok(_) => ok += 1,
-            Err(e) => warn!(service = %svc.spec.name, project = %p, error = %e, "shared_net: não conectou"),
+            Err(e) => {
+                warn!(service = %svc.spec.name, project = %p, error = %e, "shared_net: não conectou")
+            }
         }
     }
     ok

@@ -86,7 +86,15 @@ pub fn validate_name(name: &str) -> Result<()> {
     }
     if matches!(
         name,
-        "postgres" | "template0" | "template1" | "root" | "admin" | "mysql" | "sys" | "local" | "config"
+        "postgres"
+            | "template0"
+            | "template1"
+            | "root"
+            | "admin"
+            | "mysql"
+            | "sys"
+            | "local"
+            | "config"
     ) {
         bail!("\"{name}\" é um nome reservado do servidor de banco");
     }
@@ -223,7 +231,16 @@ mod tests {
     fn nomes_validos_e_invalidos() {
         assert!(validate_name("rdo_itemize").is_ok());
         assert!(validate_name("a1").is_ok());
-        for bad in ["", "1abc", "Abc", "a-b", "a b", "a;drop", "postgres", &"x".repeat(33)] {
+        for bad in [
+            "",
+            "1abc",
+            "Abc",
+            "a-b",
+            "a b",
+            "a;drop",
+            "postgres",
+            &"x".repeat(33),
+        ] {
             assert!(validate_name(bad).is_err(), "{bad}");
         }
     }

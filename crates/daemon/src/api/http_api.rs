@@ -220,7 +220,12 @@ async fn handle(
         // token). Ver `agent::login` e docs/plano-chave-de-acesso-e-mcp.md.
         (&Method::POST, "/api/login") => {
             // Com `[api].domain` o listener termina TLS (ver `ApiConfig::domain`).
-            let scheme = if state.api.domain.as_deref().is_some_and(|d| !d.trim().is_empty()) {
+            let scheme = if state
+                .api
+                .domain
+                .as_deref()
+                .is_some_and(|d| !d.trim().is_empty())
+            {
                 "https"
             } else {
                 "http"

@@ -178,7 +178,12 @@ struct Side {
 }
 
 /// Credenciais de administração do banco **antigo**, das env vars resolvidas.
-fn source_side(e: Engine, svc: &Service, host: &str, env: &HashMap<String, String>) -> Result<Side> {
+fn source_side(
+    e: Engine,
+    svc: &Service,
+    host: &str,
+    env: &HashMap<String, String>,
+) -> Result<Side> {
     let g = |k: &str| env.get(k).cloned().unwrap_or_default();
     let (user, pass) = match e {
         Engine::Postgres => (g("POSTGRES_USER"), g("POSTGRES_PASSWORD")),
@@ -189,7 +194,10 @@ fn source_side(e: Engine, svc: &Service, host: &str, env: &HashMap<String, Strin
                 (g("MYSQL_USER"), g("MYSQL_PASSWORD"))
             }
         }
-        Engine::Mongo => (g("MONGO_INITDB_ROOT_USERNAME"), g("MONGO_INITDB_ROOT_PASSWORD")),
+        Engine::Mongo => (
+            g("MONGO_INITDB_ROOT_USERNAME"),
+            g("MONGO_INITDB_ROOT_PASSWORD"),
+        ),
     };
     if user.is_empty() {
         bail!("não achei o usuário de administração do banco antigo nas env vars");
@@ -233,7 +241,11 @@ fn source_image(svc: &Service) -> Option<String> {
     let shared::ServiceSource::Compose(c) = &svc.spec.source else {
         return None;
     };
-    let host = shared::connection::compose_host(&c.content, c.ingress_service.as_deref(), svc.spec.db_kind.as_deref());
+    let host = shared::connection::compose_host(
+        &c.content,
+        c.ingress_service.as_deref(),
+        svc.spec.db_kind.as_deref(),
+    );
     shared::connection::compose_services(&c.content)
         .into_iter()
         .find(|(k, _)| Some(k) == host.as_ref())
@@ -253,7 +265,10 @@ async fn dependents(
         if s.id == source.id || s.spec.db_kind.is_some() {
             continue;
         }
-        if !matches!(s.status, shared::ServiceStatus::Running | shared::ServiceStatus::Degraded) {
+        if !matches!(
+            s.status,
+            shared::ServiceStatus::Running | shared::ServiceStatus::Degraded
+        ) {
             continue;
         }
         let env = env_resolve::resolve(&state.db, &state.secrets, &s).await?;
@@ -328,7 +343,12 @@ pub async fn run(state: AppState, mut rec: Record) {
             }
             // Desfaz o que já foi feito: env de volta, serviços parados sobem.
             if let Err(u) = undo(&state, &mut rec, false).await {
-                log(&state, &mut rec, &format!("rollback automático falhou: {u}")).await;
+                log(
+                    &state,
+                    &mut rec,
+                    &format!("rollback automático falhou: {u}"),
+                )
+                .await;
             }
             rec.m.status = "Failed".into();
             let _ = db::migration::save(&state.db, &rec).await;
@@ -346,7 +366,8 @@ async fn run_inner(state: &AppState, rec: &mut Record, cur: &mut usize) -> Resul
     let server = db::services::get(&state.db, &dest.server_service_id)
         .await?
         .ok_or_else(|| anyhow!("servidor de destino não encontrado"))?;
-    let engine = Engine::from_kind(source.spec.db_kind.as_deref()).ok_or_else(|| anyhow!("motor não suportado"))?;
+    let engine = Engine::from_kind(source.spec.db_kind.as_deref())
+        .ok_or_else(|| anyhow!("motor não suportado"))?;
     let network = db::projects::network_name(&state.db, &source.spec.project_id).await?;
     let src_db = rec.m.source_database.clone();
 
@@ -354,14 +375,22 @@ async fn run_inner(state: &AppState, rec: &mut Record, cur: &mut usize) -> Resul
     *cur = 0;
     step(state, rec, 0, "running", "").await;
     if Engine::from_kind(server.spec.db_kind.as_deref()) != Some(engine) {
-        bail!("origem e destino precisam ser do mesmo motor (MySQL ↔ MariaDB também não é permitido)");
+        bail!(
+            "origem e destino precisam ser do mesmo motor (MySQL ↔ MariaDB também não é permitido)"
+        );
     }
     if let (Some(s), Some(d)) = (
         source_image(&source).and_then(|i| image_version(&i)),
         dest_image(&server).ok().and_then(|i| image_version(&i)),
     ) && d < s
     {
-        bail!("o servidor de destino ({}.{}) é mais antigo que a origem ({}.{})", d.0, d.1, s.0, s.1);
+        bail!(
+            "o servidor de destino ({}.{}) é mais antigo que a origem ({}.{})",
+            d.0,
+            d.1,
+            s.0,
+            s.1
+        );
     }
     let src_cid = shared_net::server_container(&state.docker.inner, &source)
         .await
@@ -377,7 +406,10 @@ async fn run_inner(state: &AppState, rec: &mut Record, cur: &mut usize) -> Resul
     }
     let (sh, stdin) = counts_plan(engine, &src_db);
     // Lê a origem já aqui: valida que o database existe e as credenciais servem.
-    let env: HashMap<String, String> = env_resolve::resolve(&state.db, &state.secrets, &source).await?.into_iter().collect();
+    let env: HashMap<String, String> = env_resolve::resolve(&state.db, &state.secrets, &source)
+        .await?
+        .into_iter()
+        .collect();
     let src_host = shared::connection::compose_host(
         match &source.spec.source {
             shared::ServiceSource::Compose(c) => &c.content,
@@ -393,7 +425,14 @@ async fn run_inner(state: &AppState, rec: &mut Record, cur: &mut usize) -> Resul
     let _ = shared_db::exec_sh(engine, &src_cid, &sh, &stdin)
         .await
         .map_err(|e| anyhow!("não consegui ler o database de origem \"{src_db}\": {e}"))?;
-    step(state, rec, 0, "ok", "motor, versão, origem e destino conferidos; destino vazio").await;
+    step(
+        state,
+        rec,
+        0,
+        "ok",
+        "motor, versão, origem e destino conferidos; destino vazio",
+    )
+    .await;
 
     // 2. Parar escritas ──────────────────────────────────────────────────────
     *cur = 1;
@@ -409,7 +448,14 @@ async fn run_inner(state: &AppState, rec: &mut Record, cur: &mut usize) -> Resul
             bail!("falha ao parar {}: {message}", d.spec.name);
         }
     }
-    step(state, rec, 1, "ok", &format!("{} serviço(s) parado(s)", deps.len())).await;
+    step(
+        state,
+        rec,
+        1,
+        "ok",
+        &format!("{} serviço(s) parado(s)", deps.len()),
+    )
+    .await;
 
     // Contagens da origem, já sem escritas.
     let (sh, stdin) = counts_plan(engine, &src_db);
@@ -426,7 +472,10 @@ async fn run_inner(state: &AppState, rec: &mut Record, cur: &mut usize) -> Resul
         pass: dest.password.clone(),
     };
     let image = dest_image(&server)?;
-    let out = docker_run_pipe(engine, &image, &network, &origem, &src_db, &destino, &dest.name).await?;
+    let out = docker_run_pipe(
+        engine, &image, &network, &origem, &src_db, &destino, &dest.name,
+    )
+    .await?;
     log(state, rec, &out).await;
     step(state, rec, 2, "ok", "").await;
 
@@ -436,23 +485,56 @@ async fn run_inner(state: &AppState, rec: &mut Record, cur: &mut usize) -> Resul
     let (sh, stdin) = counts_plan(engine, &dest.name);
     let counts_dst = shared_db::exec_sh(engine, &dst_cid, &sh, &stdin).await?;
     let norm = |s: &str| -> Vec<String> {
-        let mut v: Vec<String> = s.lines().map(str::trim).filter(|l| !l.is_empty()).map(String::from).collect();
+        let mut v: Vec<String> = s
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .map(String::from)
+            .collect();
         v.sort();
         v
     };
     let (a, b) = (norm(&counts_src), norm(&counts_dst));
     if a != b {
-        log(state, rec, &format!("origem:\n{}\ndestino:\n{}", a.join("\n"), b.join("\n"))).await;
+        log(
+            state,
+            rec,
+            &format!("origem:\n{}\ndestino:\n{}", a.join("\n"), b.join("\n")),
+        )
+        .await;
         bail!("contagens diferentes entre origem e destino (veja o log)");
     }
-    step(state, rec, 3, "ok", &format!("{} tabela(s)/coleção(ões) conferidas", a.len())).await;
+    step(
+        state,
+        rec,
+        3,
+        "ok",
+        &format!("{} tabela(s)/coleção(ões) conferidas", a.len()),
+    )
+    .await;
 
     // 5. Trocar a conexão ────────────────────────────────────────────────────
     *cur = 4;
     step(state, rec, 4, "running", "").await;
     let view = handlers::managed_database::to_view(&server, engine, &dest);
-    rec.env_changes = env_switch::switch(&state.db, &rec.m.project_id, &rec.m.env_var, &view.connection_url).await?;
-    step(state, rec, 4, "ok", &format!("{} aponta para o banco novo (valor antigo guardado)", rec.m.env_var)).await;
+    rec.env_changes = env_switch::switch(
+        &state.db,
+        &rec.m.project_id,
+        &rec.m.env_var,
+        &view.connection_url,
+    )
+    .await?;
+    step(
+        state,
+        rec,
+        4,
+        "ok",
+        &format!(
+            "{} aponta para o banco novo (valor antigo guardado)",
+            rec.m.env_var
+        ),
+    )
+    .await;
 
     // 6. Subir os serviços ───────────────────────────────────────────────────
     *cur = 5;
@@ -463,7 +545,14 @@ async fn run_inner(state: &AppState, rec: &mut Record, cur: &mut usize) -> Resul
             bail!("falha ao subir {id}: {message}");
         }
     }
-    step(state, rec, 5, "ok", "redeploy enfileirado; acompanhe o healthcheck de cada serviço").await;
+    step(
+        state,
+        rec,
+        5,
+        "ok",
+        "redeploy enfileirado; acompanhe o healthcheck de cada serviço",
+    )
+    .await;
 
     // 7. Período de observação: o banco antigo fica parado, não apagado. ──────
     *cur = 6;
@@ -472,7 +561,14 @@ async fn run_inner(state: &AppState, rec: &mut Record, cur: &mut usize) -> Resul
     if let shared::Response::Err { message, .. } = r {
         bail!("falha ao parar o banco antigo: {message}");
     }
-    step(state, rec, 6, "ok", "banco antigo parado, mantido para rollback").await;
+    step(
+        state,
+        rec,
+        6,
+        "ok",
+        "banco antigo parado, mantido para rollback",
+    )
+    .await;
     Ok(())
 }
 
@@ -484,7 +580,8 @@ pub async fn undo(state: &AppState, rec: &mut Record, source_stopped: bool) -> R
         rec.env_changes.clear();
     }
     if source_stopped {
-        let r = handlers::deploy_start::handle(state.clone(), rec.m.source_service_id.clone()).await;
+        let r =
+            handlers::deploy_start::handle(state.clone(), rec.m.source_service_id.clone()).await;
         if let shared::Response::Err { message, .. } = r {
             bail!("falha ao subir o banco antigo: {message}");
         }
@@ -520,7 +617,12 @@ mod tests {
 
     #[test]
     fn scripts_sem_senha_em_argumento() {
-        for e in [Engine::Postgres, Engine::MySql, Engine::MariaDb, Engine::Mongo] {
+        for e in [
+            Engine::Postgres,
+            Engine::MySql,
+            Engine::MariaDb,
+            Engine::Mongo,
+        ] {
             let s = pipe_script(e);
             assert!(s.starts_with("set -euo pipefail"));
             assert!(!s.contains("--password") && !s.contains("-p\"$"), "{e:?}");

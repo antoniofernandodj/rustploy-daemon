@@ -27,7 +27,10 @@ async fn server(state: &AppState, id: &str) -> Result<(Service, Engine), RpRespo
         ));
     }
     let Some(engine) = Engine::from_kind(svc.spec.db_kind.as_deref()) else {
-        return Err(RpResponse::err("Unsupported", "motor de banco não suportado"));
+        return Err(RpResponse::err(
+            "Unsupported",
+            "motor de banco não suportado",
+        ));
     };
     Ok((svc, engine))
 }
@@ -76,7 +79,9 @@ pub(crate) fn to_view(svc: &Service, engine: Engine, r: &Row) -> ManagedDatabase
 
 async fn views(state: &AppState, svc: &Service, engine: Engine) -> RpResponse {
     match db::managed_database::list(&state.db, &svc.id).await {
-        Ok(rows) => RpResponse::ManagedDatabases(rows.iter().map(|r| to_view(svc, engine, r)).collect()),
+        Ok(rows) => {
+            RpResponse::ManagedDatabases(rows.iter().map(|r| to_view(svc, engine, r)).collect())
+        }
         Err(e) => RpResponse::err("DatabaseError", e.to_string()),
     }
 }
@@ -106,7 +111,10 @@ pub async fn create(state: AppState, req: ManagedDatabaseCreateReq) -> RpRespons
     } else {
         req.env_var.trim().to_string()
     };
-    if !env_var.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+    if !env_var
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_')
+    {
         return RpResponse::err("InvalidName", "nome de env var inválido");
     }
     let defined = if req.skip_env {
@@ -130,7 +138,10 @@ pub async fn create(state: AppState, req: ManagedDatabaseCreateReq) -> RpRespons
         .await
         .is_ok_and(|l| l.iter().any(|r| r.name == req.name))
     {
-        return RpResponse::err("AlreadyExists", "já existe um database com esse nome neste servidor");
+        return RpResponse::err(
+            "AlreadyExists",
+            "já existe um database com esse nome neste servidor",
+        );
     }
     let Some(cid) = shared_net::server_container(&state.docker.inner, &svc).await else {
         return RpResponse::err("NotRunning", "o servidor compartilhado não está no ar");
@@ -144,7 +155,8 @@ pub async fn create(state: AppState, req: ManagedDatabaseCreateReq) -> RpRespons
     // coisa, para que um alias em conflito aborte sem efeito colateral).
     if req.project_id != svc.spec.project_id {
         if let Err(e) =
-            shared_net::connect_to_project(&state.db, &state.docker, &svc, &cid, &req.project_id).await
+            shared_net::connect_to_project(&state.db, &state.docker, &svc, &cid, &req.project_id)
+                .await
         {
             return RpResponse::err("NetworkError", e.to_string());
         }
@@ -204,7 +216,8 @@ pub async fn delete(state: AppState, id: String) -> RpResponse {
     let Some(cid) = shared_net::server_container(&state.docker.inner, &svc).await else {
         return RpResponse::err("NotRunning", "o servidor compartilhado não está no ar");
     };
-    if let Err(e) = shared_db::exec(engine, &cid, &shared_db::drop_script(engine, &row.name)).await {
+    if let Err(e) = shared_db::exec(engine, &cid, &shared_db::drop_script(engine, &row.name)).await
+    {
         return RpResponse::err("ProvisionError", e.to_string());
     }
     if let Err(e) = db::managed_database::delete(&state.db, &id).await {

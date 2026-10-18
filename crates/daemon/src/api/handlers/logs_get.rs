@@ -111,7 +111,6 @@ async fn compose_logs(
     tail: usize,
     env_vars: &[(String, String)],
 ) -> RpResponse {
-
     let mut child = match crate::docker::cli()
         .args([
             "compose",

@@ -1219,7 +1219,8 @@ impl DeployExecutor {
                 // (re)criado, e a recriação desfaz a conexão às redes dos
                 // projetos autorizados — reconecta já, sem esperar o reconcile.
                 if svc.spec.shared.is_some() {
-                    let n = crate::deploy::shared_net::sync_server(&self.db, &self.docker, &svc).await;
+                    let n =
+                        crate::deploy::shared_net::sync_server(&self.db, &self.docker, &svc).await;
                     self.log_step(
                         &dep.id,
                         &svc.id,
@@ -1313,7 +1314,12 @@ impl DeployExecutor {
     /// pode não ser a que o healthcheck espera, e reprovar aqui quebraria
     /// deploys que hoje funcionam. Estourar o prazo vira uma linha no log e o
     /// watchdog segue dono do veredito depois.
-    async fn wait_compose_healthcheck(&self, ip: &str, svc: &shared::Service, dep: &shared::Deployment) {
+    async fn wait_compose_healthcheck(
+        &self,
+        ip: &str,
+        svc: &shared::Service,
+        dep: &shared::Deployment,
+    ) {
         let hc = &svc.spec.healthcheck;
         if !matches!(hc.kind, HealthcheckKind::Tcp | HealthcheckKind::Http { .. }) {
             return;
@@ -1321,12 +1327,25 @@ impl DeployExecutor {
         let port = svc.spec.port;
         let timeout = std::time::Duration::from_secs(hc.timeout_secs as u64);
         let interval = std::time::Duration::from_secs((hc.interval_secs as u64).max(1));
-        self.log_step(&dep.id, &svc.id, &format!("--> Healthcheck: aguardando {ip}:{port}")).await;
+        self.log_step(
+            &dep.id,
+            &svc.id,
+            &format!("--> Healthcheck: aguardando {ip}:{port}"),
+        )
+        .await;
         tokio::time::sleep(std::time::Duration::from_secs(hc.start_period_secs as u64)).await;
         for attempt in 1..=hc.retries.max(1) {
             let ok = match &hc.kind {
-                HealthcheckKind::Http { path, expected_status } => {
-                    crate::health::check_http(&format!("http://{ip}:{port}{path}"), *expected_status, timeout).await
+                HealthcheckKind::Http {
+                    path,
+                    expected_status,
+                } => {
+                    crate::health::check_http(
+                        &format!("http://{ip}:{port}{path}"),
+                        *expected_status,
+                        timeout,
+                    )
+                    .await
                 }
                 _ => crate::health::check_tcp(&format!("{ip}:{port}"), timeout).await,
             };

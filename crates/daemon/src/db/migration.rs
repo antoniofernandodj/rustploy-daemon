@@ -108,8 +108,10 @@ pub async fn active_for_source(db: &Db, source_service_id: &str) -> Result<bool>
 /// Migrações deixadas `Running` por um daemon que caiu no meio: viram `Failed`
 /// (o dump não retoma; o usuário reverte e tenta de novo).
 pub async fn fail_orphans(db: &Db) -> Result<u64> {
-    Ok(sqlx::query("UPDATE migration SET status = 'Failed' WHERE status = 'Running'")
-        .execute(db)
-        .await?
-        .rows_affected())
+    Ok(
+        sqlx::query("UPDATE migration SET status = 'Failed' WHERE status = 'Running'")
+            .execute(db)
+            .await?
+            .rows_affected(),
+    )
 }

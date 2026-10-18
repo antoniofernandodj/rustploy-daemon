@@ -14,11 +14,11 @@ pub async fn handle(state: AppState, service_id: String) -> RpResponse {
         Ok(None) => return RpResponse::err("NotFound", "service not found"),
         Err(e) => return RpResponse::err("DatabaseError", e.to_string()),
     };
-    let env: HashMap<String, String> = match env_resolve::resolve(&state.db, &state.secrets, &svc).await
-    {
-        Ok(v) => v.into_iter().collect(),
-        Err(e) => return RpResponse::err("EnvError", e.to_string()),
-    };
+    let env: HashMap<String, String> =
+        match env_resolve::resolve(&state.db, &state.secrets, &svc).await {
+            Ok(v) => v.into_iter().collect(),
+            Err(e) => return RpResponse::err("EnvError", e.to_string()),
+        };
     let kind = svc.spec.db_kind.as_deref();
 
     let host = match &svc.spec.source {

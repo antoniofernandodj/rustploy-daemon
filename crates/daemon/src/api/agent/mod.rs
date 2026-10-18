@@ -201,7 +201,9 @@ pub fn write_connection_token(config: &shared::RustployConfig) -> anyhow::Result
 /// existe **e** faz parse.
 fn config_file_in_use() -> Option<std::path::PathBuf> {
     let candidates = [
-        std::env::var("RUSTPLOY_CONFIG").ok().map(std::path::PathBuf::from),
+        std::env::var("RUSTPLOY_CONFIG")
+            .ok()
+            .map(std::path::PathBuf::from),
         Some(std::path::PathBuf::from("/etc/rustploy/config.toml")),
         shared::user_home()
             .map(|home| std::path::PathBuf::from(home).join(".config/rustploy/config.toml")),
@@ -316,7 +318,12 @@ mod tests {
 
     #[test]
     fn urls_do_agente_usam_o_host_pelo_qual_ele_chegou_e_o_esquema_do_listener() {
-        let (_, resp) = login(chave().as_bytes(), Some("segredo"), Some("127.0.0.1:9797"), "https");
+        let (_, resp) = login(
+            chave().as_bytes(),
+            Some("segredo"),
+            Some("127.0.0.1:9797"),
+            "https",
+        );
         assert_eq!(resp["server"], "https://127.0.0.1:9797");
         assert_eq!(resp["ai_agent"]["mcp"], "https://127.0.0.1:9797/mcp");
     }

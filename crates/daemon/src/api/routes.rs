@@ -180,7 +180,9 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
             handlers::managed_database::list(state, server_service_id).await
         }
         Command::ManagedDatabaseCreate(req) => handlers::managed_database::create(state, req).await,
-        Command::ManagedDatabaseDelete { id } => handlers::managed_database::delete(state, id).await,
+        Command::ManagedDatabaseDelete { id } => {
+            handlers::managed_database::delete(state, id).await
+        }
         Command::ManagedDatabaseListAll => handlers::managed_database::list_all(state).await,
         Command::MigrationStart(req) => handlers::migration::start(state, req).await,
         Command::MigrationGet { id } => handlers::migration::get(state, id).await,
