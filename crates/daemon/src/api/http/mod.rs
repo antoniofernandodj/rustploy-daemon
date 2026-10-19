@@ -677,12 +677,41 @@ fn job_run_logs(state: AppState, job_run_id: String) -> Response<ApiBody> {
     sse_response(rx)
 }
 
+/// Intervalo do comentário de "sinal de vida" nos SSE. Um stream que só emite
+/// quando há dado (logs de um job com build silencioso de minutos, por exemplo)
+/// fica ocioso, e NAT/firewall/proxy no caminho derrubam conexão ociosa sem
+/// avisar o cliente: as linhas seguintes nunca chegam e a janela parece "parada".
+const SSE_KEEPALIVE: std::time::Duration = std::time::Duration::from_secs(15);
+
 /// Response body comum dos endpoints SSE (`events`/`service_logs`/
-/// `deployment_build_logs`): drena o `rx` para o corpo `text/event-stream`, com
-/// buffering de proxy desligado p/ os eventos saírem na hora através do ingress.
+/// `deployment_build_logs`/`job_run_logs`): drena o `rx` para o corpo
+/// `text/event-stream`, com buffering de proxy desligado p/ os eventos saírem na
+/// hora através do ingress. A cada `SSE_KEEPALIVE` sem tráfego manda um
+/// comentário SSE (`: keepalive`), que os clientes ignoram, para a conexão nunca
+/// ficar ociosa. Quando o cliente some, o envio falha e a tarefa solta o `rx`
+/// (o produtor percebe o canal fechado e encerra, como antes).
 fn sse_response(mut rx: tokio::sync::mpsc::Receiver<Bytes>) -> Response<ApiBody> {
+    let (out_tx, mut out_rx) = tokio::sync::mpsc::channel::<Bytes>(64);
+    tokio::spawn(async move {
+        let mut beat = tokio::time::interval(SSE_KEEPALIVE);
+        beat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        beat.tick().await; // o primeiro tick é imediato; pula
+        loop {
+            let chunk = tokio::select! {
+                msg = rx.recv() => match msg {
+                    Some(bytes) => bytes,
+                    None => break,
+                },
+                _ = beat.tick() => Bytes::from_static(b": keepalive\n\n"),
+            };
+            if out_tx.send(chunk).await.is_err() {
+                break;
+            }
+        }
+    });
     let stream = futures::stream::poll_fn(move |cx| {
-        rx.poll_recv(cx)
+        out_rx
+            .poll_recv(cx)
             .map(|opt| opt.map(|b| Ok::<_, Infallible>(Frame::data(b))))
     });
 
