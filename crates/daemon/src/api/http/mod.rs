@@ -517,7 +517,10 @@ fn events(state: AppState) -> Response<ApiBody> {
                             }
                     }
                     // Slow consumer dropped events: skip and carry on.
-                    Err(RecvError::Lagged(_)) => continue,
+                    Err(RecvError::Lagged(skipped)) => {
+                        tracing::warn!(skipped, "SSE de eventos: eventos descartados do canal (consumidor lento)");
+                        continue;
+                    }
                     Err(RecvError::Closed) => break,
                 }
             }
@@ -568,7 +571,10 @@ fn service_logs(state: AppState, service_id: String) -> Response<ApiBody> {
                             }
                         }
                     }
-                    Err(RecvError::Lagged(_)) => continue,
+                    Err(RecvError::Lagged(skipped)) => {
+                        // Logs de container não ficam no banco: não há como repor, só avisar.
+                        tracing::warn!(service_id = %service_id, skipped, "SSE de logs do serviço: eventos descartados do canal (consumidor lento)");
+                    }
                     Err(RecvError::Closed) => break,
                 }
             }
@@ -588,7 +594,10 @@ fn deployment_build_logs(state: AppState, deployment_id: String) -> Response<Api
 
     tokio::spawn(async move {
         use tokio::sync::broadcast::error::RecvError;
+        let connected_at = chrono::Utc::now();
         let mut bus_rx = state.bus.subscribe();
+        let mut seen = SeenLines::new();
+        let mut service_id = String::new();
         const LOG_BATCH_MAX: usize = 400;
         let mut batch: Vec<Event> = Vec::new();
         let mut batch_flush = tokio::time::interval(std::time::Duration::from_millis(80));
@@ -610,6 +619,12 @@ fn deployment_build_logs(state: AppState, deployment_id: String) -> Response<Api
                             Event::BuildLog { deployment_id: did, .. } if *did == deployment_id
                         );
                         if keep {
+                            if let Event::BuildLog { timestamp, line, service_id: sid, .. } = &ev {
+                                service_id.clone_from(sid);
+                                if !mark_seen(&mut seen, *timestamp, line) {
+                                    continue;
+                                }
+                            }
                             batch.push(ev);
                             if batch.len() >= LOG_BATCH_MAX
                                 && send_log_batch(&tx, std::mem::take(&mut batch)).await.is_err()
@@ -618,7 +633,19 @@ fn deployment_build_logs(state: AppState, deployment_id: String) -> Response<Api
                             }
                         }
                     }
-                    Err(RecvError::Lagged(_)) => continue,
+                    Err(RecvError::Lagged(skipped)) => {
+                        tracing::warn!(deployment_id = %deployment_id, skipped, "SSE de build logs: eventos descartados do canal, recuperando do banco");
+                        if let Ok(db_lines) = crate::store::build_logs::get_for_deployment(&state.db, &deployment_id).await {
+                            for l in recover_lines(db_lines, connected_at, &mut seen) {
+                                batch.push(Event::BuildLog {
+                                    deployment_id: deployment_id.clone(),
+                                    service_id: service_id.clone(),
+                                    line: l.line,
+                                    timestamp: l.timestamp,
+                                });
+                            }
+                        }
+                    }
                     Err(RecvError::Closed) => break,
                 }
             }
@@ -637,7 +664,10 @@ fn job_run_logs(state: AppState, job_run_id: String) -> Response<ApiBody> {
 
     tokio::spawn(async move {
         use tokio::sync::broadcast::error::RecvError;
+        let connected_at = chrono::Utc::now();
         let mut bus_rx = state.bus.subscribe();
+        let mut seen = SeenLines::new();
+        let mut job_id = String::new();
         const LOG_BATCH_MAX: usize = 400;
         let mut batch: Vec<Event> = Vec::new();
         let mut batch_flush = tokio::time::interval(std::time::Duration::from_millis(80));
@@ -659,6 +689,12 @@ fn job_run_logs(state: AppState, job_run_id: String) -> Response<ApiBody> {
                             Event::JobLogLine { job_run_id: rid, .. } if *rid == job_run_id
                         );
                         if keep {
+                            if let Event::JobLogLine { timestamp, line, job_id: jid, .. } = &ev {
+                                job_id.clone_from(jid);
+                                if !mark_seen(&mut seen, *timestamp, line) {
+                                    continue;
+                                }
+                            }
                             batch.push(ev);
                             if batch.len() >= LOG_BATCH_MAX
                                 && send_log_batch(&tx, std::mem::take(&mut batch)).await.is_err()
@@ -667,7 +703,22 @@ fn job_run_logs(state: AppState, job_run_id: String) -> Response<ApiBody> {
                             }
                         }
                     }
-                    Err(RecvError::Lagged(_)) => continue,
+                    Err(RecvError::Lagged(skipped)) => {
+                        // O canal descartou eventos (consumidor lento): o banco tem tudo,
+                        // então repõe o que faltou em vez de deixar buracos no log.
+                        tracing::warn!(job_run_id = %job_run_id, skipped, "SSE de logs do job: eventos descartados do canal, recuperando do banco");
+                        if let Ok(db_lines) = crate::store::job_log::get_for_run(&state.db, &job_run_id).await {
+                            for l in recover_lines(db_lines, connected_at, &mut seen) {
+                                batch.push(Event::JobLogLine {
+                                    job_run_id: job_run_id.clone(),
+                                    job_id: job_id.clone(),
+                                    line: l.line,
+                                    timestamp: l.timestamp,
+                                    stream: l.stream,
+                                });
+                            }
+                        }
+                    }
                     Err(RecvError::Closed) => break,
                 }
             }
@@ -675,6 +726,38 @@ fn job_run_logs(state: AppState, job_run_id: String) -> Response<ApiBody> {
     });
 
     sse_response(rx)
+}
+
+/// Teto do conjunto de linhas já entregues por um stream de logs (a deduplicação
+/// da recuperação). Estourou, zera: o pior caso é repetir linhas numa recuperação
+/// depois de um log com dezenas de milhares de linhas.
+const SEEN_LINES_MAX: usize = 50_000;
+
+type SeenLines = std::collections::HashSet<(chrono::DateTime<chrono::Utc>, String)>;
+
+/// Marca uma linha como entregue. `false` se já tinha sido (duplicata vinda do
+/// bus depois de a mesma linha ter sido recuperada do banco).
+fn mark_seen(seen: &mut SeenLines, ts: chrono::DateTime<chrono::Utc>, line: &str) -> bool {
+    if seen.len() >= SEEN_LINES_MAX {
+        seen.clear();
+    }
+    seen.insert((ts, line.to_string()))
+}
+
+/// As linhas do banco que o consumidor perdeu quando o canal descartou eventos
+/// (`RecvError::Lagged`): as de `ts >= since` (o stream só cobre o que veio depois
+/// de conectar; o histórico anterior é do seed da janela) que ainda não foram
+/// entregues. Na ordem do banco, já marcadas como vistas.
+fn recover_lines(
+    db_lines: Vec<shared::protocol::BuildLogLine>,
+    since: chrono::DateTime<chrono::Utc>,
+    seen: &mut SeenLines,
+) -> Vec<shared::protocol::BuildLogLine> {
+    db_lines
+        .into_iter()
+        .filter(|l| l.timestamp >= since)
+        .filter(|l| mark_seen(seen, l.timestamp, &l.line))
+        .collect()
 }
 
 /// Intervalo do comentário de "sinal de vida" nos SSE. Um stream que só emite
@@ -1012,6 +1095,181 @@ mod tests {
             b = b.header(hyper::header::AUTHORIZATION, v);
         }
         b.body(()).unwrap()
+    }
+
+    /// `AppState` de teste (sem Docker nem rede de verdade), só para exercitar o SSE.
+    async fn estado_de_teste() -> AppState {
+        let tmp = std::env::temp_dir().join(format!("rustploy-sse-test-{}", ulid::Ulid::new()));
+        let config = crate::platform::config::RustployConfig::default();
+        let db = std::sync::Arc::new(crate::store::connect(&tmp).await.unwrap());
+        let secrets = std::sync::Arc::new(
+            crate::platform::secrets::SecretsManager::new(&tmp.join("master.key"), db.clone())
+                .unwrap(),
+        );
+        let tls = std::sync::Arc::new(
+            crate::features::ingress::TlsManager::new(
+                tmp.join("certs"),
+                config.ingress.acme.clone(),
+            )
+            .unwrap(),
+        );
+        AppState::new(
+            db,
+            std::sync::Arc::new(crate::engine::DockerClient::for_tests()),
+            std::sync::Arc::new(crate::features::ingress::IngressController::new()),
+            std::sync::Arc::new(crate::platform::event_bus::EventBus::new()),
+            secrets,
+            tls,
+            tmp.join("db"),
+            tmp.join("backup"),
+            30,
+            config.api,
+            None,
+            None,
+        )
+    }
+
+    /// As linhas que saem do SSE de logs de um job, na ordem em que chegaram.
+    async fn linhas_do_sse(
+        mut body: ApiBody,
+        esperadas: usize,
+        limite: std::time::Duration,
+    ) -> Vec<String> {
+        use http_body_util::BodyExt;
+        let mut texto = String::new();
+        let mut linhas: Vec<String> = Vec::new();
+        let fim = tokio::time::Instant::now() + limite;
+        while linhas.len() < esperadas {
+            let Ok(Some(Ok(frame))) = tokio::time::timeout_at(fim, body.frame()).await else {
+                break;
+            };
+            let Some(chunk) = frame.data_ref() else {
+                continue;
+            };
+            texto.push_str(&String::from_utf8_lossy(chunk));
+            while let Some(pos) = texto.find("\n\n") {
+                let bruto: String = texto.drain(..pos + 2).collect();
+                let Some(dados) = bruto.lines().find_map(|l| l.strip_prefix("data: ")) else {
+                    continue;
+                };
+                let v: serde_json::Value = serde_json::from_str(dados).unwrap();
+                for ev in v["events"].as_array().cloned().unwrap_or_default() {
+                    if let Some(l) = ev["JobLogLine"]["line"].as_str() {
+                        linhas.push(l.to_string());
+                    }
+                }
+            }
+        }
+        linhas
+    }
+
+    /// Uma rajada de linhas (o `git clone` de um job emite ~400 em ~0,3 s) tem que
+    /// sair INTEIRA, e em ordem, pelo SSE dedicado do run: perder uma linha solta
+    /// aqui deixaria a janela de logs com buracos mesmo com o banco completo.
+    #[tokio::test]
+    async fn sse_de_job_entrega_rajada_completa_e_em_ordem() {
+        use std::time::Duration;
+        for espacamento_us in [0u64, 300] {
+            let state = estado_de_teste().await;
+            let resp = job_run_logs(state.clone(), "jrun_T".to_string());
+            let body = resp.into_body();
+            // O assinante do bus nasce numa tarefa: dá a vez a ela antes de publicar.
+            tokio::time::sleep(Duration::from_millis(100)).await;
+
+            const N: usize = 413;
+            let coletor = tokio::spawn(linhas_do_sse(body, N, Duration::from_secs(5)));
+            for i in 0..N {
+                state.bus.publish(shared::Event::JobLogLine {
+                    job_run_id: "jrun_T".into(),
+                    job_id: "job_1".into(),
+                    line: format!("linha {i}"),
+                    timestamp: chrono::Utc::now(),
+                    stream: shared::protocol::LogStream::Stdout,
+                });
+                if espacamento_us == 0 {
+                    tokio::task::yield_now().await;
+                } else {
+                    tokio::time::sleep(Duration::from_micros(espacamento_us)).await;
+                }
+            }
+            let linhas = coletor.await.unwrap();
+            let esperadas: Vec<String> = (0..N).map(|i| format!("linha {i}")).collect();
+            assert_eq!(
+                linhas.len(),
+                esperadas.len(),
+                "espaçamento {espacamento_us}µs: faltaram {} linhas",
+                esperadas.len().saturating_sub(linhas.len())
+            );
+            assert_eq!(linhas, esperadas, "espaçamento {espacamento_us}µs: fora de ordem");
+        }
+    }
+
+    fn linha_bd(i: i64, base: chrono::DateTime<chrono::Utc>) -> shared::protocol::BuildLogLine {
+        shared::protocol::BuildLogLine {
+            stream: shared::protocol::LogStream::Stdout,
+            line: format!("linha {i}"),
+            timestamp: base + chrono::Duration::microseconds(i),
+        }
+    }
+
+    /// A recuperação só repõe o que o consumidor ainda não recebeu e é posterior ao
+    /// momento em que o stream conectou (o resto é histórico do seed da janela).
+    #[test]
+    fn recover_lines_repoe_so_o_que_falta_depois_de_conectar() {
+        let base = chrono::Utc::now();
+        let mut seen = SeenLines::new();
+        // Já entregues pelo bus: 2 e 3.
+        assert!(mark_seen(&mut seen, base + chrono::Duration::microseconds(2), "linha 2"));
+        assert!(mark_seen(&mut seen, base + chrono::Duration::microseconds(3), "linha 3"));
+        let no_banco: Vec<_> = (0..6).map(|i| linha_bd(i, base)).collect();
+
+        // Conectou em `base + 1µs`: a linha 0 é do histórico (seed) e fica de fora.
+        let since = base + chrono::Duration::microseconds(1);
+        let repostas: Vec<String> = recover_lines(no_banco.clone(), since, &mut seen)
+            .into_iter()
+            .map(|l| l.line)
+            .collect();
+        assert_eq!(repostas, ["linha 1", "linha 4", "linha 5"]);
+
+        // Repetir a recuperação não reenvia nada.
+        assert!(recover_lines(no_banco, since, &mut seen).is_empty());
+    }
+
+    /// Quando o consumidor atrasa e o canal descarta eventos (o `Lagged`), o stream
+    /// repõe as linhas pelo banco: todas saem, UMA vez só e em ordem.
+    #[tokio::test]
+    async fn sse_de_job_repoe_pelo_banco_o_que_o_canal_descartou() {
+        use std::time::Duration;
+        let state = estado_de_teste().await;
+        let resp = job_run_logs(state.clone(), "jrun_L".to_string());
+        let body = resp.into_body();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Bem mais que a capacidade do canal (1024). Nada cede a vez ao consumidor
+        // durante a publicação (runtime de uma thread só): ele atrasa de propósito.
+        const N: i64 = 5000;
+        let base = chrono::Utc::now();
+        for i in 0..N {
+            let l = linha_bd(i, base);
+            crate::store::job_log::append(&state.db, "jrun_L", &l.stream, &l.line, l.timestamp)
+                .await
+                .unwrap();
+        }
+        for i in 0..N {
+            let l = linha_bd(i, base);
+            state.bus.publish(shared::Event::JobLogLine {
+                job_run_id: "jrun_L".into(),
+                job_id: "job_1".into(),
+                line: l.line,
+                timestamp: l.timestamp,
+                stream: l.stream,
+            });
+        }
+
+        let linhas = linhas_do_sse(body, N as usize, Duration::from_secs(10)).await;
+        let esperadas: Vec<String> = (0..N).map(|i| format!("linha {i}")).collect();
+        assert_eq!(linhas.len(), esperadas.len(), "faltaram ou sobraram linhas");
+        assert_eq!(linhas, esperadas, "fora de ordem ou duplicadas");
     }
 
     /// O token certo passa com ou sem o prefixo `Bearer`; o motivo da recusa
