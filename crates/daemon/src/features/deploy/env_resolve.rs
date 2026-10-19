@@ -1,6 +1,6 @@
 //! Resolução de env vars com secrets decifradas — extraído de
 //! `DeployExecutor::resolve_env` pra ser reaproveitado também pelo `JobRunner`
-//! (`crates/daemon/src/jobs/runner.rs`), que precisa das mesmas env vars de
+//! (`crates/daemon/src/features/jobs/runner.rs`), que precisa das mesmas env vars de
 //! base (projeto + serviço gatilho, secrets incluídas) sem instanciar um
 //! `DeployExecutor` inteiro.
 

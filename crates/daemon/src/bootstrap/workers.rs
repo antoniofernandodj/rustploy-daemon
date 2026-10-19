@@ -8,7 +8,7 @@ use crate::features::{backup, deploy, jobs, maintenance, observability, registry
 use crate::platform::config::RustployConfig;
 use crate::platform::event_bus::EventBus;
 use crate::store::Db;
-use std::{path::PathBuf, sync::Arc};
+use std::sync::Arc;
 use tracing::{info, warn};
 
 /// Laços que só precisam de banco, Docker e barramento (sobem antes do `AppState`).
@@ -17,12 +17,12 @@ pub fn spawn_standalone(
     db: &Arc<Db>,
     docker: &Arc<DockerClient>,
     bus: &Arc<EventBus>,
-    backup_dir: &PathBuf,
+    backup_dir: &std::path::Path,
 ) {
     // Env var backup loop
     {
         let db2 = db.clone();
-        let bdir = backup_dir.clone();
+        let bdir = backup_dir.to_path_buf();
         let interval_secs = config.env_backup.interval_secs;
         tokio::spawn(async move {
             backup::backup_loop(db2, bdir, interval_secs).await;

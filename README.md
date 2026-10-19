@@ -167,12 +167,12 @@ Três repositórios, reunidos pelo agregador `rustploy` via git submodules
 
 ```tree
 rustploy/                # agregador: Makefile, AGENTS.md, docs/, tools/indexer, .github/ (release)
-├── rustploy-shared/     # crates.io — Command, Event, Response, modelos de domínio, RustployConfig, templates
+├── rustploy-shared/     # crates.io — Command, Event, Response, modelos de domínio e nomes derivados
 ├── rustploy-daemon/     # este repo: rustployd — API HTTP, SQLite (sqlx), Docker, ingress, deploy engine (crates/daemon), importer
 └── rustploy-gui/        # rustploy-gui — único cliente (glacier-ui/XML→iced), fala HTTP
 ```
 
-`rustploy-gui` fala **HTTP/JSON + SSE** com o daemon (`crates/daemon/src/api/http_api.rs`), porque sua lógica roda em Luau (`fetch`/`sse`): `POST /api/rpc` (um `Command` por requisição), `GET /api/events` (snapshot completo a cada 2s + eventos do bus, como Server-Sent Events), `GET /api/health`.
+`rustploy-gui` fala **HTTP/JSON + SSE** com o daemon (`crates/daemon/src/api/http/mod.rs`), porque sua lógica roda em Luau (`fetch`/`sse`): `POST /api/rpc` (um `Command` por requisição), `GET /api/events` (snapshot completo a cada 2s + eventos do bus, como Server-Sent Events), `GET /api/health`.
 
 ## Status
 

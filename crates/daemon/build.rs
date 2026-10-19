@@ -1,7 +1,7 @@
 //! Gera, em tempo de compilação, os assets estáticos da web UI/PWA
 //! (`crates/daemon/webui/`, ver `docs/` e `src/api/web_ui.rs`) que o daemon
 //! serve como alternativa ao client iced (bloqueado pelo Defender no
-//! Windows). Mesmo padrão de `crates/shared/build.rs` (blueprints): lê os
+//! Windows). Mesmo padrão de `build/templates_catalog.rs` (blueprints): lê os
 //! fontes legíveis, processa e embute o resultado em `$OUT_DIR`, incluído via
 //! `include!` — zero I/O de asset em runtime.
 //!

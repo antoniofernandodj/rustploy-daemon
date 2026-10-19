@@ -1,7 +1,7 @@
 use super::*;
 
 #[cfg(test)]
-mod tests {
+mod embedded_registry_image_tests {
     use super::super::is_embedded_registry_image;
 
     #[test]
