@@ -13,7 +13,7 @@ use shared::{ArchiveSource, Response as RpResponse, ServiceSource};
 use tracing::{info, warn};
 use ulid::Ulid;
 
-use crate::api::AppState;
+use crate::bootstrap::state::AppState;
 
 pub const MAX_ZIP_BYTES: usize = 100 * 1024 * 1024;
 

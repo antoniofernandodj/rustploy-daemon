@@ -27,7 +27,7 @@ pub async fn server_container(docker: &Docker, svc: &Service) -> Option<String> 
     let ServiceSource::Compose(c) = &svc.spec.source else {
         return None;
     };
-    let host = shared::connection::compose_host(
+    let host = crate::platform::connection::compose_host(
         &c.content,
         c.ingress_service.as_deref(),
         svc.spec.db_kind.as_deref(),

@@ -9,16 +9,7 @@
 
 use crate::db::Db;
 use anyhow::Result;
-use shared::{EnvVar, EnvVarValue};
-
-/// Onde a chave estava e o que valia (`None` = não existia ali).
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct EnvChange {
-    /// `None` = env do projeto; `Some(id)` = env desse serviço.
-    pub service_id: Option<String>,
-    pub key: String,
-    pub previous: Option<EnvVarValue>,
-}
+use shared::{EnvChange, EnvVar, EnvVarValue};
 
 /// A chave já está definida no projeto ou em algum serviço dele?
 pub async fn is_defined(db: &Db, project_id: &str, key: &str) -> Result<bool> {

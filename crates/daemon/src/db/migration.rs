@@ -2,7 +2,6 @@
 //! foi parado e as env vars trocadas — o necessário para o rollback).
 
 use super::Db;
-use crate::features::databases::env_switch::EnvChange;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use shared::{Migration, MigrationStep};
@@ -11,7 +10,7 @@ use shared::{Migration, MigrationStep};
 #[derive(Debug, Clone)]
 pub struct Record {
     pub m: Migration,
-    pub env_changes: Vec<EnvChange>,
+    pub env_changes: Vec<shared::EnvChange>,
     pub stopped_services: Vec<String>,
 }
 

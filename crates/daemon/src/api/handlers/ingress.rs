@@ -4,7 +4,7 @@
 //! lock pelo proxy). Ela só era escrita no fim de um deploy e no boot, e não
 //! havia como olhá-la: um domínio respondendo 502 não tinha diagnóstico
 //! possível pela API — nem conserto, a não ser redeployar.
-use crate::api::AppState;
+use crate::bootstrap::state::AppState;
 use shared::Response as RpResponse;
 use tracing::info;
 

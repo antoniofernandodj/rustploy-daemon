@@ -2,7 +2,8 @@
 //! (ver `crate::features::databases::migration`).
 
 use crate::{
-    api::{AppState, handlers},
+    api::handlers,
+    bootstrap::state::AppState,
     db,
     features::databases::migration::{self, valid_source_db},
     features::databases::shared_db::{self, Engine},
@@ -134,7 +135,7 @@ pub async fn discard(state: AppState, id: String) -> RpResponse {
         );
     }
     let sid = rec.m.source_service_id.clone();
-    let _ = handlers::service_stop::handle(state.clone(), sid.clone()).await;
+    let _ = crate::features::deploy::stop::handle(state.clone(), sid.clone()).await;
     if let RpResponse::Err { message, .. } =
         handlers::service_delete::handle(state.clone(), sid).await
     {

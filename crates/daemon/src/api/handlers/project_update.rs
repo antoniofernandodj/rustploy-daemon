@@ -1,6 +1,6 @@
 //! `Command::ProjectUpdate`: renomeia/redescreve um projeto.
 
-use crate::api::AppState;
+use crate::bootstrap::state::AppState;
 use shared::Response as RpResponse;
 
 pub async fn handle(

@@ -11,7 +11,7 @@ use http_body_util::Full;
 use hyper::{Method, Request, Response, StatusCode, body::Incoming};
 use tracing::{error, info, warn};
 
-use super::AppState;
+use crate::bootstrap::state::AppState;
 use crate::db::webhook_tokens;
 
 /// `POST /webhook/{service_id}/{token}` — valida o token e dispara um deploy,
@@ -80,7 +80,7 @@ pub async fn webhook(req: Request<Incoming>, state: AppState) -> Response<Full<B
 
     info!(service_id = %service_id, "webhook: disparando deploy");
     tokio::spawn(async move {
-        crate::api::handlers::deploy_start::handle(state, service_id).await;
+        crate::features::deploy::start::handle(state, service_id).await;
     });
 
     resp(StatusCode::OK, "deploy triggered")

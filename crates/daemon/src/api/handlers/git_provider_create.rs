@@ -1,7 +1,7 @@
 //! `Command::GitProviderCreate`: conecta um provedor git (Gitea/GitHub) por
 //! OAuth ou token pessoal.
 
-use crate::api::AppState;
+use crate::bootstrap::state::AppState;
 use crate::db::git_providers::{self, StoredProvider};
 use chrono::Utc;
 use shared::{GitAuthMode, GitProviderKind, Response};

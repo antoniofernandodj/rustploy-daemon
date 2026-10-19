@@ -1,18 +1,22 @@
 //! Montagem do `rustployd`: config e diretórios, banco, Docker, ingress, `AppState`, recuperação
 //! de boot, tarefas de fundo e listeners.
 
+pub mod state;
+
 mod config;
 mod listeners;
 mod workers;
 
-use crate::api::{self, AppState};
+use crate::api;
+use crate::bootstrap::state::AppState;
 use crate::db;
 use crate::docker;
 use crate::features::ingress::{IngressController, TlsManager};
 use crate::features::{deploy, jobs, registry};
+use crate::platform::config::RustployConfig;
 use crate::platform::{event_bus::EventBus, secrets};
 use anyhow::Result;
-use shared::{Event, RustployConfig};
+use shared::Event;
 use std::{path::PathBuf, sync::Arc};
 use tracing::{error, info, warn};
 

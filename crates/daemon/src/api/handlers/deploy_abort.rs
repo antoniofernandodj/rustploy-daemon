@@ -2,7 +2,7 @@
 //! de lá e devolve o serviço a Stopped; se está rodando, aborta a task do
 //! executor.
 
-use crate::api::AppState;
+use crate::bootstrap::state::AppState;
 use shared::{Event, Response as RpResponse, ServiceStatus};
 
 pub async fn handle(state: AppState, deployment_id: String) -> RpResponse {

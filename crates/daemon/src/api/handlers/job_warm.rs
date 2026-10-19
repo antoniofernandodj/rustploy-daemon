@@ -1,7 +1,7 @@
 //! `Command::JobWarm`: aquece um job (baixa as imagens que faltam e popula o
 //! cache de build) sem executá-lo — `jobs::warm::request`.
 
-use crate::api::AppState;
+use crate::bootstrap::state::AppState;
 use shared::Response as RpResponse;
 
 pub async fn handle(state: AppState, job_id: String) -> RpResponse {

@@ -7,19 +7,6 @@ use bollard::{
 };
 use tracing::info;
 
-/// Nome de rede no formato **legado** (`rp_net_` + 8 primeiros chars do ID),
-/// derivado a cada uso e sem garantia de unicidade. Só a migração de
-/// preenchimento (SQL, em `db::migrate`) e o fallback de
-/// `db::projects::network_name` o usam; o nome de um projeto novo é gravado na
-/// criação (`shared::new_project_network_name`).
-pub fn legacy_project_net_for(project_id: &str) -> String {
-    let s = project_id
-        .find('_')
-        .map(|i| &project_id[i + 1..])
-        .unwrap_or(project_id);
-    format!("rp_net_{}", &s[..8.min(s.len())])
-}
-
 pub fn id_short(id: &str) -> &str {
     let s = id.find('_').map(|i| &id[i + 1..]).unwrap_or(id);
 

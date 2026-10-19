@@ -1,7 +1,7 @@
 //! `Command::GitBranchList`: branches de um repositório num provedor git
 //! conectado.
 
-use crate::api::AppState;
+use crate::bootstrap::state::AppState;
 use shared::Response;
 
 pub async fn handle(state: AppState, provider_id: String, repo_full_name: String) -> Response {

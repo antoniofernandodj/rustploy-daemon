@@ -1,7 +1,7 @@
 //! `Command::GitOAuthStart`: monta a URL de autorização OAuth do provedor git e
 //! guarda o `state` CSRF.
 
-use crate::api::AppState;
+use crate::bootstrap::state::AppState;
 use shared::Response;
 use tracing::warn;
 use ulid::Ulid;

@@ -1,7 +1,7 @@
 //! Imagens: pull (com credenciais) e build a partir de um contexto empacotado
 //! em tar, com progresso no log de build.
 
-use crate::{db::Db, platform::event_bus::EventBus};
+use crate::platform::{event_bus::EventBus, log_sink::LogSink};
 use anyhow::{Result, anyhow};
 use bollard::{
     Docker,
@@ -18,7 +18,7 @@ pub async fn pull(
     service_id: &str,
     deployment_id: &str,
     bus: &EventBus,
-    db: &Arc<Db>,
+    db: &Arc<impl LogSink>,
     credentials: Option<bollard::auth::DockerCredentials>,
 ) -> Result<()> {
     info!(
@@ -77,7 +77,7 @@ pub async fn pull(
                         percent,
                         description: line.clone(),
                     });
-                    let _ = crate::db::build_logs::append(db, deployment_id, &line, ts).await;
+                    let _ = db.append_build_line(deployment_id, &line, ts).await;
                 }
             }
             Err(e) => {
@@ -106,7 +106,7 @@ pub async fn _exists(docker: &Docker, image: &str) -> bool {
 #[allow(clippy::too_many_arguments)]
 pub async fn build(
     docker: &Docker,
-    db: &Arc<Db>,
+    db: &Arc<impl LogSink>,
     context_path: &Path,
     dockerfile: &str,
     tag: &str,
@@ -147,9 +147,7 @@ pub async fn build(
                             line: line.to_string(),
                             timestamp: now,
                         });
-                        if let Err(e) =
-                            crate::db::build_logs::append(db, deployment_id, line, now).await
-                        {
+                        if let Err(e) = db.append_build_line(deployment_id, line, now).await {
                             warn!(
                                 deployment_id,
                                 error = %e,

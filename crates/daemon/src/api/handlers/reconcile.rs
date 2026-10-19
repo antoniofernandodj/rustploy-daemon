@@ -9,7 +9,7 @@
 ///      All older Live deployments for the same service → Pruning.
 ///   2. For the most recent Live deployment per service, verify its container
 ///      is actually running. If not → Stopped.
-use crate::{api::AppState, docker};
+use crate::{bootstrap::state::AppState, docker};
 use chrono::Utc;
 use shared::{DeployState, Deployment, Event, ServiceStatus};
 use std::collections::HashSet;

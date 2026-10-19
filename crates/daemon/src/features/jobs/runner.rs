@@ -3,7 +3,7 @@
 //! (`docker::compose::run_once`), grava o resultado em `job_run`/`job_log` e
 //! reagenda (`Job::recurrence`, quando houver).
 
-use crate::api::AppState;
+use crate::bootstrap::state::AppState;
 use crate::db;
 use crate::docker::{self, DockerClient, networks};
 use crate::platform::event_bus::EventBus;

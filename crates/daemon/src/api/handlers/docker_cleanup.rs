@@ -1,7 +1,7 @@
 //! `Command::DockerCleanupConfig*` e `DockerCleanupRunNow`: config e disparo
 //! manual da limpeza automática do Docker (`maintenance/`).
 
-use crate::api::AppState;
+use crate::bootstrap::state::AppState;
 use crate::features::maintenance;
 use chrono::Utc;
 use shared::{DockerCleanupConfig, Response as RpResponse};

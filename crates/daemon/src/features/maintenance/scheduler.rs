@@ -4,7 +4,7 @@
 //! um JSON e compara `next_run_at` (persistido, nunca recalculado a partir
 //! de "agora" — ver `DockerCleanupConfig::recompute_next_run`) contra `now`.
 
-use crate::api::AppState;
+use crate::bootstrap::state::AppState;
 use chrono::Utc;
 use std::time::Duration;
 use tokio::time::MissedTickBehavior;

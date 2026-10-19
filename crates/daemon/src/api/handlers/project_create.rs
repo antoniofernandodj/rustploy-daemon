@@ -1,6 +1,6 @@
 //! `Command::ProjectCreate`: cria um projeto.
 
-use crate::api::AppState;
+use crate::bootstrap::state::AppState;
 use shared::Response as RpResponse;
 
 pub async fn handle(state: AppState, name: String, description: Option<String>) -> RpResponse {

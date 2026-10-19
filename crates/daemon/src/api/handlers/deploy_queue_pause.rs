@@ -1,6 +1,6 @@
 //! `Command::DeployQueuePause`: pausa/retoma a fila global de deploys.
 
-use crate::api::AppState;
+use crate::bootstrap::state::AppState;
 use shared::{Event, Response as RpResponse};
 
 /// Pausa (`true`) ou retoma (`false`) a fila global. Pausada, o worker não puxa

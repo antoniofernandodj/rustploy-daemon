@@ -127,7 +127,7 @@ fn format_error(fail: &KeyFormatError) -> Value {
 
 /// `host:porta` público deste daemon: `[api].domain` quando definido, senão o
 /// IP de saída; a porta é sempre a do listener (mesmo a 443).
-pub fn public_address(api: &shared::ApiConfig, fallback_host: &str) -> String {
+pub fn public_address(api: &crate::platform::config::ApiConfig, fallback_host: &str) -> String {
     let host = api
         .domain
         .as_deref()
@@ -150,8 +150,8 @@ pub fn access_key_for(address: &str, token: Option<&str>) -> Option<String> {
 }
 
 /// Imprime o token de conexão e sai — `rustployd access-key`.
-pub fn print_access_key_and_exit(config: &shared::RustployConfig) -> ! {
-    let address = public_address(&config.api, &super::outbound_ip());
+pub fn print_access_key_and_exit(config: &crate::platform::config::RustployConfig) -> ! {
+    let address = public_address(&config.api, &crate::bootstrap::state::outbound_ip());
     match access_key_for(&address, config.api.token.as_deref()) {
         Some(key) => {
             println!("{key}");
@@ -178,14 +178,16 @@ pub const CONNECTION_TOKEN_KEY: &str = "connection_token";
 /// cada boot — trocar `token` ou `domain` e reiniciar atualiza a linha. O
 /// arquivo só é reescrito quando a linha muda, e nada acontece quando o token
 /// veio de `RUSTPLOY_API_TOKEN` em vez do arquivo.
-pub fn write_connection_token(config: &shared::RustployConfig) -> anyhow::Result<()> {
+pub fn write_connection_token(
+    config: &crate::platform::config::RustployConfig,
+) -> anyhow::Result<()> {
     let Some(path) = config_file_in_use() else {
         return Ok(());
     };
     let Some(token) = config.api.token.as_deref() else {
         return Ok(());
     };
-    let address = public_address(&config.api, &super::outbound_ip());
+    let address = public_address(&config.api, &crate::bootstrap::state::outbound_ip());
     let Some(key) = access_key_for(&address, Some(token)) else {
         return Ok(());
     };
@@ -205,13 +207,13 @@ fn config_file_in_use() -> Option<std::path::PathBuf> {
             .ok()
             .map(std::path::PathBuf::from),
         Some(std::path::PathBuf::from("/etc/rustploy/config.toml")),
-        shared::user_home()
+        crate::platform::config::user_home()
             .map(|home| std::path::PathBuf::from(home).join(".config/rustploy/config.toml")),
     ];
     candidates.into_iter().flatten().find(|path| {
-        std::fs::read_to_string(path)
-            .ok()
-            .is_some_and(|text| toml::from_str::<shared::RustployConfig>(&text).is_ok())
+        std::fs::read_to_string(path).ok().is_some_and(|text| {
+            toml::from_str::<crate::platform::config::RustployConfig>(&text).is_ok()
+        })
     })
 }
 
@@ -336,7 +338,7 @@ mod tests {
 
     #[test]
     fn endereco_publico_sempre_leva_a_porta() {
-        let mut api = shared::ApiConfig {
+        let mut api = crate::platform::config::ApiConfig {
             port: 443,
             domain: Some("rp.exemplo.com".into()),
             ..Default::default()
@@ -359,7 +361,7 @@ mod tests {
         assert!(atualizado.ends_with('\n'));
         // O `[api]` continua válido (chave desconhecida é ignorada), com o mesmo token.
         let tabela: toml::Table = toml::from_str(&atualizado).unwrap();
-        let api: shared::ApiConfig = tabela["api"].clone().try_into().unwrap();
+        let api: crate::platform::config::ApiConfig = tabela["api"].clone().try_into().unwrap();
         assert_eq!(api.token.as_deref(), Some("abc"));
 
         // Segundo boot com a mesma chave: nada a reescrever.

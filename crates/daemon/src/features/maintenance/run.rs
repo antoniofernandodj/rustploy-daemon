@@ -4,8 +4,8 @@
 //! `Event::DockerCleanupCompleted` e persiste `last_run_at`/`next_run_at` +
 //! um resumo, pra tela mostrar "última limpeza" sem depender do SSE.
 
-use crate::api::AppState;
-use crate::api::handlers::docker_prune::{self, PruneStat};
+use super::prune::{self as docker_prune, PruneStat};
+use crate::bootstrap::state::AppState;
 use crate::db::daemon_settings;
 use chrono::Utc;
 use shared::{DockerCleanupConfig, DockerCleanupLastRun, DockerCleanupResourceResult, Event};

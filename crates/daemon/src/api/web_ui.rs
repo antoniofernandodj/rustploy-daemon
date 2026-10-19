@@ -626,7 +626,7 @@ mod headless_tests {
         )
         .await;
         // O host (chave do YAML) agora é decidido no daemon
-        // (`shared::connection::compose_host`, testado lá); a webui só exibe.
+        // (`crate::platform::connection::compose_host`, testado lá); a webui só exibe.
         assert_eq!(url, "postgresql://u:p@rp_banco:5432/db");
 
         // Application: outro aviso.

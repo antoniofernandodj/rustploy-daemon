@@ -2,11 +2,12 @@
 //! injetada, execução one-shot de job com cancelamento, e login no registry
 //! embutido.
 
-use crate::{db::Db, platform::event_bus::EventBus};
+use crate::platform::config::RustployConfig;
+use crate::platform::{event_bus::EventBus, log_sink::LogSink};
 use anyhow::{Result, anyhow};
 use bollard::{Docker, volume::CreateVolumeOptions};
 use chrono::Utc;
-use shared::{Event, RustployConfig};
+use shared::Event;
 use std::collections::VecDeque;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -226,7 +227,7 @@ pub async fn up(
     deployment_id: &str,
     network_name: &str,
     bus: &Arc<EventBus>,
-    db: &Arc<Db>,
+    db: &Arc<impl LogSink>,
     env_vars: &[(String, String)],
     build_dir: &Path,
     registry_internal_token: Option<Arc<str>>,
@@ -307,7 +308,7 @@ pub async fn up(
                 line: line.clone(),
                 timestamp: ts,
             });
-            let _ = crate::db::build_logs::append(&db_s, &did, &line, ts).await;
+            let _ = db_s.append_build_line(&did, &line, ts).await;
         }
     };
     let bus_e = bus.clone();
@@ -327,7 +328,7 @@ pub async fn up(
                 line: line.clone(),
                 timestamp: ts,
             });
-            let _ = crate::db::build_logs::append(&db_e, &did_e, &line, ts).await;
+            let _ = db_e.append_build_line(&did_e, &line, ts).await;
         }
     };
 
@@ -642,7 +643,7 @@ pub async fn run_once(
     job_id: &str,
     job_run_id: &str,
     bus: &Arc<EventBus>,
-    db: &Arc<Db>,
+    db: &Arc<impl LogSink>,
     env_vars: &[(String, String)],
     build_dir: &Path,
     registry_internal_token: Option<Arc<str>>,
@@ -761,7 +762,7 @@ fn clean_compose_line(line: &str) -> Option<String> {
 /// job espelha um deployment, no build log dele também.
 async fn record_job_line(
     bus: &EventBus,
-    db: &Db,
+    db: &impl LogSink,
     job_id: &str,
     job_run_id: &str,
     mirror: Option<&(String, String)>,
@@ -776,9 +777,9 @@ async fn record_job_line(
         timestamp: ts,
         stream: stream.clone(),
     });
-    let _ = crate::db::job_log::append(db, job_run_id, &stream, &line, ts).await;
+    let _ = db.append_job_line(job_run_id, &stream, &line, ts).await;
     if let Some((deployment_id, service_id)) = mirror {
-        let _ = crate::db::build_logs::append(db, deployment_id, &line, ts).await;
+        let _ = db.append_build_line(deployment_id, &line, ts).await;
         bus.publish(Event::BuildLog {
             deployment_id: deployment_id.clone(),
             service_id: service_id.clone(),
@@ -799,7 +800,7 @@ async fn read_compose_output<R: tokio::io::AsyncRead + Unpin>(
     stream: shared::protocol::LogStream,
     main_service: &str,
     bus: &EventBus,
-    db: &Db,
+    db: &impl LogSink,
     job_id: &str,
     job_run_id: &str,
     mirror: Option<&(String, String)>,
@@ -838,7 +839,7 @@ async fn run_once_up(
     job_id: &str,
     job_run_id: &str,
     bus: &Arc<EventBus>,
-    db: &Arc<Db>,
+    db: &Arc<impl LogSink>,
     build_dir: &Path,
     mirror_deployment: Option<(String, String)>,
     cancel_rx: Option<tokio::sync::watch::Receiver<bool>>,

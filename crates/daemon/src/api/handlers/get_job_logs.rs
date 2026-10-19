@@ -1,6 +1,6 @@
 //! `Command::GetJobLogs`: linhas do log de uma execução de job.
 
-use crate::api::AppState;
+use crate::bootstrap::state::AppState;
 use shared::Response as RpResponse;
 
 pub async fn handle(state: AppState, job_run_id: String) -> RpResponse {

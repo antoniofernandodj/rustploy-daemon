@@ -1,10 +1,11 @@
 //! Listeners do daemon: registry OCI embutido (storage e rota), proxy de ingress e API HTTP.
 
-use crate::api::{self, AppState};
+use crate::api;
+use crate::bootstrap::state::AppState;
 use crate::db;
 use crate::features::ingress::{self, IngressController, TlsManager};
 use crate::features::registry::{self, storage::RegistryStorage};
-use shared::RustployConfig;
+use crate::platform::config::RustployConfig;
 use std::{
     path::{Path, PathBuf},
     sync::Arc,

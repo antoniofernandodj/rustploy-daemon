@@ -2,7 +2,7 @@
 //! Compose), apaga o serviço, tira suas rotas do ingress e fecha a porta
 //! externa no firewall. Volumes nomeados e imagens ficam (dados do usuário).
 
-use crate::{api::AppState, docker::containers};
+use crate::{bootstrap::state::AppState, docker::containers};
 use shared::{Response as RpResponse, ServiceSource};
 
 /// Containers do serviço: para (réplicas, ou `compose down`, que já os remove) e
@@ -15,7 +15,7 @@ async fn remove_containers(state: &AppState, id: &str) -> Result<(), RpResponse>
     // Reaproveita o ServiceStop: Application para as réplicas; Compose roda `compose down`
     // (que remove os containers e a rede, mas NÃO os volumes).
     if let err @ RpResponse::Err { .. } =
-        crate::api::handlers::service_stop::handle(state.clone(), id.to_string()).await
+        crate::features::deploy::stop::handle(state.clone(), id.to_string()).await
     {
         return Err(err);
     }

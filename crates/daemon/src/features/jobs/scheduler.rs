@@ -2,7 +2,7 @@
 //! `env_backup.rs`: `tokio::time::interval`, a cada tick busca os jobs
 //! vencidos e dispara cada um em background (não bloqueia o próprio ticker).
 
-use crate::api::AppState;
+use crate::bootstrap::state::AppState;
 use crate::db;
 use std::time::Duration;
 use tokio::time::MissedTickBehavior;

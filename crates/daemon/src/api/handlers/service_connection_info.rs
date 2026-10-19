@@ -1,11 +1,9 @@
 //! `Command::ServiceConnectionInfo`: host e connection string internos de um
-//! serviço (ver `shared::connection` e `docs/plano-banco-compartilhado.md` §3).
+//! serviço (ver `crate::platform::connection` e `docs/plano-banco-compartilhado.md` §3).
 
-use crate::{api::AppState, docker::containers, features::deploy::env_resolve};
-use shared::{
-    Response as RpResponse, ServiceSource,
-    connection::{self, ConnTarget},
-};
+use crate::platform::connection::{self, ConnTarget};
+use crate::{bootstrap::state::AppState, docker::containers, features::deploy::env_resolve};
+use shared::{Response as RpResponse, ServiceSource};
 use std::collections::HashMap;
 
 pub async fn handle(state: AppState, service_id: String) -> RpResponse {

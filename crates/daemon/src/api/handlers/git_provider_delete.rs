@@ -1,6 +1,6 @@
 //! `Command::GitProviderDelete`: desconecta (apaga) um provedor git.
 
-use crate::api::AppState;
+use crate::bootstrap::state::AppState;
 use shared::Response;
 
 pub async fn handle(state: AppState, id: String) -> Response {

@@ -20,12 +20,17 @@
 //!      `Asset { .. }` em `$OUT_DIR/webui_assets.rs` (struct `Asset` definida
 //!      em `src/api/web_ui.rs`, que faz `include!` deste arquivo).
 
+#[path = "build/templates_catalog.rs"]
+mod templates_catalog;
+
 use std::env;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
 fn main() {
+    templates_catalog::generate();
+
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let webui_dir = Path::new(&manifest_dir).join("webui");
     println!("cargo:rerun-if-changed={}", webui_dir.display());

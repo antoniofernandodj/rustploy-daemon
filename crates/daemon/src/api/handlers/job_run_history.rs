@@ -1,6 +1,6 @@
 //! `Command::JobRunHistory`: últimas execuções de um job.
 
-use crate::api::AppState;
+use crate::bootstrap::state::AppState;
 use shared::Response as RpResponse;
 
 pub async fn handle(state: AppState, job_id: String, limit: usize) -> RpResponse {

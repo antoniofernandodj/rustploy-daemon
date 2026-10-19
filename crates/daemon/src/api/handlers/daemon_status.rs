@@ -1,7 +1,7 @@
 //! `Command::DaemonStatus`: versão, uptime e contagem de serviços
 //! rodando/total.
 
-use crate::api::AppState;
+use crate::bootstrap::state::AppState;
 use shared::Response as RpResponse;
 
 pub async fn handle(state: AppState) -> RpResponse {

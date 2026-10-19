@@ -24,20 +24,21 @@
 use std::convert::Infallible;
 use std::sync::Arc;
 
+use crate::platform::config::ApiConfig;
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full, StreamBody, combinators::BoxBody};
 use hyper::body::{Frame, Incoming};
 use hyper::service::service_fn;
 use hyper::{Method, Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
-use shared::{ApiConfig, Command, Event, Response as RpResponse};
+use shared::{Command, Event, Response as RpResponse};
 use tracing::{error, info, warn};
 
-use super::AppState;
 use super::agent;
 use super::public_routes;
 use super::routes::dispatch;
 use super::web_ui;
+use crate::bootstrap::state::AppState;
 use crate::features::ingress::TlsManager;
 
 /// Unified response body: both the buffered (`Full`) replies and the streaming
@@ -287,7 +288,7 @@ async fn handle(
             .unwrap(),
         (&Method::GET, "/api/access-key") => {
             let chave = agent::access_key_for(
-                &agent::public_address(&state.api, &super::outbound_ip()),
+                &agent::public_address(&state.api, &crate::bootstrap::state::outbound_ip()),
                 token.as_deref(),
             );
             json_value(StatusCode::OK, &serde_json::json!({ "key": chave }))
@@ -369,7 +370,9 @@ async fn mcp(req: Request<Incoming>, state: AppState) -> Response<ApiBody> {
         .map(str::trim)
         .filter(|h| !h.is_empty())
         .map(str::to_owned)
-        .unwrap_or_else(|| agent::public_address(&state.api, &super::outbound_ip()));
+        .unwrap_or_else(|| {
+            agent::public_address(&state.api, &crate::bootstrap::state::outbound_ip())
+        });
     let body = match req.into_body().collect().await {
         Ok(c) => c.to_bytes(),
         Err(_) => return text(StatusCode::BAD_REQUEST, "erro ao ler o corpo"),

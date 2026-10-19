@@ -78,9 +78,9 @@ async fn new_compose_project(db: &Db, id: &str, name: &str) -> Result<String> {
 }
 
 /// Regras de nome/`shared` (prefixo `rp-shared-` reservado etc.) — ver
-/// `shared::connection::validate_shared_rules`.
+/// `crate::platform::connection::validate_shared_rules`.
 fn check_shared_rules(spec: &ServiceSpec) -> Result<()> {
-    shared::connection::validate_shared_rules(
+    crate::platform::connection::validate_shared_rules(
         &spec.name,
         &spec.source,
         spec.db_kind.as_deref(),
@@ -338,9 +338,39 @@ pub async fn list_all(db: &Db) -> Result<Vec<Service>> {
 }
 
 #[cfg(test)]
+fn test_compose_spec(name: String, project_id: String) -> ServiceSpec {
+    ServiceSpec {
+        name,
+        project_id,
+        source: ServiceSource::Compose(shared::ComposeSource {
+            content: String::new(),
+            ingress_service: None,
+        }),
+        port: 80,
+        host_port: None,
+        domain: None,
+        tls_enabled: false,
+        env_vars: vec![],
+        env_comments: vec![],
+        volumes: vec![],
+        healthcheck: shared::Healthcheck::default(),
+        replicas: 1,
+        resources: shared::ResourceLimits::default(),
+        run_command: None,
+        run_args: vec![],
+        db_kind: None,
+        domains: vec![],
+        pre_deploy_job_id: None,
+        pre_deploy_job_ids: vec![],
+        shared: None,
+    }
+}
+
+#[cfg(test)]
 mod tests {
+
     use super::*;
-    use shared::{Healthcheck, ResourceLimits, ServiceSource};
+    use shared::ServiceSource;
 
     fn spec(name: &str, project: &str) -> ServiceSpec {
         ServiceSpec {
@@ -356,9 +386,9 @@ mod tests {
             env_vars: vec![],
             env_comments: vec![],
             volumes: vec![],
-            healthcheck: Healthcheck::default(),
+            healthcheck: shared::Healthcheck::default(),
             replicas: 1,
-            resources: ResourceLimits::default(),
+            resources: shared::ResourceLimits::default(),
             run_command: None,
             run_args: vec![],
             db_kind: None,
@@ -676,7 +706,7 @@ mod nome_gravado_tests {
     async fn rename_de_servico_compose_nao_muda_a_stack() {
         let db = temp_db().await;
         let p = projects::create(&db, "p".into(), None).await.unwrap();
-        let spec = shared::wizard::compose_spec("postgres".into(), p.id.clone());
+        let spec = test_compose_spec("postgres".into(), p.id.clone());
         let svc = create(&db, spec).await.unwrap();
         let stack = svc.compose_project.clone().expect("Compose grava a stack");
         assert_eq!(stack, shared::new_compose_project_name(&svc.id, "postgres"));
@@ -692,7 +722,7 @@ mod nome_gravado_tests {
     async fn servico_que_nao_e_compose_nao_grava_stack() {
         let db = temp_db().await;
         let p = projects::create(&db, "p".into(), None).await.unwrap();
-        let spec = shared::wizard::compose_spec("x".into(), p.id.clone());
+        let spec = test_compose_spec("x".into(), p.id.clone());
         let mut spec = spec;
         spec.source = ServiceSource::Registry {
             image: "nginx".into(),
@@ -705,7 +735,7 @@ mod nome_gravado_tests {
     async fn backfill_usa_a_stack_viva_de_servico_renomeado_sem_redeploy() {
         let db = temp_db().await;
         let p = projects::create(&db, "p".into(), None).await.unwrap();
-        let mut spec = shared::wizard::compose_spec("postgres".into(), p.id.clone());
+        let mut spec = test_compose_spec("postgres".into(), p.id.clone());
         spec.source = ServiceSource::Compose(shared::ComposeSource {
             content: "services:\n  app:\n    image: x\n".into(),
             ingress_service: None,
@@ -739,7 +769,7 @@ mod nome_gravado_tests {
     async fn backfill_sem_stack_no_docker_usa_a_formula_legada_com_o_nome_atual() {
         let db = temp_db().await;
         let p = projects::create(&db, "p".into(), None).await.unwrap();
-        let svc = create(&db, shared::wizard::compose_spec("db".into(), p.id.clone()))
+        let svc = create(&db, test_compose_spec("db".into(), p.id.clone()))
             .await
             .unwrap();
         sqlx::query("UPDATE service SET compose_project = NULL WHERE id = ?")
@@ -759,10 +789,10 @@ mod nome_gravado_tests {
     async fn backfill_nao_rouba_a_stack_de_outro_servico() {
         let db = temp_db().await;
         let p = projects::create(&db, "p".into(), None).await.unwrap();
-        let a = create(&db, shared::wizard::compose_spec("a".into(), p.id.clone()))
+        let a = create(&db, test_compose_spec("a".into(), p.id.clone()))
             .await
             .unwrap();
-        let b = create(&db, shared::wizard::compose_spec("b".into(), p.id.clone()))
+        let b = create(&db, test_compose_spec("b".into(), p.id.clone()))
             .await
             .unwrap();
         sqlx::query("UPDATE service SET compose_project = NULL")
@@ -793,7 +823,7 @@ mod nome_gravado_tests {
         let db = temp_db().await;
         let p = projects::create(&db, "p".into(), None).await.unwrap();
         let mk = |name: &str, key: &str| {
-            let mut spec = shared::wizard::compose_spec(name.into(), p.id.clone());
+            let mut spec = test_compose_spec(name.into(), p.id.clone());
             spec.source = ServiceSource::Compose(shared::ComposeSource {
                 content: format!("services:\n  {key}:\n    image: x\n"),
                 ingress_service: None,

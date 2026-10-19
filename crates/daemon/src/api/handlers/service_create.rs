@@ -1,7 +1,7 @@
 //! `Command::ServiceCreate`: cria um serviço, alocando a porta externa
 //! automática e liberando-a no firewall.
 
-use crate::api::AppState;
+use crate::bootstrap::state::AppState;
 use shared::{Response as RpResponse, ServiceSource, ServiceSpec};
 use tracing::info;
 

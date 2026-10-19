@@ -1,7 +1,7 @@
 //! `Command::JobUpdate`: edita um job (compose ou fonte git, serviço principal,
 //! env, recorrência, ligado/desligado).
 
-use crate::api::AppState;
+use crate::bootstrap::state::AppState;
 use shared::{EnvComment, EnvVar, JobGitSource, Recurrence, Response as RpResponse};
 
 #[allow(clippy::too_many_arguments)]

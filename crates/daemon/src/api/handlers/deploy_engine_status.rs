@@ -2,7 +2,7 @@
 //! da fila), o que está rodando, pausa e histórico recente, com nomes de
 //! serviço/projeto.
 
-use crate::api::AppState;
+use crate::bootstrap::state::AppState;
 use chrono::Utc;
 use shared::{ActiveDeployInfo, DeployEngineSummary, Response as RpResponse};
 use std::collections::HashMap;

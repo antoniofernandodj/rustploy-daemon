@@ -1,7 +1,7 @@
 //! `Command::ProjectDelete`: apaga um projeto; recusa se ainda tiver serviços
 //! ou jobs.
 
-use crate::api::AppState;
+use crate::bootstrap::state::AppState;
 use shared::Response as RpResponse;
 
 pub async fn handle(state: AppState, id: String) -> RpResponse {

@@ -2,7 +2,7 @@
 //! healthcheck, reinicia com limite de tentativas e, se o container sumiu, pede
 //! redeploy.
 
-use crate::{api::AppState, db::Db, platform::event_bus::EventBus};
+use crate::{bootstrap::state::AppState, db::Db, platform::event_bus::EventBus};
 use bollard::Docker;
 use shared::{Event, Healthcheck, HealthcheckKind, ServiceSource, ServiceStatus};
 use std::{

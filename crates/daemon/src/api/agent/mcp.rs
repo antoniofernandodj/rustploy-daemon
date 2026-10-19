@@ -9,8 +9,8 @@
 use hyper::StatusCode;
 use serde_json::{Value, json};
 
-use super::super::AppState;
 use super::{MANUAL, tools};
+use crate::bootstrap::state::AppState;
 
 /// Versões do protocolo que este servidor fala, da mais nova para a mais velha.
 const PROTOCOL_VERSIONS: &[&str] = &["2025-06-18", "2025-03-26", "2024-11-05"];

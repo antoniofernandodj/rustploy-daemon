@@ -1,5 +1,5 @@
 //! `Command::ServiceImport`: cria UM serviço novo a partir de um
-//! [`shared::ServiceBundle`] (ver `docs/plano-copiar-servico-entre-servidores.md`).
+//! [`crate::features::iac::service_bundle::ServiceBundle`] (ver `docs/plano-copiar-servico-entre-servidores.md`).
 //!
 //! O destino é sempre um projeto que JÁ existe (aquele em que o usuário está
 //! com a tela aberta): importar é criar um serviço dentro dele, como qualquer
@@ -10,11 +10,12 @@
 //!    devolve tudo o que o relatório precisa; é o que o `dry_run` mostra.
 //! 2. [`apply`] — só roda sem `dry_run` e sem pendência que bloqueie.
 
-use crate::api::AppState;
+use crate::bootstrap::state::AppState;
+use crate::features::iac::service_bundle::ServiceBundle;
 use shared::{
     EnvVar, EnvVarValue, ImportWarning, Project, ProjectEnvChoice, ProjectEnvState,
-    ProjectEnvStatus, Response as RpResponse, Service, ServiceBundle, ServiceImportReport,
-    ServiceImportReq, ServiceSource, ServiceSpec, normalize_name,
+    ProjectEnvStatus, Response as RpResponse, Service, ServiceImportReport, ServiceImportReq,
+    ServiceSource, ServiceSpec, normalize_name,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use tracing::info;
@@ -416,7 +417,7 @@ async fn write_all(
     info!(service_id = %svc.id, name = %svc.spec.name, project_id, "service_import: serviço criado");
 
     if req.deploy {
-        match super::deploy_start::handle(state.clone(), svc.id.clone()).await {
+        match crate::features::deploy::start::handle(state.clone(), svc.id.clone()).await {
             RpResponse::Err { message, .. } => {
                 // O serviço existe; só o deploy não começou. Vira aviso, não falha.
                 a.report.warnings.push(warn_item(
@@ -523,7 +524,7 @@ mod e2e {
     async fn daemon() -> AppState {
         let tmp = std::env::temp_dir().join(format!("rustploy-test-state-{}", Ulid::new()));
         let db = crate::db::connect(&tmp.join("data")).await.unwrap();
-        let config = shared::RustployConfig::default();
+        let config = crate::platform::config::RustployConfig::default();
         let docker = std::sync::Arc::new(
             crate::docker::DockerClient::connect(&config.docker.socket_path).unwrap(),
         );

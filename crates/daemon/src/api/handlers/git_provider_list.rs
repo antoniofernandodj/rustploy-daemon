@@ -1,6 +1,6 @@
 //! `Command::GitProviderList`: provedores git conectados, sem os tokens.
 
-use crate::api::AppState;
+use crate::bootstrap::state::AppState;
 use shared::Response;
 
 pub async fn handle(state: AppState) -> Response {

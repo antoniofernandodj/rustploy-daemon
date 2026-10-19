@@ -87,7 +87,7 @@ pub async fn network_name(db: &Db, project_id: &str) -> Result<String> {
             .await?;
     Ok(stored
         .flatten()
-        .unwrap_or_else(|| crate::docker::networks::legacy_project_net_for(project_id)))
+        .unwrap_or_else(|| shared::legacy_project_net_for(project_id)))
 }
 
 /// `id do projeto → nome da rede` de todos os projetos (o inventário Docker
@@ -100,7 +100,7 @@ pub async fn network_names(db: &Db) -> Result<std::collections::HashMap<String, 
     Ok(rows
         .into_iter()
         .map(|(id, net)| {
-            let net = net.unwrap_or_else(|| crate::docker::networks::legacy_project_net_for(&id));
+            let net = net.unwrap_or_else(|| shared::legacy_project_net_for(&id));
             (id, net)
         })
         .collect())

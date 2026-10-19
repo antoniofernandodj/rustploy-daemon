@@ -10,11 +10,11 @@
 //! aquecimento explícito e também de uma execução bem-sucedida, que baixa e
 //! compila tudo do mesmo jeito.
 
-use crate::api::AppState;
-use crate::api::handlers::docker_prune::{self, BuildCachePrune};
+use crate::bootstrap::state::AppState;
 use crate::db::{self, Db, daemon_settings};
 use crate::docker::compose::{self, ComposeImages};
 use crate::docker::networks;
+use crate::features::maintenance::prune::{self as docker_prune, BuildCachePrune};
 use anyhow::{Result, anyhow};
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use serde::{Deserialize, Serialize};

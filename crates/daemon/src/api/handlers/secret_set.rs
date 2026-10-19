@@ -1,6 +1,6 @@
 //! `Command::SecretSet`: cria/sobrescreve um secret cifrado do projeto.
 
-use crate::api::AppState;
+use crate::bootstrap::state::AppState;
 use shared::Response;
 
 pub async fn handle(state: AppState, project_id: String, name: String, value: String) -> Response {

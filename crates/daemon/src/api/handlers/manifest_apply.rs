@@ -1,10 +1,11 @@
 //! `Command::ManifestApply`: reconcilia manifestos YAML de projeto (IaC) com o
 //! banco, com prune e deploy opcionais.
 
-use crate::api::AppState;
+use crate::bootstrap::state::AppState;
+use crate::features::iac::manifest::ProjectManifest;
 use shared::{
-    ActionVerb, ApplyReport, ProjectManifest, ResourceAction, ResourceActionKind,
-    Response as RpResponse, ServiceSource,
+    ActionVerb, ApplyReport, ResourceAction, ResourceActionKind, Response as RpResponse,
+    ServiceSource,
 };
 use std::collections::BTreeMap;
 use tracing::{debug, info, warn};
@@ -64,7 +65,7 @@ pub async fn handle(
     // Deploy dos serviços alterados — feito por último, após todas as escritas.
     if deploy {
         for (service_id, label) in &changed {
-            match super::deploy_start::handle(state.clone(), service_id.clone()).await {
+            match crate::features::deploy::start::handle(state.clone(), service_id.clone()).await {
                 RpResponse::Err { code, message } => {
                     warn!(%label, %code, %message, "manifest_apply: deploy falhou ao iniciar");
                 }

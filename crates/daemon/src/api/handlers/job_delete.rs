@@ -1,7 +1,7 @@
 //! `Command::JobDelete`: apaga um job (e o registro de aquecimento dele) e limpa
 //! o `pre_deploy_job_id` dos serviços que o usavam como gate.
 
-use crate::api::AppState;
+use crate::bootstrap::state::AppState;
 use shared::Response as RpResponse;
 use tracing::warn;
 

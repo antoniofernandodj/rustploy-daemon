@@ -14,7 +14,7 @@ pub fn init_logging(level: &str) {
 }
 
 fn fallback_dir() -> PathBuf {
-    shared::fallback_data_dir()
+    crate::platform::config::fallback_data_dir()
 }
 
 /// Tries to use `configured` as the data directory.

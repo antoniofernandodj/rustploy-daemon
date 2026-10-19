@@ -1,7 +1,7 @@
 //! `Command::JobWarmStatus`: se as imagens e o cache de build de um job já estão
 //! no host — a fonte única da verdade que as telas exibem (`jobs::warm::status`).
 
-use crate::api::AppState;
+use crate::bootstrap::state::AppState;
 use shared::Response as RpResponse;
 
 pub async fn handle(state: AppState, job_id: String) -> RpResponse {

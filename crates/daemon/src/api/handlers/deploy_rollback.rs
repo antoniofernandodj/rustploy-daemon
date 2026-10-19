@@ -1,7 +1,7 @@
 //! `Command::DeployRollback`: acha o deploy Live anterior de um serviço (só
 //! consulta; não redeploya).
 
-use crate::api::AppState;
+use crate::bootstrap::state::AppState;
 use shared::Response as RpResponse;
 
 pub async fn handle(state: AppState, service_id: String) -> RpResponse {

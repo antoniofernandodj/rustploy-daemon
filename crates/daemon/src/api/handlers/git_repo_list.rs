@@ -1,7 +1,7 @@
 //! `Command::GitRepoList`: repositórios de um provedor git, com um refresh
 //! OAuth e nova tentativa se o token expirou.
 
-use crate::api::AppState;
+use crate::bootstrap::state::AppState;
 use shared::Response;
 
 pub async fn handle(state: AppState, provider_id: String) -> Response {

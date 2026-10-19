@@ -2,7 +2,7 @@
 //! the host (not just rustploy-managed resources), plus a robust "stop
 //! everything rustploy manages" command.
 
-use crate::api::AppState;
+use crate::bootstrap::state::AppState;
 use shared::{
     DockerContainerInfo, DockerImageInfo, DockerNetworkInfo, DockerVolumeInfo,
     Response as RpResponse, ServiceSource, ServiceStatus,
@@ -315,7 +315,7 @@ pub async fn stop_all_managed(state: AppState) -> RpResponse {
         if matches!(svc.status, ServiceStatus::Stopped) {
             continue;
         }
-        let resp = super::service_stop::handle(state.clone(), svc.id).await;
+        let resp = crate::features::deploy::stop::handle(state.clone(), svc.id).await;
         if matches!(resp, RpResponse::Ok) {
             count += 1;
         }

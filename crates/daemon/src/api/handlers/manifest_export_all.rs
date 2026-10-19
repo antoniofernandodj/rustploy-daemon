@@ -1,8 +1,9 @@
 //! `Command::ManifestExportAll`: exporta todos os projetos e serviços num
 //! manifesto raiz só.
 
-use crate::api::AppState;
-use shared::{EnvDoc, Response as RpResponse, ServerManifest, ServiceSource};
+use crate::bootstrap::state::AppState;
+use crate::features::iac::manifest::{EnvDoc, ServerManifest};
+use shared::{Response as RpResponse, ServiceSource};
 use std::collections::BTreeMap;
 use tracing::{debug, info, warn};
 
@@ -12,7 +13,7 @@ use tracing::{debug, info, warn};
 /// esses valores reais. Secrets seguem como `secret:NOME`, nunca decifradas.
 /// Serviços `git` que usam um provider conectado (Gitea) referenciam-no pelo
 /// nome no YAML; os dados não-secretos do provider (URL, modo de auth, client
-/// id) vão para o mesmo TOML — ver [`shared::GitProviderDoc`].
+/// id) vão para o mesmo TOML — ver [`crate::features::iac::manifest::GitProviderDoc`].
 pub async fn handle(state: AppState) -> RpResponse {
     info!("manifest_export_all: exportando todos os projetos");
 
@@ -54,7 +55,7 @@ pub async fn handle(state: AppState) -> RpResponse {
     );
 
     // Diagnóstico: resolve aqui mesmo (id -> nome) pra logar ANTES de entrar
-    // no `shared::manifest` (format-agnostic, sem tracing) — se um
+    // no `crate::features::iac::manifest` (format-agnostic, sem tracing) — se um
     // `GitSource.provider_id` não bater com nenhum provider carregado acima
     // (provider deletado/recriado com outro id, por ex.), o export vai OMITIR
     // o campo `provider` no YAML pra esse serviço, silenciosamente, do lado
@@ -98,7 +99,7 @@ pub async fn handle(state: AppState) -> RpResponse {
             );
             RpResponse::ManifestBundle {
                 yaml,
-                dotenv: shared::format_env_doc(&env_doc),
+                dotenv: crate::features::iac::manifest::format_env_doc(&env_doc),
             }
         }
         Err(e) => RpResponse::err("SerializeError", e.to_string()),

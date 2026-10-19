@@ -1,13 +1,13 @@
 //! `Command::ManifestImport`: importa um manifesto IaC (raiz `projects:` ou de
 //! projeto) mais o `.env`, criando provedores git referenciados.
 
-use crate::api::AppState;
+use crate::bootstrap::state::AppState;
 use crate::db::git_providers::{self, StoredProvider};
-use chrono::Utc;
-use shared::{
-    GitAuthMode, GitProviderDoc, GitProviderKind, ProjectEntry, ProjectManifest,
-    Response as RpResponse, ServerManifest,
+use crate::features::iac::manifest::{
+    GitProviderDoc, ProjectEntry, ProjectManifest, ServerManifest,
 };
+use chrono::Utc;
+use shared::{GitAuthMode, GitProviderKind, Response as RpResponse};
 use std::collections::BTreeMap;
 use tracing::{debug, info, warn};
 use ulid::Ulid;
@@ -69,7 +69,7 @@ pub async fn handle(
         );
     }
 
-    let env = match shared::parse_env_doc(&dotenv) {
+    let env = match crate::features::iac::manifest::parse_env_doc(&dotenv) {
         Ok(e) => e,
         Err(msg) => {
             warn!(%msg, "manifest_import: TOML inválido");
@@ -329,7 +329,7 @@ mod git_provider_iac_tests {
     /// replicada manualmente no teste.
     async fn test_state(db: crate::db::Db) -> AppState {
         let tmp = std::env::temp_dir().join(format!("rustploy-test-state-{}", Ulid::new()));
-        let config = shared::RustployConfig::default();
+        let config = crate::platform::config::RustployConfig::default();
         let docker = std::sync::Arc::new(
             crate::docker::DockerClient::connect(&config.docker.socket_path).unwrap(),
         );
@@ -430,7 +430,7 @@ mod git_provider_iac_tests {
         }
         let (manifest, env_doc) = ServerManifest::from_existing_redacted(&items, &providers);
         let yaml = serde_yaml::to_string(&manifest).unwrap();
-        let toml_text = shared::format_env_doc(&env_doc);
+        let toml_text = crate::features::iac::manifest::format_env_doc(&env_doc);
 
         assert!(
             yaml.contains("provider: Gitea"),
@@ -443,7 +443,7 @@ mod git_provider_iac_tests {
 
         // ── IMPORT via o handler de verdade (mesmo daemon, provider já existe) ──
         let mut projects = parse_projects(&yaml).unwrap();
-        let env = shared::parse_env_doc(&toml_text).unwrap();
+        let env = crate::features::iac::manifest::parse_env_doc(&toml_text).unwrap();
 
         let mut missing = Vec::new();
         for m in &mut projects {
@@ -553,13 +553,13 @@ mod git_provider_iac_tests {
         }
         let (manifest, env_doc) = ServerManifest::from_existing_redacted(&items, &providers);
         let yaml = serde_yaml::to_string(&manifest).unwrap();
-        let toml_text = shared::format_env_doc(&env_doc);
+        let toml_text = crate::features::iac::manifest::format_env_doc(&env_doc);
 
         // ── import no dst_db (provider "Gitea" não existe ainda lá) ──
         assert!(git_providers::list(&dst_db).await.unwrap().is_empty());
 
         let mut projects = parse_projects(&yaml).unwrap();
-        let env = shared::parse_env_doc(&toml_text).unwrap();
+        let env = crate::features::iac::manifest::parse_env_doc(&toml_text).unwrap();
         let mut missing = Vec::new();
         for m in &mut projects {
             missing.extend(m.interpolate(&env));

@@ -1,7 +1,7 @@
 //! `Command::ServiceUpdate`: grava um ServiceSpec novo (porta externa, TLS dos
 //! domínios, firewall) sem redeployar.
 
-use crate::api::AppState;
+use crate::bootstrap::state::AppState;
 use shared::{Response as RpResponse, ServiceSpec};
 use tracing::warn;
 

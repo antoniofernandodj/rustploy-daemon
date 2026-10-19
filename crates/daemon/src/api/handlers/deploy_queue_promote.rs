@@ -1,7 +1,7 @@
 //! `Command::DeployQueuePromote`: fura a fila (move um enfileirado para o
 //! início).
 
-use crate::api::AppState;
+use crate::bootstrap::state::AppState;
 use shared::{Event, Response as RpResponse};
 
 /// Move um deploy enfileirado para o início da fila ("furar fila"). No-op se o

@@ -2,6 +2,7 @@
 //! (clone/pull/build, staging, healthcheck, troca para live, rollback) e grava
 //! cada passo no log de build.
 
+use crate::platform::config::RustployConfig;
 use crate::{
     db::Db,
     docker,
@@ -14,8 +15,7 @@ use anyhow::{Result, anyhow};
 use bollard::models::HealthStatusEnum;
 use chrono::Utc;
 use shared::{
-    DeployState, Deployment, Event, HealthcheckKind, RustployConfig, Service, ServiceSource,
-    ServiceStatus,
+    DeployState, Deployment, Event, HealthcheckKind, Service, ServiceSource, ServiceStatus,
 };
 use std::{path::PathBuf, sync::Arc, time::Duration};
 use tokio::time::sleep;
@@ -1788,6 +1788,7 @@ mod tests {
 #[cfg(test)]
 mod pre_deploy_check_tests {
     use super::*;
+    use crate::platform::config::AcmeConfig;
     use crate::{
         db,
         docker::DockerClient,
@@ -1795,7 +1796,6 @@ mod pre_deploy_check_tests {
         platform::event_bus::EventBus,
         platform::secrets::SecretsManager,
     };
-    use shared::config::AcmeConfig;
     use shared::{Healthcheck, ResourceLimits, ServiceSource, ServiceSpec};
     use ulid::Ulid;
 

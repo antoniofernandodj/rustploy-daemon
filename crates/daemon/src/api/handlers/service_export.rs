@@ -1,12 +1,13 @@
 //! `Command::ServiceExportPlan` e `Command::ServiceExport`: o lado de cá de
 //! copiar um serviço para outro servidor (ver
 //! `docs/plano-copiar-servico-entre-servidores.md`). O arquivo gerado é um
-//! [`shared::ServiceBundle`]; quem o lê é `service_import`.
+//! [`crate::features::iac::service_bundle::ServiceBundle`]; quem o lê é `service_import`.
 
-use crate::api::AppState;
+use crate::bootstrap::state::AppState;
+use crate::features::iac::service_bundle::{BundleOrigin, ServiceBundle, suggested_project_vars};
 use shared::{
-    BundleOrigin, EnvVarValue, PlanVar, Project, Response as RpResponse, Service, ServiceBundle,
-    ServiceExportPlan, ServiceSource, suggested_project_vars,
+    EnvVarValue, PlanVar, Project, Response as RpResponse, Service, ServiceExportPlan,
+    ServiceSource,
 };
 use std::collections::BTreeMap;
 use tracing::{error, info};

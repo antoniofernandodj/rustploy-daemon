@@ -4,7 +4,7 @@
 //! ao cliente (a UI mostra a mensagem), evitando remoção acidental do que está
 //! em uso. Invalida os caches de inventário afetados para a aba refletir na hora.
 
-use crate::api::AppState;
+use crate::bootstrap::state::AppState;
 use bollard::{
     container::RemoveContainerOptions, image::RemoveImageOptions, volume::RemoveVolumeOptions,
 };

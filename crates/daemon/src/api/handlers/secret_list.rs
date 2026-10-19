@@ -1,6 +1,6 @@
 //! `Command::SecretList`: nomes (nunca valores) dos secrets de um projeto.
 
-use crate::api::AppState;
+use crate::bootstrap::state::AppState;
 use shared::Response;
 
 pub async fn handle(state: AppState, project_id: String) -> Response {

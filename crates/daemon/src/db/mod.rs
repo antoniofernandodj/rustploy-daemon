@@ -8,6 +8,7 @@ pub mod git_providers;
 pub mod job;
 pub mod job_log;
 pub mod job_run;
+pub mod log_sink;
 pub mod managed_database;
 pub mod migration;
 pub mod projects;

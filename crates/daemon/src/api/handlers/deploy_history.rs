@@ -1,7 +1,7 @@
 //! `Command::DeployHistory`: últimos deployments de um serviço, com o `live`
 //! velho corrigido por `reconcile::fix_stale_live`.
 
-use crate::api::AppState;
+use crate::bootstrap::state::AppState;
 use shared::Response as RpResponse;
 
 pub async fn handle(state: AppState, service_id: String, limit: usize) -> RpResponse {

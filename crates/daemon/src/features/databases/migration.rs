@@ -7,7 +7,7 @@
 //! do processo `docker` (nunca na linha de comando).
 
 use crate::{
-    api::{AppState, handlers},
+    bootstrap::state::AppState,
     db::{self, migration::Record},
     features::databases::env_switch,
     features::databases::shared_db::{self, Engine},
@@ -215,12 +215,12 @@ fn dest_image(server: &Service) -> Result<String> {
     let shared::ServiceSource::Compose(c) = &server.spec.source else {
         bail!("servidor de destino não é Compose");
     };
-    let host = shared::connection::compose_host(
+    let host = crate::platform::connection::compose_host(
         &c.content,
         c.ingress_service.as_deref(),
         server.spec.db_kind.as_deref(),
     );
-    shared::connection::compose_services(&c.content)
+    crate::platform::connection::compose_services(&c.content)
         .into_iter()
         .find(|(k, _)| Some(k) == host.as_ref())
         .and_then(|(_, img)| img)
@@ -241,12 +241,12 @@ fn source_image(svc: &Service) -> Option<String> {
     let shared::ServiceSource::Compose(c) = &svc.spec.source else {
         return None;
     };
-    let host = shared::connection::compose_host(
+    let host = crate::platform::connection::compose_host(
         &c.content,
         c.ingress_service.as_deref(),
         svc.spec.db_kind.as_deref(),
     );
-    shared::connection::compose_services(&c.content)
+    crate::platform::connection::compose_services(&c.content)
         .into_iter()
         .find(|(k, _)| Some(k) == host.as_ref())
         .and_then(|(_, i)| i)
@@ -410,7 +410,7 @@ async fn run_inner(state: &AppState, rec: &mut Record, cur: &mut usize) -> Resul
         .await?
         .into_iter()
         .collect();
-    let src_host = shared::connection::compose_host(
+    let src_host = crate::platform::connection::compose_host(
         match &source.spec.source {
             shared::ServiceSource::Compose(c) => &c.content,
             _ => "",
@@ -443,7 +443,7 @@ async fn run_inner(state: &AppState, rec: &mut Record, cur: &mut usize) -> Resul
     }
     let _ = db::migration::save(&state.db, rec).await;
     for d in &deps {
-        let r = handlers::service_stop::handle(state.clone(), d.id.clone()).await;
+        let r = crate::features::deploy::stop::handle(state.clone(), d.id.clone()).await;
         if let shared::Response::Err { message, .. } = r {
             bail!("falha ao parar {}: {message}", d.spec.name);
         }
@@ -516,7 +516,7 @@ async fn run_inner(state: &AppState, rec: &mut Record, cur: &mut usize) -> Resul
     // 5. Trocar a conexão ────────────────────────────────────────────────────
     *cur = 4;
     step(state, rec, 4, "running", "").await;
-    let view = handlers::managed_database::to_view(&server, engine, &dest);
+    let view = super::managed_view::to_view(&server, engine, &dest);
     rec.env_changes = env_switch::switch(
         &state.db,
         &rec.m.project_id,
@@ -540,7 +540,7 @@ async fn run_inner(state: &AppState, rec: &mut Record, cur: &mut usize) -> Resul
     *cur = 5;
     step(state, rec, 5, "running", "").await;
     for id in rec.stopped_services.clone() {
-        let r = handlers::deploy_start::handle(state.clone(), id.clone()).await;
+        let r = crate::features::deploy::start::handle(state.clone(), id.clone()).await;
         if let shared::Response::Err { message, .. } = r {
             bail!("falha ao subir {id}: {message}");
         }
@@ -557,7 +557,7 @@ async fn run_inner(state: &AppState, rec: &mut Record, cur: &mut usize) -> Resul
     // 7. Período de observação: o banco antigo fica parado, não apagado. ──────
     *cur = 6;
     step(state, rec, 6, "running", "").await;
-    let r = handlers::service_stop::handle(state.clone(), source.id.clone()).await;
+    let r = crate::features::deploy::stop::handle(state.clone(), source.id.clone()).await;
     if let shared::Response::Err { message, .. } = r {
         bail!("falha ao parar o banco antigo: {message}");
     }
@@ -581,13 +581,14 @@ pub async fn undo(state: &AppState, rec: &mut Record, source_stopped: bool) -> R
     }
     if source_stopped {
         let r =
-            handlers::deploy_start::handle(state.clone(), rec.m.source_service_id.clone()).await;
+            crate::features::deploy::start::handle(state.clone(), rec.m.source_service_id.clone())
+                .await;
         if let shared::Response::Err { message, .. } = r {
             bail!("falha ao subir o banco antigo: {message}");
         }
     }
     for id in rec.stopped_services.clone() {
-        let _ = handlers::deploy_start::handle(state.clone(), id).await;
+        let _ = crate::features::deploy::start::handle(state.clone(), id).await;
     }
     rec.stopped_services.clear();
     let _ = db::migration::save(&state.db, rec).await;

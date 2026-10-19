@@ -1,7 +1,7 @@
 //! `Command::LogsGet`: últimas linhas de log de um serviço, do container ou
 //! (Compose) via `docker compose logs`.
 
-use crate::api::AppState;
+use crate::bootstrap::state::AppState;
 use bollard::container::{LogOutput, LogsOptions};
 use chrono::Utc;
 use futures::StreamExt;

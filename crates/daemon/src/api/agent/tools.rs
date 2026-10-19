@@ -10,8 +10,8 @@ use std::time::{Duration, Instant};
 use serde_json::{Value, json};
 use shared::Command;
 
-use super::super::AppState;
 use super::super::routes::dispatch;
+use crate::bootstrap::state::AppState;
 
 /// De quanto em quanto tempo o `wait` de um deploy reconsulta o histórico.
 const POLL_INTERVAL: Duration = Duration::from_secs(2);

@@ -1,7 +1,7 @@
 //! `dispatch`: o `match` que manda cada `Command` para o seu handler em
 //! `handlers/`. Ver `docs/indice/comandos.md`.
 
-use super::AppState;
+use crate::bootstrap::state::AppState;
 use shared::{Command, Response as RpResponse};
 use tracing::info;
 
@@ -210,7 +210,7 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         }
         Command::ServiceDelete { id } => handlers::service_delete::handle(state, id).await,
         Command::DeployStart { service_id } => {
-            handlers::deploy_start::handle(state, service_id).await
+            crate::features::deploy::start::handle(state, service_id).await
         }
         Command::DeployAbort { deployment_id } => {
             handlers::deploy_abort::handle(state, deployment_id).await
@@ -234,7 +234,7 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
             handlers::deploy_rollback::handle(state, service_id).await
         }
         Command::ServiceStop { service_id } => {
-            handlers::service_stop::handle(state, service_id).await
+            crate::features::deploy::stop::handle(state, service_id).await
         }
         Command::ServiceReload { service_id } => {
             handlers::service_reload::handle(state, service_id).await

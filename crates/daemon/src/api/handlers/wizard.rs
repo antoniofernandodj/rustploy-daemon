@@ -1,11 +1,12 @@
 //! Wizard "Novo serviço" server-side: catálogos (`WizardCatalog`) e criação
 //! (`WizardCreate`). A lógica de montagem do `ServiceSpec` vive em
-//! `shared::wizard` (que tem acesso aos blueprints de `shared::templates`); aqui
+//! `crate::features::wizard` (que tem acesso aos blueprints de `crate::features::templates`); aqui
 //! só ligamos aos handlers existentes.
 
-use crate::api::AppState;
+use crate::bootstrap::state::AppState;
+use crate::features::wizard;
 use shared::Response as RpResponse;
-use shared::wizard::{self, WizardCreateReq};
+use shared::WizardCreateReq;
 
 /// Catálogos de bancos/brokers/templates prontos como JSON para o contexto do
 /// cliente (`new_service_databases`/`new_service_brokers`/`new_service_templates`). `search` filtra os templates.

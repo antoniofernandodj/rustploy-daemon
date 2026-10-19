@@ -1,6 +1,7 @@
 //! Certificados TLS: resolução por SNI, emissão e renovação ACME (Let's
 //! Encrypt) e os desafios HTTP-01.
 
+use crate::platform::config::AcmeConfig;
 use anyhow::{Result, anyhow};
 use instant_acme::{
     Account, AccountCredentials, ChallengeType, Identifier, NewAccount, NewOrder, OrderStatus,
@@ -12,7 +13,6 @@ use rustls::{
     server::{ClientHello, ResolvesServerCert},
     sign::CertifiedKey,
 };
-use shared::config::AcmeConfig;
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
