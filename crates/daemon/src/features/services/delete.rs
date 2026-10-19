@@ -2,7 +2,7 @@
 //! Compose), apaga o serviço, tira suas rotas do ingress e fecha a porta
 //! externa no firewall. Volumes nomeados e imagens ficam (dados do usuário).
 
-use crate::{bootstrap::state::AppState, docker::containers};
+use crate::{bootstrap::state::AppState, engine::containers};
 use shared::{Response as RpResponse, ServiceSource};
 
 /// Containers do serviço: para (réplicas, ou `compose down`, que já os remove) e

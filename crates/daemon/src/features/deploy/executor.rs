@@ -5,8 +5,8 @@
 use crate::platform::config::RustployConfig;
 use crate::{
     db::Db,
-    docker,
-    docker::{DockerClient, containers, images, networks},
+    engine,
+    engine::{DockerClient, containers, images, networks},
     features::ingress::{IngressController, TlsManager},
     platform::event_bus::EventBus,
     platform::secrets::SecretsManager,
@@ -1096,7 +1096,7 @@ impl DeployExecutor {
                     );
                     let network_name = self.network_name(&svc.spec.project_id).await?;
                     let env_vars = self.resolve_env(svc).await.unwrap_or_default();
-                    let _ = docker::compose::down(
+                    let _ = engine::compose::down(
                         &compose.content,
                         &project_name,
                         &network_name,
@@ -1200,7 +1200,7 @@ impl DeployExecutor {
                 );
                 let network_name = self.network_name(&svc.spec.project_id).await?;
                 let env_vars = self.resolve_env(svc).await.unwrap_or_default();
-                docker::compose::up(
+                engine::compose::up(
                     &self.docker.inner,
                     &compose.content,
                     &project_name,
@@ -1791,7 +1791,7 @@ mod pre_deploy_check_tests {
     use crate::platform::config::AcmeConfig;
     use crate::{
         db,
-        docker::DockerClient,
+        engine::DockerClient,
         features::ingress::{IngressController, TlsManager},
         platform::event_bus::EventBus,
         platform::secrets::SecretsManager,

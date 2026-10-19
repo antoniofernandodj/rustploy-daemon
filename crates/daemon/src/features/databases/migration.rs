@@ -288,7 +288,7 @@ async fn docker_run_pipe(
     destino: &Side,
     destino_db: &str,
 ) -> Result<String> {
-    let mut cmd = crate::docker::cli();
+    let mut cmd = crate::engine::cli();
     cmd.args(["run", "--rm", "--network", network]);
     let vars = [
         ("ORIGEM_HOST", origem.host.clone()),

@@ -2,7 +2,7 @@
 
 use crate::{
     db::Db,
-    docker::DockerClient,
+    engine::DockerClient,
     features::ingress::{IngressController, TlsManager},
     platform::event_bus::EventBus,
     platform::secrets::SecretsManager,

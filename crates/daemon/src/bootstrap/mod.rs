@@ -10,7 +10,7 @@ mod workers;
 use crate::api;
 use crate::bootstrap::state::AppState;
 use crate::db;
-use crate::docker;
+use crate::engine;
 use crate::features::ingress::{IngressController, TlsManager};
 use crate::features::{deploy, jobs, registry};
 use crate::platform::config::RustployConfig;
@@ -60,7 +60,7 @@ pub async fn run() -> Result<()> {
         .unwrap_or_else(|| db_path.join("env_backups"));
 
     // Docker
-    let docker = Arc::new(docker::DockerClient::connect(&config.docker.socket_path)?);
+    let docker = Arc::new(engine::DockerClient::connect(&config.docker.socket_path)?);
     if let Err(e) = docker.ping().await {
         error!(error = %e, "docker engine unreachable");
         std::process::exit(1);
@@ -109,7 +109,7 @@ pub async fn run() -> Result<()> {
 
     // Grava o nome da stack Compose dos serviços que ainda não têm, com o que já
     // está no Docker (nada muda de nome). Antes da recovery, que já lê o gravado.
-    match docker::containers::list_compose_projects(&docker.inner).await {
+    match engine::containers::list_compose_projects(&docker.inner).await {
         Ok(live) => {
             if let Err(e) = db::services::backfill_compose_projects(&db, &live).await {
                 error!(error = %e, "falha ao gravar o nome das stacks Compose");

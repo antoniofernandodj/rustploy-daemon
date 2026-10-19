@@ -196,7 +196,7 @@ pub async fn exec(e: Engine, container: &str, script: &str) -> Result<String> {
 
 /// Como [`exec`], com o comando `sh -c` escolhido por quem chama.
 pub async fn exec_sh(e: Engine, container: &str, sh: &str, script: &str) -> Result<String> {
-    let mut child = crate::docker::cli()
+    let mut child = crate::engine::cli()
         .args(["exec", "-i", container, "sh", "-c", sh])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

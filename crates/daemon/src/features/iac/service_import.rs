@@ -526,7 +526,7 @@ mod e2e {
         let db = crate::db::connect(&tmp.join("data")).await.unwrap();
         let config = crate::platform::config::RustployConfig::default();
         let docker = std::sync::Arc::new(
-            crate::docker::DockerClient::connect(&config.docker.socket_path).unwrap(),
+            crate::engine::DockerClient::connect(&config.docker.socket_path).unwrap(),
         );
         let db = std::sync::Arc::new(db);
         let bus = std::sync::Arc::new(crate::platform::event_bus::EventBus::new());

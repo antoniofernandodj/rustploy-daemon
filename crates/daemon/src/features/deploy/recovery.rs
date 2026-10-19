@@ -3,8 +3,8 @@
 
 use crate::{
     db::Db,
-    docker,
-    docker::{DockerClient, containers},
+    engine,
+    engine::{DockerClient, containers},
     features::ingress::{IngressController, TlsManager},
     platform::event_bus::EventBus,
     platform::secrets::SecretsManager,
@@ -98,7 +98,7 @@ pub async fn recover(
                 );
                 // Remove staging containers if they exist (todas as réplicas;
                 // nome atual ou legado, sempre conferindo o dono)
-                let dep_short = docker::networks::id_short(&dep.id);
+                let dep_short = engine::networks::id_short(&dep.id);
                 for i in 0..svc.spec.replicas.max(1) {
                     if let Ok(Some(id)) = containers::find_staging(
                         &docker.inner,

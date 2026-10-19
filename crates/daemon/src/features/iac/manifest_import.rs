@@ -331,7 +331,7 @@ mod git_provider_iac_tests {
         let tmp = std::env::temp_dir().join(format!("rustploy-test-state-{}", Ulid::new()));
         let config = crate::platform::config::RustployConfig::default();
         let docker = std::sync::Arc::new(
-            crate::docker::DockerClient::connect(&config.docker.socket_path).unwrap(),
+            crate::engine::DockerClient::connect(&config.docker.socket_path).unwrap(),
         );
         let db = std::sync::Arc::new(db);
         let bus = std::sync::Arc::new(crate::platform::event_bus::EventBus::new());

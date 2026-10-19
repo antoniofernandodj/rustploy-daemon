@@ -5,7 +5,7 @@
 
 use crate::bootstrap::state::AppState;
 use crate::db;
-use crate::docker::{self, DockerClient, networks};
+use crate::engine::{self, DockerClient, networks};
 use crate::platform::event_bus::EventBus;
 use crate::platform::secrets::SecretsManager;
 use anyhow::Result;
@@ -234,11 +234,11 @@ impl JobRunner {
                 )
                 .await?;
 
-                docker::compose::JobBuildSource::Git {
+                engine::compose::JobBuildSource::Git {
                     compose_rel_path: &git.compose_path,
                 }
             }
-            None => docker::compose::JobBuildSource::Compose(&job.compose),
+            None => engine::compose::JobBuildSource::Compose(&job.compose),
         };
 
         // Cancelamento pode chegar durante um clone Git lento (não
@@ -246,9 +246,9 @@ impl JobRunner {
         // seguiria pra subir containers mesmo já tendo sido cancelado.
         let already_cancelled = cancel_rx.as_ref().map(|rx| *rx.borrow()).unwrap_or(false);
         let (exit_code, images) = if already_cancelled {
-            (docker::compose::CANCELLED_EXIT_CODE, None)
+            (engine::compose::CANCELLED_EXIT_CODE, None)
         } else {
-            docker::compose::run_once(
+            engine::compose::run_once(
                 build_source,
                 &project_name,
                 &network_name,
@@ -304,7 +304,7 @@ impl JobRunner {
     async fn cancelar_antes_de_comecar(&self, job: &Job, run_id: &str) {
         self.linha(&job.id, run_id, "==> Cancelado antes de começar a executar")
             .await;
-        let _ = db::job_run::finish(&self.db, run_id, docker::compose::CANCELLED_EXIT_CODE).await;
+        let _ = db::job_run::finish(&self.db, run_id, engine::compose::CANCELLED_EXIT_CODE).await;
         self.bus.publish(Event::JobRunStateChanged {
             job_id: job.id.clone(),
             job_run_id: run_id.to_string(),

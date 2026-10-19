@@ -1,7 +1,7 @@
 //! Parar um serviço (`Command::ServiceStop`): para um serviço (todas as réplicas live, ou a stack
 //! Compose) e marca o deployment como Stopped.
 
-use crate::{bootstrap::state::AppState, docker, docker::containers};
+use crate::{bootstrap::state::AppState, engine, engine::containers};
 use chrono::Utc;
 use shared::{
     DeployState, EnvVarValue, Event, Response as RpResponse, ServiceSource, ServiceStatus,
@@ -128,7 +128,7 @@ async fn stop_compose(
     network_name: &str,
     env_vars: &[(String, String)],
 ) -> RpResponse {
-    if let Err(e) = docker::compose::down(content, project_name, network_name, env_vars).await {
+    if let Err(e) = engine::compose::down(content, project_name, network_name, env_vars).await {
         return RpResponse::err("DockerError", e.to_string());
     }
     finish_stop(state, service_id, None).await

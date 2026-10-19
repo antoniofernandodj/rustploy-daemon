@@ -727,7 +727,7 @@ pub(crate) async fn snapshot(state: &AppState) -> String {
         // e por projeto Compose, para anexar a cada serviço os containers reais
         // em execução (id + nome + estado) — cobre réplicas, staging e Compose.
         let container_index =
-            crate::docker::containers::index_containers(&state.docker.inner).await;
+            crate::engine::containers::index_containers(&state.docker.inner).await;
         let mut services = Vec::new();
         let mut projects_json = Vec::new();
         for p in &projects {

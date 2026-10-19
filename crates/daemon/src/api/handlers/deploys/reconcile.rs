@@ -9,7 +9,7 @@
 ///      All older Live deployments for the same service → Pruning.
 ///   2. For the most recent Live deployment per service, verify its container
 ///      is actually running. If not → Stopped.
-use crate::{bootstrap::state::AppState, docker};
+use crate::{bootstrap::state::AppState, engine};
 use chrono::Utc;
 use shared::{DeployState, Deployment, Event, ServiceStatus};
 use std::collections::HashSet;
@@ -156,7 +156,7 @@ async fn is_container_running(state: &AppState, service_id: &str) -> bool {
     };
 
     for attempt in 0..RUNNING_CHECK_RETRIES {
-        let running = match docker::containers::inspect(&state.docker.inner, &container_id).await {
+        let running = match engine::containers::inspect(&state.docker.inner, &container_id).await {
             Ok(info) => info.state.as_ref().and_then(|s| s.running).unwrap_or(false),
             Err(_) => false,
         };

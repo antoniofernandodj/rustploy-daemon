@@ -1,65 +1,11 @@
-//! Containers de serviços Application: nomes (live, staging, réplicas, legado),
-//! busca por label, criação, start/stop, IP e alias de rede.
+//! Busca de containers por label, nome e prefixo, e o índice dos gerenciados.
 
-use anyhow::{Result, anyhow};
-use bollard::{
-    Docker,
-    container::{
-        Config, CreateContainerOptions, InspectContainerOptions, LogsOptions, NetworkingConfig,
-        RemoveContainerOptions, RenameContainerOptions, StartContainerOptions,
-        StopContainerOptions,
-    },
-    errors::Error as BollardError,
-    models::{
-        EndpointSettings, HostConfig, Mount, MountTypeEnum, RestartPolicy, RestartPolicyNameEnum,
-    },
-};
-use futures::StreamExt;
-use shared::ServiceSpec;
+use anyhow::Result;
+use bollard::Docker;
 use std::collections::HashMap;
 use tracing::{debug, info, warn};
 
-// ── Nomes de container de serviço Application ───────────────────────────────
-//
-// Formato atual: `rp_<id8>_<safe>` (+ `_r<i>` / `_staging_<dep>`), com a base
-// de `shared::app_container_base`. Formato legado, de antes do ID no nome:
-// `rp_<safe>` (+ os mesmos sufixos). Nenhum dos dois serve para **achar** o
-// container de um serviço — isso é por label (`find_live_replicas`, e
-// `find_owned_by_name` para staging). O legado só é montado para achar o
-// staging de um deploy que estava em andamento quando o daemon foi atualizado.
-// Ver `docs/plano-colisao-nome-container.md`.
-
-fn with_replica_suffix(base: String, idx: u32) -> String {
-    if idx == 0 {
-        base
-    } else {
-        format!("{base}_r{idx}")
-    }
-}
-
-pub fn staging_name(service_id: &str, service_name: &str, deployment_id_short: &str) -> String {
-    replica_staging_name(service_id, service_name, deployment_id_short, 0)
-}
-
-pub fn replica_staging_name(
-    service_id: &str,
-    service_name: &str,
-    dep_short: &str,
-    idx: u32,
-) -> String {
-    let base = shared::app_container_base(service_id, service_name);
-    with_replica_suffix(format!("{base}_staging_{dep_short}"), idx)
-}
-
-pub fn replica_live_name(service_id: &str, service_name: &str, idx: u32) -> String {
-    with_replica_suffix(shared::app_container_base(service_id, service_name), idx)
-}
-
-/// Nome de staging no formato legado (`rp_<safe>_staging_<dep>[_r<i>]`).
-pub fn legacy_replica_staging_name(service_name: &str, dep_short: &str, idx: u32) -> String {
-    let safe_name = shared::normalize_name(service_name);
-    with_replica_suffix(format!("rp_{safe_name}_staging_{dep_short}"), idx)
-}
+use super::*;
 
 /// Staging da réplica `idx` deste deploy: no nome atual ou, para um deploy
 /// iniciado antes da atualização do daemon, no legado. Sempre conferindo o
@@ -81,7 +27,7 @@ pub async fn find_staging(
 
 /// Índice de réplica de um container: o label `rustploy.replica` ou, em
 /// container de antes do label, o sufixo `_r<i>` do nome (sem sufixo = 0).
-fn replica_index(labels: Option<&HashMap<String, String>>, name: &str) -> u32 {
+pub(super) fn replica_index(labels: Option<&HashMap<String, String>>, name: &str) -> u32 {
     if let Some(i) = labels
         .and_then(|l| l.get("rustploy.replica"))
         .and_then(|v| v.parse().ok())
@@ -91,24 +37,6 @@ fn replica_index(labels: Option<&HashMap<String, String>>, name: &str) -> u32 {
     name.rsplit_once("_r")
         .and_then(|(_, n)| n.parse().ok())
         .unwrap_or(0)
-}
-
-/// É um staging (nome termina em `_staging_<dep>` ou `_staging_<dep>_r<i>`)?
-/// Staging promovido é renomeado, e perde o marcador.
-///
-/// `<dep>` são os 8 primeiros caracteres do ULID do deploy — maiúsculas e
-/// dígitos. O nome do serviço entra normalizado, sempre minúsculo; é isso que
-/// impede o live de um serviço chamado `app-staging-prod` de ser tomado por
-/// staging.
-fn is_staging_name(name: &str) -> bool {
-    let Some((_, tail)) = name.rsplit_once("_staging_") else {
-        return false;
-    };
-    let dep = tail.split_once("_r").map_or(tail, |(d, _)| d);
-    dep.len() == 8
-        && dep
-            .chars()
-            .all(|c| c.is_ascii_digit() || c.is_ascii_uppercase())
 }
 
 /// Réplica live de um serviço Application, achada por label.
@@ -194,494 +122,6 @@ pub async fn live_replica_ips(
         }
     }
     ips
-}
-
-/// Dá ao container o alias `alias` na rede `network`, reconectando-o
-/// (`disconnect` + `connect`): o Docker não altera aliases de um endpoint
-/// existente. **O IP do container na rede muda** — quem guardou o IP (ingress)
-/// precisa relê-lo. Não faz nada se o alias já estiver lá (retomada de deploy
-/// pela recovery), para não derrubar conexões à toa.
-pub async fn attach_network_alias(
-    docker: &Docker,
-    container_id: &str,
-    network: &str,
-    alias: &str,
-) -> Result<()> {
-    use bollard::network::{ConnectNetworkOptions, DisconnectNetworkOptions};
-    let info = docker
-        .inspect_container(container_id, None::<InspectContainerOptions>)
-        .await?;
-    let ja_tem = info
-        .network_settings
-        .as_ref()
-        .and_then(|n| n.networks.as_ref())
-        .and_then(|n| n.get(network))
-        .and_then(|e| e.aliases.as_ref())
-        .is_some_and(|a| a.iter().any(|x| x == alias));
-    if ja_tem {
-        debug!(container_id = %container_id, alias = %alias, "alias já presente");
-        return Ok(());
-    }
-    docker
-        .disconnect_network(
-            network,
-            DisconnectNetworkOptions {
-                container: container_id.to_string(),
-                force: true,
-            },
-        )
-        .await
-        .map_err(|e| anyhow!("falha ao desconectar {container_id} de {network}: {e}"))?;
-    docker
-        .connect_network(
-            network,
-            ConnectNetworkOptions {
-                container: container_id.to_string(),
-                endpoint_config: EndpointSettings {
-                    aliases: Some(vec![alias.to_string()]),
-                    ..Default::default()
-                },
-            },
-        )
-        .await
-        .map_err(|e| {
-            anyhow!("falha ao reconectar {container_id} a {network} com alias {alias}: {e}")
-        })?;
-    info!(container_id = %container_id, network = %network, alias = %alias, "alias de rede atribuído");
-    Ok(())
-}
-
-/// Cria o container de staging de uma réplica já na rede do projeto
-/// (`network_mode` e `NetworkingConfig`, como o `docker run --network`), com
-/// labels, env, volumes e limites do spec.
-#[allow(clippy::too_many_arguments)]
-pub async fn create_staging(
-    docker: &Docker,
-    spec: &ServiceSpec,
-    image: &str,
-    service_id: &str,
-    deployment_id: &str,
-    network_id: &str,
-    resolved_env: &[(String, String)],
-    container_name: &str,
-    replica: u32,
-) -> Result<String> {
-    let name = container_name;
-    info!(
-        name = %name,
-        image = %image,
-        network = %network_id,
-        service_id = %service_id,
-        port = spec.port,
-        volumes = spec.volumes.len(),
-        "criando container"
-    );
-
-    let env: Vec<String> = resolved_env
-        .iter()
-        .map(|(k, v)| format!("{k}={v}"))
-        .collect();
-
-    debug!(
-        name = %name,
-        env_keys = ?resolved_env
-            .iter()
-            .map(
-                |(k, _)| k.as_str()
-            )
-            .collect::<Vec<_>>(),
-        "env vars configuradas"
-    );
-
-    let mounts: Vec<Mount> = spec
-        .volumes
-        .iter()
-        .map(|v| {
-            debug!(
-                host = %v.host_path,
-                container = %v.container_path,
-                ro = v.read_only,
-                "montando volume"
-            );
-            Mount {
-                target: Some(v.container_path.clone()),
-                source: Some(v.host_path.clone()),
-                typ: Some(MountTypeEnum::BIND),
-                read_only: Some(v.read_only),
-                ..Default::default()
-            }
-        })
-        .collect();
-
-    let mut labels = HashMap::new();
-    labels.insert("rustploy.managed".to_string(), "true".to_string());
-
-    labels.insert("rustploy.service_id".to_string(), service_id.to_string());
-
-    labels.insert(
-        "rustploy.deployment_id".to_string(),
-        deployment_id.to_string(),
-    );
-
-    labels.insert("rustploy.replica".to_string(), replica.to_string());
-
-    let mem_limit = if spec.resources.mem_limit_bytes > 0 {
-        Some(spec.resources.mem_limit_bytes as i64)
-    } else {
-        None
-    };
-    let cpu_shares = if spec.resources.cpu_shares > 0 {
-        Some(spec.resources.cpu_shares as i64)
-    } else {
-        None
-    };
-
-    debug!(
-        name = %name,
-        mem_limit = ?mem_limit,
-        cpu_shares = ?cpu_shares,
-        "limites de recurso"
-    );
-
-    let host_config = HostConfig {
-        // network_mode substitui a bridge padrão pela rede user-defined do projeto.
-        // Equivalente a `docker run --network <rede>`: o Docker configura o DNS
-        // embebido (127.0.0.11) imediatamente, sem depender de network connect.
-        network_mode: Some(network_id.to_string()),
-        mounts: Some(mounts),
-        memory: mem_limit,
-        cpu_shares,
-        restart_policy: Some(RestartPolicy {
-            name: Some(RestartPolicyNameEnum::NO),
-            maximum_retry_count: None,
-        }),
-        ..Default::default()
-    };
-
-    let cmd = if spec.run_command.is_some() || !spec.run_args.is_empty() {
-        let mut parts: Vec<String> = spec
-            .run_command
-            .as_deref()
-            .map(|c| vec![c.to_string()])
-            .unwrap_or_default();
-        parts.extend(spec.run_args.iter().cloned());
-        Some(parts)
-    } else {
-        None
-    };
-
-    // Replica o comportamento de `docker run --network <rede>`:
-    // a CLI envia TANTO network_mode no HostConfig COMO o endpoint em NetworkingConfig.
-    // Sem NetworkingConfig, o Docker pode não configurar o DNS embebido (127.0.0.11)
-    // correctamente mesmo com network_mode definido.
-    let mut endpoints = HashMap::new();
-    endpoints.insert(network_id.to_string(), EndpointSettings::default());
-
-    let config = Config {
-        image: Some(image.to_string()),
-        env: Some(env),
-        labels: Some(labels),
-        host_config: Some(host_config),
-        cmd,
-        exposed_ports: Some({
-            let mut m = HashMap::new();
-            m.insert(format!("{}/tcp", spec.port), HashMap::new());
-            m
-        }),
-        networking_config: Some(NetworkingConfig {
-            endpoints_config: endpoints,
-        }),
-        ..Default::default()
-    };
-
-    let opts = CreateContainerOptions {
-        name,
-        platform: None,
-    };
-    let response = docker.create_container(Some(opts), config).await?;
-    info!(
-        name = %name,
-        container_id = %response.id,
-        "container criado com sucesso"
-    );
-    if !response.warnings.is_empty() {
-        warn!(
-            name = %name,
-            warnings = ?response.warnings,
-            "Docker retornou warnings"
-        );
-    }
-    Ok(response.id)
-}
-
-pub async fn start(docker: &Docker, container_id: &str) -> Result<()> {
-    info!(
-        container_id = %format!(
-            "...{}",
-            &container_id[..container_id.len().min(10)]
-        ),
-        "iniciando container"
-    );
-
-    docker
-        .start_container(container_id, None::<StartContainerOptions<String>>)
-        .await?;
-
-    info!(
-        container_id = %format!(
-            "...{}",
-            &container_id[..container_id.len().min(10)]
-        ),
-        "container em execução"
-    );
-    Ok(())
-}
-
-/// Retorna `true` se o erro do bollard for um 404 (container inexistente).
-///
-/// Um `container_id`/nome desatualizado no DB (ex.: após uma promoção que
-/// removeu o container antigo mas não persistiu o novo id a tempo) não deve
-/// ser tratado como falha ao parar/remover — o estado desejado já é
-/// satisfeito.
-fn is_not_found(e: &BollardError) -> bool {
-    matches!(
-        e,
-        BollardError::DockerResponseServerError {
-            status_code: 404,
-            ..
-        }
-    )
-}
-
-pub async fn stop_graceful(docker: &Docker, container_id: &str, timeout: i64) -> Result<()> {
-    info!(
-        container_id = %format!(
-            "...{}",
-            &container_id[..container_id.len().min(10)]
-        ),
-        timeout = timeout,
-        "parando container"
-    );
-
-    let opts = StopContainerOptions { t: timeout };
-    if let Err(e) = docker.stop_container(container_id, Some(opts)).await {
-        if is_not_found(&e) {
-            warn!(
-                container_id = %format!(
-                    "...{}",
-                    &container_id[..container_id.len().min(10)]
-                ),
-                "container já não existe, ignorando"
-            );
-            return Ok(());
-        }
-        return Err(e.into());
-    }
-
-    info!(
-        container_id = %format!(
-            "...{}",
-            &container_id[..container_id.len().min(10)]
-        ),
-        "container parado"
-    );
-
-    Ok(())
-}
-
-pub async fn rename(docker: &Docker, container_id: &str, new_name: &str) -> Result<()> {
-    info!(
-        container_id = %format!(
-            "...{}",
-            &container_id[..container_id.len().min(10)]
-        ),
-        new_name = %new_name, "renomeando container"
-    );
-
-    let opts = RenameContainerOptions {
-        name: new_name.to_string(),
-    };
-
-    docker.rename_container(container_id, opts).await?;
-    info!(
-        container_id = %format!(
-            "...{}",
-            &container_id[..container_id.len().min(10)]
-        ),
-        new_name = %new_name, "renomeado"
-    );
-    Ok(())
-}
-
-pub async fn remove(docker: &Docker, container_id: &str) -> Result<()> {
-    info!(
-        container_id = %format!(
-            "...{}",
-            &container_id[..container_id.len().min(10)]
-        ),
-        "removendo container"
-    );
-
-    let opts = RemoveContainerOptions {
-        force: true,
-        v: true,
-        ..Default::default()
-    };
-    if let Err(e) = docker.remove_container(container_id, Some(opts)).await {
-        if is_not_found(&e) {
-            warn!(
-                container_id = %format!(
-                    "...{}",
-                    &container_id[..container_id.len().min(10)]
-                ),
-                "container já não existe, ignorando"
-            );
-            return Ok(());
-        }
-        return Err(e.into());
-    }
-    info!(
-    container_id = %format!(
-        "...{}",
-        &container_id[..container_id.len().min(10)]),
-        "removido"
-    );
-    Ok(())
-}
-
-pub async fn inspect(
-    docker: &Docker,
-    container_id: &str,
-) -> Result<bollard::models::ContainerInspectResponse> {
-    debug!(
-        container_id = %format!(
-            "...{}",
-            &container_id[..container_id.len().min(10)]
-        ),
-        "inspecionando"
-    );
-
-    let resp = docker
-        .inspect_container(container_id, None::<InspectContainerOptions>)
-        .await?;
-    let running = resp.state.as_ref().and_then(|s| s.running).unwrap_or(false);
-    let status = resp.state.as_ref().and_then(|s| s.status);
-    debug!(
-        container_id = %format!(
-            "...{}",
-            &container_id[..container_id.len().min(10)]
-        ),
-        running = running,
-        status = ?status,
-        "resultado"
-    );
-    Ok(resp)
-}
-
-/// IP do container na rede dada, lido via `docker network inspect` (o IP do
-/// `container inspect` vem vazio em algumas combinações de Docker/bollard).
-pub async fn get_container_ip(
-    docker: &Docker,
-    container_id: &str,
-    network_name: &str,
-) -> Result<String> {
-    // Usa `docker network inspect` (NetworkContainer.ipv4_address) em vez de
-    // `docker container inspect` (EndpointSettings.ip_address).
-    // EndpointSettings.ip_address vem vazio em alguns Docker/bollard combos;
-    // NetworkContainer.ipv4_address é uma struct diferente e mais confiável.
-    debug!(
-        container_id = %format!(
-            "...{}",
-            &container_id[..container_id.len().min(10)]
-        ),
-        network = %network_name,
-        "inspecionando rede"
-    );
-
-    let net_info = docker
-        .inspect_network::<String>(network_name, None)
-        .await
-        .map_err(|e| anyhow!("falha ao inspecionar rede {network_name}: {e}"))?;
-
-    let net_containers = net_info.containers.unwrap_or_default();
-
-    info!(
-        container_id = %format!(
-            "...{}",
-            &container_id[..container_id.len().min(10)]
-        ),
-        network = %network_name,
-        count = net_containers.len(),
-        ids = ?net_containers
-            .keys()
-            .map(|k| &k[..k.len().min(12)])
-            .collect::<Vec<_>>(),
-        "containers encontrados na rede"
-    );
-
-    // Chave do mapa é o container ID completo (64 hex chars)
-    let nc = net_containers
-        .get(container_id)
-        .or_else(|| {
-            net_containers
-                .iter()
-                .find(|(k, _)| k.starts_with(container_id) || container_id.starts_with(k.as_str()))
-                .map(|(_, v)| v)
-        })
-        .ok_or_else(|| {
-            let ids: Vec<String> = net_containers
-                .keys()
-                .map(|k| k[..k.len().min(12)].to_string())
-                .collect();
-            anyhow!("container não encontrado na rede {network_name} (presentes: {ids:?})")
-        })?;
-
-    info!(
-        container_id = %format!("...{}", &container_id[..container_id.len().min(10)]),
-        network = %network_name,
-        ipv4 = ?nc.ipv4_address,
-        mac = ?nc.mac_address,
-        "NetworkContainer encontrado"
-    );
-
-    // ipv4_address vem no formato CIDR "172.18.0.2/16" — extrai só o IP
-    let ip = nc
-        .ipv4_address
-        .as_deref()
-        .filter(|s| !s.is_empty())
-        .map(|s| s.split('/').next().unwrap_or(s).to_string())
-        .ok_or_else(|| anyhow!("sem IPv4 para container na rede {network_name}"))?;
-
-    info!(
-        container_id = %format!(
-            "...{}",
-            &container_id[..container_id.len().min(10)]
-        ),
-        network = %network_name,
-        ip = %ip, "IP resolvido"
-    );
-    Ok(ip)
-}
-
-/// Returns the last `tail` lines of stdout+stderr from a container (best-effort).
-pub async fn get_container_logs(docker: &Docker, container_id: &str, tail: usize) -> Vec<String> {
-    let opts = LogsOptions::<String> {
-        stdout: true,
-        stderr: true,
-        tail: tail.to_string(),
-        ..Default::default()
-    };
-    let mut stream = docker.logs(container_id, Some(opts));
-    let mut lines = Vec::new();
-    while let Some(Ok(output)) = stream.next().await {
-        let text = output.to_string();
-        for line in text.lines() {
-            if !line.is_empty() {
-                lines.push(line.to_string());
-            }
-        }
-    }
-    lines
 }
 
 pub async fn find_all_by_service_id(docker: &Docker, service_id: &str) -> Result<Vec<String>> {
@@ -906,14 +346,6 @@ pub async fn find_by_name(docker: &Docker, name: &str) -> Result<Option<String>>
     Ok(found)
 }
 
-/// O label `rustploy.service_id` de um container identifica `service_id`?
-///
-/// Aceita também o formato de antes dos prefixos de tipo nos IDs (commit
-/// 8a6d27f): containers criados naquela época carregam o ULID sem o `svc_`.
-pub fn label_owned_by(label: &str, service_id: &str) -> bool {
-    label == service_id || service_id.strip_prefix("svc_") == Some(label)
-}
-
 /// Quem ocupa o nome `name` no host: `None` se não há container com esse
 /// nome; senão `(container_id, rustploy.service_id)`, com o label `None` num
 /// container sem ele (não criado pelo rustploy, ou antigo demais).
@@ -1008,7 +440,7 @@ pub async fn list_running_by_prefix(
 
 /// Portas TCP que o container declara expor (`EXPOSE` da imagem + `expose:`/
 /// `ports:` do compose).
-async fn exposed_tcp_ports(docker: &Docker, container_id: &str) -> Vec<u16> {
+pub(super) async fn exposed_tcp_ports(docker: &Docker, container_id: &str) -> Vec<u16> {
     let Ok(info) = inspect(docker, container_id).await else {
         return Vec::new();
     };
@@ -1035,7 +467,7 @@ async fn exposed_tcp_ports(docker: &Docker, container_id: &str) -> Vec<u16> {
 ///
 /// O Compose nomeia `<projeto>-<serviço>-<réplica>`; aceita também o nome sem
 /// sufixo de réplica, que é o que aparece com `container_name:` fixo.
-fn match_ingress_service(
+pub(super) fn match_ingress_service(
     candidates: &[(String, String)],
     prefix: &str,
     svc: &str,
@@ -1052,7 +484,7 @@ fn match_ingress_service(
 /// A ordem de `want_ports` manda: a primeira porta pedida que alguém expuser
 /// decide, para que um serviço com dois domínios em portas diferentes caia
 /// sempre no mesmo container em vez de alternar.
-fn match_exposed_port(exposed: &[Vec<u16>], want_ports: &[u16]) -> Option<usize> {
+pub(super) fn match_exposed_port(exposed: &[Vec<u16>], want_ports: &[u16]) -> Option<usize> {
     want_ports
         .iter()
         .find_map(|want| exposed.iter().position(|ports| ports.contains(want)))
@@ -1217,6 +649,7 @@ mod tests_ingress {
 #[cfg(test)]
 mod tests_owner {
     use super::*;
+    use bollard::container::{Config, CreateContainerOptions};
 
     const SVC: &str = "svc_01JABCDEFGHJKMNPQRSTVWXYZ0";
 

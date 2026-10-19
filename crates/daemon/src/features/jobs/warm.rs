@@ -12,8 +12,8 @@
 
 use crate::bootstrap::state::AppState;
 use crate::db::{self, Db, daemon_settings};
-use crate::docker::compose::{self, ComposeImages};
-use crate::docker::networks;
+use crate::engine::compose::{self, ComposeImages};
+use crate::engine::networks;
 use crate::features::maintenance::prune::{self as docker_prune, BuildCachePrune};
 use anyhow::{Result, anyhow};
 use chrono::{DateTime, Duration as ChronoDuration, Utc};

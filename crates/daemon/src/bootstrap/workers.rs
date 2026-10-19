@@ -2,7 +2,7 @@
 
 use crate::bootstrap::state::AppState;
 use crate::db::Db;
-use crate::docker::DockerClient;
+use crate::engine::DockerClient;
 use crate::features::ingress::TlsManager;
 use crate::features::registry::storage::RegistryStorage;
 use crate::features::{backup, deploy, jobs, maintenance, observability, registry};

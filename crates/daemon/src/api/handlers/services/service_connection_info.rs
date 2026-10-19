@@ -2,7 +2,7 @@
 //! serviço (ver `crate::platform::connection` e `docs/plano-banco-compartilhado.md` §3).
 
 use crate::platform::connection::{self, ConnTarget};
-use crate::{bootstrap::state::AppState, docker::containers, features::deploy::env_resolve};
+use crate::{bootstrap::state::AppState, engine::containers, features::deploy::env_resolve};
 use shared::{Response as RpResponse, ServiceSource};
 use std::collections::HashMap;
 
