@@ -83,7 +83,7 @@
             { v: 'monitoring',    label: 'Monitoring',    icon: '◔' },
             { v: 'schedules',     label: 'Schedules',     icon: '◫' },
             { v: 'ingress',       label: 'Ingress',       icon: '↦' },
-            { v: 'docker',        label: 'Docker',        icon: '◉' } ] },
+            { v: 'docker',        label: 'Runtime',       icon: '◉' } ] },
           { title: 'MANAGEMENT', items: [
             { v: 'projects', label: 'Projects', icon: '◧', also: ['project', 'service'] } ] } ],
         on(it) { const v = $store.app.view; return v === it.v || (it.also || []).includes(v); }
@@ -531,7 +531,7 @@
       <column class="content" x-data="docker" x-show="$store.app.view === 'docker'">
         <row class="page-head">
           <column class="page-head__titles">
-            <text class="page-head__title">Docker</text>
+            <text class="page-head__title">Runtime</text>
             <text class="page-head__subtitle">Containers, imagens, volumes e networks do host.</text>
           </column>
           <row class="page-head__stats page-head__stats--hide-md">
@@ -1450,9 +1450,9 @@
           </column>
         </column>
 
-        <!-- Manutenção: limpeza automática de recursos Docker sem uso (ver
+        <!-- Manutenção: limpeza automática de recursos do runtime sem uso (ver
              docs/plano-limpeza-automatica-docker.md) — mesmas funções dos
-             botões manuais da aba Docker, disparadas por agendamento em vez
+             botões manuais da aba Runtime, disparadas por agendamento em vez
              de clique. -->
         <column class="u-fill-all" x-show="store.settingsTab === 'maintenance'">
           <column class="form-panel">
@@ -1521,7 +1521,7 @@
               <column class="healthcheck__field">
                 <text class="u-label-cap">SÓ IMAGENS CRIADAS HÁ MAIS DE (HORAS)</text>
                 <input class="field__input" type="number" min="0" max="8760" x-model="store.dockerCleanupImagesOlderThanHours" placeholder="168" />
-                <text class="u-muted">0 não filtra por idade. O Docker olha a data de criação da imagem, não a do último uso: as imagens base antigas continuam elegíveis.</text>
+                <text class="u-muted">0 não filtra por idade. O runtime olha a data de criação da imagem, não a do último uso: as imagens base antigas continuam elegíveis.</text>
               </column>
             </row>
 

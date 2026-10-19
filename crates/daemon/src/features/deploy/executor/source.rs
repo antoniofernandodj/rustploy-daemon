@@ -152,7 +152,7 @@ impl DeployExecutor {
         self.log_step(
             &dep.id,
             &svc.id,
-            &format!("--> Build Docker: {} ({})", tag, dockerfile_path),
+            &format!("--> Build da imagem: {} ({})", tag, dockerfile_path),
         )
         .await;
         images::build(
