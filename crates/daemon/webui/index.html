@@ -1656,15 +1656,15 @@
                     <text class="badge__label" :class="'state-cell--' + service.statusKind" x-text="service.statusLabel"></text>
                   </row>
                 </row>
-                <row class="card__container" style="gap:6px">
-                  <text class="u-muted" x-text="'name: ' + service.containerName"></text>
+                <row class="card__container" style="gap:6px;align-items:center">
                   <button class="btn--copy-mini" type="button" title="Copiar nome" x-show="service.containerNameFull"
                     @click="$store.app.copyText(service.containerNameFull, 'nome')">⧉</button>
+                  <text class="u-muted" x-text="'name: ' + service.containerName"></text>
                 </row>
-                <row style="gap:6px">
-                  <text class="u-muted" x-text="'id: ' + service.containerId"></text>
+                <row style="gap:6px;align-items:center">
                   <button class="btn--copy-mini" type="button" title="Copiar id" x-show="service.containerIdFull"
                     @click="$store.app.copyText(service.containerIdFull, 'id')">⧉</button>
+                  <text class="u-muted" x-text="'id: ' + service.containerId"></text>
                   <text class="u-muted" x-show="service.containerExtra" x-text="'extra: ' + service.containerExtra"></text>
                 </row>
                 <hr class="rule" />
