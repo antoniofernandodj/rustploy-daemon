@@ -61,7 +61,7 @@ pub fn spawn_stateful(
     {
         let state2 = state.clone();
         tokio::spawn(async move {
-            deploy::queue::run_worker(state2).await;
+            deploy::queue::run_worker(state2.deploy_ctx()).await;
         });
     }
 
@@ -93,7 +93,7 @@ pub fn spawn_stateful(
     {
         let state2 = state.clone();
         tokio::spawn(async move {
-            observability::watchdog::watchdog_loop(state2).await;
+            observability::watchdog::watchdog_loop(state2.watchdog_ctx()).await;
         });
     }
 
@@ -120,7 +120,7 @@ pub fn spawn_stateful(
     {
         let state2 = state.clone();
         tokio::spawn(async move {
-            jobs::scheduler::scheduler_loop(state2).await;
+            jobs::scheduler::scheduler_loop(state2.jobs_ctx()).await;
         });
     }
 
@@ -128,7 +128,7 @@ pub fn spawn_stateful(
     {
         let state2 = state.clone();
         tokio::spawn(async move {
-            maintenance::scheduler::scheduler_loop(state2).await;
+            maintenance::scheduler::scheduler_loop(state2.maintenance_ctx()).await;
         });
     }
 

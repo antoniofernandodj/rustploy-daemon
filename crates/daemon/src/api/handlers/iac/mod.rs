@@ -6,7 +6,7 @@ use shared::{Command, Response as RpResponse};
 pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
     match cmd {
         Command::ServiceExportPlan { service_id } => {
-            crate::features::iac::service_export::plan(state, service_id).await
+            crate::features::iac::service_export::plan(state.iac_ctx(), service_id).await
         }
         Command::ServiceExport {
             service_id,
@@ -14,7 +14,7 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
             project_env_keys,
         } => {
             crate::features::iac::service_export::export(
-                state,
+                state.iac_ctx(),
                 service_id,
                 include_values,
                 project_env_keys,
@@ -22,18 +22,21 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
             .await
         }
         Command::ServiceImport(req) => {
-            crate::features::iac::service_import::handle(state, req).await
+            crate::features::iac::service_import::handle(state.iac_ctx(), req).await
         }
         Command::ManifestApply {
             manifests,
             prune,
             deploy,
-        } => crate::features::iac::manifest_apply::handle(state, manifests, prune, deploy).await,
+        } => {
+            crate::features::iac::manifest_apply::handle(state.iac_ctx(), manifests, prune, deploy)
+                .await
+        }
         Command::ManifestExport { project_id } => {
-            crate::features::iac::manifest_export::handle(state, project_id).await
+            crate::features::iac::manifest_export::handle(state.iac_ctx(), project_id).await
         }
         Command::ManifestExportAll => {
-            crate::features::iac::manifest_export_all::handle(state).await
+            crate::features::iac::manifest_export_all::handle(state.iac_ctx()).await
         }
         Command::ManifestImport {
             yaml,
@@ -41,7 +44,14 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
             prune,
             deploy,
         } => {
-            crate::features::iac::manifest_import::handle(state, yaml, dotenv, prune, deploy).await
+            crate::features::iac::manifest_import::handle(
+                state.iac_ctx(),
+                yaml,
+                dotenv,
+                prune,
+                deploy,
+            )
+            .await
         }
         _ => RpResponse::err("NotImplemented", "command not yet implemented"),
     }

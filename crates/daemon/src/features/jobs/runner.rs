@@ -3,8 +3,8 @@
 //! (`docker::compose::run_once`), grava o resultado em `job_run`/`job_log` e
 //! reagenda (`Job::recurrence`, quando houver).
 
-use crate::bootstrap::state::AppState;
 use crate::engine::{self, DockerClient, networks};
+use crate::features::jobs::JobsContext;
 use crate::platform::event_bus::EventBus;
 use crate::platform::secrets::SecretsManager;
 use crate::store;
@@ -33,7 +33,7 @@ pub struct JobRunner {
 /// `Command::JobRunNow` (disparo manual). Retorna assim que o `job_run` é
 /// criado; o resultado chega depois via `Event::JobRunStateChanged` +
 /// `Command::JobRunHistory`/`GetJobLogs`.
-pub async fn spawn(state: &AppState, job: Job) -> Result<JobRun> {
+pub async fn spawn(state: &JobsContext, job: Job) -> Result<JobRun> {
     let run = store::job_run::create(&state.db, &job.id).await?;
     let runner = Arc::new(JobRunner {
         db: state.db.clone(),
@@ -45,7 +45,7 @@ pub async fn spawn(state: &AppState, job: Job) -> Result<JobRun> {
     });
     let run_id = run.id.clone();
 
-    // Sinal de cancelamento (`Command::JobRunCancel` → `AppState::
+    // Sinal de cancelamento (`Command::JobRunCancel` → `JobsContext::
     // active_jobs`): registrado ANTES da task começar a rodar, removido
     // depois de terminar (sucesso, falha ou cancelamento) — mesmo idioma de
     // `active_deploys`, mas com um `watch<bool>` observado dentro de

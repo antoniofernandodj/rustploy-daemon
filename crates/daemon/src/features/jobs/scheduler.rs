@@ -2,7 +2,7 @@
 //! `env_backup.rs`: `tokio::time::interval`, a cada tick busca os jobs
 //! vencidos e dispara cada um em background (não bloqueia o próprio ticker).
 
-use crate::bootstrap::state::AppState;
+use crate::features::jobs::JobsContext;
 use crate::store;
 use std::time::Duration;
 use tokio::time::MissedTickBehavior;
@@ -10,7 +10,7 @@ use tracing::{debug, warn};
 
 const TICK_SECS: u64 = 30;
 
-pub async fn scheduler_loop(state: AppState) {
+pub async fn scheduler_loop(state: JobsContext) {
     let mut ticker = tokio::time::interval(Duration::from_secs(TICK_SECS));
     ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
     loop {

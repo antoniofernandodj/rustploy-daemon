@@ -10,7 +10,7 @@
 //!    devolve tudo o que o relatório precisa; é o que o `dry_run` mostra.
 //! 2. [`apply`] — só roda sem `dry_run` e sem pendência que bloqueie.
 
-use crate::bootstrap::state::AppState;
+use crate::features::iac::IacContext;
 use crate::features::iac::service_bundle::ServiceBundle;
 use shared::{
     EnvVar, EnvVarValue, ImportWarning, Project, ProjectEnvChoice, ProjectEnvState,
@@ -98,7 +98,7 @@ fn rename_compose_alias(content: &str, old: &str, new: &str) -> String {
     out
 }
 
-async fn analyze(state: &AppState, req: &ServiceImportReq) -> Result<Analysis, Fail> {
+async fn analyze(state: &IacContext, req: &ServiceImportReq) -> Result<Analysis, Fail> {
     if req.yaml.len() > MAX_YAML_BYTES {
         return Err((
             "InvalidBundle",
@@ -369,7 +369,7 @@ async fn analyze(state: &AppState, req: &ServiceImportReq) -> Result<Analysis, F
 }
 
 /// Grava o que a análise decidiu.
-async fn apply(state: &AppState, req: &ServiceImportReq, mut a: Analysis) -> RpResponse {
+async fn apply(state: &IacContext, req: &ServiceImportReq, mut a: Analysis) -> RpResponse {
     match write_all(state, req, &mut a).await {
         Ok(()) => RpResponse::ServiceImportReport(a.report),
         Err(r) => r,
@@ -377,7 +377,7 @@ async fn apply(state: &AppState, req: &ServiceImportReq, mut a: Analysis) -> RpR
 }
 
 async fn write_all(
-    state: &AppState,
+    state: &IacContext,
     req: &ServiceImportReq,
     a: &mut Analysis,
 ) -> Result<(), RpResponse> {
@@ -403,21 +403,24 @@ async fn write_all(
     }
 
     a.spec.project_id = project_id.to_string();
-    let svc = match crate::features::services::create::handle(state.clone(), a.spec.clone()).await {
-        RpResponse::Service(s) => s,
-        err @ RpResponse::Err { .. } => return Err(err),
-        _ => {
-            return Err(RpResponse::err(
-                "Unexpected",
-                "resposta inesperada do ServiceCreate",
-            ));
-        }
-    };
+    let svc =
+        match crate::features::services::create::handle(state.services.clone(), a.spec.clone())
+            .await
+        {
+            RpResponse::Service(s) => s,
+            err @ RpResponse::Err { .. } => return Err(err),
+            _ => {
+                return Err(RpResponse::err(
+                    "Unexpected",
+                    "resposta inesperada do ServiceCreate",
+                ));
+            }
+        };
     a.report.service_id = Some(svc.id.clone());
     info!(service_id = %svc.id, name = %svc.spec.name, project_id, "service_import: serviço criado");
 
     if req.deploy {
-        match crate::features::deploy::start::handle(state.clone(), svc.id.clone()).await {
+        match crate::features::deploy::start::handle(state.deploy.clone(), svc.id.clone()).await {
             RpResponse::Err { message, .. } => {
                 // O serviço existe; só o deploy não começou. Vira aviso, não falha.
                 a.report.warnings.push(warn_item(
@@ -431,7 +434,7 @@ async fn write_all(
     Ok(())
 }
 
-pub async fn handle(state: AppState, req: ServiceImportReq) -> RpResponse {
+pub async fn handle(state: IacContext, req: ServiceImportReq) -> RpResponse {
     info!(
         dry_run = req.dry_run,
         deploy = req.deploy,
@@ -521,7 +524,7 @@ mod e2e {
     use shared::{DomainRoute, EnvVarValue, Healthcheck, ResourceLimits, Response, ServiceStatus};
     use ulid::Ulid;
 
-    async fn daemon() -> AppState {
+    async fn daemon() -> IacContext {
         let tmp = std::env::temp_dir().join(format!("rustploy-test-state-{}", Ulid::new()));
         let db = crate::store::connect(&tmp.join("data")).await.unwrap();
         let config = crate::platform::config::RustployConfig::default();
@@ -542,7 +545,7 @@ mod e2e {
             )
             .unwrap(),
         );
-        AppState::new(
+        crate::bootstrap::state::AppState::new(
             db,
             docker,
             ingress,
@@ -556,6 +559,7 @@ mod e2e {
             None,
             None,
         )
+        .iac_ctx()
     }
 
     fn plain(k: &str, v: &str) -> EnvVar {
@@ -611,7 +615,7 @@ mod e2e {
     }
 
     /// O servidor A: projeto "Flow" com 3 variáveis (uma é secret) e o serviço api.
-    async fn server_a() -> (AppState, String) {
+    async fn server_a() -> (IacContext, String) {
         let a = daemon().await;
         let p = crate::store::projects::create(&a.db, "Flow".into(), None)
             .await
@@ -634,7 +638,7 @@ mod e2e {
         (a, svc.id)
     }
 
-    async fn export(a: &AppState, id: &str, values: bool, keys: &[&str]) -> String {
+    async fn export(a: &IacContext, id: &str, values: bool, keys: &[&str]) -> String {
         match service_export_export(a, id, values, keys).await {
             Response::ServiceBundleYaml { yaml, .. } => yaml,
             other => panic!("export falhou: {other:?}"),
@@ -642,7 +646,7 @@ mod e2e {
     }
 
     async fn service_export_export(
-        a: &AppState,
+        a: &IacContext,
         id: &str,
         values: bool,
         keys: &[&str],
@@ -679,7 +683,7 @@ mod e2e {
     }
 
     /// O projeto do servidor B em que o usuário está com a tela aberta.
-    async fn project_b(b: &AppState) -> String {
+    async fn project_b(b: &IacContext) -> String {
         crate::store::projects::create(&b.db, "Flow B".into(), None)
             .await
             .unwrap()
@@ -801,7 +805,7 @@ mod e2e {
             .unwrap();
             (b, p.id)
         };
-        let run = |b: AppState, pid: String, choice: Option<ProjectEnvChoice>| {
+        let run = |b: IacContext, pid: String, choice: Option<ProjectEnvChoice>| {
             let yaml = yaml.clone();
             async move {
                 let mut r = ServiceImportReq {
@@ -1005,7 +1009,7 @@ mod e2e {
         assert!(rep.warnings.iter().any(|w| w.code == "domains_dropped"));
     }
 
-    async fn handle_resp(b: &AppState, r: ServiceImportReq) -> Response {
+    async fn handle_resp(b: &IacContext, r: ServiceImportReq) -> Response {
         super::handle(b.clone(), r).await
     }
 }

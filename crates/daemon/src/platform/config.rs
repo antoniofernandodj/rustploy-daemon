@@ -389,6 +389,20 @@ fn dirs_config_path() -> Option<PathBuf> {
     })
 }
 
+/// Detecta o IP de saída da máquina conectando um socket UDP em 8.8.8.8:80
+/// (sem enviar dados) e lendo o endereço local escolhido pelo kernel. Usado só
+/// como host de fallback quando `api.domain` não está configurado.
+pub fn outbound_ip() -> String {
+    use std::net::UdpSocket;
+    UdpSocket::bind("0.0.0.0:0")
+        .and_then(|s| {
+            s.connect("8.8.8.8:80")?;
+            s.local_addr()
+        })
+        .map(|addr| addr.ip().to_string())
+        .unwrap_or_else(|_| "localhost".to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

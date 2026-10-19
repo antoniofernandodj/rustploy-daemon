@@ -1,7 +1,7 @@
 //! Limpeza de containers, volumes, imagens, build cache e redes do Docker: o miolo que o botão manual
 //! (`api::handlers::docker_prune`) e a limpeza automática (`scheduler`/`run`) compartilham.
 
-use crate::bootstrap::state::AppState;
+use crate::features::maintenance::MaintenanceContext;
 use crate::store::{Db, daemon_settings};
 use bollard::{
     container::PruneContainersOptions, image::PruneImagesOptions, network::PruneNetworksOptions,
@@ -23,7 +23,7 @@ pub struct PruneStat {
     pub reclaimed_bytes: u64,
 }
 
-pub async fn prune_containers_core(state: &AppState) -> Result<PruneStat, String> {
+pub async fn prune_containers_core(state: &MaintenanceContext) -> Result<PruneStat, String> {
     let result = state
         .docker
         .inner
@@ -41,7 +41,10 @@ pub async fn prune_containers_core(state: &AppState) -> Result<PruneStat, String
     }
 }
 
-pub async fn prune_volumes_core(state: &AppState, all: bool) -> Result<PruneStat, String> {
+pub async fn prune_volumes_core(
+    state: &MaintenanceContext,
+    all: bool,
+) -> Result<PruneStat, String> {
     let mut filters = std::collections::HashMap::new();
     if all {
         filters.insert("all", vec!["true"]);
@@ -65,7 +68,7 @@ pub async fn prune_volumes_core(state: &AppState, all: bool) -> Result<PruneStat
 /// (filtro `until` do Docker, que olha a data de criação, não a do último uso);
 /// `0` não filtra por idade.
 pub async fn prune_images_core(
-    state: &AppState,
+    state: &MaintenanceContext,
     all: bool,
     older_than_hours: u32,
 ) -> Result<PruneStat, String> {
@@ -130,7 +133,7 @@ fn build_cache_prune_args_for(engine: crate::engine::Engine, older_than_hours: u
 /// O instante e o corte ficam registrados para `JobWarmStatus` saber se o
 /// cache de um job sobreviveu.
 pub async fn prune_build_cache_core(
-    state: &AppState,
+    state: &MaintenanceContext,
     older_than_hours: u32,
 ) -> Result<PruneStat, String> {
     let output = tokio::time::timeout(
@@ -212,7 +215,7 @@ fn parse_reclaimed_space(output: &str) -> u64 {
     0
 }
 
-pub async fn prune_networks_core(state: &AppState) -> Result<PruneStat, String> {
+pub async fn prune_networks_core(state: &MaintenanceContext) -> Result<PruneStat, String> {
     let result = state
         .docker
         .inner

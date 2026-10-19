@@ -1,7 +1,7 @@
 //! `Command::ManifestImport`: importa um manifesto IaC (raiz `projects:` ou de
 //! projeto) mais o `.env`, criando provedores git referenciados.
 
-use crate::bootstrap::state::AppState;
+use crate::features::iac::IacContext;
 use crate::features::iac::manifest::{
     GitProviderDoc, ProjectEntry, ProjectManifest, ServerManifest,
 };
@@ -25,7 +25,7 @@ use ulid::Ulid;
 /// — também aborta ANTES de aplicar, em vez de silenciosamente cair pra "Git"
 /// sem provider. Sem pendências, reconcilia exatamente como `Command::ManifestApply`.
 pub async fn handle(
-    state: AppState,
+    state: IacContext,
     yaml: String,
     dotenv: String,
     prune: bool,
@@ -322,12 +322,12 @@ mod git_provider_iac_tests {
         crate::store::connect(&dir).await.unwrap()
     }
 
-    /// `AppState` completo (Docker/ingress/TLS/secrets reais, mas sem
+    /// `IacContext` completo (Docker/ingress/TLS/secrets reais, mas sem
     /// depender de nenhum daemon Docker/Let's Encrypt de verdade — nada aqui
     /// chega a fazer uma chamada de rede) para exercitar os handlers reais
     /// (`super::handle`, `manifest_apply::handle`) fim-a-fim, em vez de lógica
     /// replicada manualmente no teste.
-    async fn test_state(db: crate::store::Db) -> AppState {
+    async fn test_state(db: crate::store::Db) -> IacContext {
         let tmp = std::env::temp_dir().join(format!("rustploy-test-state-{}", Ulid::new()));
         let config = crate::platform::config::RustployConfig::default();
         let docker = std::sync::Arc::new(
@@ -347,7 +347,7 @@ mod git_provider_iac_tests {
             )
             .unwrap(),
         );
-        AppState::new(
+        crate::bootstrap::state::AppState::new(
             db,
             docker,
             ingress,
@@ -361,6 +361,7 @@ mod git_provider_iac_tests {
             None,
             None,
         )
+        .iac_ctx()
     }
 
     #[tokio::test]

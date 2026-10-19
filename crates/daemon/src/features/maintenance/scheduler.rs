@@ -4,7 +4,7 @@
 //! um JSON e compara `next_run_at` (persistido, nunca recalculado a partir
 //! de "agora" — ver `DockerCleanupConfig::recompute_next_run`) contra `now`.
 
-use crate::bootstrap::state::AppState;
+use crate::features::maintenance::MaintenanceContext;
 use chrono::Utc;
 use std::time::Duration;
 use tokio::time::MissedTickBehavior;
@@ -12,7 +12,7 @@ use tracing::{info, warn};
 
 const TICK_SECS: u64 = 60;
 
-pub async fn scheduler_loop(state: AppState) {
+pub async fn scheduler_loop(state: MaintenanceContext) {
     let mut ticker = tokio::time::interval(Duration::from_secs(TICK_SECS));
     ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
     loop {

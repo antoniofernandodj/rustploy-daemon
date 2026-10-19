@@ -5,7 +5,7 @@
 //! um resumo, pra tela mostrar "última limpeza" sem depender do SSE.
 
 use super::prune::{self as docker_prune, PruneStat};
-use crate::bootstrap::state::AppState;
+use crate::features::maintenance::MaintenanceContext;
 use crate::store::daemon_settings;
 use chrono::Utc;
 use shared::{DockerCleanupConfig, DockerCleanupLastRun, DockerCleanupResourceResult, Event};
@@ -21,7 +21,7 @@ const RUN_TIMEOUT: Duration = Duration::from_secs(900);
 /// executa, nenhum deploy, pre-deploy nem job avulso compete por CPU/disco, e
 /// ela nunca apaga cache no meio de um build. A vaga solta ao fim.
 pub async fn run_holding_slot(
-    state: &AppState,
+    state: &MaintenanceContext,
     config: DockerCleanupConfig,
     permit: OwnedSemaphorePermit,
 ) -> DockerCleanupConfig {
@@ -35,7 +35,7 @@ pub async fn run_holding_slot(
 }
 
 async fn finish_timed_out(
-    state: &AppState,
+    state: &MaintenanceContext,
     mut config: DockerCleanupConfig,
 ) -> DockerCleanupConfig {
     let message = format!(
@@ -63,7 +63,10 @@ async fn finish_timed_out(
 
 /// Ordem importa: containers primeiro (libera imagens/redes em uso por eles),
 /// depois imagens, depois volumes/redes que só ficam "sem uso" após isso.
-pub async fn run(state: &AppState, mut config: DockerCleanupConfig) -> DockerCleanupConfig {
+pub async fn run(
+    state: &MaintenanceContext,
+    mut config: DockerCleanupConfig,
+) -> DockerCleanupConfig {
     let mut results = Vec::new();
 
     if config.containers {
@@ -154,14 +157,14 @@ fn record(resource: &str, result: Result<PruneStat, String>) -> DockerCleanupRes
 }
 
 pub(crate) async fn save_config(
-    state: &AppState,
+    state: &MaintenanceContext,
     config: &DockerCleanupConfig,
 ) -> anyhow::Result<()> {
     let json = serde_json::to_string(config)?;
     daemon_settings::set(&state.db, daemon_settings::KEY_DOCKER_CLEANUP_CONFIG, &json).await
 }
 
-pub(crate) async fn load_config(state: &AppState) -> anyhow::Result<DockerCleanupConfig> {
+pub(crate) async fn load_config(state: &MaintenanceContext) -> anyhow::Result<DockerCleanupConfig> {
     let raw = daemon_settings::get(&state.db, daemon_settings::KEY_DOCKER_CLEANUP_CONFIG).await?;
     Ok(match raw {
         Some(json) => serde_json::from_str(&json).unwrap_or_default(),
@@ -169,7 +172,7 @@ pub(crate) async fn load_config(state: &AppState) -> anyhow::Result<DockerCleanu
     })
 }
 
-pub(crate) async fn load_last_run(state: &AppState) -> Option<DockerCleanupLastRun> {
+pub(crate) async fn load_last_run(state: &MaintenanceContext) -> Option<DockerCleanupLastRun> {
     let raw = daemon_settings::get(&state.db, daemon_settings::KEY_DOCKER_CLEANUP_LAST_RUN)
         .await
         .ok()

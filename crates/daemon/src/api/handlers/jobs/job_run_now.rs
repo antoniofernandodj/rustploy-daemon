@@ -11,7 +11,7 @@ pub async fn handle(state: AppState, id: String) -> RpResponse {
         Err(e) => return RpResponse::err("DatabaseError", e.to_string()),
     };
 
-    match crate::features::jobs::runner::spawn(&state, job).await {
+    match crate::features::jobs::runner::spawn(&state.jobs_ctx(), job).await {
         Ok(run) => RpResponse::JobRun(run),
         Err(e) => RpResponse::err("JobRunError", e.to_string()),
     }

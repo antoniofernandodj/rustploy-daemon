@@ -1,7 +1,7 @@
 //! `Command::ManifestApply`: reconcilia manifestos YAML de projeto (IaC) com o
 //! banco, com prune e deploy opcionais.
 
-use crate::bootstrap::state::AppState;
+use crate::features::iac::IacContext;
 use crate::features::iac::manifest::ProjectManifest;
 use shared::{
     ActionVerb, ApplyReport, ResourceAction, ResourceActionKind, Response as RpResponse,
@@ -16,7 +16,7 @@ use tracing::{debug, info, warn};
 /// também remove serviços ausentes do manifesto. Com `deploy`, dispara o deploy
 /// dos serviços criados/alterados depois de sincronizar.
 pub async fn handle(
-    state: AppState,
+    state: IacContext,
     manifests: Vec<String>,
     prune: bool,
     deploy: bool,
@@ -65,7 +65,9 @@ pub async fn handle(
     // Deploy dos serviços alterados — feito por último, após todas as escritas.
     if deploy {
         for (service_id, label) in &changed {
-            match crate::features::deploy::start::handle(state.clone(), service_id.clone()).await {
+            match crate::features::deploy::start::handle(state.deploy.clone(), service_id.clone())
+                .await
+            {
                 RpResponse::Err { code, message } => {
                     warn!(%label, %code, %message, "manifest_apply: deploy falhou ao iniciar");
                 }
@@ -86,7 +88,7 @@ pub async fn handle(
 /// vars só se o manifesto declara alguma, e reconcilia os serviços por nome
 /// (com prune e deploy opcionais).
 async fn apply_one(
-    state: &AppState,
+    state: &IacContext,
     manifest: ProjectManifest,
     prune: bool,
     provider_ids: &BTreeMap<String, String>,
@@ -230,7 +232,7 @@ async fn apply_one(
                     .await
                     .map_err(db_err)?;
                 crate::features::services::update::sync_firewall(
-                    state,
+                    &state.services,
                     &s.id,
                     s.spec.host_port,
                     effective_spec.host_port,
@@ -267,7 +269,9 @@ async fn apply_one(
             }
             let label = format!("{name}/{}", s.spec.name);
             // Reusa a mesma semântica de remoção da TUI (remove rota + DB).
-            match crate::features::services::delete::handle(state.clone(), s.id.clone()).await {
+            match crate::features::services::delete::handle(state.services.clone(), s.id.clone())
+                .await
+            {
                 RpResponse::Err { code, message } => {
                     warn!(%label, %code, %message, "manifest_apply: prune falhou");
                 }

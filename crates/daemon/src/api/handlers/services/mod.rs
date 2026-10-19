@@ -15,7 +15,7 @@ use shared::{Command, Response as RpResponse};
 pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
     match cmd {
         Command::ServiceCreate(spec) => {
-            crate::features::services::create::handle(state, spec).await
+            crate::features::services::create::handle(state.services_ctx(), spec).await
         }
         Command::ServiceList { project_id } => service_list::handle(state, project_id).await,
         Command::ServiceConnectionInfo { service_id } => {
@@ -23,11 +23,13 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         }
         Command::ServiceGet { id } => service_get::handle(state, id).await,
         Command::ServiceUpdate { id, spec } => {
-            crate::features::services::update::handle(state, id, spec).await
+            crate::features::services::update::handle(state.services_ctx(), id, spec).await
         }
-        Command::ServiceDelete { id } => crate::features::services::delete::handle(state, id).await,
+        Command::ServiceDelete { id } => {
+            crate::features::services::delete::handle(state.services_ctx(), id).await
+        }
         Command::ServiceStop { service_id } => {
-            crate::features::deploy::stop::handle(state, service_id).await
+            crate::features::deploy::stop::handle(state.deploy_ctx(), service_id).await
         }
         Command::ServiceReload { service_id } => service_reload::handle(state, service_id).await,
         Command::GetWebhookUrl { service_id } => get_webhook_url::handle(state, service_id).await,

@@ -1,7 +1,7 @@
 //! `Command::ManifestExportAll`: exporta todos os projetos e serviços num
 //! manifesto raiz só.
 
-use crate::bootstrap::state::AppState;
+use crate::features::iac::IacContext;
 use crate::features::iac::manifest::{EnvDoc, ServerManifest};
 use shared::{Response as RpResponse, ServiceSource};
 use std::collections::BTreeMap;
@@ -14,7 +14,7 @@ use tracing::{debug, info, warn};
 /// Serviços `git` que usam um provider conectado (Gitea) referenciam-no pelo
 /// nome no YAML; os dados não-secretos do provider (URL, modo de auth, client
 /// id) vão para o mesmo TOML — ver [`crate::features::iac::manifest::GitProviderDoc`].
-pub async fn handle(state: AppState) -> RpResponse {
+pub async fn handle(state: IacContext) -> RpResponse {
     info!("manifest_export_all: exportando todos os projetos");
 
     let projects = match crate::store::projects::list(&state.db).await {

@@ -315,7 +315,7 @@ pub async fn stop_all_managed(state: AppState) -> RpResponse {
         if matches!(svc.status, ServiceStatus::Stopped) {
             continue;
         }
-        let resp = crate::features::deploy::stop::handle(state.clone(), svc.id).await;
+        let resp = crate::features::deploy::stop::handle(state.deploy_ctx(), svc.id).await;
         if matches!(resp, RpResponse::Ok) {
             count += 1;
         }

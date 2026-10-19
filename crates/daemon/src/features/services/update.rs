@@ -1,11 +1,11 @@
 //! `Command::ServiceUpdate`: grava um ServiceSpec novo (porta externa, TLS dos
 //! domínios, firewall) sem redeployar.
 
-use crate::bootstrap::state::AppState;
+use crate::features::services::ServicesContext;
 use shared::{Response as RpResponse, ServiceSpec};
 use tracing::warn;
 
-pub async fn handle(state: AppState, id: String, mut spec: ServiceSpec) -> RpResponse {
+pub async fn handle(state: ServicesContext, id: String, mut spec: ServiceSpec) -> RpResponse {
     // Porta externa: sentinela 0 → aloca; manual duplicada → erro.
     if let Err(e) =
         crate::features::ingress::external_ports::resolve_host_port(&state.db, &mut spec, Some(&id))
@@ -41,7 +41,12 @@ pub async fn handle(state: AppState, id: String, mut spec: ServiceSpec) -> RpRes
 /// Porta mudou/removida → fecha a antiga (se mais ninguém a usa) e o listener
 /// do ingress; porta nova/mantida → garante a liberação. Reusado por
 /// `manifest_apply` (IaC import), que também atualiza specs fora deste handler.
-pub(crate) async fn sync_firewall(state: &AppState, id: &str, old: Option<u16>, new: Option<u16>) {
+pub(crate) async fn sync_firewall(
+    state: &ServicesContext,
+    id: &str,
+    old: Option<u16>,
+    new: Option<u16>,
+) {
     if let Some(old_port) = old.filter(|o| Some(*o) != new) {
         state.ingress.remove_port_route(old_port);
         if !crate::features::ingress::external_ports::port_in_use_by_other(

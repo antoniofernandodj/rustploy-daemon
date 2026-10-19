@@ -2,20 +2,21 @@
 //! Compose), apaga o serviço, tira suas rotas do ingress e fecha a porta
 //! externa no firewall. Volumes nomeados e imagens ficam (dados do usuário).
 
-use crate::{bootstrap::state::AppState, engine::containers};
+use crate::engine::containers;
+use crate::features::services::ServicesContext;
 use shared::{Response as RpResponse, ServiceSource};
 
 /// Containers do serviço: para (réplicas, ou `compose down`, que já os remove) e
 /// remove o que sobrar, inclusive staging e parados. Idempotente: sem container
 /// algum, é um no-op. Falha de motor = erro (o serviço não é apagado; dá para repetir).
-async fn remove_containers(state: &AppState, id: &str) -> Result<(), RpResponse> {
+async fn remove_containers(state: &ServicesContext, id: &str) -> Result<(), RpResponse> {
     let Ok(Some(svc)) = crate::store::services::get(&state.db, id).await else {
         return Ok(());
     };
     // Reaproveita o ServiceStop: Application para as réplicas; Compose roda `compose down`
     // (que remove os containers e a rede, mas NÃO os volumes).
     if let err @ RpResponse::Err { .. } =
-        crate::features::deploy::stop::handle(state.clone(), id.to_string()).await
+        crate::features::deploy::stop::handle(state.deploy.clone(), id.to_string()).await
     {
         return Err(err);
     }
@@ -32,7 +33,7 @@ async fn remove_containers(state: &AppState, id: &str) -> Result<(), RpResponse>
     Ok(())
 }
 
-pub async fn handle(state: AppState, id: String) -> RpResponse {
+pub async fn handle(state: ServicesContext, id: String) -> RpResponse {
     // Primeiro os containers: se o motor falhar, nada mudou (rotas, registro) e dá para tentar de novo.
     if let Err(e) = remove_containers(&state, &id).await {
         return e;

@@ -289,7 +289,7 @@ async fn handle(
             .unwrap(),
         (&Method::GET, "/api/access-key") => {
             let chave = agent::access_key_for(
-                &agent::public_address(&state.api, &crate::bootstrap::state::outbound_ip()),
+                &agent::public_address(&state.api, &crate::platform::config::outbound_ip()),
                 token.as_deref(),
             );
             json_value(StatusCode::OK, &serde_json::json!({ "key": chave }))
@@ -372,7 +372,7 @@ async fn mcp(req: Request<Incoming>, state: AppState) -> Response<ApiBody> {
         .filter(|h| !h.is_empty())
         .map(str::to_owned)
         .unwrap_or_else(|| {
-            agent::public_address(&state.api, &crate::bootstrap::state::outbound_ip())
+            agent::public_address(&state.api, &crate::platform::config::outbound_ip())
         });
     let body = match req.into_body().collect().await {
         Ok(c) => c.to_bytes(),

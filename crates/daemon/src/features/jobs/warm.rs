@@ -10,9 +10,9 @@
 //! aquecimento explícito e também de uma execução bem-sucedida, que baixa e
 //! compila tudo do mesmo jeito.
 
-use crate::bootstrap::state::AppState;
 use crate::engine::compose::{self, ComposeImages};
 use crate::engine::networks;
+use crate::features::jobs::JobsContext;
 use crate::features::maintenance::prune::{self as docker_prune, BuildCachePrune};
 use crate::store::{self, Db, daemon_settings};
 use anyhow::{Result, anyhow};
@@ -153,7 +153,7 @@ fn judge(
 }
 
 /// Fonte única da verdade: se o job está quente agora, e por que não, se frio.
-pub async fn status(state: &AppState, job: &Job) -> JobWarmStatus {
+pub async fn status(state: &JobsContext, job: &Job) -> JobWarmStatus {
     let warming = state
         .warming_jobs
         .lock()
@@ -198,7 +198,7 @@ pub async fn status(state: &AppState, job: &Job) -> JobWarmStatus {
 /// Pede o aquecimento de `job`. Devolve `Ok(true)` se ele já estava quente (nada
 /// é disparado) e `Ok(false)` se o aquecimento foi para a fila: a vaga única é
 /// disputada em segundo plano e o fim chega em `Event::JobWarmChanged`.
-pub async fn request(state: &AppState, job: Job) -> Result<bool, String> {
+pub async fn request(state: &JobsContext, job: Job) -> Result<bool, String> {
     if status(state, &job).await.warm {
         return Ok(true);
     }
@@ -247,7 +247,7 @@ pub async fn request(state: &AppState, job: Job) -> Result<bool, String> {
 
 /// Aquece com a vaga já em mãos. Reconfere o status primeiro: uma execução pode
 /// ter aquecido o job enquanto o pedido esperava a vez.
-async fn warm_once(state: &AppState, job: &Job) -> Result<()> {
+async fn warm_once(state: &JobsContext, job: &Job) -> Result<()> {
     if status(state, job).await.warm {
         return Ok(());
     }
@@ -278,7 +278,7 @@ async fn warm_once(state: &AppState, job: &Job) -> Result<()> {
 }
 
 async fn warm_in_dir(
-    state: &AppState,
+    state: &JobsContext,
     job: &Job,
     project_name: &str,
     network_name: &str,

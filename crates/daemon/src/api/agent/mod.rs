@@ -151,7 +151,7 @@ pub fn access_key_for(address: &str, token: Option<&str>) -> Option<String> {
 
 /// Imprime o token de conexão e sai — `rustployd access-key`.
 pub fn print_access_key_and_exit(config: &crate::platform::config::RustployConfig) -> ! {
-    let address = public_address(&config.api, &crate::bootstrap::state::outbound_ip());
+    let address = public_address(&config.api, &crate::platform::config::outbound_ip());
     match access_key_for(&address, config.api.token.as_deref()) {
         Some(key) => {
             println!("{key}");
@@ -187,7 +187,7 @@ pub fn write_connection_token(
     let Some(token) = config.api.token.as_deref() else {
         return Ok(());
     };
-    let address = public_address(&config.api, &crate::bootstrap::state::outbound_ip());
+    let address = public_address(&config.api, &crate::platform::config::outbound_ip());
     let Some(key) = access_key_for(&address, Some(token)) else {
         return Ok(());
     };

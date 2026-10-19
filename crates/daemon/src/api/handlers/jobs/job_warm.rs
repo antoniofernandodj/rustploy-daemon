@@ -11,7 +11,7 @@ pub async fn handle(state: AppState, job_id: String) -> RpResponse {
         Err(e) => return RpResponse::err("DatabaseError", e.to_string()),
     };
 
-    match crate::features::jobs::warm::request(&state, job).await {
+    match crate::features::jobs::warm::request(&state.jobs_ctx(), job).await {
         Ok(already_warm) => RpResponse::JobWarmRequested { already_warm },
         Err(message) => RpResponse::err("AlreadyWarming", message),
     }

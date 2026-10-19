@@ -19,7 +19,7 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
     match cmd {
         Command::DeployEngineStatus => deploy_engine_status::handle(state).await,
         Command::DeployStart { service_id } => {
-            crate::features::deploy::start::handle(state, service_id).await
+            crate::features::deploy::start::handle(state.deploy_ctx(), service_id).await
         }
         Command::DeployAbort { deployment_id } => deploy_abort::handle(state, deployment_id).await,
         Command::DeployQueuePromote { deployment_id } => {

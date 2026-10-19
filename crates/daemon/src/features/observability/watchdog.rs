@@ -2,7 +2,8 @@
 //! healthcheck, reinicia com limite de tentativas e, se o container sumiu, pede
 //! redeploy.
 
-use crate::{bootstrap::state::AppState, platform::event_bus::EventBus, store::Db};
+use crate::features::observability::WatchdogContext;
+use crate::{platform::event_bus::EventBus, store::Db};
 use bollard::Docker;
 use shared::{Event, Healthcheck, HealthcheckKind, ServiceSource, ServiceStatus};
 use std::{
@@ -26,7 +27,7 @@ struct ServiceState {
 /// Laço do watchdog: a cada tick, para cada serviço no ar, confere se o
 /// container roda e passa no healthcheck, e aciona `try_restart` depois de
 /// falhas seguidas.
-pub async fn watchdog_loop(state: AppState) {
+pub async fn watchdog_loop(state: WatchdogContext) {
     let mut states: HashMap<String, ServiceState> = HashMap::new();
 
     loop {
@@ -143,7 +144,7 @@ pub async fn watchdog_loop(state: AppState) {
 /// Tenta religar o container de um serviço caído, até `MAX_RESTART_ATTEMPTS`;
 /// se o container foi removido, enfileira um redeploy no lugar.
 async fn try_restart(
-    state: &AppState,
+    state: &WatchdogContext,
     svc: &shared::Service,
     container_id: &str,
     svc_state: &mut ServiceState,
@@ -248,7 +249,7 @@ fn is_not_found_error(e: &bollard::errors::Error) -> bool {
     msg.contains("404") || msg.contains("No such container")
 }
 
-async fn trigger_redeploy(state: &AppState, svc: &shared::Service) {
+async fn trigger_redeploy(state: &WatchdogContext, svc: &shared::Service) {
     info!(service = %svc.spec.name, service_id = %svc.id, "watchdog: disparando redeploy automático");
 
     let image = match &svc.spec.source {

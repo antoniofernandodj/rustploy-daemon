@@ -25,7 +25,7 @@ use shared::{Event, ServiceStatus};
 use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore, watch};
 use tracing::{info, warn};
 
-use crate::bootstrap::state::AppState;
+use crate::features::deploy::DeployContext;
 use crate::features::deploy::executor::DeployExecutor;
 
 #[derive(Default)]
@@ -38,8 +38,8 @@ struct QueueInner {
     paused: bool,
 }
 
-/// Handle compartilhado da fila (fica no `AppState`). Sem `AppState` dentro,
-/// para não criar ciclo de tipos: o worker recebe o `AppState` por fora.
+/// Handle compartilhado da fila (fica no `DeployContext`). Sem `DeployContext` dentro,
+/// para não criar ciclo de tipos: o worker recebe o `DeployContext` por fora.
 pub struct DeployQueue {
     inner: Mutex<QueueInner>,
     notify: Notify,
@@ -221,7 +221,7 @@ impl DeployQueue {
 
 /// Worker único da fila global. Spawnado uma vez no startup. Puxa um deploy por
 /// vez, roda até terminar (ou ser abortado) e só então pega o próximo.
-pub async fn run_worker(state: AppState) {
+pub async fn run_worker(state: DeployContext) {
     let queue = state.deploy_queue.clone();
     info!("deploy queue worker iniciado");
     loop {
@@ -244,7 +244,7 @@ pub async fn run_worker(state: AppState) {
 /// Roda um deployment: marca o serviço como `Deploying`, spawna o executor como
 /// task (guardando o `AbortHandle` em `active_deploys` para o `deploy_abort`) e
 /// aguarda terminar.
-async fn run_one(state: &AppState, dep_id: &str) {
+async fn run_one(state: &DeployContext, dep_id: &str) {
     // Marca o serviço como Deploying (deploy_start deixou em Queued).
     if let Ok(Some(dep)) = crate::store::deployments::get(&state.db, dep_id).await {
         let _ = crate::store::services::update_status(

@@ -7,11 +7,11 @@ use chrono::Utc;
 use shared::{DockerCleanupConfig, Response as RpResponse};
 
 pub async fn get_config(state: AppState) -> RpResponse {
-    let config = match maintenance::run::load_config(&state).await {
+    let config = match maintenance::run::load_config(&state.maintenance_ctx()).await {
         Ok(c) => c,
         Err(e) => return RpResponse::err("DatabaseError", e.to_string()),
     };
-    let last_run = maintenance::run::load_last_run(&state).await;
+    let last_run = maintenance::run::load_last_run(&state.maintenance_ctx()).await;
     RpResponse::DockerCleanupConfig { config, last_run }
 }
 
@@ -20,10 +20,10 @@ pub async fn set_config(state: AppState, mut config: DockerCleanupConfig) -> RpR
     // faz o scheduler saber quando é a próxima janela, sem recalcular a
     // partir de "agora" a cada tick (ver `DockerCleanupConfig::recompute_next_run`).
     config.recompute_next_run(Utc::now());
-    if let Err(e) = maintenance::run::save_config(&state, &config).await {
+    if let Err(e) = maintenance::run::save_config(&state.maintenance_ctx(), &config).await {
         return RpResponse::err("DatabaseError", e.to_string());
     }
-    let last_run = maintenance::run::load_last_run(&state).await;
+    let last_run = maintenance::run::load_last_run(&state.maintenance_ctx()).await;
     RpResponse::DockerCleanupConfig { config, last_run }
 }
 
@@ -34,7 +34,7 @@ pub async fn set_config(state: AppState, mut config: DockerCleanupConfig) -> RpR
 /// `Event::DockerCleanupCompleted`, não pela resposta deste RPC. Espera a
 /// vez na fila de deploy, como a limpeza agendada.
 pub async fn run_now(state: AppState) -> RpResponse {
-    let config = match maintenance::run::load_config(&state).await {
+    let config = match maintenance::run::load_config(&state.maintenance_ctx()).await {
         Ok(c) => c,
         Err(e) => return RpResponse::err("DatabaseError", e.to_string()),
     };
@@ -46,7 +46,7 @@ pub async fn run_now(state: AppState) -> RpResponse {
     }
     tokio::spawn(async move {
         let permit = state.deploy_queue.acquire_job_slot().await;
-        maintenance::run::run_holding_slot(&state, config, permit).await;
+        maintenance::run::run_holding_slot(&state.maintenance_ctx(), config, permit).await;
     });
     RpResponse::Ok
 }

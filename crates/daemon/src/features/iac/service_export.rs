@@ -3,7 +3,7 @@
 //! `docs/plano-copiar-servico-entre-servidores.md`). O arquivo gerado é um
 //! [`crate::features::iac::service_bundle::ServiceBundle`]; quem o lê é `service_import`.
 
-use crate::bootstrap::state::AppState;
+use crate::features::iac::IacContext;
 use crate::features::iac::service_bundle::{BundleOrigin, ServiceBundle, suggested_project_vars};
 use shared::{
     EnvVarValue, PlanVar, Project, Response as RpResponse, Service, ServiceExportPlan,
@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 use tracing::{error, info};
 
 /// Carrega o serviço e o projeto dele, ou já a resposta de erro.
-async fn load(state: &AppState, service_id: &str) -> Result<(Service, Project), RpResponse> {
+async fn load(state: &IacContext, service_id: &str) -> Result<(Service, Project), RpResponse> {
     let svc = match crate::store::services::get(&state.db, service_id).await {
         Ok(Some(s)) => s,
         Ok(None) => return Err(RpResponse::err("NotFound", "service not found")),
@@ -37,7 +37,7 @@ fn plan_var(key: &str, value: &EnvVarValue, suggested: bool) -> PlanVar {
 
 /// O que dá para levar: as variáveis do serviço (todas vão) e as do projeto
 /// (o usuário marca; as citadas pelo serviço vêm sugeridas). Nunca valores.
-pub async fn plan(state: AppState, service_id: String) -> RpResponse {
+pub async fn plan(state: IacContext, service_id: String) -> RpResponse {
     let (svc, project) = match load(&state, &service_id).await {
         Ok(x) => x,
         Err(r) => return r,
@@ -74,7 +74,7 @@ pub async fn plan(state: AppState, service_id: String) -> RpResponse {
 /// marcadas entram no arquivo); uma chave que o projeto não tem é erro, para
 /// uma tela desatualizada não exportar menos do que o usuário viu.
 pub async fn export(
-    state: AppState,
+    state: IacContext,
     service_id: String,
     include_values: bool,
     project_env_keys: Vec<String>,

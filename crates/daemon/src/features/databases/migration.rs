@@ -6,8 +6,8 @@
 //! não passam pelo daemon nem ocupam disco. Senhas vão por variável de ambiente
 //! do processo `docker` (nunca na linha de comando).
 
+use crate::features::databases::MigrationContext;
 use crate::{
-    bootstrap::state::AppState,
     features::databases::env_switch,
     features::databases::shared_db::{self, Engine},
     features::deploy::{env_resolve, shared_net},
@@ -66,7 +66,7 @@ pub fn valid_source_db(name: &str) -> bool {
 
 // ── persistência de progresso ───────────────────────────────────────────────
 
-async fn step(state: &AppState, rec: &mut Record, i: usize, st: &str, detail: &str) {
+async fn step(state: &MigrationContext, rec: &mut Record, i: usize, st: &str, detail: &str) {
     rec.m.steps[i].state = st.into();
     if !detail.is_empty() {
         rec.m.steps[i].detail = detail.into();
@@ -74,7 +74,7 @@ async fn step(state: &AppState, rec: &mut Record, i: usize, st: &str, detail: &s
     let _ = store::migration::save(&state.db, rec).await;
 }
 
-async fn log(state: &AppState, rec: &mut Record, text: &str) {
+async fn log(state: &MigrationContext, rec: &mut Record, text: &str) {
     for l in text.lines().filter(|l| !l.trim().is_empty()) {
         rec.m.log.push(l.to_string());
     }
@@ -255,7 +255,7 @@ fn source_image(svc: &Service) -> Option<String> {
 /// Serviços do projeto que usam o banco antigo: os rodando que referenciam a
 /// env var da conexão ou o hostname do banco antigo.
 async fn dependents(
-    state: &AppState,
+    state: &MigrationContext,
     source: &Service,
     host: &str,
     env_var: &str,
@@ -326,7 +326,7 @@ async fn docker_run_pipe(
 }
 
 /// Roda a migração inteira. Erro em qualquer passo → desfaz (até o passo 6).
-pub async fn run(state: AppState, mut rec: Record) {
+pub async fn run(state: MigrationContext, mut rec: Record) {
     let mut cur = 0usize;
     let res = run_inner(&state, &mut rec, &mut cur).await;
     match res {
@@ -356,7 +356,7 @@ pub async fn run(state: AppState, mut rec: Record) {
     }
 }
 
-async fn run_inner(state: &AppState, rec: &mut Record, cur: &mut usize) -> Result<()> {
+async fn run_inner(state: &MigrationContext, rec: &mut Record, cur: &mut usize) -> Result<()> {
     let source = store::services::get(&state.db, &rec.m.source_service_id)
         .await?
         .ok_or_else(|| anyhow!("banco antigo não encontrado"))?;
@@ -443,7 +443,7 @@ async fn run_inner(state: &AppState, rec: &mut Record, cur: &mut usize) -> Resul
     }
     let _ = store::migration::save(&state.db, rec).await;
     for d in &deps {
-        let r = crate::features::deploy::stop::handle(state.clone(), d.id.clone()).await;
+        let r = crate::features::deploy::stop::handle(state.deploy.clone(), d.id.clone()).await;
         if let shared::Response::Err { message, .. } = r {
             bail!("falha ao parar {}: {message}", d.spec.name);
         }
@@ -540,7 +540,7 @@ async fn run_inner(state: &AppState, rec: &mut Record, cur: &mut usize) -> Resul
     *cur = 5;
     step(state, rec, 5, "running", "").await;
     for id in rec.stopped_services.clone() {
-        let r = crate::features::deploy::start::handle(state.clone(), id.clone()).await;
+        let r = crate::features::deploy::start::handle(state.deploy.clone(), id.clone()).await;
         if let shared::Response::Err { message, .. } = r {
             bail!("falha ao subir {id}: {message}");
         }
@@ -557,7 +557,7 @@ async fn run_inner(state: &AppState, rec: &mut Record, cur: &mut usize) -> Resul
     // 7. Período de observação: o banco antigo fica parado, não apagado. ──────
     *cur = 6;
     step(state, rec, 6, "running", "").await;
-    let r = crate::features::deploy::stop::handle(state.clone(), source.id.clone()).await;
+    let r = crate::features::deploy::stop::handle(state.deploy.clone(), source.id.clone()).await;
     if let shared::Response::Err { message, .. } = r {
         bail!("falha ao parar o banco antigo: {message}");
     }
@@ -574,21 +574,23 @@ async fn run_inner(state: &AppState, rec: &mut Record, cur: &mut usize) -> Resul
 
 /// Volta tudo: env var antiga, banco antigo de pé (se foi parado) e serviços
 /// parados de novo no ar. `source_stopped`: o passo 7 já parou o banco antigo.
-pub async fn undo(state: &AppState, rec: &mut Record, source_stopped: bool) -> Result<()> {
+pub async fn undo(state: &MigrationContext, rec: &mut Record, source_stopped: bool) -> Result<()> {
     if !rec.env_changes.is_empty() {
         env_switch::restore(&state.db, &rec.m.project_id, &rec.env_changes).await?;
         rec.env_changes.clear();
     }
     if source_stopped {
-        let r =
-            crate::features::deploy::start::handle(state.clone(), rec.m.source_service_id.clone())
-                .await;
+        let r = crate::features::deploy::start::handle(
+            state.deploy.clone(),
+            rec.m.source_service_id.clone(),
+        )
+        .await;
         if let shared::Response::Err { message, .. } = r {
             bail!("falha ao subir o banco antigo: {message}");
         }
     }
     for id in rec.stopped_services.clone() {
-        let _ = crate::features::deploy::start::handle(state.clone(), id).await;
+        let _ = crate::features::deploy::start::handle(state.deploy.clone(), id).await;
     }
     rec.stopped_services.clear();
     let _ = store::migration::save(&state.db, rec).await;

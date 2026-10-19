@@ -1,13 +1,14 @@
 //! Parar um serviço (`Command::ServiceStop`): para um serviço (todas as réplicas live, ou a stack
 //! Compose) e marca o deployment como Stopped.
 
-use crate::{bootstrap::state::AppState, engine, engine::containers};
+use crate::features::deploy::DeployContext;
+use crate::{engine, engine::containers};
 use chrono::Utc;
 use shared::{
     DeployState, EnvVarValue, Event, Response as RpResponse, ServiceSource, ServiceStatus,
 };
 
-pub async fn handle(state: AppState, service_id: String) -> RpResponse {
+pub async fn handle(state: DeployContext, service_id: String) -> RpResponse {
     let svc = match crate::store::services::get(&state.db, &service_id).await {
         Ok(Some(s)) => s,
         Ok(None) => return RpResponse::err("NotFound", "serviço não encontrado"),
@@ -121,7 +122,7 @@ pub async fn handle(state: AppState, service_id: String) -> RpResponse {
 }
 
 async fn stop_compose(
-    state: &AppState,
+    state: &DeployContext,
     service_id: &str,
     project_name: &str,
     content: &str,
@@ -134,7 +135,11 @@ async fn stop_compose(
     finish_stop(state, service_id, None).await
 }
 
-async fn finish_stop(state: &AppState, service_id: &str, container_id: Option<&str>) -> RpResponse {
+async fn finish_stop(
+    state: &DeployContext,
+    service_id: &str,
+    container_id: Option<&str>,
+) -> RpResponse {
     if let Err(e) = crate::store::services::update_status(
         &state.db,
         service_id,

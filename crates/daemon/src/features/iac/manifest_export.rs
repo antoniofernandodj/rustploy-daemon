@@ -1,7 +1,7 @@
 //! `Command::ManifestExport`: exporta um projeto como manifesto IaC (secrets
 //! como `secret:NOME`).
 
-use crate::bootstrap::state::AppState;
+use crate::features::iac::IacContext;
 use crate::features::iac::manifest::ProjectManifest;
 use shared::Response as RpResponse;
 use std::collections::BTreeMap;
@@ -9,7 +9,7 @@ use tracing::info;
 
 /// Exporta o estado atual de um projeto como manifesto declarativo.
 /// Secrets aparecem como `secret:NOME` (nunca o valor decifrado).
-pub async fn handle(state: AppState, project_id: String) -> RpResponse {
+pub async fn handle(state: IacContext, project_id: String) -> RpResponse {
     info!(%project_id, "manifest_export: exportando projeto");
 
     let project = match crate::store::projects::get(&state.db, &project_id).await {

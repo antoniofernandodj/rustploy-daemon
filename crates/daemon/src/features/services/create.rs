@@ -1,11 +1,11 @@
 //! `Command::ServiceCreate`: cria um serviço, alocando a porta externa
 //! automática e liberando-a no firewall.
 
-use crate::bootstrap::state::AppState;
+use crate::features::services::ServicesContext;
 use shared::{Response as RpResponse, ServiceSource, ServiceSpec};
 use tracing::info;
 
-pub async fn handle(state: AppState, mut spec: ServiceSpec) -> RpResponse {
+pub async fn handle(state: ServicesContext, mut spec: ServiceSpec) -> RpResponse {
     // Sentinela 0 → aloca porta externa da faixa configurada; porta manual
     // duplicada → erro antes de persistir.
     if let Err(e) =

@@ -1,109 +1,28 @@
 //! Estado compartilhado do daemon (`AppState`) e os caches do inventário Docker.
 
 use crate::{
-    engine::DockerClient,
+    engine::{DockerClient, inventory_cache::DockerCache},
+    features::databases::MigrationContext,
+    features::deploy::{ActiveDeploys, DeployContext},
+    features::iac::IacContext,
     features::ingress::{IngressController, TlsManager},
+    features::jobs::{ActiveJobs, JobsContext},
+    features::maintenance::MaintenanceContext,
+    features::observability::WatchdogContext,
+    features::services::ServicesContext,
     platform::event_bus::EventBus,
     platform::secrets::SecretsManager,
     store::Db,
 };
-use shared::{DockerImageInfo, DockerNetworkInfo, DockerVolumeInfo};
 use std::{
     collections::HashMap,
     path::PathBuf,
     sync::{Arc, Mutex},
-    time::{Duration, Instant},
 };
-use tokio::sync::Mutex as AsyncMutex;
 
 /// Pending OAuth handshakes: CSRF `state` → `provider_id`, consumed by the
 /// `/oauth/gitea/callback` route once the user authorizes.
 pub type OAuthStates = Arc<Mutex<HashMap<String, String>>>;
-
-/// Handles de abort para deploys activos: deployment_id → AbortHandle.
-/// Permite cancelar a task do executor ao receber DeployAbort.
-pub type ActiveDeploys = Arc<Mutex<HashMap<String, tokio::task::AbortHandle>>>;
-
-/// Sinais de cancelamento para `job_run`s em execução: job_run_id → sender
-/// de um `watch<bool>` (valor `true` = cancelar). Diferente de
-/// `ActiveDeploys` (que aborta a TASK): abortar só a task não mata o
-/// processo `docker compose up` filho — `tokio::process::Child` não é
-/// `kill_on_drop` por padrão, então uma task abortada deixaria o processo
-/// (e os containers que ele sobe) órfãos. O sinal aqui é observado dentro de
-/// `docker::compose::run_once_up`, que mata o processo de verdade
-/// (`Child::kill`) antes de retornar — o `down()` de sempre cuida de
-/// desmontar containers/rede depois. Ver `docs/plano-cancelamento-de-jobs.md`.
-pub type ActiveJobs = Arc<Mutex<HashMap<String, tokio::sync::watch::Sender<bool>>>>;
-
-/// How long the host-wide Docker inventory (`docker system df` + the network
-/// cross-reference) stays cached before the next request re-hits the Docker
-/// Engine. These calls are slow (hundreds of ms to seconds) and the 2s status
-/// poll would otherwise fire them every tick; the inventory changes rarely, so
-/// a generous TTL cuts almost all of that Docker load. Busted early by the
-/// prune handlers so a cleanup is reflected at once.
-const DOCKER_CACHE_TTL: Duration = Duration::from_secs(300);
-
-/// Single-slot value cache with a TTL. The async lock is held across a
-/// miss-refresh so concurrent callers coalesce into ONE upstream call instead
-/// of a thundering herd — the whole point, since the upstream here is a slow
-/// `docker system df`.
-pub struct TtlCache<T> {
-    ttl: Duration,
-    slot: AsyncMutex<Option<(Instant, T)>>,
-}
-
-impl<T: Clone> TtlCache<T> {
-    fn new(ttl: Duration) -> Self {
-        Self {
-            ttl,
-            slot: AsyncMutex::new(None),
-        }
-    }
-
-    /// Returns the cached value if still within the TTL, otherwise runs
-    /// `refresh`, stores and returns it. On a `refresh` error any previously
-    /// cached (now stale) value is left untouched and the error is propagated.
-    pub async fn get_or_refresh<F, Fut, E>(&self, refresh: F) -> Result<T, E>
-    where
-        F: FnOnce() -> Fut,
-        Fut: std::future::Future<Output = Result<T, E>>,
-    {
-        let mut slot = self.slot.lock().await;
-        if let Some((at, v)) = slot.as_ref()
-            && at.elapsed() < self.ttl
-        {
-            return Ok(v.clone());
-        }
-        let v = refresh().await?;
-        *slot = Some((Instant::now(), v.clone()));
-        Ok(v)
-    }
-
-    /// Drops the cached value so the next `get_or_refresh` fetches fresh.
-    pub async fn invalidate(&self) {
-        *self.slot.lock().await = None;
-    }
-}
-
-/// Caches the slow host-wide Docker inventory calls so the 2s status poll (and
-/// every Docker-tab refresh) serves from RAM instead of re-hitting the Docker
-/// Engine. See [`DOCKER_CACHE_TTL`].
-pub struct DockerCache {
-    /// `docker system df` feeds BOTH the Images and Volumes tabs — cached
-    /// together so a single refresh serves both handlers.
-    pub df: TtlCache<(Vec<DockerImageInfo>, Vec<DockerVolumeInfo>)>,
-    /// The network list cross-referenced against every container's attachments.
-    pub networks: TtlCache<Vec<DockerNetworkInfo>>,
-}
-
-impl DockerCache {
-    fn new() -> Self {
-        Self {
-            df: TtlCache::new(DOCKER_CACHE_TTL),
-            networks: TtlCache::new(DOCKER_CACHE_TTL),
-        }
-    }
-}
 
 #[derive(Clone)]
 pub struct AppState {
@@ -183,25 +102,90 @@ impl AppState {
         }
     }
 
+    pub fn deploy_ctx(&self) -> DeployContext {
+        DeployContext {
+            db: self.db.clone(),
+            docker: self.docker.clone(),
+            ingress: self.ingress.clone(),
+            bus: self.bus.clone(),
+            secrets: self.secrets.clone(),
+            tls: self.tls.clone(),
+            db_path: self.db_path.clone(),
+            drain_secs: self.drain_secs,
+            registry_internal_token: self.registry_internal_token.clone(),
+            active_deploys: self.active_deploys.clone(),
+            deploy_queue: self.deploy_queue.clone(),
+        }
+    }
+
+    pub fn jobs_ctx(&self) -> JobsContext {
+        JobsContext {
+            db: self.db.clone(),
+            docker: self.docker.clone(),
+            bus: self.bus.clone(),
+            secrets: self.secrets.clone(),
+            db_path: self.db_path.clone(),
+            registry_internal_token: self.registry_internal_token.clone(),
+            active_jobs: self.active_jobs.clone(),
+            warming_jobs: self.warming_jobs.clone(),
+            deploy_queue: self.deploy_queue.clone(),
+        }
+    }
+
+    pub fn maintenance_ctx(&self) -> MaintenanceContext {
+        MaintenanceContext {
+            db: self.db.clone(),
+            docker: self.docker.clone(),
+            bus: self.bus.clone(),
+            docker_cache: self.docker_cache.clone(),
+            deploy_queue: self.deploy_queue.clone(),
+        }
+    }
+
+    pub fn watchdog_ctx(&self) -> WatchdogContext {
+        WatchdogContext {
+            db: self.db.clone(),
+            docker: self.docker.clone(),
+            bus: self.bus.clone(),
+            deploy_queue: self.deploy_queue.clone(),
+        }
+    }
+
+    pub fn services_ctx(&self) -> ServicesContext {
+        ServicesContext {
+            db: self.db.clone(),
+            docker: self.docker.clone(),
+            ingress: self.ingress.clone(),
+            tls: self.tls.clone(),
+            deploy: self.deploy_ctx(),
+        }
+    }
+
+    pub fn migration_ctx(&self) -> MigrationContext {
+        MigrationContext {
+            db: self.db.clone(),
+            docker: self.docker.clone(),
+            secrets: self.secrets.clone(),
+            deploy: self.deploy_ctx(),
+        }
+    }
+
+    pub fn iac_ctx(&self) -> IacContext {
+        IacContext {
+            db: self.db.clone(),
+            secrets: self.secrets.clone(),
+            api: self.api.clone(),
+            services: self.services_ctx(),
+            deploy: self.deploy_ctx(),
+        }
+    }
+
     /// URL pública do daemon, sem barra final: base do webhook
     /// (`{base}/webhook/{service_id}/{token}`) e do callback OAuth
     /// (`{base}/oauth/gitea/callback`). Derivada de `[api]` — não há setting no
     /// banco para sobrescrevê-la; para mudá-la, configure `api.domain`.
     pub fn public_base_url(&self) -> String {
-        self.api.public_base_url(&outbound_ip())
+        self.api
+            .public_base_url(&crate::platform::config::outbound_ip())
     }
-}
-
-/// Detecta o IP de saída da máquina conectando um socket UDP em 8.8.8.8:80
-/// (sem enviar dados) e lendo o endereço local escolhido pelo kernel. Usado só
-/// como host de fallback quando `api.domain` não está configurado.
-pub fn outbound_ip() -> String {
-    use std::net::UdpSocket;
-    UdpSocket::bind("0.0.0.0:0")
-        .and_then(|s| {
-            s.connect("8.8.8.8:80")?;
-            s.local_addr()
-        })
-        .map(|addr| addr.ip().to_string())
-        .unwrap_or_else(|_| "localhost".to_string())
 }

@@ -4,6 +4,9 @@
 //! mesmas funções `*_core` que os botões manuais da aba Docker chamam
 //! (`prune`).
 
+mod context;
 pub mod prune;
 pub mod run;
 pub mod scheduler;
+
+pub use context::MaintenanceContext;

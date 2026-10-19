@@ -16,21 +16,21 @@ fn respond(result: Result<PruneStat, String>) -> RpResponse {
 }
 
 pub async fn prune_containers(state: AppState) -> RpResponse {
-    respond(prune::prune_containers_core(&state).await)
+    respond(prune::prune_containers_core(&state.maintenance_ctx()).await)
 }
 
 pub async fn prune_volumes(state: AppState, all: bool) -> RpResponse {
-    respond(prune::prune_volumes_core(&state, all).await)
+    respond(prune::prune_volumes_core(&state.maintenance_ctx(), all).await)
 }
 
 pub async fn prune_images(state: AppState, all: bool) -> RpResponse {
-    respond(prune::prune_images_core(&state, all, 0).await)
+    respond(prune::prune_images_core(&state.maintenance_ctx(), all, 0).await)
 }
 
 pub async fn prune_build_cache(state: AppState) -> RpResponse {
-    respond(prune::prune_build_cache_core(&state, 0).await)
+    respond(prune::prune_build_cache_core(&state.maintenance_ctx(), 0).await)
 }
 
 pub async fn prune_networks(state: AppState) -> RpResponse {
-    respond(prune::prune_networks_core(&state).await)
+    respond(prune::prune_networks_core(&state.maintenance_ctx()).await)
 }

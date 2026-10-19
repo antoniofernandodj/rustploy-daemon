@@ -8,6 +8,7 @@
 pub mod compose;
 pub mod containers;
 pub mod images;
+pub mod inventory_cache;
 pub mod networks;
 
 use std::sync::OnceLock;

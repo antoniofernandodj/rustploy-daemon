@@ -1,9 +1,12 @@
 //! Jobs one-shot (Schedules): execução (`runner`) e agendamento (`scheduler`).
 
+mod context;
 pub mod runner;
 pub mod scheduler;
 pub(crate) mod source;
 pub mod warm;
+
+pub use context::{ActiveJobs, JobsContext};
 
 use crate::store::{self, Db};
 use chrono::Utc;
