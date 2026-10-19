@@ -37,7 +37,8 @@ pub async fn down(
         .map_err(|e| anyhow!("falha ao aguardar compose down: {e}"))?;
 
     if !output.status.success() {
-        return Err(anyhow!("docker compose down falhou"));
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(anyhow!("docker compose down falhou: {}", stderr.trim()));
     }
     info!(project = %project_name, "compose_down: concluído");
     Ok(())

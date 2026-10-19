@@ -294,6 +294,15 @@ document.addEventListener("alpine:init", () => {
       return toastId;
     },
 
+    /** Copia `text` e avisa por toast; falha (sem permissão/contexto inseguro) vira toast de erro. */
+    async copyText(text, what) {
+      try {
+        await navigator.clipboard.writeText(text);
+        this.toastOk(`${what} copiado`);
+      } catch (e) {
+        this.toastError(`não foi possível copiar o ${what}`);
+      }
+    },
     toastOk(message) {
       return this.toast(message, "success");
     },

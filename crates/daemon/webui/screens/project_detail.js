@@ -19,7 +19,7 @@ import {
  * mais de um container. Porta de format/dashboard.luau::primary_container. */
 function primaryContainer(service) {
   const list = service.containers || [];
-  if (list.length === 0) return { name: "—", id: "", extra: "" };
+  if (list.length === 0) return { name: "—", id: "", idFull: "", nameFull: "", extra: "" };
   let chosen = list[0];
   for (const item of list) {
     if (service.live_container_id && item.id === service.live_container_id) {
@@ -29,7 +29,13 @@ function primaryContainer(service) {
     if (item.state === "running" && chosen.state !== "running") chosen = item;
   }
   const extra = list.length > 1 ? `+${list.length - 1}` : "";
-  return { name: chosen.name || "—", id: (chosen.id || "").slice(0, 12), extra };
+  return {
+    name: chosen.name || "—",
+    nameFull: chosen.name || "",
+    id: (chosen.id || "").slice(0, 12),
+    idFull: chosen.id || "",
+    extra,
+  };
 }
 
 document.addEventListener("alpine:init", () => {
@@ -69,6 +75,8 @@ document.addEventListener("alpine:init", () => {
             mem: metricsPoint ? formatBytes(metricsPoint.mem_used_bytes) : "—",
             containerName: container.name,
             containerId: container.id,
+            containerNameFull: container.nameFull,
+            containerIdFull: container.idFull,
             containerExtra: container.extra,
           };
         });

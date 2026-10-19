@@ -9,6 +9,35 @@ use shared::{
 };
 
 pub async fn handle(state: DeployContext, service_id: String) -> RpResponse {
+    let previous = match crate::store::services::get(&state.db, &service_id).await {
+        Ok(Some(s)) => Some((s.status.clone(), s.live_container_id.clone())),
+        _ => None,
+    };
+    let response = stop(&state, &service_id).await;
+    // Falha no meio do stop não pode deixar o serviço preso em `Stopping`:
+    // devolve o status anterior (a GUI volta a mostrar os botões, dá para repetir).
+    if let (RpResponse::Err { .. }, Some((status, container_id))) = (&response, previous)
+        && status != ServiceStatus::Stopping
+        && crate::store::services::update_status(
+            &state.db,
+            &service_id,
+            &status,
+            container_id.as_deref(),
+        )
+        .await
+        .is_ok()
+    {
+        state.bus.publish(Event::ServiceStatusChanged {
+            service_id,
+            status,
+        });
+    }
+    response
+}
+
+async fn stop(state: &DeployContext, service_id: &str) -> RpResponse {
+    let state = state.clone();
+    let service_id = service_id.to_string();
     let svc = match crate::store::services::get(&state.db, &service_id).await {
         Ok(Some(s)) => s,
         Ok(None) => return RpResponse::err("NotFound", "serviço não encontrado"),
