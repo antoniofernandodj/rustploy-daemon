@@ -10,6 +10,13 @@ pub async fn down(
     _network_name: &str,
     env_vars: &[(String, String)],
 ) -> Result<()> {
+    // Compose vazio (serviço criado e nunca preenchido): não há stack para
+    // derrubar, e `compose -f - down` recusa o arquivo vazio ("empty compose
+    // file"). Sem isto o serviço nunca saía de `Stopping` nem podia ser removido.
+    if content.trim().is_empty() {
+        info!(project = %project_name, "compose_down: compose vazio, nada a derrubar");
+        return Ok(());
+    }
     info!(project = %project_name, "compose_down: iniciando");
     let mut child = crate::engine::cli()
         .args([
@@ -37,9 +44,39 @@ pub async fn down(
         .map_err(|e| anyhow!("falha ao aguardar compose down: {e}"))?;
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr = strip_ansi(&String::from_utf8_lossy(&output.stderr));
         return Err(anyhow!("docker compose down falhou: {}", stderr.trim()));
     }
     info!(project = %project_name, "compose_down: concluído");
     Ok(())
+}
+
+/// Tira as sequências de cor (`ESC [ … m`) que o compose escreve no stderr, para a
+/// mensagem ficar legível num toast/UI em vez de `␛[4m>>>>`.
+fn strip_ansi(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\u{1b}' && chars.peek() == Some(&'[') {
+            chars.next();
+            for next in chars.by_ref() {
+                if next.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::strip_ansi;
+
+    #[test]
+    fn strip_ansi_remove_cores() {
+        assert_eq!(strip_ansi("\u{1b}[4m>>>>\u{1b}[0m empty"), ">>>> empty");
+    }
 }
