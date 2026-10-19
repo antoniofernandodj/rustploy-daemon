@@ -19,7 +19,7 @@ const BUILD_CACHE_PRUNE_TIMEOUT: Duration = Duration::from_secs(600);
 
 /// Resultado tipado de uma limpeza — o denominador comum entre o botão manual
 /// (embrulhado em `RpResponse::PruneResult` por cada função pública deste
-/// arquivo) e a limpeza automática (`crate::maintenance`, que chama
+/// arquivo) e a limpeza automática (`crate::features::maintenance`, que chama
 /// `*_core` diretamente e embrulha em `shared::DockerCleanupResourceResult`).
 pub struct PruneStat {
     pub count: u32,

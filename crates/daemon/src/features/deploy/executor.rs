@@ -6,9 +6,9 @@ use crate::{
     db::Db,
     docker,
     docker::{DockerClient, containers, images, networks},
-    event_bus::EventBus,
-    ingress::{IngressController, TlsManager},
-    secrets::SecretsManager,
+    features::ingress::{IngressController, TlsManager},
+    platform::event_bus::EventBus,
+    platform::secrets::SecretsManager,
 };
 use anyhow::{Result, anyhow};
 use bollard::models::HealthStatusEnum;
@@ -332,7 +332,7 @@ impl DeployExecutor {
                         success: None,
                     });
 
-                    let runner = crate::jobs::runner::JobRunner {
+                    let runner = crate::features::jobs::runner::JobRunner {
                         db: self.db.clone(),
                         docker: self.docker.clone(),
                         bus: self.bus.clone(),
@@ -1219,8 +1219,12 @@ impl DeployExecutor {
                 // (re)criado, e a recriação desfaz a conexão às redes dos
                 // projetos autorizados — reconecta já, sem esperar o reconcile.
                 if svc.spec.shared.is_some() {
-                    let n =
-                        crate::deploy::shared_net::sync_server(&self.db, &self.docker, svc).await;
+                    let n = crate::features::deploy::shared_net::sync_server(
+                        &self.db,
+                        &self.docker,
+                        svc,
+                    )
+                    .await;
                     self.log_step(
                         &dep.id,
                         &svc.id,
@@ -1339,14 +1343,14 @@ impl DeployExecutor {
                     path,
                     expected_status,
                 } => {
-                    crate::health::check_http(
+                    crate::platform::health::check_http(
                         &format!("http://{ip}:{port}{path}"),
                         *expected_status,
                         timeout,
                     )
                     .await
                 }
-                _ => crate::health::check_tcp(&format!("{ip}:{port}"), timeout).await,
+                _ => crate::platform::health::check_tcp(&format!("{ip}:{port}"), timeout).await,
             };
             if ok {
                 self.log_step(&dep.id, &svc.id, "--> Healthcheck OK").await;
@@ -1436,12 +1440,12 @@ impl DeployExecutor {
                 } => {
                     let url = format!("http://{ip}:{}{path}", svc.spec.port);
                     debug!(deployment_id = %dep.id, url = %url, expected = expected_status, "healthcheck: HTTP check");
-                    crate::health::check_http(&url, *expected_status, timeout).await
+                    crate::platform::health::check_http(&url, *expected_status, timeout).await
                 }
                 HealthcheckKind::Tcp => {
                     let addr = format!("{ip}:{}", svc.spec.port);
                     debug!(deployment_id = %dep.id, addr = %addr, "healthcheck: TCP check");
-                    crate::health::check_tcp(&addr, timeout).await
+                    crate::platform::health::check_tcp(&addr, timeout).await
                 }
                 HealthcheckKind::DockerNative => {
                     let status = inspect
@@ -1569,7 +1573,7 @@ impl DeployExecutor {
     /// a cada deploy também re-cria a regra caso o admin a tenha removido.
     /// Falha nunca aborta o deploy (pior caso = porta bloqueada, como antes).
     async fn ensure_firewall(&self, deployment_id: &str, service_id: &str, host_port: u16) {
-        let line = match crate::firewall::ensure_allowed(host_port).await {
+        let line = match crate::features::ingress::firewall::ensure_allowed(host_port).await {
             Ok(backend) if backend == "none" => {
                 format!("--> Porta externa {host_port} exposta (nenhum firewall ativo no host)")
             }
@@ -1598,7 +1602,7 @@ impl DeployExecutor {
 
     /// Se `image` aponta pro registry embutido do próprio rustployd,
     /// devolve as credenciais do token interno `rp-internal` (ver
-    /// `crate::registry::internal_token`) pra que o Docker Engine do host
+    /// `crate::features::registry::internal_token`) pra que o Docker Engine do host
     /// consiga se autenticar no pull — necessário desde que a Fase 2 do
     /// registry passou a exigir Basic auth em toda rota, inclusive loopback.
     async fn registry_credentials_for(
@@ -1787,9 +1791,9 @@ mod pre_deploy_check_tests {
     use crate::{
         db,
         docker::DockerClient,
-        event_bus::EventBus,
-        ingress::{IngressController, TlsManager},
-        secrets::SecretsManager,
+        features::ingress::{IngressController, TlsManager},
+        platform::event_bus::EventBus,
+        platform::secrets::SecretsManager,
     };
     use shared::config::AcmeConfig;
     use shared::{Healthcheck, ResourceLimits, ServiceSource, ServiceSpec};

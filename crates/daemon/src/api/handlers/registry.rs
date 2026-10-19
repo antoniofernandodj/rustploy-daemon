@@ -1,5 +1,5 @@
 //! Sub-aba Docker > Registry: navegação (repositórios/tags), delete e GC do
-//! registry OCI embutido (`crate::registry`). Criar conteúdo só acontece via
+//! registry OCI embutido (`crate::features::registry`). Criar conteúdo só acontece via
 //! `docker push` externo, fora deste protocolo. Delete é só de metadados; o
 //! disco é liberado pelo GC (`RegistryGc` — botão na UI + job diário).
 
@@ -104,7 +104,7 @@ pub async fn gc(state: AppState) -> RpResponse {
             "registry desabilitado na config ([registry] enabled = true)",
         );
     };
-    match crate::registry::gc::run(&state.db, &storage).await {
+    match crate::features::registry::gc::run(&state.db, &storage).await {
         Ok(r) => RpResponse::RegistryGcResult {
             blobs_removed: r.blobs_removed,
             bytes_freed: r.bytes_freed,

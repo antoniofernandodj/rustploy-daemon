@@ -15,7 +15,7 @@ pub async fn handle(state: AppState, id: String) -> RpResponse {
             if let Err(e) = crate::db::services::clear_pre_deploy_job(&state.db, &id).await {
                 warn!(job_id = %id, error = %e, "job_delete: falha ao limpar pre_deploy_job_id órfão em serviços");
             }
-            crate::jobs::warm::forget(&state.db, &id).await;
+            crate::features::jobs::warm::forget(&state.db, &id).await;
             RpResponse::Ok
         }
         Ok(false) => RpResponse::err("NotFound", "job not found"),

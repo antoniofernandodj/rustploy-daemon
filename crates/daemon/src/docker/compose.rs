@@ -2,7 +2,7 @@
 //! injetada, execução one-shot de job com cancelamento, e login no registry
 //! embutido.
 
-use crate::{db::Db, event_bus::EventBus};
+use crate::{db::Db, platform::event_bus::EventBus};
 use anyhow::{Result, anyhow};
 use bollard::{Docker, volume::CreateVolumeOptions};
 use chrono::Utc;

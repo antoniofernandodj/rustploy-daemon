@@ -3,8 +3,8 @@
 //! deploy de serviço git-sourced.
 
 use crate::db::Db;
-use crate::deploy::git::{self, CloneOptions, CloneProgress};
-use crate::secrets::SecretsManager;
+use crate::features::deploy::git::{self, CloneOptions, CloneProgress};
+use crate::platform::secrets::SecretsManager;
 use anyhow::Result;
 use shared::{Job, JobGitSource};
 use std::path::Path;

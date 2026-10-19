@@ -6,8 +6,8 @@
 use crate::api::AppState;
 use crate::db;
 use crate::docker::{self, DockerClient, networks};
-use crate::event_bus::EventBus;
-use crate::secrets::SecretsManager;
+use crate::platform::event_bus::EventBus;
+use crate::platform::secrets::SecretsManager;
 use anyhow::Result;
 use chrono::Utc;
 use shared::{Event, Job, JobRun};
@@ -17,7 +17,7 @@ use std::sync::Arc;
 use tokio::sync::OwnedSemaphorePermit;
 use tracing::{error, info, warn};
 
-use crate::deploy::queue::DeployQueue;
+use crate::features::deploy::queue::DeployQueue;
 
 pub struct JobRunner {
     pub db: Arc<db::Db>,
@@ -183,7 +183,7 @@ impl JobRunner {
         // Base (projeto [+ serviço gatilho]) + overrides do próprio job, maior
         // precedência — ver deploy::env_resolve::resolve_job.
         let env_vars =
-            crate::deploy::env_resolve::resolve_job(&self.db, &self.secrets, job).await?;
+            crate::features::deploy::env_resolve::resolve_job(&self.db, &self.secrets, job).await?;
 
         // Nome de projeto do compose: só minúsculas/dígitos/`_`/`-` (regra do
         // próprio `docker compose`) — o run_id (ULID) tem letras maiúsculas.

@@ -2,7 +2,7 @@
 //! manual da limpeza automática do Docker (`maintenance/`).
 
 use crate::api::AppState;
-use crate::maintenance;
+use crate::features::maintenance;
 use chrono::Utc;
 use shared::{DockerCleanupConfig, Response as RpResponse};
 

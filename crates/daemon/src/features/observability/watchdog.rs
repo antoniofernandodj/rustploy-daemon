@@ -2,7 +2,7 @@
 //! healthcheck, reinicia com limite de tentativas e, se o container sumiu, pede
 //! redeploy.
 
-use crate::{api::AppState, db::Db, event_bus::EventBus};
+use crate::{api::AppState, db::Db, platform::event_bus::EventBus};
 use bollard::Docker;
 use shared::{Event, Healthcheck, HealthcheckKind, ServiceSource, ServiceStatus};
 use std::{
@@ -322,14 +322,14 @@ async fn run_healthcheck(
         } => match get_container_ip(docker, container_id).await {
             Some(ip) => {
                 let url = format!("http://{ip}:{port}{path}");
-                crate::health::check_http(&url, *expected_status, timeout).await
+                crate::platform::health::check_http(&url, *expected_status, timeout).await
             }
             None => false,
         },
         HealthcheckKind::Tcp => match get_container_ip(docker, container_id).await {
             Some(ip) => {
                 let addr = format!("{ip}:{port}");
-                crate::health::check_tcp(&addr, timeout).await
+                crate::platform::health::check_tcp(&addr, timeout).await
             }
             None => false,
         },

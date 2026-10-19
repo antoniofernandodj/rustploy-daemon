@@ -8,7 +8,7 @@ pub mod github;
 
 use crate::db::Db;
 use crate::db::git_providers::{self, StoredProvider};
-use crate::secrets::SecretsManager;
+use crate::platform::secrets::SecretsManager;
 use anyhow::{Context, Result};
 use shared::{GitAccount, GitBranch, GitProviderKind, GitRepo};
 

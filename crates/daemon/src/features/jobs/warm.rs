@@ -255,7 +255,8 @@ async fn warm_once(state: &AppState, job: &Job) -> Result<()> {
 
     let project_net = db::projects::network_name(&state.db, &job.project_id).await?;
     let network_name = networks::ensure_project_network(&state.docker.inner, &project_net).await?;
-    let env_vars = crate::deploy::env_resolve::resolve_job(&state.db, &state.secrets, job).await?;
+    let env_vars =
+        crate::features::deploy::env_resolve::resolve_job(&state.db, &state.secrets, job).await?;
 
     let project_name = format!("warm-{}", job.id.to_lowercase());
     let build_dir = state.db_path.join("jobs").join(&project_name);

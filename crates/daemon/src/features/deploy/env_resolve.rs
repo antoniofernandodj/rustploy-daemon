@@ -5,7 +5,7 @@
 //! `DeployExecutor` inteiro.
 
 use crate::db::Db;
-use crate::secrets::SecretsManager;
+use crate::platform::secrets::SecretsManager;
 use anyhow::Result;
 use shared::{EnvVarValue, Job, Service};
 use std::collections::HashMap;

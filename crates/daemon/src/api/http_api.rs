@@ -38,7 +38,7 @@ use super::agent;
 use super::public_routes;
 use super::routes::dispatch;
 use super::web_ui;
-use crate::ingress::TlsManager;
+use crate::features::ingress::TlsManager;
 
 /// Unified response body: both the buffered (`Full`) replies and the streaming
 /// (`StreamBody`) SSE body box to this, so a single `service_fn` can return

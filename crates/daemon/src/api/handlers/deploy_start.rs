@@ -133,7 +133,7 @@ pub async fn handle(state: AppState, service_id: String) -> RpResponse {
     }
 
     // Enfileira na fila global (um por vez). O worker
-    // (`crate::deploy::queue::run_worker`) puxa serialmente, marca o serviço
+    // (`crate::features::deploy::queue::run_worker`) puxa serialmente, marca o serviço
     // como `Deploying` e roda o `DeployExecutor`.
     info!(deployment_id = %dep.id, "deploy_start: enfileirando deploy");
     state.deploy_queue.enqueue(dep.id.clone());

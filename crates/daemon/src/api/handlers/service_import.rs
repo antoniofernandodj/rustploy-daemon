@@ -528,14 +528,18 @@ mod e2e {
             crate::docker::DockerClient::connect(&config.docker.socket_path).unwrap(),
         );
         let db = std::sync::Arc::new(db);
-        let bus = std::sync::Arc::new(crate::event_bus::EventBus::new());
-        let ingress = std::sync::Arc::new(crate::ingress::IngressController::new());
+        let bus = std::sync::Arc::new(crate::platform::event_bus::EventBus::new());
+        let ingress = std::sync::Arc::new(crate::features::ingress::IngressController::new());
         let secrets = std::sync::Arc::new(
-            crate::secrets::SecretsManager::new(&tmp.join("master.key"), db.clone()).unwrap(),
+            crate::platform::secrets::SecretsManager::new(&tmp.join("master.key"), db.clone())
+                .unwrap(),
         );
         let tls = std::sync::Arc::new(
-            crate::ingress::TlsManager::new(tmp.join("certs"), config.ingress.acme.clone())
-                .unwrap(),
+            crate::features::ingress::TlsManager::new(
+                tmp.join("certs"),
+                config.ingress.acme.clone(),
+            )
+            .unwrap(),
         );
         AppState::new(
             db,

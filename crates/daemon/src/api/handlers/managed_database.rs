@@ -4,9 +4,9 @@
 use crate::{
     api::AppState,
     db::{self, managed_database::Row},
-    deploy::shared_net,
-    env_switch,
-    shared_db::{self, Engine},
+    features::databases::env_switch,
+    features::databases::shared_db::{self, Engine},
+    features::deploy::shared_net,
 };
 use chrono::Utc;
 use shared::{

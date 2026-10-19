@@ -59,7 +59,7 @@ pub struct RegistryStorage {
     uploads: RwLock<HashMap<String, Mutex<UploadSession>>>,
     /// Trava de commit compartilhada entre os pontos que COMMITAM conteúdo
     /// (finalize de upload de blob, PUT de manifest — operações curtas, só o
-    /// rename/insert, nunca o streaming) e o GC (`crate::registry::gc`), que a
+    /// rename/insert, nunca o streaming) e o GC (`crate::features::registry::gc`), que a
     /// segura do snapshot de digests vivos até o fim do sweep — sem ela, um
     /// blob finalizado no meio do sweep não estaria no snapshot e seria
     /// apagado como órfão.

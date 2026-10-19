@@ -11,9 +11,9 @@ pub mod web_ui;
 use crate::{
     db::Db,
     docker::DockerClient,
-    event_bus::EventBus,
-    ingress::{IngressController, TlsManager},
-    secrets::SecretsManager,
+    features::ingress::{IngressController, TlsManager},
+    platform::event_bus::EventBus,
+    platform::secrets::SecretsManager,
 };
 use shared::{DockerImageInfo, DockerNetworkInfo, DockerVolumeInfo};
 use std::{
@@ -138,16 +138,16 @@ pub struct AppState {
     /// `jobs::warm`.
     pub warming_jobs: Arc<Mutex<std::collections::HashSet<String>>>,
     /// Fila global de deploys (um por vez). `deploy_start` enfileira aqui e o
-    /// worker (`crate::deploy::queue::run_worker`) puxa serialmente.
-    pub deploy_queue: Arc<crate::deploy::queue::DeployQueue>,
+    /// worker (`crate::features::deploy::queue::run_worker`) puxa serialmente.
+    pub deploy_queue: Arc<crate::features::deploy::queue::DeployQueue>,
     /// TTL cache for the slow host-wide Docker inventory (see [`DockerCache`]).
     pub docker_cache: Arc<DockerCache>,
     /// Storage do registry OCI embutido — o MESMO (mesma `commit_lock`) que o
     /// listener HTTP do registry usa, para o handler `RegistryGc`. `None`
     /// quando `[registry]` está desabilitado na config.
-    pub registry_storage: Option<Arc<crate::registry::storage::RegistryStorage>>,
+    pub registry_storage: Option<Arc<crate::features::registry::storage::RegistryStorage>>,
     /// Token interno `rp-internal`, regenerado a cada boot (ver
-    /// `crate::registry::internal_token`), usado pelo `DeployExecutor` pra se
+    /// `crate::features::registry::internal_token`), usado pelo `DeployExecutor` pra se
     /// autenticar sozinho ao puxar imagens do registry embutido.
     pub registry_internal_token: Option<Arc<str>>,
 }
@@ -165,7 +165,7 @@ impl AppState {
         backup_dir: PathBuf,
         drain_secs: u64,
         api: shared::ApiConfig,
-        registry_storage: Option<Arc<crate::registry::storage::RegistryStorage>>,
+        registry_storage: Option<Arc<crate::features::registry::storage::RegistryStorage>>,
         registry_internal_token: Option<Arc<str>>,
     ) -> Self {
         Self {
@@ -184,7 +184,7 @@ impl AppState {
             active_deploys: Arc::new(Mutex::new(HashMap::new())),
             active_jobs: Arc::new(Mutex::new(HashMap::new())),
             warming_jobs: Arc::new(Mutex::new(std::collections::HashSet::new())),
-            deploy_queue: crate::deploy::queue::DeployQueue::new(),
+            deploy_queue: crate::features::deploy::queue::DeployQueue::new(),
             docker_cache: Arc::new(DockerCache::new()),
             registry_storage,
             registry_internal_token,

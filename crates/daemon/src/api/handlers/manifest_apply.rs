@@ -164,22 +164,22 @@ async fn apply_one(
     // serviço homônimo (estabilidade entre applies) ou aloca uma nova — nunca
     // deixa o 0 cru chegar ao DB/executor.
     for spec in &mut specs {
-        if spec.host_port != Some(crate::ports::AUTO_PORT) {
+        if spec.host_port != Some(crate::features::ingress::external_ports::AUTO_PORT) {
             continue;
         }
         let existing_port = existing_services
             .iter()
             .find(|s| s.spec.name == spec.name)
             .and_then(|s| s.spec.host_port)
-            .filter(|p| *p != crate::ports::AUTO_PORT);
+            .filter(|p| *p != crate::features::ingress::external_ports::AUTO_PORT);
         match existing_port {
             Some(p) => spec.host_port = Some(p),
             None => {
-                crate::ports::resolve_host_port(&state.db, spec, None)
+                crate::features::ingress::external_ports::resolve_host_port(&state.db, spec, None)
                     .await
                     .map_err(|e| RpResponse::err("PortAllocationError", e))?;
                 if let Some(p) = spec.host_port {
-                    crate::firewall::ensure_allowed_bg(p);
+                    crate::features::ingress::firewall::ensure_allowed_bg(p);
                 }
             }
         }

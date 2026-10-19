@@ -10,5 +10,5 @@ pub async fn handle(state: AppState, job_id: String) -> RpResponse {
         Ok(None) => return RpResponse::err("NotFound", "job not found"),
         Err(e) => return RpResponse::err("DatabaseError", e.to_string()),
     };
-    RpResponse::JobWarmStatus(crate::jobs::warm::status(&state, &job).await)
+    RpResponse::JobWarmStatus(crate::features::jobs::warm::status(&state, &job).await)
 }

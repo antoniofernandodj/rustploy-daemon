@@ -1,5 +1,5 @@
 //! Wrappers SQL do registry OCI embutido (metadados; os bytes de blob/manifest
-//! vivem no CAS em disco, ver `crate::registry::storage`). Convenção espelha
+//! vivem no CAS em disco, ver `crate::features::registry::storage`). Convenção espelha
 //! `db/projects.rs`: funções livres `db: &Db`, `anyhow::Result`, IDs ULID.
 
 use super::Db;
@@ -157,7 +157,7 @@ pub async fn summary(db: &Db) -> Result<RegistrySummary> {
 
 /// Remove o repositório inteiro (todos os manifests/tags/refs) — só
 /// metadados, não mexe no CAS em disco (blobs órfãos são liberados pelo GC,
-/// `crate::registry::gc`). Só limpa `registry_manifest_refs` dos digests que não
+/// `crate::features::registry::gc`). Só limpa `registry_manifest_refs` dos digests que não
 /// pertencem a NENHUM outro repo (calculado antes de apagar as linhas deste
 /// repo — o mesmo digest pode ser compartilhado via PK composta).
 pub async fn delete_repo(db: &Db, repo_id: &str) -> Result<bool> {
@@ -317,7 +317,7 @@ pub async fn list_tags(db: &Db, repo_id: &str) -> Result<Vec<String>> {
 }
 
 /// Remove o manifest deste repo e as tags dele que apontavam para ele — só
-/// metadados (blobs órfãos são liberados pelo GC, `crate::registry::gc`).
+/// metadados (blobs órfãos são liberados pelo GC, `crate::features::registry::gc`).
 /// `registry_manifest_refs` só é limpo quando NENHUM repo mais tem uma linha
 /// pra esse digest (o mesmo digest pode pertencer a outro repo — PK composta).
 pub async fn delete_manifest(db: &Db, repo_id: &str, digest: &str) -> Result<bool> {
@@ -353,7 +353,7 @@ pub async fn delete_manifest(db: &Db, repo_id: &str, digest: &str) -> Result<boo
     Ok(true)
 }
 
-/// Fase de metadados do GC (`crate::registry::gc`), numa transação só:
+/// Fase de metadados do GC (`crate::features::registry::gc`), numa transação só:
 ///
 /// 1. apaga manifests **pendurados** — sem nenhuma tag no próprio repo e não
 ///    referenciados como filho por nenhum index (`registry_manifest_refs`

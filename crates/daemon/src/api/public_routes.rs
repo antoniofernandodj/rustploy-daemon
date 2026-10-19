@@ -203,7 +203,7 @@ pub async fn oauth_callback(req: Request<Incoming>, state: AppState) -> Response
         }
     };
 
-    let tokens = match crate::git_providers::exchange_code(
+    let tokens = match crate::features::git_providers::exchange_code(
         kind,
         &provider.base_url,
         &client_id,
@@ -233,28 +233,33 @@ pub async fn oauth_callback(req: Request<Incoming>, state: AppState) -> Response
         let cid = client_id.clone();
         let ru = redirect_uri.clone();
         tokio::spawn(async move {
-            if let Err(e) =
-                crate::git_providers::ensure_redirect_uri(kind, &base_url, &token, &cid, &ru).await
+            if let Err(e) = crate::features::git_providers::ensure_redirect_uri(
+                kind, &base_url, &token, &cid, &ru,
+            )
+            .await
             {
                 warn!(error = %e, "oauth: falha ao sincronizar redirect URI no provider (não crítico)");
             }
         });
     }
 
-    let account =
-        match crate::git_providers::current_user(kind, &provider.base_url, &tokens.access_token)
-            .await
-        {
-            Ok(a) => a,
-            Err(e) => {
-                error!(error = %e, "oauth: current_user falhou");
-                return html(
-                    StatusCode::BAD_GATEWAY,
-                    "Erro",
-                    "Token obtido, mas falha ao ler a conta.",
-                );
-            }
-        };
+    let account = match crate::features::git_providers::current_user(
+        kind,
+        &provider.base_url,
+        &tokens.access_token,
+    )
+    .await
+    {
+        Ok(a) => a,
+        Err(e) => {
+            error!(error = %e, "oauth: current_user falhou");
+            return html(
+                StatusCode::BAD_GATEWAY,
+                "Erro",
+                "Token obtido, mas falha ao ler a conta.",
+            );
+        }
+    };
 
     let access_enc = state.secrets.encrypt(&tokens.access_token).ok();
     let refresh_enc = tokens
@@ -301,7 +306,7 @@ pub async fn oauth_callback(req: Request<Incoming>, state: AppState) -> Response
 /// mantido porque o chamador ainda trata o caso "sem base utilizável"; hoje ela
 /// é sempre derivável.
 pub fn callback_redirect_uri(state: &AppState, kind: shared::GitProviderKind) -> Option<String> {
-    let seg = crate::git_providers::callback_path_segment(kind);
+    let seg = crate::features::git_providers::callback_path_segment(kind);
     Some(format!("{}/oauth/{seg}/callback", state.public_base_url()))
 }
 

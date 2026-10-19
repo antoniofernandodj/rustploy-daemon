@@ -46,7 +46,7 @@ pub async fn handle(state: AppState) -> RpResponse {
             .await
             .unwrap_or_default();
 
-        let warm = crate::jobs::warm::status(&state, &job).await;
+        let warm = crate::features::jobs::warm::status(&state, &job).await;
 
         summaries.push(JobSummary {
             job,

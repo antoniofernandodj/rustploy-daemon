@@ -1,7 +1,7 @@
 //! `Command::ServiceConnectionInfo`: host e connection string internos de um
 //! serviço (ver `shared::connection` e `docs/plano-banco-compartilhado.md` §3).
 
-use crate::{api::AppState, deploy::env_resolve, docker::containers};
+use crate::{api::AppState, docker::containers, features::deploy::env_resolve};
 use shared::{
     Response as RpResponse, ServiceSource,
     connection::{self, ConnTarget},

@@ -220,7 +220,7 @@ impl IngressController {
             let port_backend: PortBackend =
                 Arc::new(ArcSwap::from_pointee(Some(PortBackends::new(backends))));
             ports.insert(host_port, port_backend.clone());
-            tokio::spawn(crate::ingress::proxy::serve_port_proxy(
+            tokio::spawn(crate::features::ingress::proxy::serve_port_proxy(
                 host_port,
                 port_backend,
             ));

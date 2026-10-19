@@ -21,6 +21,12 @@ pub async fn routes(state: AppState) -> RpResponse {
 /// mantém a porta aberta para um reconcile por serviço sem trocar o protocolo.
 pub async fn reconcile(state: AppState, service_id: Option<String>) -> RpResponse {
     info!(service_id = ?service_id, "ingress: reconcile sob demanda");
-    crate::deploy::recovery::reconcile(&state.db, &state.docker, &state.ingress, &state.tls).await;
+    crate::features::deploy::recovery::reconcile(
+        &state.db,
+        &state.docker,
+        &state.ingress,
+        &state.tls,
+    )
+    .await;
     RpResponse::IngressRoutes(state.ingress.snapshot())
 }

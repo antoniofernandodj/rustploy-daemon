@@ -1,7 +1,7 @@
 //! `Command::SharedAccess{List,Grant,Revoke}`: quais projetos alcançam um
 //! servidor de banco compartilhado (ver `deploy::shared_net`).
 
-use crate::{api::AppState, db, deploy::shared_net};
+use crate::{api::AppState, db, features::deploy::shared_net};
 use shared::{Response as RpResponse, Service, SharedAccess};
 
 async fn server(state: &AppState, id: &str) -> Result<Service, RpResponse> {

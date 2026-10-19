@@ -1,11 +1,11 @@
 //! `Command::Migration*`: assistente de migração para banco compartilhado
-//! (ver `crate::migration`).
+//! (ver `crate::features::databases::migration`).
 
 use crate::{
     api::{AppState, handlers},
     db,
-    migration::{self, valid_source_db},
-    shared_db::{self, Engine},
+    features::databases::migration::{self, valid_source_db},
+    features::databases::shared_db::{self, Engine},
 };
 use shared::{MigrationStartReq, Response as RpResponse};
 

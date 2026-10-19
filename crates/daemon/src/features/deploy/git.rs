@@ -2,7 +2,7 @@
 //! conectado ou secret, e URL mascarada nos logs.
 
 use crate::db::Db;
-use crate::secrets::SecretsManager;
+use crate::platform::secrets::SecretsManager;
 use anyhow::{Result, anyhow};
 use fs_extra::dir::{CopyOptions, copy};
 use std::path::Path;
@@ -182,7 +182,7 @@ pub async fn resolve_clone_credentials(
         match crate::db::git_providers::get(db, pid).await {
             Ok(Some(p)) => {
                 provider_login = p.account_login.clone();
-                crate::git_providers::usable_token(secrets, &p).ok()
+                crate::features::git_providers::usable_token(secrets, &p).ok()
             }
             _ => None,
         }

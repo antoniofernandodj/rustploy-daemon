@@ -50,9 +50,14 @@ pub async fn handle(state: AppState, id: String) -> RpResponse {
             // Sem regra órfã: com o serviço fora do DB, fecha a porta no
             // firewall (a menos que outro serviço compartilhe a mesma porta).
             if let Some(port) = host_port
-                && !crate::ports::port_in_use_by_other(&state.db, port, Some(&id)).await
+                && !crate::features::ingress::external_ports::port_in_use_by_other(
+                    &state.db,
+                    port,
+                    Some(&id),
+                )
+                .await
             {
-                crate::firewall::ensure_denied_bg(port);
+                crate::features::ingress::firewall::ensure_denied_bg(port);
             }
             // Jobs gatilhados por este serviço vão junto (senão ficariam
             // órfãos, falhando em loop a cada recorrência) — a GUI avisa no

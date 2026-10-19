@@ -9,9 +9,9 @@
 use crate::{
     api::{AppState, handlers},
     db::{self, migration::Record},
-    deploy::{env_resolve, shared_net},
-    env_switch,
-    shared_db::{self, Engine},
+    features::databases::env_switch,
+    features::databases::shared_db::{self, Engine},
+    features::deploy::{env_resolve, shared_net},
 };
 use anyhow::{Result, anyhow, bail};
 use chrono::Utc;

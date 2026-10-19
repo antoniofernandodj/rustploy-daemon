@@ -38,7 +38,7 @@ pub async fn handle(state: AppState, provider_id: String) -> Response {
     // (no-op no GitHub, que não permite editar a callback URL via API).
     if let Some(enc) = &provider.access_token_enc
         && let Ok(token) = state.secrets.decrypt(enc)
-        && let Err(e) = crate::git_providers::ensure_redirect_uri(
+        && let Err(e) = crate::features::git_providers::ensure_redirect_uri(
             kind,
             &provider.base_url,
             &token,
@@ -57,7 +57,7 @@ pub async fn handle(state: AppState, provider_id: String) -> Response {
         .unwrap()
         .insert(csrf.clone(), provider_id);
 
-    let url = crate::git_providers::authorize_url(
+    let url = crate::features::git_providers::authorize_url(
         kind,
         &provider.base_url,
         &pct(&client_id),

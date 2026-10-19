@@ -5,7 +5,7 @@
 //! HTTPS: listener TLS separado com SNI — seleciona o certificado correto por domínio.
 //! HTTP:  redireciona para HTTPS, exceto o path /.well-known/acme-challenge/* (ACME HTTP-01).
 
-use crate::ingress::{
+use crate::features::ingress::{
     router::{PortBackend, RouteHandle},
     tls::{ChallengeStore, TlsManager},
 };

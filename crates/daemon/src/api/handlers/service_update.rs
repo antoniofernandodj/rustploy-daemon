@@ -7,7 +7,10 @@ use tracing::warn;
 
 pub async fn handle(state: AppState, id: String, mut spec: ServiceSpec) -> RpResponse {
     // Porta externa: sentinela 0 → aloca; manual duplicada → erro.
-    if let Err(e) = crate::ports::resolve_host_port(&state.db, &mut spec, Some(&id)).await {
+    if let Err(e) =
+        crate::features::ingress::external_ports::resolve_host_port(&state.db, &mut spec, Some(&id))
+            .await
+    {
         return RpResponse::err("PortAllocationError", e);
     }
     let old_port = match crate::db::services::get(&state.db, &id).await {
@@ -41,11 +44,17 @@ pub async fn handle(state: AppState, id: String, mut spec: ServiceSpec) -> RpRes
 pub(crate) async fn sync_firewall(state: &AppState, id: &str, old: Option<u16>, new: Option<u16>) {
     if let Some(old_port) = old.filter(|o| Some(*o) != new) {
         state.ingress.remove_port_route(old_port);
-        if !crate::ports::port_in_use_by_other(&state.db, old_port, Some(id)).await {
-            crate::firewall::ensure_denied_bg(old_port);
+        if !crate::features::ingress::external_ports::port_in_use_by_other(
+            &state.db,
+            old_port,
+            Some(id),
+        )
+        .await
+        {
+            crate::features::ingress::firewall::ensure_denied_bg(old_port);
         }
     }
     if let Some(new_port) = new {
-        crate::firewall::ensure_allowed_bg(new_port);
+        crate::features::ingress::firewall::ensure_allowed_bg(new_port);
     }
 }

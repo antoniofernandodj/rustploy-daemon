@@ -26,7 +26,7 @@ use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore, watch};
 use tracing::{info, warn};
 
 use crate::api::AppState;
-use crate::deploy::executor::DeployExecutor;
+use crate::features::deploy::executor::DeployExecutor;
 
 #[derive(Default)]
 struct QueueInner {

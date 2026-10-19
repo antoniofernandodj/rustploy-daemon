@@ -2,7 +2,7 @@
 //! foi parado e as env vars trocadas — o necessário para o rollback).
 
 use super::Db;
-use crate::env_switch::EnvChange;
+use crate::features::databases::env_switch::EnvChange;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use shared::{Migration, MigrationStep};

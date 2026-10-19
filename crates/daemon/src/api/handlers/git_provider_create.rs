@@ -46,7 +46,7 @@ pub async fn handle(
         let Some(pat) = pat.filter(|p| !p.is_empty()) else {
             return Response::err("InvalidInput", "Personal Access Token obrigatório");
         };
-        match crate::git_providers::current_user(kind, &base_url, &pat).await {
+        match crate::features::git_providers::current_user(kind, &base_url, &pat).await {
             Ok(acc) => {
                 let enc = match state.secrets.encrypt(&pat) {
                     Ok(e) => e,

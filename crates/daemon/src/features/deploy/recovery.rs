@@ -5,9 +5,9 @@ use crate::{
     db::Db,
     docker,
     docker::{DockerClient, containers},
-    event_bus::EventBus,
-    ingress::{IngressController, TlsManager},
-    secrets::SecretsManager,
+    features::ingress::{IngressController, TlsManager},
+    platform::event_bus::EventBus,
+    platform::secrets::SecretsManager,
 };
 use shared::{DeployState, Service, ServiceStatus};
 use std::{path::PathBuf, sync::Arc};
@@ -136,7 +136,7 @@ pub async fn recover(
                     state = dep.state.label(),
                     "resuming swap-in-progress deployment"
                 );
-                let executor = Arc::new(crate::deploy::executor::DeployExecutor {
+                let executor = Arc::new(crate::features::deploy::executor::DeployExecutor {
                     db: db.clone(),
                     docker: docker.clone(),
                     ingress: ingress.clone(),
@@ -154,7 +154,7 @@ pub async fn recover(
             // Promoting: complete the rename
             DeployState::Promoting => {
                 info!(deployment_id = dep.id, "completing promotion");
-                let executor = Arc::new(crate::deploy::executor::DeployExecutor {
+                let executor = Arc::new(crate::features::deploy::executor::DeployExecutor {
                     db: db.clone(),
                     docker: docker.clone(),
                     ingress: ingress.clone(),
@@ -172,7 +172,7 @@ pub async fn recover(
             // Rolling back: complete the rollback
             DeployState::RollingBack => {
                 info!(deployment_id = dep.id, "completing rollback");
-                let executor = Arc::new(crate::deploy::executor::DeployExecutor {
+                let executor = Arc::new(crate::features::deploy::executor::DeployExecutor {
                     db: db.clone(),
                     docker: docker.clone(),
                     ingress: ingress.clone(),
@@ -219,7 +219,7 @@ pub async fn reconcile(
         // recriação do container, ou o restart do dockerd, desfaz). Barato
         // quando já está tudo conectado.
         if svc.spec.shared.is_some() {
-            crate::deploy::shared_net::sync_server(db, docker, &svc).await;
+            crate::features::deploy::shared_net::sync_server(db, docker, &svc).await;
         }
         let replicas = svc.spec.replicas.max(1);
         let net = match crate::db::projects::network_name(db, &svc.spec.project_id).await {
@@ -407,7 +407,7 @@ async fn restore_routes(
             );
             // Auto-cura: se o admin resetou o ufw (ou o SO foi reinstalado), a
             // regra da porta volta sozinha junto com a rota.
-            crate::firewall::ensure_allowed_bg(host_port);
+            crate::features::ingress::firewall::ensure_allowed_bg(host_port);
         }
     }
 }

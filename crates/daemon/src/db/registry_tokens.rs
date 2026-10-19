@@ -1,5 +1,5 @@
 //! Tokens de acesso do registry OCI embutido (Basic auth — ver
-//! `crate::registry::auth`). Só o SHA-256 do segredo é persistido; o valor em
+//! `crate::features::registry::auth`). Só o SHA-256 do segredo é persistido; o valor em
 //! texto plano só existe na resposta de criação (`Response::RegistryTokenCreated`),
 //! uma única vez. Convenção espelha `db/webhook_tokens.rs`.
 
@@ -9,7 +9,7 @@ use chrono::{DateTime, Utc};
 use ulid::Ulid;
 
 /// Nome reservado do token interno usado pelo próprio deploy executor pra
-/// puxar imagens do registry embutido (ver `crate::registry::internal_token`).
+/// puxar imagens do registry embutido (ver `crate::features::registry::internal_token`).
 /// Nunca visto por humano, não aparece em `list()`, não pode ser criado via
 /// `RegistryTokenCreate`.
 pub const RP_INTERNAL: &str = "rp-internal";
@@ -37,7 +37,7 @@ pub async fn create(db: &Db, name: &str, token_sha256: &str, scope: &str) -> Res
 }
 
 /// Cria ou atualiza o token interno `rp-internal`, regenerado a cada boot do
-/// daemon (ver `crate::registry::internal_token::ensure`). Idempotente: o
+/// daemon (ver `crate::features::registry::internal_token::ensure`). Idempotente: o
 /// hash mais recente sempre vence.
 pub async fn upsert_internal(db: &Db, token_sha256: &str) -> Result<()> {
     let id = format!("rtok_{}", Ulid::new());

@@ -1,7 +1,7 @@
 //! Streaming dos logs dos containers gerenciados para o event bus, reconectando
 //! e encerrando streams parados.
 
-use crate::{db::Db, event_bus::EventBus};
+use crate::{db::Db, platform::event_bus::EventBus};
 use bollard::{
     Docker,
     container::{LogOutput, LogsOptions},
