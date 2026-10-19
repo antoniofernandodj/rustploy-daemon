@@ -224,7 +224,7 @@ async fn apply_one(
                 crate::db::services::update_spec(&state.db, &s.id, effective_spec.clone())
                     .await
                     .map_err(db_err)?;
-                super::service_update::sync_firewall(
+                crate::features::services::update::sync_firewall(
                     state,
                     &s.id,
                     s.spec.host_port,
@@ -262,7 +262,7 @@ async fn apply_one(
             }
             let label = format!("{name}/{}", s.spec.name);
             // Reusa a mesma semântica de remoção da TUI (remove rota + DB).
-            match super::service_delete::handle(state.clone(), s.id.clone()).await {
+            match crate::features::services::delete::handle(state.clone(), s.id.clone()).await {
                 RpResponse::Err { code, message } => {
                     warn!(%label, %code, %message, "manifest_apply: prune falhou");
                 }

@@ -42,6 +42,9 @@ pub async fn handle(
     {
         Ok(Some(job)) => RpResponse::Job(job),
         Ok(None) => RpResponse::err("NotFound", "job not found"),
-        Err(e) => RpResponse::err("DatabaseError", super::humanize_db_error(&e, "job")),
+        Err(e) => RpResponse::err(
+            "DatabaseError",
+            crate::platform::errors::humanize_db_error(&e, "job"),
+        ),
     }
 }

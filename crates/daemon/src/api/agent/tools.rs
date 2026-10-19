@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use serde_json::{Value, json};
 use shared::Command;
 
-use super::super::routes::dispatch;
+use crate::api::dispatch::dispatch;
 use crate::bootstrap::state::AppState;
 
 /// De quanto em quanto tempo o `wait` de um deploy reconsulta o histórico.
@@ -230,7 +230,7 @@ async fn status(state: &AppState) -> Result<Value, ToolError> {
 
 /// `Snapshot` devolve JSON **dentro** de uma string.
 async fn snapshot(state: &AppState) -> Result<Value, ToolError> {
-    let texto = Box::pin(super::super::http_api::snapshot(state)).await;
+    let texto = Box::pin(crate::api::http::snapshot(state)).await;
     serde_json::from_str(&texto).map_err(|e| {
         ToolError::new(
             "unexpected_response",

@@ -40,7 +40,10 @@ pub async fn handle(state: AppState, mut spec: ServiceSpec) -> RpResponse {
         }
         Err(e) => {
             tracing::error!(error = %e, "service_create: falha ao criar serviço");
-            RpResponse::err("DatabaseError", super::humanize_db_error(&e, "serviço"))
+            RpResponse::err(
+                "DatabaseError",
+                crate::platform::errors::humanize_db_error(&e, "serviço"),
+            )
         }
     }
 }

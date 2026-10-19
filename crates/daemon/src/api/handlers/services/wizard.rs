@@ -22,7 +22,7 @@ pub async fn catalog(search: String) -> RpResponse {
 /// serviço — reaproveitando o handler `service_create`.
 pub async fn create(state: AppState, req: WizardCreateReq) -> RpResponse {
     match wizard::build_spec(&req) {
-        Ok(spec) => super::service_create::handle(state, spec).await,
+        Ok(spec) => crate::features::services::create::handle(state, spec).await,
         Err(e) => RpResponse::err("WizardError", e),
     }
 }

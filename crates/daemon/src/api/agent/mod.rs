@@ -46,7 +46,7 @@ pub fn login(
     };
 
     if let Some(expected) = expected
-        && !super::http_api::constant_time_eq(key.token.as_bytes(), expected.as_bytes())
+        && !crate::api::http::constant_time_eq(key.token.as_bytes(), expected.as_bytes())
     {
         return (
             StatusCode::UNAUTHORIZED,

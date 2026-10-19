@@ -21,6 +21,8 @@
 //!   the payload.
 //! - `GET /api/health` — liveness probe (`ok`).
 
+pub mod public_routes;
+
 use std::convert::Infallible;
 use std::sync::Arc;
 
@@ -35,9 +37,8 @@ use shared::{Command, Event, Response as RpResponse};
 use tracing::{error, info, warn};
 
 use super::agent;
-use super::public_routes;
-use super::routes::dispatch;
 use super::web_ui;
+use crate::api::dispatch::dispatch;
 use crate::bootstrap::state::AppState;
 use crate::features::ingress::TlsManager;
 
@@ -418,11 +419,13 @@ async fn service_archive_upload(
         Ok(c) => c.to_bytes(),
         Err(_) => return text(StatusCode::BAD_REQUEST, "erro ao ler o corpo"),
     };
-    if body.len() > super::handlers::service_archive_upload::MAX_ZIP_BYTES {
+    if body.len() > super::handlers::services::service_archive_upload::MAX_ZIP_BYTES {
         return text(StatusCode::PAYLOAD_TOO_LARGE, "zip excede 100 MiB");
     }
-    let resp =
-        super::handlers::service_archive_upload::handle(state, service_id, body, filename).await;
+    let resp = super::handlers::services::service_archive_upload::handle(
+        state, service_id, body, filename,
+    )
+    .await;
     match serde_json::to_vec(&resp) {
         Ok(bytes) => json_response(bytes, accept_gzip),
         Err(e) => text(

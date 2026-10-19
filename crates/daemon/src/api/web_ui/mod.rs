@@ -5,7 +5,7 @@
 //! entrega o app shell (HTML/CSS/JS/ícones), pré-minificado e pré-gzipado em
 //! tempo de build (ver `../../build.rs`), sem I/O nem CPU extra em runtime.
 //!
-//! Roteamento por caminho fixo, plugado em `http_api.rs::handle` ANTES do
+//! Roteamento por caminho fixo, plugado em `http/mod.rs::handle` ANTES do
 //! gate de Bearer token — mesmo tratamento das rotas públicas de webhook/
 //! OAuth, porque o usuário ainda não tem o token quando a página carrega (ele
 //! loga *depois* de abrir). Isso é seguro: só entrega estático, sem dado
@@ -81,7 +81,7 @@ mod headless_tests {
     type ApiBody = BoxBody<Bytes, std::convert::Infallible>;
 
     /// Sobe um servidor HTTP mínimo (mesmo padrão de accept-loop de
-    /// `http_api.rs::listen`) que só chama `serve()` — os mesmos bytes que o
+    /// `http/mod.rs::listen`) que só chama `serve()` — os mesmos bytes que o
     /// daemon real serve, sem precisar de `AppState` (Docker/DB/etc.), que
     /// `serve()` não usa.
     async fn spawn_static_server() -> std::net::SocketAddr {
@@ -187,7 +187,7 @@ mod headless_tests {
         panic!("Alpine.store('app') não ficou pronto a tempo");
     }
 
-    /// Snapshot mínimo — mesmo formato que `http_api.rs::snapshot()` monta e
+    /// Snapshot mínimo — mesmo formato que `http/mod.rs::snapshot()` monta e
     /// `app.js::applySnapshot` consome (`kind` é ignorado por `applySnapshot`,
     /// só o `onStreamEvent` do SSE real olha pra ele). Cobre o suficiente
     /// pra cada tela ter pelo menos uma linha de tabela — mesmo espírito das

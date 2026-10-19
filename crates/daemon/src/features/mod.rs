@@ -10,5 +10,6 @@ pub mod jobs;
 pub mod maintenance;
 pub mod observability;
 pub mod registry;
+pub mod services;
 pub mod templates;
 pub mod wizard;

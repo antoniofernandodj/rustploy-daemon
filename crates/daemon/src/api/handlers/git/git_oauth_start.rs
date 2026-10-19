@@ -23,7 +23,7 @@ pub async fn handle(state: AppState, provider_id: String) -> Response {
         return Response::err("InvalidInput", "Provider sem Client ID (OAuth)");
     }
 
-    let redirect_uri = match crate::api::public_routes::callback_redirect_uri(&state, kind) {
+    let redirect_uri = match crate::api::http::public_routes::callback_redirect_uri(&state, kind) {
         Some(u) => u,
         None => {
             return Response::err(

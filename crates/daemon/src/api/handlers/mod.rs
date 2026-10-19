@@ -1,91 +1,15 @@
-//! Um arquivo por `Command` (o `match` que escolhe o handler fica em
-//! `api/routes.rs`) e utilitários comuns como `humanize_db_error`.
+//! Handlers agrupados por assunto: um arquivo por `Command` dentro de cada pasta, e o `dispatch` da pasta
+//! escolhe o handler. O primeiro nível do `match` fica em `api/routes.rs`.
 
-/// Converte um erro de banco (sqlx) numa mensagem amigável para o usuário.
-/// Reconhece as violações de constraint mais comuns (UNIQUE) e devolve algo
-/// legível em vez do texto cru do SQLite (`(code: 2067) UNIQUE constraint
-/// failed: project.name`). `subject` é o rótulo do recurso (ex.: "projeto").
-pub fn humanize_db_error(err: &(impl std::fmt::Display + ?Sized), subject: &str) -> String {
-    let s = err.to_string();
-    if s.contains("UNIQUE constraint failed") {
-        return format!("Já existe um {subject} com esse nome.");
-    }
-    if s.contains("FOREIGN KEY constraint failed") {
-        return format!("Operação inválida no {subject}: referência inexistente.");
-    }
-    // Regras de validação do próprio rustploy (já em português, sem SQL).
-    if s.contains("reservado") || s.contains("servidor compartilhado") {
-        return s;
-    }
-    // Fallback: mensagem genérica, sem vazar o SQL cru.
-    format!("Falha ao salvar o {subject}. Tente novamente.")
-}
-
-pub mod daemon_status;
-pub mod deploy_abort;
-pub mod deploy_delete;
-pub mod deploy_engine_status;
-pub mod deploy_history;
-pub mod deploy_queue_pause;
-pub mod deploy_queue_promote;
-pub mod deploy_queue_reorder;
-pub mod deploy_rollback;
-pub mod docker_cleanup;
-pub mod docker_inventory;
-pub mod docker_prune;
-pub mod docker_remove;
-pub mod env_backup;
-pub mod get_build_logs;
-pub mod get_daemon_settings;
-pub mod get_job_logs;
-pub mod get_webhook_url;
-pub mod git_branch_list;
-pub mod git_oauth_start;
-pub mod git_provider_create;
-pub mod git_provider_delete;
-pub mod git_provider_list;
-pub mod git_repo_list;
-pub mod ingress;
-pub mod job_create;
-pub mod job_delete;
-pub mod job_list;
-pub mod job_list_all;
-pub mod job_run_cancel;
-pub mod job_run_history;
-pub mod job_run_now;
-pub mod job_update;
-pub mod job_warm;
-pub mod job_warm_status;
-pub mod logs_get;
-pub mod managed_database;
-pub mod manifest_apply;
-pub mod manifest_export;
-pub mod manifest_export_all;
-pub mod manifest_import;
-pub mod migration;
-pub mod ping;
-pub mod project_create;
-pub mod project_delete;
-pub mod project_env_set;
-pub mod project_list;
-pub mod project_update;
-pub mod recent_deployments;
-pub mod reconcile;
-pub mod regenerate_webhook_token;
+pub mod databases;
+pub mod deploys;
+pub mod docker;
+pub mod git;
+pub mod iac;
+pub mod jobs;
+pub mod observability;
+pub mod projects;
 pub mod registry;
-pub mod secret_delete;
-pub mod secret_list;
-pub mod secret_set;
-pub mod service_archive_upload;
-pub mod service_connection_info;
-pub mod service_create;
-pub mod service_delete;
-pub mod service_export;
-pub mod service_get;
-pub mod service_import;
-pub mod service_list;
-pub mod service_reload;
-pub mod service_update;
-pub mod set_daemon_settings;
-pub mod shared_access;
-pub mod wizard;
+pub mod secrets;
+pub mod services;
+pub mod settings;

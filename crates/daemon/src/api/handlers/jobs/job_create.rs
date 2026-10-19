@@ -58,6 +58,9 @@ pub async fn handle(
     .await
     {
         Ok(job) => RpResponse::Job(job),
-        Err(e) => RpResponse::err("DatabaseError", super::humanize_db_error(&e, "job")),
+        Err(e) => RpResponse::err(
+            "DatabaseError",
+            crate::platform::errors::humanize_db_error(&e, "job"),
+        ),
     }
 }

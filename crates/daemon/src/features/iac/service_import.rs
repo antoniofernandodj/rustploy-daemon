@@ -403,7 +403,7 @@ async fn write_all(
     }
 
     a.spec.project_id = project_id.to_string();
-    let svc = match super::service_create::handle(state.clone(), a.spec.clone()).await {
+    let svc = match crate::features::services::create::handle(state.clone(), a.spec.clone()).await {
         RpResponse::Service(s) => s,
         err @ RpResponse::Err { .. } => return Err(err),
         _ => {

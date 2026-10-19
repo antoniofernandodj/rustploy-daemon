@@ -24,7 +24,7 @@ use crate::db::registry as registry_db;
 
 /// Bind (loopback only); retorna em caso de falha (log + listener
 /// desabilitado, daemon continua) — mesmo padrão de
-/// `api::webhook_server::run`/`api::http_api::run`. O `storage` vem pronto do
+/// `api::webhook_server::run`/`api::http::run`. O `storage` vem pronto do
 /// `main.rs`, que o compartilha com o handler `RegistryGc` e o job diário de
 /// GC (mesma `commit_lock`).
 pub async fn run(db: Arc<Db>, storage: Arc<RegistryStorage>, port: u16) {

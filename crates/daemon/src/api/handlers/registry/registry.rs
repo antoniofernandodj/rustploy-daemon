@@ -140,7 +140,7 @@ pub async fn token_create(state: AppState, name: String, scope: String) -> RpRes
         Ok(()) => RpResponse::RegistryTokenCreated { name, secret },
         Err(e) => RpResponse::err(
             "Conflict",
-            crate::api::handlers::humanize_db_error(&e, "token"),
+            crate::platform::errors::humanize_db_error(&e, "token"),
         ),
     }
 }

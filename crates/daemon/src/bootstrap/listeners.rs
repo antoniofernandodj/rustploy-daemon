@@ -90,7 +90,7 @@ pub fn spawn(
     // API HTTP/JSON + SSE — canal administrativo remoto; é o que o GUI (glacier-ui/Luau) e
     // clientes externos consomem. Bind loopback + HTTP puro por padrão (atrás do ingress); se
     // `api.domain` estiver setado, o próprio listener termina TLS na sua porta com cert
-    // automático via ACME. Serve TAMBÉM as rotas públicas sem Bearer (`api::public_routes`): o
+    // automático via ACME. Serve TAMBÉM as rotas públicas sem Bearer (`api::http::public_routes`): o
     // webhook de CI/CD e o callback OAuth do Gitea (ver docs/plano-unificacao-webhook-api.md).
     // Com a API desabilitada (`[api] enabled = false`), não há webhook.
     if config.api.enabled {
@@ -98,7 +98,7 @@ pub fn spawn(
         let api_cfg = config.api.clone();
         let tls2 = tls.clone();
         tokio::spawn(async move {
-            api::http_api::run(state2, api_cfg, Some(tls2)).await;
+            api::http::run(state2, api_cfg, Some(tls2)).await;
         });
         // O token de conexão não vai para o log: ele contém o token, e o journal é lido por mais
         // gente do que o config.toml. Vai para o próprio config.toml, abaixo do `token` de `[api]`.
