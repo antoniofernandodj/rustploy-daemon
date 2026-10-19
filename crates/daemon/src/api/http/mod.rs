@@ -1200,7 +1200,10 @@ mod tests {
                 "espaçamento {espacamento_us}µs: faltaram {} linhas",
                 esperadas.len().saturating_sub(linhas.len())
             );
-            assert_eq!(linhas, esperadas, "espaçamento {espacamento_us}µs: fora de ordem");
+            assert_eq!(
+                linhas, esperadas,
+                "espaçamento {espacamento_us}µs: fora de ordem"
+            );
         }
     }
 
@@ -1219,8 +1222,16 @@ mod tests {
         let base = chrono::Utc::now();
         let mut seen = SeenLines::new();
         // Já entregues pelo bus: 2 e 3.
-        assert!(mark_seen(&mut seen, base + chrono::Duration::microseconds(2), "linha 2"));
-        assert!(mark_seen(&mut seen, base + chrono::Duration::microseconds(3), "linha 3"));
+        assert!(mark_seen(
+            &mut seen,
+            base + chrono::Duration::microseconds(2),
+            "linha 2"
+        ));
+        assert!(mark_seen(
+            &mut seen,
+            base + chrono::Duration::microseconds(3),
+            "linha 3"
+        ));
         let no_banco: Vec<_> = (0..6).map(|i| linha_bd(i, base)).collect();
 
         // Conectou em `base + 1µs`: a linha 0 é do histórico (seed) e fica de fora.

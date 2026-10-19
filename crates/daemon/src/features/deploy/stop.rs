@@ -27,10 +27,9 @@ pub async fn handle(state: DeployContext, service_id: String) -> RpResponse {
         .await
         .is_ok()
     {
-        state.bus.publish(Event::ServiceStatusChanged {
-            service_id,
-            status,
-        });
+        state
+            .bus
+            .publish(Event::ServiceStatusChanged { service_id, status });
     }
     response
 }

@@ -64,10 +64,7 @@ async fn remove_image_by_name(state: &AppState, name: &str) -> Result<(), bollar
         .map(|_| ())
 }
 
-async fn remove_image_tag_by_tag(
-    state: &AppState,
-    id: &str,
-) -> Result<(), bollard::errors::Error> {
+async fn remove_image_tag_by_tag(state: &AppState, id: &str) -> Result<(), bollard::errors::Error> {
     let tags = state
         .docker
         .inner
