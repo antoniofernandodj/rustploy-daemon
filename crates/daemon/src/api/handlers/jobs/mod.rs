@@ -77,7 +77,7 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         }
         Command::GetJobLogs { job_run_id } => get_job_logs::handle(state, job_run_id).await,
         Command::JobWarmStatus { job_id } => job_warm_status::handle(state, job_id).await,
-        Command::JobWarm { job_id } => job_warm::handle(state, job_id).await,
+        Command::JobWarm { job_id, force } => job_warm::handle(state, job_id, force).await,
         _ => RpResponse::err("NotImplemented", "command not yet implemented"),
     }
 }

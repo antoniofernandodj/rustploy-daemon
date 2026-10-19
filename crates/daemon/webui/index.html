@@ -995,6 +995,11 @@
                     :disabled="$store.app.jobActionsRow?.isWarming"
                     @click="$store.app.jobWarm($store.app.jobActionsRow.id)">◐ Aquecer</button>
             <button class="btn btn--ghost job-actions__item" type="button"
+                    x-show="$store.app.jobActionsRow?.isWarm"
+                    :disabled="$store.app.jobActionsRow?.isWarming"
+                    title="Refaz o build do zero e rebaixa as imagens base"
+                    @click="$store.app.jobRebuild($store.app.jobActionsRow.id)">↻ Reconstruir (sem cache)</button>
+            <button class="btn btn--ghost job-actions__item" type="button"
                     x-show="$store.app.jobActionsRow?.lastRunId"
                     @click="$store.app.openJobLogs($store.app.jobActionsRow.lastRunId); $store.app.closeJobActions()">≡ Ver logs</button>
             <button class="btn btn--ghost job-actions__item" type="button"

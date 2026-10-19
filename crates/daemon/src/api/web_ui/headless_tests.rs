@@ -946,6 +946,27 @@ async fn job_actions_window_lists_actions_and_warm_status() {
         "job quente: o toast avisa que já estava aquecido"
     );
 
+    // Quente: "Reconstruir (sem cache)" aparece, confirma e manda `force: true`.
+    eval_str(
+        &page,
+        "(() => { window.confirm = () => true; window.__commands = []; [...document.querySelectorAll('.job-actions__item')].find(el => el.textContent.includes('Reconstruir')).click(); return 'ok'; })()",
+    )
+    .await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(
+        eval_str(&page, "JSON.stringify(window.__commands)").await,
+        r#"[{"JobWarm":{"job_id":"job_1","force":true}}]"#
+    );
+    assert!(
+        eval_str(
+            &page,
+            "JSON.stringify(Alpine.store('app').toasts.map(t => t.message))"
+        )
+        .await
+        .contains("reconstrução iniciada"),
+        "o toast confirma que a reconstrução começou"
+    );
+
     // Em execução: cancelar no lugar de rodar, e os logs da última execução.
     eval_str(
         &page,
@@ -960,7 +981,7 @@ async fn job_actions_window_lists_actions_and_warm_status() {
     .await;
     assert_eq!(
         items,
-        r#"["■ Cancelar execução","◐ Aquecer","≡ Ver logs","‖ Pausar","✎ Editar","✕ Remover"]"#
+        r#"["■ Cancelar execução","◐ Aquecer","↻ Reconstruir (sem cache)","≡ Ver logs","‖ Pausar","✎ Editar","✕ Remover"]"#
     );
 
     assert_eq!(

@@ -198,8 +198,13 @@ pub async fn status(state: &JobsContext, job: &Job) -> JobWarmStatus {
 /// Pede o aquecimento de `job`. Devolve `Ok(true)` se ele já estava quente (nada
 /// é disparado) e `Ok(false)` se o aquecimento foi para a fila: a vaga única é
 /// disputada em segundo plano e o fim chega em `Event::JobWarmChanged`.
-pub async fn request(state: &JobsContext, job: Job) -> Result<bool, String> {
-    if status(state, &job).await.warm {
+///
+/// `force` ignora o "já está quente" e reconstrói do zero (`--no-cache --pull`,
+/// rebaixando também as imagens de registry). Se a reconstrução falhar, o
+/// registro de aquecimento anterior fica como está: o job continua quente com o
+/// cache antigo, que ainda funciona.
+pub async fn request(state: &JobsContext, job: Job, force: bool) -> Result<bool, String> {
+    if !force && status(state, &job).await.warm {
         return Ok(true);
     }
     let newly_warming = state
@@ -220,7 +225,7 @@ pub async fn request(state: &JobsContext, job: Job) -> Result<bool, String> {
     let state = state.clone();
     tokio::spawn(async move {
         let permit = state.deploy_queue.acquire_job_slot().await;
-        let outcome = tokio::time::timeout(WARM_TIMEOUT, warm_once(&state, &job)).await;
+        let outcome = tokio::time::timeout(WARM_TIMEOUT, warm_once(&state, &job, force)).await;
         drop(permit);
         let result = outcome.unwrap_or_else(|_| {
             Err(anyhow!(
@@ -247,11 +252,11 @@ pub async fn request(state: &JobsContext, job: Job) -> Result<bool, String> {
 
 /// Aquece com a vaga já em mãos. Reconfere o status primeiro: uma execução pode
 /// ter aquecido o job enquanto o pedido esperava a vez.
-async fn warm_once(state: &JobsContext, job: &Job) -> Result<()> {
-    if status(state, job).await.warm {
+async fn warm_once(state: &JobsContext, job: &Job, force: bool) -> Result<()> {
+    if !force && status(state, job).await.warm {
         return Ok(());
     }
-    info!(job_id = %job.id, "job_warm: aquecendo");
+    info!(job_id = %job.id, force, "job_warm: aquecendo");
 
     let project_net = store::projects::network_name(&state.db, &job.project_id).await?;
     let network_name = networks::ensure_project_network(&state.docker.inner, &project_net).await?;
@@ -267,6 +272,7 @@ async fn warm_once(state: &JobsContext, job: &Job) -> Result<()> {
         &network_name,
         &env_vars,
         &build_dir,
+        force,
     )
     .await;
     if let Err(e) = tokio::fs::remove_dir_all(&build_dir).await {
@@ -284,6 +290,7 @@ async fn warm_in_dir(
     network_name: &str,
     env_vars: &[(String, String)],
     build_dir: &std::path::Path,
+    force: bool,
 ) -> Result<ComposeImages> {
     let source = match &job.git_source {
         Some(git) => {
@@ -310,6 +317,7 @@ async fn warm_in_dir(
         build_dir,
         state.registry_internal_token.clone(),
         &state.docker.inner,
+        force,
     )
     .await
 }

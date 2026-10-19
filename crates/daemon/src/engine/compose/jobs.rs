@@ -193,6 +193,9 @@ pub(super) async fn resolve_compose_images(
 /// (`docker pull`, só das ausentes) e roda `docker compose build` para popular o
 /// cache de build. Devolve o que o job precisa ter no host, para registrar o
 /// aquecimento. Os filhos morrem se a tarefa for abortada (`kill_on_drop`).
+///
+/// `force` rebaixa TODAS as imagens de registry (não só as ausentes) e roda o
+/// build sem cache e com `--pull` (imagem base nova): é o "reconstruir do zero".
 #[allow(clippy::too_many_arguments)]
 pub async fn warm(
     source: JobBuildSource<'_>,
@@ -202,8 +205,9 @@ pub async fn warm(
     build_dir: &Path,
     registry_internal_token: Option<Arc<str>>,
     docker: &Docker,
+    force: bool,
 ) -> Result<ComposeImages> {
-    info!(project = %project_name, "compose_warm: iniciando aquecimento");
+    info!(project = %project_name, force, "compose_warm: iniciando aquecimento");
     let files = write_job_files(source, network_name, env_vars, build_dir).await?;
 
     if let Some(token) = &registry_internal_token
@@ -212,7 +216,14 @@ pub async fn warm(
         tracing::warn!(error = %e, project = %project_name, "compose_warm: falha ao autenticar no registry embutido, pull vai falhar se a imagem for de lá");
     }
 
-    let result = warm_images(project_name, &files.compose_rel_path, build_dir, docker).await;
+    let result = warm_images(
+        project_name,
+        &files.compose_rel_path,
+        build_dir,
+        docker,
+        force,
+    )
+    .await;
 
     if registry_internal_token.is_some()
         && let Err(e) = registry_logout().await
@@ -228,11 +239,12 @@ pub(super) async fn warm_images(
     compose_rel_path: &str,
     build_dir: &Path,
     docker: &Docker,
+    force: bool,
 ) -> Result<ComposeImages> {
     let images = resolve_compose_images(project_name, compose_rel_path, build_dir).await?;
 
     for image in &images.pulled_images {
-        if docker.inspect_image(image).await.is_ok() {
+        if !force && docker.inspect_image(image).await.is_ok() {
             continue;
         }
         let output = crate::engine::cli()
@@ -251,16 +263,7 @@ pub(super) async fn warm_images(
 
     if images.has_build {
         let output = crate::engine::cli()
-            .args([
-                "compose",
-                "-p",
-                project_name,
-                "-f",
-                compose_rel_path,
-                "--env-file",
-                ".env",
-                "build",
-            ])
+            .args(warm_build_args(project_name, compose_rel_path, force))
             .current_dir(build_dir)
             .kill_on_drop(true)
             .output()
@@ -274,6 +277,28 @@ pub(super) async fn warm_images(
         }
     }
     Ok(images)
+}
+
+/// Argumentos do `compose build` do aquecimento. `force` acrescenta
+/// `--no-cache --pull`: refaz todas as camadas e rebaixa as imagens base.
+fn warm_build_args(project_name: &str, compose_rel_path: &str, force: bool) -> Vec<String> {
+    let mut args: Vec<String> = [
+        "compose",
+        "-p",
+        project_name,
+        "-f",
+        compose_rel_path,
+        "--env-file",
+        ".env",
+        "build",
+    ]
+    .map(String::from)
+    .to_vec();
+    if force {
+        args.push("--no-cache".to_string());
+        args.push("--pull".to_string());
+    }
+    args
 }
 
 /// Executa um job uma vez: prepara o compose (colado ou do repositório git) com
@@ -485,4 +510,26 @@ pub(super) async fn run_once_up(
     }
 
     Ok(exit_code)
+}
+
+#[cfg(test)]
+mod warm_args_tests {
+    use super::warm_build_args;
+
+    #[test]
+    fn build_normal_usa_o_cache() {
+        let args = warm_build_args("warm-job_1", "docker-compose.yml", false);
+        assert_eq!(args.last().map(String::as_str), Some("build"));
+        assert!(!args.iter().any(|a| a == "--no-cache" || a == "--pull"));
+    }
+
+    #[test]
+    fn build_forcado_refaz_tudo_e_rebaixa_a_base() {
+        let args = warm_build_args("warm-job_1", "docker-compose.yml", true);
+        assert!(args.iter().any(|a| a == "--no-cache"));
+        assert!(args.iter().any(|a| a == "--pull"));
+        // As opções vêm depois do subcomando `build`.
+        let build = args.iter().position(|a| a == "build").unwrap();
+        assert!(args.iter().position(|a| a == "--no-cache").unwrap() > build);
+    }
 }

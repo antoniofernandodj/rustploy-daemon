@@ -1100,6 +1100,17 @@ document.addEventListener("alpine:init", () => {
       await this.refreshNow();
     },
 
+    /** Reconstrói o job do zero (`JobWarm` com `force`): rebaixa as imagens e refaz
+     * o build sem cache, mesmo com o job quente. Leva minutos e segura a vaga única
+     * da fila de jobs, por isso pede confirmação. O fim chega em `Event::JobWarmChanged`. */
+    async jobRebuild(jobId) {
+      if (!confirm("Reconstruir este job do zero (sem cache, com as imagens base rebaixadas)? Pode levar vários minutos e ocupa a fila de jobs enquanto roda.")) return;
+      const jobRebuildResponse = await this.api.rpcChecked({ JobWarm: { job_id: jobId, force: true } });
+      if (!this.toastResult(jobRebuildResponse)) return;
+      this.toastOk("reconstrução iniciada");
+      await this.refreshNow();
+    },
+
     openJobActions(jobId) {
       this.jobActionsJobId = jobId;
     },
