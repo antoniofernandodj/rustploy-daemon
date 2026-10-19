@@ -112,7 +112,7 @@ pub async fn list_images(state: AppState) -> RpResponse {
         .await
     {
         Ok((images, _)) => RpResponse::DockerImages(images),
-        Err(e) => RpResponse::err("DockerError", e),
+        Err(e) => RpResponse::err("RuntimeError", e),
     }
 }
 
@@ -128,7 +128,7 @@ pub async fn list_volumes(state: AppState) -> RpResponse {
         .await
     {
         Ok((_, volumes)) => RpResponse::DockerVolumes(volumes),
-        Err(e) => RpResponse::err("DockerError", e),
+        Err(e) => RpResponse::err("RuntimeError", e),
     }
 }
 
@@ -140,9 +140,23 @@ async fn compute_df_inventory(
 ) -> Result<(Vec<DockerImageInfo>, Vec<DockerVolumeInfo>), String> {
     let df = state.docker.inner.df().await.map_err(|e| e.to_string())?;
     let idx = ServiceIndex::build(state).await;
-    let images: Vec<DockerImageInfo> = df
-        .images
-        .unwrap_or_default()
+    // O `df` do Podman devolve UMA entrada por tag da mesma imagem (mesmo `id`
+    // repetido); a lista e a remoção trabalham por imagem, então funde-as.
+    let mut images: Vec<bollard::models::ImageSummary> = Vec::new();
+    for img in df.images.unwrap_or_default() {
+        match images.iter_mut().find(|seen| seen.id == img.id) {
+            Some(seen) => {
+                for tag in img.repo_tags {
+                    if !seen.repo_tags.contains(&tag) {
+                        seen.repo_tags.push(tag);
+                    }
+                }
+                seen.containers = seen.containers.max(img.containers);
+            }
+            None => images.push(img),
+        }
+    }
+    let images: Vec<DockerImageInfo> = images
         .into_iter()
         .map(|img| {
             let (project, service) = idx.image_owner(&img.repo_tags);
@@ -189,7 +203,7 @@ pub async fn list_networks(state: AppState) -> RpResponse {
         .await
     {
         Ok(infos) => RpResponse::DockerNetworks(infos),
-        Err(e) => RpResponse::err("DockerError", e),
+        Err(e) => RpResponse::err("RuntimeError", e),
     }
 }
 
@@ -262,7 +276,7 @@ pub async fn list_containers(state: AppState) -> RpResponse {
         .await
     {
         Ok(c) => c,
-        Err(e) => return RpResponse::err("DockerError", e.to_string()),
+        Err(e) => return RpResponse::err("RuntimeError", e.to_string()),
     };
     let idx = ServiceIndex::build(&state).await;
     let infos: Vec<DockerContainerInfo> = containers

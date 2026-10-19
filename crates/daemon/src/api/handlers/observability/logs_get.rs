@@ -131,7 +131,7 @@ async fn compose_logs(
         .spawn()
     {
         Ok(c) => c,
-        Err(e) => return RpResponse::err("DockerError", format!("falha ao buscar logs: {e}")),
+        Err(e) => return RpResponse::err("RuntimeError", format!("falha ao buscar logs: {e}")),
     };
 
     if let Some(mut stdin) = child.stdin.take() {
@@ -141,7 +141,7 @@ async fn compose_logs(
 
     let output = match child.wait_with_output().await {
         Ok(o) => o,
-        Err(e) => return RpResponse::err("DockerError", e.to_string()),
+        Err(e) => return RpResponse::err("RuntimeError", e.to_string()),
     };
 
     let stdout_str = String::from_utf8_lossy(&output.stdout);

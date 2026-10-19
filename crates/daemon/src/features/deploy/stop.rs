@@ -109,7 +109,7 @@ async fn stop(state: &DeployContext, service_id: &str) -> RpResponse {
     // Para todas as instâncias do serviço (suporte a replicas).
     let all_ids = match containers::find_all_by_service_id(&state.docker.inner, &service_id).await {
         Ok(ids) => ids,
-        Err(e) => return RpResponse::err("DockerError", e.to_string()),
+        Err(e) => return RpResponse::err("RuntimeError", e.to_string()),
     };
 
     // Fallback: containers existentes antes da migração de prefixos de ID têm
@@ -139,7 +139,7 @@ async fn stop(state: &DeployContext, service_id: &str) -> RpResponse {
 
     for cid in &ids_to_stop {
         if let Err(e) = containers::stop_graceful(&state.docker.inner, cid, 10).await {
-            return RpResponse::err("DockerError", e.to_string());
+            return RpResponse::err("RuntimeError", e.to_string());
         }
     }
 
@@ -159,7 +159,7 @@ async fn stop_compose(
     env_vars: &[(String, String)],
 ) -> RpResponse {
     if let Err(e) = engine::compose::down(content, project_name, network_name, env_vars).await {
-        return RpResponse::err("DockerError", e.to_string());
+        return RpResponse::err("RuntimeError", e.to_string());
     }
     finish_stop(state, service_id, None).await
 }

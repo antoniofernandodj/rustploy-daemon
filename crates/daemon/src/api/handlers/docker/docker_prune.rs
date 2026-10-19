@@ -11,7 +11,7 @@ fn respond(result: Result<PruneStat, String>) -> RpResponse {
             count: s.count,
             reclaimed_bytes: s.reclaimed_bytes,
         },
-        Err(e) => RpResponse::err("DockerError", e),
+        Err(e) => RpResponse::err("RuntimeError", e),
     }
 }
 

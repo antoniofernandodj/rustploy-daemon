@@ -23,11 +23,11 @@ async fn remove_containers(state: &ServicesContext, id: &str) -> Result<(), RpRe
     if !matches!(svc.spec.source, ServiceSource::Compose(_)) {
         let ids = containers::find_all_by_service_id(&state.docker.inner, id)
             .await
-            .map_err(|e| RpResponse::err("DockerError", e.to_string()))?;
+            .map_err(|e| RpResponse::err("RuntimeError", e.to_string()))?;
         for cid in ids {
             containers::remove(&state.docker.inner, &cid)
                 .await
-                .map_err(|e| RpResponse::err("DockerError", e.to_string()))?;
+                .map_err(|e| RpResponse::err("RuntimeError", e.to_string()))?;
         }
     }
     Ok(())

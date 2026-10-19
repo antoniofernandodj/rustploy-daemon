@@ -18,11 +18,11 @@ pub async fn handle(state: AppState, service_id: String) -> RpResponse {
     };
 
     if let Err(e) = containers::stop_graceful(&state.docker.inner, &container_id, 10).await {
-        return RpResponse::err("DockerError", format!("falha ao parar: {e}"));
+        return RpResponse::err("RuntimeError", format!("falha ao parar: {e}"));
     }
 
     if let Err(e) = containers::start(&state.docker.inner, &container_id).await {
-        return RpResponse::err("DockerError", format!("falha ao iniciar: {e}"));
+        return RpResponse::err("RuntimeError", format!("falha ao iniciar: {e}"));
     }
 
     if let Err(e) = crate::store::services::update_status(
