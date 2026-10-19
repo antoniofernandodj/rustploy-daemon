@@ -3,19 +3,19 @@
 
 use crate::{
     bootstrap::state::AppState,
-    db::{self, managed_database::Row},
     features::databases::env_switch,
     features::databases::{
         managed_view::to_view,
         shared_db::{self, Engine},
     },
     features::deploy::shared_net,
+    store::{self, managed_database::Row},
 };
 use chrono::Utc;
 use shared::{ManagedDatabaseCreateReq, Response as RpResponse, Service};
 
 async fn server(state: &AppState, id: &str) -> Result<(Service, Engine), RpResponse> {
-    let svc = match db::services::get(&state.db, id).await {
+    let svc = match store::services::get(&state.db, id).await {
         Ok(Some(s)) => s,
         Ok(None) => return Err(RpResponse::err("NotFound", "service not found")),
         Err(e) => return Err(RpResponse::err("DatabaseError", e.to_string())),
@@ -36,7 +36,7 @@ async fn server(state: &AppState, id: &str) -> Result<(Service, Engine), RpRespo
 }
 
 async fn views(state: &AppState, svc: &Service, engine: Engine) -> RpResponse {
-    match db::managed_database::list(&state.db, &svc.id).await {
+    match store::managed_database::list(&state.db, &svc.id).await {
         Ok(rows) => {
             RpResponse::ManagedDatabases(rows.iter().map(|r| to_view(svc, engine, r)).collect())
         }
@@ -59,7 +59,7 @@ pub async fn create(state: AppState, req: ManagedDatabaseCreateReq) -> RpRespons
     if let Err(e) = shared_db::validate_name(&req.name) {
         return RpResponse::err("InvalidName", e.to_string());
     }
-    match db::projects::get(&state.db, &req.project_id).await {
+    match store::projects::get(&state.db, &req.project_id).await {
         Ok(Some(_)) => {}
         Ok(None) => return RpResponse::err("NotFound", "project not found"),
         Err(e) => return RpResponse::err("DatabaseError", e.to_string()),
@@ -92,7 +92,7 @@ pub async fn create(state: AppState, req: ManagedDatabaseCreateReq) -> RpRespons
         Ok(_) => {}
         Err(e) => return RpResponse::err("DatabaseError", e.to_string()),
     }
-    if db::managed_database::list(&state.db, &svc.id)
+    if store::managed_database::list(&state.db, &svc.id)
         .await
         .is_ok_and(|l| l.iter().any(|r| r.name == req.name))
     {
@@ -118,7 +118,7 @@ pub async fn create(state: AppState, req: ManagedDatabaseCreateReq) -> RpRespons
         {
             return RpResponse::err("NetworkError", e.to_string());
         }
-        let _ = db::shared_access::grant(&state.db, &svc.id, &req.project_id).await;
+        let _ = store::shared_access::grant(&state.db, &svc.id, &req.project_id).await;
     }
 
     // 2. Database + usuário no servidor (espera o init da imagem, se preciso).
@@ -148,7 +148,7 @@ pub async fn create(state: AppState, req: ManagedDatabaseCreateReq) -> RpRespons
         statement_timeout_ms: req.statement_timeout_ms,
         created_at: Utc::now(),
     };
-    let row = match db::managed_database::insert(&state.db, &row).await {
+    let row = match store::managed_database::insert(&state.db, &row).await {
         Ok(r) => r,
         Err(e) => return RpResponse::err("DatabaseError", e.to_string()),
     };
@@ -162,7 +162,7 @@ pub async fn create(state: AppState, req: ManagedDatabaseCreateReq) -> RpRespons
 }
 
 pub async fn delete(state: AppState, id: String) -> RpResponse {
-    let row = match db::managed_database::get(&state.db, &id).await {
+    let row = match store::managed_database::get(&state.db, &id).await {
         Ok(Some(r)) => r,
         Ok(None) => return RpResponse::err("NotFound", "database not found"),
         Err(e) => return RpResponse::err("DatabaseError", e.to_string()),
@@ -178,14 +178,14 @@ pub async fn delete(state: AppState, id: String) -> RpResponse {
     {
         return RpResponse::err("ProvisionError", e.to_string());
     }
-    if let Err(e) = db::managed_database::delete(&state.db, &id).await {
+    if let Err(e) = store::managed_database::delete(&state.db, &id).await {
         return RpResponse::err("DatabaseError", e.to_string());
     }
     views(&state, &svc, engine).await
 }
 
 pub async fn list_all(state: AppState) -> RpResponse {
-    let servers = match db::services::list_all(&state.db).await {
+    let servers = match store::services::list_all(&state.db).await {
         Ok(v) => v,
         Err(e) => return RpResponse::err("DatabaseError", e.to_string()),
     };
@@ -194,7 +194,7 @@ pub async fn list_all(state: AppState) -> RpResponse {
         let Some(engine) = Engine::from_kind(svc.spec.db_kind.as_deref()) else {
             continue;
         };
-        if let Ok(rows) = db::managed_database::list(&state.db, &svc.id).await {
+        if let Ok(rows) = store::managed_database::list(&state.db, &svc.id).await {
             out.extend(rows.iter().map(|r| to_view(svc, engine, r)));
         }
     }

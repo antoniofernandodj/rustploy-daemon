@@ -19,8 +19,8 @@ use tracing::{error, info, warn};
 use super::error::{RegistryBody, RegistryError};
 use super::name;
 use super::storage::{RegistryStorage, StorageError};
-use crate::db::Db;
-use crate::db::registry as registry_db;
+use crate::store::Db;
+use crate::store::registry as registry_db;
 
 /// Bind (loopback only); retorna em caso de falha (log + listener
 /// desabilitado, daemon continua) — mesmo padrão de
@@ -717,12 +717,12 @@ mod tests {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let dir = std::env::temp_dir().join(format!("rp_registry_http_test_{}", Ulid::new()));
-        let db = Arc::new(crate::db::connect(&dir).await.unwrap());
+        let db = Arc::new(crate::store::connect(&dir).await.unwrap());
         let storage = Arc::new(RegistryStorage::new(dir.join("registry")).unwrap());
 
         let secret = "s3cret-push";
         let hash = hex::encode(Sha256::digest(secret.as_bytes()));
-        crate::db::registry_tokens::create(&db, "test-push", &hash, "push")
+        crate::store::registry_tokens::create(&db, "test-push", &hash, "push")
             .await
             .unwrap();
         let auth = basic_auth_header("test-push", secret);
@@ -1054,7 +1054,7 @@ mod tests {
 
         let pull_secret = "s3cret-pull";
         let pull_hash = hex::encode(Sha256::digest(pull_secret.as_bytes()));
-        crate::db::registry_tokens::create(&db, "test-pull", &pull_hash, "pull")
+        crate::store::registry_tokens::create(&db, "test-pull", &pull_hash, "pull")
             .await
             .unwrap();
         let pull_auth = basic_auth_header("test-pull", pull_secret);

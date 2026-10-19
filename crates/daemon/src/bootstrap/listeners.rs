@@ -2,10 +2,10 @@
 
 use crate::api;
 use crate::bootstrap::state::AppState;
-use crate::db;
 use crate::features::ingress::{self, IngressController, TlsManager};
 use crate::features::registry::{self, storage::RegistryStorage};
 use crate::platform::config::RustployConfig;
+use crate::store;
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -41,13 +41,13 @@ pub fn prepare_registry_storage(
 /// ACME). Só registra rota/cert se o storage subiu de verdade.
 pub async fn publish_registry_route(
     config: &RustployConfig,
-    db: &db::Db,
+    db: &store::Db,
     ingress: &IngressController,
     tls: &Arc<TlsManager>,
 ) {
     let mut registry_domain = config.registry.domain.clone();
     if let Ok(Some(d)) =
-        db::daemon_settings::get(db, db::daemon_settings::KEY_REGISTRY_DOMAIN).await
+        store::daemon_settings::get(db, store::daemon_settings::KEY_REGISTRY_DOMAIN).await
         && !d.trim().is_empty()
     {
         registry_domain = Some(d);

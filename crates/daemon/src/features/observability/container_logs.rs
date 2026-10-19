@@ -1,7 +1,7 @@
 //! Streaming dos logs dos containers gerenciados para o event bus, reconectando
 //! e encerrando streams parados.
 
-use crate::{db::Db, platform::event_bus::EventBus};
+use crate::{platform::event_bus::EventBus, store::Db};
 use bollard::{
     Docker,
     container::{LogOutput, LogsOptions},
@@ -24,7 +24,7 @@ pub async fn stream_loop(docker: Arc<Docker>, db: Arc<Db>, bus: Arc<EventBus>) {
     loop {
         ticker.tick().await;
 
-        let services = match crate::db::services::get_running(&db).await {
+        let services = match crate::store::services::get_running(&db).await {
             Ok(s) => s,
             Err(e) => {
                 warn!(error = %e, "logs: failed to get running services");

@@ -25,7 +25,7 @@ pub async fn handle(
     };
 
     if let Some(sid) = &trigger_service_id
-        && crate::db::services::get(&state.db, sid)
+        && crate::store::services::get(&state.db, sid)
             .await
             .ok()
             .flatten()
@@ -43,7 +43,7 @@ pub async fn handle(
         );
     }
 
-    match crate::db::job::create(
+    match crate::store::job::create(
         &state.db,
         &project_id,
         trigger_service_id.as_deref(),

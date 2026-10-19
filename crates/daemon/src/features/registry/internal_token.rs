@@ -2,7 +2,7 @@
 //! registry embutido, sem ação manual do usuário. Regenerado a cada boot
 //! (ver comentário em db/registry_tokens.rs sobre por que não é fixo).
 
-use crate::db::{Db, registry_tokens};
+use crate::store::{Db, registry_tokens};
 use anyhow::Result;
 use sha2::{Digest, Sha256};
 use std::io::Read;

@@ -4,7 +4,7 @@ use crate::bootstrap::state::AppState;
 use shared::Response as RpResponse;
 
 pub async fn handle(state: AppState, project_id: String) -> RpResponse {
-    match crate::db::job::list(&state.db, &project_id).await {
+    match crate::store::job::list(&state.db, &project_id).await {
         Ok(jobs) => RpResponse::Jobs(jobs),
         Err(e) => RpResponse::err("DatabaseError", e.to_string()),
     }

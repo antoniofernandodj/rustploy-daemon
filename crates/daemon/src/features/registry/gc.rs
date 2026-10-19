@@ -21,7 +21,7 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 use super::storage::RegistryStorage;
-use crate::db::{Db, registry as db_registry};
+use crate::store::{Db, registry as db_registry};
 
 /// Idade mínima de um arquivo órfão em `uploads/` para o GC apagar — folga
 /// generosa para uploads legitimamente lentos ainda em andamento.
@@ -55,7 +55,7 @@ mod tests {
 
     async fn test_db() -> Db {
         let dir = std::env::temp_dir().join(format!("rustploy_test_gc_{}", Ulid::new()));
-        crate::db::connect(&dir).await.unwrap()
+        crate::store::connect(&dir).await.unwrap()
     }
 
     fn tmp_root() -> std::path::PathBuf {

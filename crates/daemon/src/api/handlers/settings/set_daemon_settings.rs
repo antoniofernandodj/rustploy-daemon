@@ -2,7 +2,7 @@
 //! ligando/desligando ACME e a rota do registry no ingress na hora.
 
 use crate::platform::config::RustployConfig;
-use crate::{bootstrap::state::AppState, db::daemon_settings};
+use crate::{bootstrap::state::AppState, store::daemon_settings};
 use shared::Response as RpResponse;
 use tracing::{error, info, warn};
 
@@ -95,7 +95,7 @@ pub async fn handle(
 /// Emite certificados para todos os services já em execução com tls_enabled.
 fn provision_existing_domains(state: AppState) {
     tokio::spawn(async move {
-        let services = match crate::db::services::get_running(&state.db).await {
+        let services = match crate::store::services::get_running(&state.db).await {
             Ok(s) => s,
             Err(e) => {
                 warn!(error = %e, "TLS: falha ao listar services para provisionamento");

@@ -1,7 +1,7 @@
 //! Coleta periódica de métricas de CPU/memória/disco do host e por container,
 //! publicadas no event bus.
 
-use crate::{db::Db, platform::event_bus::EventBus};
+use crate::{platform::event_bus::EventBus, store::Db};
 use bollard::Docker;
 use chrono::Utc;
 use shared::{ContainerMetricsPoint, Event, SystemMetricsPoint};
@@ -27,7 +27,7 @@ pub async fn collect_loop(
         bus.publish(Event::SystemMetrics(collect_system_metrics(&mut sys)));
 
         // ── Métricas por container ───────────────────────────────────────────
-        let services = match crate::db::services::get_running(&db).await {
+        let services = match crate::store::services::get_running(&db).await {
             Ok(s) => s,
             Err(e) => {
                 warn!(error = %e, "metrics: failed to get running services");

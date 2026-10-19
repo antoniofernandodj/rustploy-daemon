@@ -2,10 +2,10 @@
 
 mod api;
 mod bootstrap;
-mod db;
 mod engine;
 mod features;
 mod platform;
+mod store;
 
 use mimalloc::MiMalloc;
 

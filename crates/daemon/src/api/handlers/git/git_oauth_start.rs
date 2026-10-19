@@ -10,7 +10,7 @@ use ulid::Ulid;
 /// after stashing a CSRF `state` mapped to this provider for the callback to
 /// consume. Works for any provider kind via the `git_providers` dispatch layer.
 pub async fn handle(state: AppState, provider_id: String) -> Response {
-    let provider = match crate::db::git_providers::get(&state.db, &provider_id).await {
+    let provider = match crate::store::git_providers::get(&state.db, &provider_id).await {
         Ok(Some(p)) => p,
         Ok(None) => return Response::err("NotFound", "Provider não encontrado"),
         Err(e) => return Response::err("DatabaseError", e.to_string()),

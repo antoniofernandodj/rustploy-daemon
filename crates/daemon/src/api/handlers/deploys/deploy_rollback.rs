@@ -5,7 +5,7 @@ use crate::bootstrap::state::AppState;
 use shared::Response as RpResponse;
 
 pub async fn handle(state: AppState, service_id: String) -> RpResponse {
-    match crate::db::deployments::list_for_service(&state.db, &service_id, 10).await {
+    match crate::store::deployments::list_for_service(&state.db, &service_id, 10).await {
         Ok(history) => {
             let prev = history
                 .iter()

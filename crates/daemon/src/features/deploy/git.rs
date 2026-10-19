@@ -1,8 +1,8 @@
 //! Clone de repositório git para build, com progresso, credenciais de provedor
 //! conectado ou secret, e URL mascarada nos logs.
 
-use crate::db::Db;
 use crate::platform::secrets::SecretsManager;
+use crate::store::Db;
 use anyhow::{Result, anyhow};
 use fs_extra::dir::{CopyOptions, copy};
 use std::path::Path;
@@ -179,7 +179,7 @@ pub async fn resolve_clone_credentials(
 ) -> (Option<String>, Option<String>) {
     let mut provider_login: Option<String> = None;
     let token = if let Some(pid) = provider_id {
-        match crate::db::git_providers::get(db, pid).await {
+        match crate::store::git_providers::get(db, pid).await {
             Ok(Some(p)) => {
                 provider_login = p.account_login.clone();
                 crate::features::git_providers::usable_token(secrets, &p).ok()

@@ -4,9 +4,9 @@
 //! disco é liberado pelo GC (`RegistryGc` — botão na UI + job diário).
 
 use crate::bootstrap::state::AppState;
-use crate::db::registry as db_registry;
-use crate::db::registry_tokens as db_tokens;
 use crate::platform::config::RustployConfig;
+use crate::store::registry as db_registry;
+use crate::store::registry_tokens as db_tokens;
 use sha2::{Digest, Sha256};
 use shared::{
     RegistryRepoInfo, RegistryStatusInfo, RegistryTagInfo, RegistryTokenInfo,

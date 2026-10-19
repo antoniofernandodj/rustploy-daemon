@@ -6,7 +6,7 @@ use crate::bootstrap::state::AppState;
 use shared::{Event, Response as RpResponse, ServiceStatus};
 
 pub async fn handle(state: AppState, deployment_id: String) -> RpResponse {
-    let dep = match crate::db::deployments::get(&state.db, &deployment_id).await {
+    let dep = match crate::store::deployments::get(&state.db, &deployment_id).await {
         Ok(Some(d)) => d,
         Ok(None) => return RpResponse::err("NotFound", "deployment not found"),
         Err(e) => return RpResponse::err("DatabaseError", e.to_string()),
@@ -20,7 +20,7 @@ pub async fn handle(state: AppState, deployment_id: String) -> RpResponse {
     // Estava só esperando na fila (nunca rodou): remove da fila e devolve o
     // serviço ao repouso (Stopped) — não há task de executor para abortar.
     if state.deploy_queue.remove_queued(&deployment_id) {
-        let _ = crate::db::services::update_status(
+        let _ = crate::store::services::update_status(
             &state.db,
             &dep.service_id,
             &ServiceStatus::Stopped,
@@ -45,14 +45,15 @@ pub async fn handle(state: AppState, deployment_id: String) -> RpResponse {
     // ficaria preso em "Deploying". Marca erro (o redeploy sai desse estado).
     if aborted_running {
         let status = ServiceStatus::Error("deploy aborted by user".into());
-        let _ = crate::db::services::update_status(&state.db, &dep.service_id, &status, None).await;
+        let _ =
+            crate::store::services::update_status(&state.db, &dep.service_id, &status, None).await;
         state.bus.publish(Event::ServiceStatusChanged {
             service_id: dep.service_id.clone(),
             status,
         });
     }
 
-    match crate::db::deployments::transition(
+    match crate::store::deployments::transition(
         &state.db,
         &deployment_id,
         &dep.state,

@@ -12,7 +12,7 @@ use tracing::info;
 pub async fn handle(state: AppState, project_id: String) -> RpResponse {
     info!(%project_id, "manifest_export: exportando projeto");
 
-    let project = match crate::db::projects::get(&state.db, &project_id).await {
+    let project = match crate::store::projects::get(&state.db, &project_id).await {
         Ok(Some(p)) => p,
         Ok(None) => return RpResponse::err("NotFound", "project not found"),
         Err(e) => {
@@ -21,7 +21,7 @@ pub async fn handle(state: AppState, project_id: String) -> RpResponse {
         }
     };
 
-    let services = match crate::db::services::list(&state.db, &project_id).await {
+    let services = match crate::store::services::list(&state.db, &project_id).await {
         Ok(s) => s,
         Err(e) => {
             tracing::error!(error = %e, "manifest_export: erro ao listar serviços");
@@ -30,7 +30,7 @@ pub async fn handle(state: AppState, project_id: String) -> RpResponse {
     };
 
     let providers: BTreeMap<String, shared::GitProvider> =
-        match crate::db::git_providers::list(&state.db).await {
+        match crate::store::git_providers::list(&state.db).await {
             Ok(list) => list
                 .into_iter()
                 .map(|p| (p.id.clone(), p.to_public()))

@@ -71,18 +71,18 @@ mod pre_deploy_check_tests {
     use super::*;
     use crate::platform::config::AcmeConfig;
     use crate::{
-        db,
         engine::DockerClient,
         features::ingress::{IngressController, TlsManager},
         platform::event_bus::EventBus,
         platform::secrets::SecretsManager,
+        store,
     };
     use shared::{Healthcheck, ResourceLimits, ServiceSource, ServiceSpec};
     use ulid::Ulid;
 
     pub(super) async fn test_executor() -> DeployExecutor {
         let dir = std::env::temp_dir().join(format!("rustploy_test_predeploy_{}", Ulid::new()));
-        let db = Arc::new(db::connect(&dir).await.unwrap());
+        let db = Arc::new(store::connect(&dir).await.unwrap());
         let docker = Arc::new(DockerClient::connect("/var/run/docker.sock").unwrap());
         let secrets = Arc::new(SecretsManager::new(&dir.join("master.key"), db.clone()).unwrap());
         let tls = Arc::new(
@@ -139,10 +139,10 @@ mod pre_deploy_check_tests {
     #[tokio::test]
     async fn fila_vazia_e_no_op() {
         let executor = test_executor().await;
-        let svc = db::services::create(&executor.db, spec(vec![]))
+        let svc = store::services::create(&executor.db, spec(vec![]))
             .await
             .unwrap();
-        let mut dep = db::deployments::create(&executor.db, &svc.id, "nginx:latest")
+        let mut dep = store::deployments::create(&executor.db, &svc.id, "nginx:latest")
             .await
             .unwrap();
         dep.state = DeployState::PreDeployCheck;
@@ -154,10 +154,10 @@ mod pre_deploy_check_tests {
     #[tokio::test]
     async fn job_inexistente_falha_o_step() {
         let executor = test_executor().await;
-        let svc = db::services::create(&executor.db, spec(vec!["job_nao_existe".into()]))
+        let svc = store::services::create(&executor.db, spec(vec!["job_nao_existe".into()]))
             .await
             .unwrap();
-        let mut dep = db::deployments::create(&executor.db, &svc.id, "nginx:latest")
+        let mut dep = store::deployments::create(&executor.db, &svc.id, "nginx:latest")
             .await
             .unwrap();
         dep.state = DeployState::PreDeployCheck;
@@ -172,13 +172,13 @@ mod pre_deploy_check_tests {
     #[tokio::test]
     async fn fila_para_no_primeiro_job_ausente_sem_chegar_no_segundo() {
         let executor = test_executor().await;
-        let svc = db::services::create(
+        let svc = store::services::create(
             &executor.db,
             spec(vec!["job_ausente_1".into(), "job_ausente_2".into()]),
         )
         .await
         .unwrap();
-        let mut dep = db::deployments::create(&executor.db, &svc.id, "nginx:latest")
+        let mut dep = store::deployments::create(&executor.db, &svc.id, "nginx:latest")
             .await
             .unwrap();
         dep.state = DeployState::PreDeployCheck;
@@ -197,8 +197,8 @@ mod pre_deploy_check_tests {
         let executor = test_executor().await;
         let mut s = spec(vec![]);
         s.pre_deploy_job_id = Some("job_legado_nao_existe".into());
-        let svc = db::services::create(&executor.db, s).await.unwrap();
-        let mut dep = db::deployments::create(&executor.db, &svc.id, "nginx:latest")
+        let svc = store::services::create(&executor.db, s).await.unwrap();
+        let mut dep = store::deployments::create(&executor.db, &svc.id, "nginx:latest")
             .await
             .unwrap();
         dep.state = DeployState::PreDeployCheck;
@@ -217,7 +217,7 @@ mod pre_deploy_check_tests {
 mod failure_log_tests {
     use super::pre_deploy_check_tests::{spec, test_executor};
     use super::*;
-    use crate::db;
+    use crate::store;
     use shared::{GitSource, ServiceSpec, StateTransition};
 
     fn git_spec() -> ServiceSpec {
@@ -365,10 +365,10 @@ mod failure_log_tests {
     #[tokio::test]
     async fn step_building_image_falha_com_mensagem_util_sem_dockerfile() {
         let executor = test_executor().await;
-        let svc = db::services::create(&executor.db, git_spec())
+        let svc = store::services::create(&executor.db, git_spec())
             .await
             .unwrap();
-        let mut dep = db::deployments::create(&executor.db, &svc.id, "rp_app:1")
+        let mut dep = store::deployments::create(&executor.db, &svc.id, "rp_app:1")
             .await
             .unwrap();
         dep.state = DeployState::BuildingImage;
@@ -387,10 +387,10 @@ mod failure_log_tests {
     #[tokio::test]
     async fn causa_do_step_falho_e_persistida_no_build_log() {
         let executor = test_executor().await;
-        let svc = db::services::create(&executor.db, git_spec())
+        let svc = store::services::create(&executor.db, git_spec())
             .await
             .unwrap();
-        let dep = db::deployments::create(&executor.db, &svc.id, "rp_app:1")
+        let dep = store::deployments::create(&executor.db, &svc.id, "rp_app:1")
             .await
             .unwrap();
 
@@ -409,7 +409,7 @@ mod failure_log_tests {
             executor.log_step(&dep.id, &svc.id, &linha).await;
         }
 
-        let log = db::build_logs::get_for_deployment(&executor.db, &dep.id)
+        let log = store::build_logs::get_for_deployment(&executor.db, &dep.id)
             .await
             .unwrap();
         assert!(!log.is_empty());

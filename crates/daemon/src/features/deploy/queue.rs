@@ -246,8 +246,8 @@ pub async fn run_worker(state: AppState) {
 /// aguarda terminar.
 async fn run_one(state: &AppState, dep_id: &str) {
     // Marca o serviço como Deploying (deploy_start deixou em Queued).
-    if let Ok(Some(dep)) = crate::db::deployments::get(&state.db, dep_id).await {
-        let _ = crate::db::services::update_status(
+    if let Ok(Some(dep)) = crate::store::deployments::get(&state.db, dep_id).await {
+        let _ = crate::store::services::update_status(
             &state.db,
             &dep.service_id,
             &ServiceStatus::Deploying,

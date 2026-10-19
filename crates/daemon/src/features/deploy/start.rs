@@ -1,7 +1,7 @@
 //! Iniciar um deploy (`Command::DeployStart`): valida a fonte do serviço, cria o deployment e o
 //! enfileira na fila global (quem roda é `deploy::queue::run_worker`).
 
-use crate::{bootstrap::state::AppState, db::services};
+use crate::{bootstrap::state::AppState, store::services};
 use shared::{Event, Response as RpResponse, ServiceSource, ServiceStatus};
 use tracing::{error, info, warn};
 
@@ -97,7 +97,7 @@ pub async fn handle(state: AppState, service_id: String) -> RpResponse {
         }
     };
 
-    let dep = match crate::db::deployments::create(&state.db, &service_id, &image).await {
+    let dep = match crate::store::deployments::create(&state.db, &service_id, &image).await {
         Ok(d) => {
             info!(
                 service_id = %service_id,
@@ -115,7 +115,7 @@ pub async fn handle(state: AppState, service_id: String) -> RpResponse {
 
     info!(service_id = %service_id, "deploy_start: atualizando status para Queued");
     let _ =
-        crate::db::services::update_status(&state.db, &service_id, &ServiceStatus::Queued, None)
+        crate::store::services::update_status(&state.db, &service_id, &ServiceStatus::Queued, None)
             .await;
 
     state.bus.publish(Event::ServiceStatusChanged {
@@ -126,10 +126,10 @@ pub async fn handle(state: AppState, service_id: String) -> RpResponse {
 
     // Auto-cria webhook token na primeira vez para serviços Application (não Compose)
     if !matches!(svc.spec.source, ServiceSource::Compose(_))
-        && let Ok(None) = crate::db::webhook_tokens::get(&state.db, &service_id).await
+        && let Ok(None) = crate::store::webhook_tokens::get(&state.db, &service_id).await
     {
-        let token = crate::db::webhook_tokens::generate_token();
-        let _ = crate::db::webhook_tokens::upsert(&state.db, &service_id, &token).await;
+        let token = crate::store::webhook_tokens::generate_token();
+        let _ = crate::store::webhook_tokens::upsert(&state.db, &service_id, &token).await;
     }
 
     // Enfileira na fila global (um por vez). O worker

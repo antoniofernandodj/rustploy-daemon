@@ -92,7 +92,7 @@ impl DeployExecutor {
             container_id = ?live_container_id,
             "step[ComposingUp]: compose up concluído, promovendo serviço"
         );
-        crate::db::services::update_status(
+        crate::store::services::update_status(
             &self.db,
             &svc.id,
             &ServiceStatus::Running,

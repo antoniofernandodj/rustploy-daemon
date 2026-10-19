@@ -9,8 +9,8 @@ use hyper::body::Incoming;
 use sha2::{Digest, Sha256};
 
 use super::error::RegistryError;
-use crate::db::Db;
-use crate::db::registry_tokens;
+use crate::store::Db;
+use crate::store::registry_tokens;
 
 /// Nível de acesso exigido por uma rota — `Push` satisfaz também exigência de
 /// `Pull` (um token de escrita pode ler).

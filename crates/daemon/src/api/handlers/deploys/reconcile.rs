@@ -81,7 +81,7 @@ pub async fn fix_stale_live(state: &AppState, deployments: Vec<Deployment>) -> V
                 "container not running at read time",
             )
             .await;
-            let _ = crate::db::services::update_status(
+            let _ = crate::store::services::update_status(
                 &state.db,
                 &dep.service_id,
                 &ServiceStatus::Stopped,
@@ -109,13 +109,13 @@ pub async fn fix_stale_live(state: &AppState, deployments: Vec<Deployment>) -> V
 /// existe), então pulamos.
 async fn service_is_deploying(state: &AppState, service_id: &str) -> bool {
     matches!(
-        crate::db::services::get(&state.db, service_id).await,
+        crate::store::services::get(&state.db, service_id).await,
         Ok(Some(svc)) if matches!(svc.status, ServiceStatus::Deploying | ServiceStatus::Queued)
     )
 }
 
 async fn transition_deployment(state: &AppState, dep: &mut Deployment, to: DeployState, msg: &str) {
-    let _ = crate::db::deployments::transition(
+    let _ = crate::store::deployments::transition(
         &state.db,
         &dep.id,
         &dep.state,
@@ -142,7 +142,7 @@ const RUNNING_CHECK_RETRIES: u32 = 3;
 const RUNNING_CHECK_DELAY: std::time::Duration = std::time::Duration::from_millis(300);
 
 async fn is_container_running(state: &AppState, service_id: &str) -> bool {
-    let svc = match crate::db::services::get(&state.db, service_id).await {
+    let svc = match crate::store::services::get(&state.db, service_id).await {
         Ok(Some(s)) => s,
         _ => return false,
     };

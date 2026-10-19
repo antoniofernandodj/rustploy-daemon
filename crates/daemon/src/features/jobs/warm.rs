@@ -11,10 +11,10 @@
 //! compila tudo do mesmo jeito.
 
 use crate::bootstrap::state::AppState;
-use crate::db::{self, Db, daemon_settings};
 use crate::engine::compose::{self, ComposeImages};
 use crate::engine::networks;
 use crate::features::maintenance::prune::{self as docker_prune, BuildCachePrune};
+use crate::store::{self, Db, daemon_settings};
 use anyhow::{Result, anyhow};
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use serde::{Deserialize, Serialize};
@@ -253,7 +253,7 @@ async fn warm_once(state: &AppState, job: &Job) -> Result<()> {
     }
     info!(job_id = %job.id, "job_warm: aquecendo");
 
-    let project_net = db::projects::network_name(&state.db, &job.project_id).await?;
+    let project_net = store::projects::network_name(&state.db, &job.project_id).await?;
     let network_name = networks::ensure_project_network(&state.docker.inner, &project_net).await?;
     let env_vars =
         crate::features::deploy::env_resolve::resolve_job(&state.db, &state.secrets, job).await?;

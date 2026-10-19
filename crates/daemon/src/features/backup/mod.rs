@@ -1,7 +1,7 @@
 //! Backup periódico das env vars de projetos e serviços em snapshots JSON, com
 //! listagem, restauração e limpeza dos antigos.
 
-use crate::db::Db;
+use crate::store::Db;
 use chrono::{Datelike, Utc};
 use serde::{Deserialize, Serialize};
 use shared::{EnvComment, EnvVar, EnvVarValue};
@@ -85,7 +85,7 @@ async fn write_snapshot(db: &Db, backup_dir: &PathBuf) -> anyhow::Result<()> {
 }
 
 pub async fn collect_snapshot(db: &Db) -> anyhow::Result<EnvSnapshot> {
-    let projects = crate::db::projects::list(db).await?;
+    let projects = crate::store::projects::list(db).await?;
     let mut project_entries = Vec::new();
     let mut service_entries = Vec::new();
 
@@ -97,7 +97,7 @@ pub async fn collect_snapshot(db: &Db) -> anyhow::Result<EnvSnapshot> {
             env_comments: proj.env_comments.clone(),
         });
 
-        let services = crate::db::services::list(db, &proj.id).await?;
+        let services = crate::store::services::list(db, &proj.id).await?;
         for svc in services {
             if !svc.spec.env_vars.is_empty() {
                 service_entries.push(ServiceEnvEntry {
@@ -152,8 +152,8 @@ pub async fn restore_snapshot(db: &Db, backup_dir: &Path, snapshot: &str) -> any
 
     for entry in &snap.projects {
         // Só actualiza se o projecto ainda existe com o mesmo ID
-        if crate::db::projects::get(db, &entry.id).await?.is_some() {
-            crate::db::projects::update_env_vars(
+        if crate::store::projects::get(db, &entry.id).await?.is_some() {
+            crate::store::projects::update_env_vars(
                 db,
                 &entry.id,
                 entry.env_vars.clone(),
@@ -165,10 +165,10 @@ pub async fn restore_snapshot(db: &Db, backup_dir: &Path, snapshot: &str) -> any
     }
 
     for entry in &snap.services {
-        if let Ok(Some(svc)) = crate::db::services::get(db, &entry.id).await {
+        if let Ok(Some(svc)) = crate::store::services::get(db, &entry.id).await {
             let mut spec = svc.spec.clone();
             spec.env_vars = entry.env_vars.clone();
-            crate::db::services::update_spec(db, &entry.id, spec).await?;
+            crate::store::services::update_spec(db, &entry.id, spec).await?;
             restored += 1;
         }
     }

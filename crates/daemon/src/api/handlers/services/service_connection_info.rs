@@ -7,7 +7,7 @@ use shared::{Response as RpResponse, ServiceSource};
 use std::collections::HashMap;
 
 pub async fn handle(state: AppState, service_id: String) -> RpResponse {
-    let svc = match crate::db::services::get(&state.db, &service_id).await {
+    let svc = match crate::store::services::get(&state.db, &service_id).await {
         Ok(Some(s)) => s,
         Ok(None) => return RpResponse::err("NotFound", "service not found"),
         Err(e) => return RpResponse::err("DatabaseError", e.to_string()),

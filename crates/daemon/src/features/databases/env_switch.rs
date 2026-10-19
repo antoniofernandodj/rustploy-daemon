@@ -7,18 +7,18 @@
 //! descreve. Então a troca vai em todo lugar onde a chave já existe; se não
 //! existe em lugar nenhum, entra no projeto.
 
-use crate::db::Db;
+use crate::store::Db;
 use anyhow::Result;
 use shared::{EnvChange, EnvVar, EnvVarValue};
 
 /// A chave já está definida no projeto ou em algum serviço dele?
 pub async fn is_defined(db: &Db, project_id: &str, key: &str) -> Result<bool> {
-    if let Some(p) = crate::db::projects::get(db, project_id).await?
+    if let Some(p) = crate::store::projects::get(db, project_id).await?
         && p.env_vars.iter().any(|e| e.key == key)
     {
         return Ok(true);
     }
-    Ok(crate::db::services::list(db, project_id)
+    Ok(crate::store::services::list(db, project_id)
         .await?
         .iter()
         .any(|s| s.spec.env_vars.iter().any(|e| e.key == key)))
@@ -29,7 +29,7 @@ pub async fn switch(db: &Db, project_id: &str, key: &str, value: &str) -> Result
     let new = EnvVarValue::Plain(value.to_string());
     let mut changes = vec![];
 
-    for svc in crate::db::services::list(db, project_id).await? {
+    for svc in crate::store::services::list(db, project_id).await? {
         let mut spec = svc.spec.clone();
         let Some(e) = spec.env_vars.iter_mut().find(|e| e.key == key) else {
             continue;
@@ -39,10 +39,10 @@ pub async fn switch(db: &Db, project_id: &str, key: &str, value: &str) -> Result
             key: key.to_string(),
             previous: Some(std::mem::replace(&mut e.value, new.clone())),
         });
-        crate::db::services::update_spec(db, &svc.id, spec).await?;
+        crate::store::services::update_spec(db, &svc.id, spec).await?;
     }
 
-    let Some(project) = crate::db::projects::get(db, project_id).await? else {
+    let Some(project) = crate::store::projects::get(db, project_id).await? else {
         anyhow::bail!("projeto não encontrado");
     };
     let mut vars = project.env_vars.clone();
@@ -58,7 +58,7 @@ pub async fn switch(db: &Db, project_id: &str, key: &str, value: &str) -> Result
                 None
             }
         };
-        crate::db::projects::update_env_vars(db, project_id, vars, project.env_comments).await?;
+        crate::store::projects::update_env_vars(db, project_id, vars, project.env_comments).await?;
         changes.push(EnvChange {
             service_id: None,
             key: key.to_string(),
@@ -73,7 +73,7 @@ pub async fn restore(db: &Db, project_id: &str, changes: &[EnvChange]) -> Result
     for c in changes {
         match &c.service_id {
             Some(sid) => {
-                let Some(svc) = crate::db::services::get(db, sid).await? else {
+                let Some(svc) = crate::store::services::get(db, sid).await? else {
                     continue;
                 };
                 let mut spec = svc.spec.clone();
@@ -85,10 +85,10 @@ pub async fn restore(db: &Db, project_id: &str, changes: &[EnvChange]) -> Result
                     }
                     None => spec.env_vars.retain(|e| e.key != c.key),
                 }
-                crate::db::services::update_spec(db, sid, spec).await?;
+                crate::store::services::update_spec(db, sid, spec).await?;
             }
             None => {
-                let Some(project) = crate::db::projects::get(db, project_id).await? else {
+                let Some(project) = crate::store::projects::get(db, project_id).await? else {
                     continue;
                 };
                 let mut vars = project.env_vars.clone();
@@ -100,7 +100,7 @@ pub async fn restore(db: &Db, project_id: &str, changes: &[EnvChange]) -> Result
                     }
                     None => vars.retain(|e| e.key != c.key),
                 }
-                crate::db::projects::update_env_vars(db, project_id, vars, project.env_comments)
+                crate::store::projects::update_env_vars(db, project_id, vars, project.env_comments)
                     .await?;
             }
         }

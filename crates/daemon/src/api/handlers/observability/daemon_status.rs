@@ -5,7 +5,7 @@ use crate::bootstrap::state::AppState;
 use shared::Response as RpResponse;
 
 pub async fn handle(state: AppState) -> RpResponse {
-    let services = crate::db::services::get_running(&state.db)
+    let services = crate::store::services::get_running(&state.db)
         .await
         .unwrap_or_default();
 

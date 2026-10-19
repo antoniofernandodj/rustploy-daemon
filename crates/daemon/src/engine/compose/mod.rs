@@ -98,7 +98,7 @@ mod tests {
     #[tokio::test]
     async fn keeps_only_compose_lines_in_tail() {
         let bus = EventBus::new();
-        let db = crate::db::Db::connect_lazy("sqlite::memory:").unwrap();
+        let db = crate::store::Db::connect_lazy("sqlite::memory:").unwrap();
         let tail = Mutex::new(VecDeque::new());
         let input: &[u8] =
             b"main-1  | hello\nside-1  | ignored\n\x1b[31mfailed to bind port 5432\x1b[0m\n\n";

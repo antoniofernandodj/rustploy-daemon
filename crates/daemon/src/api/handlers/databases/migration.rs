@@ -3,9 +3,9 @@
 
 use crate::{
     bootstrap::state::AppState,
-    db,
     features::databases::migration::{self, valid_source_db},
     features::databases::shared_db::{self, Engine},
+    store,
 };
 use shared::{MigrationStartReq, Response as RpResponse};
 
@@ -14,7 +14,7 @@ fn err(code: &str, m: impl Into<String>) -> RpResponse {
 }
 
 pub async fn start(state: AppState, mut req: MigrationStartReq) -> RpResponse {
-    let source = match db::services::get(&state.db, &req.source_service_id).await {
+    let source = match store::services::get(&state.db, &req.source_service_id).await {
         Ok(Some(s)) => s,
         Ok(None) => return err("NotFound", "banco antigo não encontrado"),
         Err(e) => return err("DatabaseError", e.to_string()),
@@ -37,7 +37,7 @@ pub async fn start(state: AppState, mut req: MigrationStartReq) -> RpResponse {
             "nome do database de origem inválido (use letras, dígitos e _)",
         );
     }
-    let dest = match db::managed_database::get(&state.db, &req.dest_database_id).await {
+    let dest = match store::managed_database::get(&state.db, &req.dest_database_id).await {
         Ok(Some(d)) => d,
         Ok(None) => return err("NotFound", "database de destino não encontrado"),
         Err(e) => return err("DatabaseError", e.to_string()),
@@ -62,7 +62,7 @@ pub async fn start(state: AppState, mut req: MigrationStartReq) -> RpResponse {
     if let Err(e) = shared_db::validate_name(&dest.name) {
         return err("InvalidName", e.to_string());
     }
-    match db::migration::active_for_source(&state.db, &source.id).await {
+    match store::migration::active_for_source(&state.db, &source.id).await {
         Ok(true) => {
             return err(
                 "AlreadyRunning",
@@ -73,7 +73,7 @@ pub async fn start(state: AppState, mut req: MigrationStartReq) -> RpResponse {
         Err(e) => return err("DatabaseError", e.to_string()),
     }
     let rec = migration::new_record(&req, &source.spec.project_id, &req.env_var);
-    if let Err(e) = db::migration::save(&state.db, &rec).await {
+    if let Err(e) = store::migration::save(&state.db, &rec).await {
         return err("DatabaseError", e.to_string());
     }
     let out = rec.m.clone();
@@ -82,7 +82,7 @@ pub async fn start(state: AppState, mut req: MigrationStartReq) -> RpResponse {
 }
 
 pub async fn get(state: AppState, id: String) -> RpResponse {
-    match db::migration::get(&state.db, &id).await {
+    match store::migration::get(&state.db, &id).await {
         Ok(Some(r)) => RpResponse::Migration(r.m),
         Ok(None) => err("NotFound", "migração não encontrada"),
         Err(e) => err("DatabaseError", e.to_string()),
@@ -90,7 +90,7 @@ pub async fn get(state: AppState, id: String) -> RpResponse {
 }
 
 pub async fn list(state: AppState, project_id: String) -> RpResponse {
-    match db::migration::list(&state.db, &project_id).await {
+    match store::migration::list(&state.db, &project_id).await {
         Ok(v) => RpResponse::Migrations(v.into_iter().map(|r| r.m).collect()),
         Err(e) => err("DatabaseError", e.to_string()),
     }
@@ -99,7 +99,7 @@ pub async fn list(state: AppState, project_id: String) -> RpResponse {
 /// Reverte uma migração concluída: env var e serviços voltam ao banco antigo.
 /// O que foi escrito no banco novo depois da migração se perde.
 pub async fn rollback(state: AppState, id: String) -> RpResponse {
-    let mut rec = match db::migration::get(&state.db, &id).await {
+    let mut rec = match store::migration::get(&state.db, &id).await {
         Ok(Some(r)) => r,
         Ok(None) => return err("NotFound", "migração não encontrada"),
         Err(e) => return err("DatabaseError", e.to_string()),
@@ -114,7 +114,7 @@ pub async fn rollback(state: AppState, id: String) -> RpResponse {
         return err("RollbackError", e.to_string());
     }
     rec.m.status = "RolledBack".into();
-    if let Err(e) = db::migration::save(&state.db, &rec).await {
+    if let Err(e) = store::migration::save(&state.db, &rec).await {
         return err("DatabaseError", e.to_string());
     }
     RpResponse::Migration(rec.m)
@@ -122,7 +122,7 @@ pub async fn rollback(state: AppState, id: String) -> RpResponse {
 
 /// Descarta o banco antigo (já parado) — **apaga os dados dele**.
 pub async fn discard(state: AppState, id: String) -> RpResponse {
-    let mut rec = match db::migration::get(&state.db, &id).await {
+    let mut rec = match store::migration::get(&state.db, &id).await {
         Ok(Some(r)) => r,
         Ok(None) => return err("NotFound", "migração não encontrada"),
         Err(e) => return err("DatabaseError", e.to_string()),
@@ -141,7 +141,7 @@ pub async fn discard(state: AppState, id: String) -> RpResponse {
         return err("DeleteError", message);
     }
     rec.m.status = "Discarded".into();
-    if let Err(e) = db::migration::save(&state.db, &rec).await {
+    if let Err(e) = store::migration::save(&state.db, &rec).await {
         return err("DatabaseError", e.to_string());
     }
     RpResponse::Migration(rec.m)

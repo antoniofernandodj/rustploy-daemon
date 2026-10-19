@@ -12,7 +12,7 @@ pub async fn handle(
     if name.trim().is_empty() {
         return RpResponse::err("InvalidInput", "nome do projeto não pode ser vazio");
     }
-    match crate::db::projects::update(&state.db, &id, name, description).await {
+    match crate::store::projects::update(&state.db, &id, name, description).await {
         Ok(Some(p)) => RpResponse::Project(p),
         Ok(None) => RpResponse::err("NotFound", "project not found"),
         Err(e) => RpResponse::err(

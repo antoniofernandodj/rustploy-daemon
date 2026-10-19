@@ -23,7 +23,8 @@ impl DeployExecutor {
                 engine::compose::down(&compose.content, &project_name, &network_name, &env_vars)
                     .await;
             let err_status = ServiceStatus::Error(rollback_cause(dep));
-            let _ = crate::db::services::update_status(&self.db, &svc.id, &err_status, None).await;
+            let _ =
+                crate::store::services::update_status(&self.db, &svc.id, &err_status, None).await;
             self.bus.publish(Event::ServiceStatusChanged {
                 service_id: svc.id.clone(),
                 status: err_status,
@@ -88,7 +89,7 @@ impl DeployExecutor {
             service_id = %svc.id,
             "step[RollingBack]: atualizando serviço para Error"
         );
-        crate::db::services::update_status(&self.db, &svc.id, &err_status, None).await?;
+        crate::store::services::update_status(&self.db, &svc.id, &err_status, None).await?;
         self.bus.publish(Event::ServiceStatusChanged {
             service_id: svc.id.clone(),
             status: err_status,

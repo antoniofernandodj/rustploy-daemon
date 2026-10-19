@@ -654,11 +654,11 @@ pub async fn backfill_compose_projects(
 #[cfg(test)]
 mod nome_gravado_tests {
     use super::*;
-    use crate::db::projects;
+    use crate::store::projects;
 
     async fn temp_db() -> Db {
         let dir = std::env::temp_dir().join(format!("rustploy-test-{}", Ulid::new()));
-        crate::db::connect(&dir).await.unwrap()
+        crate::store::connect(&dir).await.unwrap()
     }
 
     /// Stacks vivas do Docker: `(nome da stack, chaves de serviço dos containers)`.
@@ -693,7 +693,7 @@ mod nome_gravado_tests {
         .await
         .unwrap();
         // Roda a migração de novo, como num boot seguinte.
-        crate::db::connect_existing_for_test(&db).await;
+        crate::store::connect_existing_for_test(&db).await;
         assert_eq!(
             projects::network_name(&db, "prj_01ABCDEFGHJK")
                 .await

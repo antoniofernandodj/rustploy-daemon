@@ -9,8 +9,8 @@
 //! `docs/plano-banco-compartilhado.md` §2.3.
 
 use crate::{
-    db::Db,
     engine::{DockerClient, containers, networks},
+    store::Db,
 };
 use anyhow::{Result, anyhow};
 use bollard::{Docker, container::InspectContainerOptions};
@@ -135,7 +135,7 @@ pub async fn connect_to_project(
             "o servidor já está na rede deste projeto; use o nome interno dele"
         ));
     }
-    let net = crate::db::projects::network_name(db, project_id).await?;
+    let net = crate::store::projects::network_name(db, project_id).await?;
     networks::ensure_project_network(&docker.inner, &net).await?;
     let alias = alias_of(svc);
     if let Some(other) = alias_holder(&docker.inner, &net, &alias, container_id).await {
@@ -157,7 +157,7 @@ pub async fn sync_server(db: &Db, docker: &DockerClient, svc: &Service) -> usize
     let Some(cid) = server_container(&docker.inner, svc).await else {
         return 0;
     };
-    let projects = match crate::db::shared_access::projects_of(db, &svc.id).await {
+    let projects = match crate::store::shared_access::projects_of(db, &svc.id).await {
         Ok(p) => p,
         Err(e) => {
             warn!(service = %svc.spec.name, error = %e, "shared_net: falha ao ler acessos");
@@ -186,7 +186,7 @@ pub async fn disconnect_from_project(
     let Some(cid) = server_container(&docker.inner, svc).await else {
         return Ok(());
     };
-    let net = crate::db::projects::network_name(db, project_id).await?;
+    let net = crate::store::projects::network_name(db, project_id).await?;
     if let Err(e) = networks::_disconnect_container(&docker.inner, &net, &cid).await {
         // Rede ou conexão já inexistente não é erro de revogação.
         warn!(network = %net, error = %e, "shared_net: desconexão (ignorado)");

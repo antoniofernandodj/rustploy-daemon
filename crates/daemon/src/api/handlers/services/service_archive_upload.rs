@@ -30,7 +30,7 @@ pub async fn handle(
         return RpResponse::err("ArchiveTooLarge", "zip excede 100 MiB");
     }
 
-    let svc = match crate::db::services::get(&state.db, &service_id).await {
+    let svc = match crate::store::services::get(&state.db, &service_id).await {
         Ok(Some(s)) => s,
         Ok(None) => return RpResponse::err("NotFound", "service not found"),
         Err(e) => return RpResponse::err("DatabaseError", e.to_string()),
@@ -67,7 +67,7 @@ pub async fn handle(
         build_context: ".".into(),
     });
 
-    match crate::db::services::update_spec(&state.db, &service_id, spec).await {
+    match crate::store::services::update_spec(&state.db, &service_id, spec).await {
         Ok(Some(updated)) => {
             info!(service_id = %service_id, archive_id = %archive_id, "service_archive_upload: archive associado ao serviço");
             RpResponse::Service(updated)

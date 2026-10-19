@@ -169,7 +169,7 @@ impl DeployExecutor {
             container_id = %primary_id,
             "step[Promoting]: atualizando status do serviço para Running"
         );
-        crate::db::services::update_status(
+        crate::store::services::update_status(
             &self.db,
             &svc.id,
             &ServiceStatus::Running,
@@ -212,12 +212,14 @@ impl DeployExecutor {
 
         // Transiciona qualquer deployment anterior em Live para Pruning
         // para evitar múltiplos registros Live para o mesmo serviço.
-        if let Ok(history) = crate::db::deployments::list_for_service(&self.db, &svc.id, 20).await {
+        if let Ok(history) =
+            crate::store::deployments::list_for_service(&self.db, &svc.id, 20).await
+        {
             for prev in history
                 .iter()
                 .filter(|d| d.id != dep.id && d.state == DeployState::Live)
             {
-                let _ = crate::db::deployments::transition(
+                let _ = crate::store::deployments::transition(
                     &self.db,
                     &prev.id,
                     &DeployState::Live,

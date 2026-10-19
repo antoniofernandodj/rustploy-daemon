@@ -1,11 +1,11 @@
 //! `Command::SharedAccess{List,Grant,Revoke}`: quais projetos alcançam um
 //! servidor de banco compartilhado (ver `deploy::shared_net`).
 
-use crate::{bootstrap::state::AppState, db, features::deploy::shared_net};
+use crate::{bootstrap::state::AppState, features::deploy::shared_net, store};
 use shared::{Response as RpResponse, Service, SharedAccess};
 
 async fn server(state: &AppState, id: &str) -> Result<Service, RpResponse> {
-    match db::services::get(&state.db, id).await {
+    match store::services::get(&state.db, id).await {
         Ok(Some(s)) if s.spec.shared.is_some() => Ok(s),
         Ok(Some(_)) => Err(RpResponse::err(
             "NotShared",
@@ -17,13 +17,13 @@ async fn server(state: &AppState, id: &str) -> Result<Service, RpResponse> {
 }
 
 async fn view(state: &AppState, svc: &Service) -> Vec<SharedAccess> {
-    let projects = db::shared_access::projects_of(&state.db, &svc.id)
+    let projects = store::shared_access::projects_of(&state.db, &svc.id)
         .await
         .unwrap_or_default();
     let alias = shared_net::alias_of(svc);
     let mut out = vec![];
     for project_id in projects {
-        let network = db::projects::network_name(&state.db, &project_id)
+        let network = store::projects::network_name(&state.db, &project_id)
             .await
             .unwrap_or_default();
         out.push(SharedAccess {
@@ -48,7 +48,7 @@ pub async fn grant(state: AppState, server_service_id: String, project_id: Strin
         Ok(s) => s,
         Err(r) => return r,
     };
-    match db::projects::get(&state.db, &project_id).await {
+    match store::projects::get(&state.db, &project_id).await {
         Ok(Some(_)) => {}
         Ok(None) => return RpResponse::err("NotFound", "project not found"),
         Err(e) => return RpResponse::err("DatabaseError", e.to_string()),
@@ -68,7 +68,7 @@ pub async fn grant(state: AppState, server_service_id: String, project_id: Strin
     {
         return RpResponse::err("NetworkError", e.to_string());
     }
-    if let Err(e) = db::shared_access::grant(&state.db, &svc.id, &project_id).await {
+    if let Err(e) = store::shared_access::grant(&state.db, &svc.id, &project_id).await {
         return RpResponse::err("DatabaseError", e.to_string());
     }
     RpResponse::SharedAccessList(view(&state, &svc).await)
@@ -79,7 +79,7 @@ pub async fn revoke(state: AppState, server_service_id: String, project_id: Stri
         Ok(s) => s,
         Err(r) => return r,
     };
-    if let Err(e) = db::shared_access::revoke(&state.db, &svc.id, &project_id).await {
+    if let Err(e) = store::shared_access::revoke(&state.db, &svc.id, &project_id).await {
         return RpResponse::err("DatabaseError", e.to_string());
     }
     let _ = shared_net::disconnect_from_project(&state.db, &state.docker, &svc, &project_id).await;

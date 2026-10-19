@@ -4,10 +4,10 @@
 //! reagenda (`Job::recurrence`, quando houver).
 
 use crate::bootstrap::state::AppState;
-use crate::db;
 use crate::engine::{self, DockerClient, networks};
 use crate::platform::event_bus::EventBus;
 use crate::platform::secrets::SecretsManager;
+use crate::store;
 use anyhow::Result;
 use chrono::Utc;
 use shared::{Event, Job, JobRun};
@@ -20,7 +20,7 @@ use tracing::{error, info, warn};
 use crate::features::deploy::queue::DeployQueue;
 
 pub struct JobRunner {
-    pub db: Arc<db::Db>,
+    pub db: Arc<store::Db>,
     pub docker: Arc<DockerClient>,
     pub bus: Arc<EventBus>,
     pub secrets: Arc<SecretsManager>,
@@ -34,7 +34,7 @@ pub struct JobRunner {
 /// criado; o resultado chega depois via `Event::JobRunStateChanged` +
 /// `Command::JobRunHistory`/`GetJobLogs`.
 pub async fn spawn(state: &AppState, job: Job) -> Result<JobRun> {
-    let run = db::job_run::create(&state.db, &job.id).await?;
+    let run = store::job_run::create(&state.db, &job.id).await?;
     let runner = Arc::new(JobRunner {
         db: state.db.clone(),
         docker: state.docker.clone(),
@@ -145,7 +145,7 @@ impl JobRunner {
             Ok(exit_code) => *exit_code == 0,
             Err(e) => {
                 error!(job_id = %job.id, run_id = %run_id, error = %e, "job_runner: falha ao executar job");
-                let _ = db::job_run::finish(&self.db, &run_id, -1).await;
+                let _ = store::job_run::finish(&self.db, &run_id, -1).await;
                 false
             }
         };
@@ -176,7 +176,7 @@ impl JobRunner {
         mirror_deployment: Option<(String, String)>,
         cancel_rx: Option<tokio::sync::watch::Receiver<bool>>,
     ) -> Result<i32> {
-        let project_net = crate::db::projects::network_name(&self.db, &job.project_id).await?;
+        let project_net = crate::store::projects::network_name(&self.db, &job.project_id).await?;
         let network_name =
             networks::ensure_project_network(&self.docker.inner, &project_net).await?;
 
@@ -221,7 +221,7 @@ impl JobRunner {
                         let rid = rid.clone();
                         let line = p.description;
                         tokio::spawn(async move {
-                            let _ = db::job_log::append(
+                            let _ = store::job_log::append(
                                 &db_handle,
                                 &rid,
                                 &shared::protocol::LogStream::Stdout,
@@ -266,7 +266,7 @@ impl JobRunner {
             .await?
         };
 
-        db::job_run::finish(&self.db, run_id, exit_code).await?;
+        store::job_run::finish(&self.db, run_id, exit_code).await?;
 
         if let Some(images) = images {
             super::warm::record(&self.db, job, &images).await;
@@ -289,7 +289,7 @@ impl JobRunner {
             timestamp: ts,
             stream: shared::protocol::LogStream::Stdout,
         });
-        let _ = db::job_log::append(
+        let _ = store::job_log::append(
             &self.db,
             run_id,
             &shared::protocol::LogStream::Stdout,
@@ -304,7 +304,8 @@ impl JobRunner {
     async fn cancelar_antes_de_comecar(&self, job: &Job, run_id: &str) {
         self.linha(&job.id, run_id, "==> Cancelado antes de começar a executar")
             .await;
-        let _ = db::job_run::finish(&self.db, run_id, engine::compose::CANCELLED_EXIT_CODE).await;
+        let _ =
+            store::job_run::finish(&self.db, run_id, engine::compose::CANCELLED_EXIT_CODE).await;
         self.bus.publish(Event::JobRunStateChanged {
             job_id: job.id.clone(),
             job_run_id: run_id.to_string(),
@@ -316,7 +317,7 @@ impl JobRunner {
     async fn reschedule(&self, job: &Job) {
         let now = Utc::now();
         let next_run_at = job.recurrence.map(|r| r.next_after(now));
-        if let Err(e) = db::job::mark_fired(&self.db, &job.id, now, next_run_at).await {
+        if let Err(e) = store::job::mark_fired(&self.db, &job.id, now, next_run_at).await {
             error!(job_id = %job.id, error = %e, "job_runner: falha ao reagendar");
         }
     }

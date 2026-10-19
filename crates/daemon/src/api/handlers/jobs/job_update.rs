@@ -26,7 +26,7 @@ pub async fn handle(
         );
     }
 
-    match crate::db::job::update(
+    match crate::store::job::update(
         &state.db,
         &id,
         &name,

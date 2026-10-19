@@ -6,7 +6,7 @@ use shared::{DeploymentSummary, Response as RpResponse};
 use std::collections::HashMap;
 
 pub async fn handle(state: AppState, limit: usize) -> RpResponse {
-    let deps = match crate::db::deployments::list_recent(&state.db, limit).await {
+    let deps = match crate::store::deployments::list_recent(&state.db, limit).await {
         Ok(d) => d,
         Err(e) => return RpResponse::err("DatabaseError", e.to_string()),
     };
@@ -23,7 +23,7 @@ pub async fn handle(state: AppState, limit: usize) -> RpResponse {
         let (service_name, project_name) = if let Some(cached) = svc_cache.get(&dep.service_id) {
             cached.clone()
         } else {
-            let (sname, pid) = match crate::db::services::get(&state.db, &dep.service_id).await {
+            let (sname, pid) = match crate::store::services::get(&state.db, &dep.service_id).await {
                 Ok(Some(s)) => (s.spec.name.clone(), s.spec.project_id.clone()),
                 _ => (dep.service_id.clone(), String::new()),
             };
@@ -32,7 +32,7 @@ pub async fn handle(state: AppState, limit: usize) -> RpResponse {
             } else if let Some(p) = proj_cache.get(&pid) {
                 p.clone()
             } else {
-                let name = match crate::db::projects::get(&state.db, &pid).await {
+                let name = match crate::store::projects::get(&state.db, &pid).await {
                     Ok(Some(p)) => p.name.clone(),
                     _ => pid.clone(),
                 };

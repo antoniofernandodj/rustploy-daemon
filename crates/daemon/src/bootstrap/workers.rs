@@ -1,13 +1,13 @@
 //! Tarefas de fundo do daemon: backup de env, métricas, logs, GC do registry, watchdog, agendadores e renovação de TLS.
 
 use crate::bootstrap::state::AppState;
-use crate::db::Db;
 use crate::engine::DockerClient;
 use crate::features::ingress::TlsManager;
 use crate::features::registry::storage::RegistryStorage;
 use crate::features::{backup, deploy, jobs, maintenance, observability, registry};
 use crate::platform::config::RustployConfig;
 use crate::platform::event_bus::EventBus;
+use crate::store::Db;
 use std::{path::PathBuf, sync::Arc};
 use tracing::{info, warn};
 

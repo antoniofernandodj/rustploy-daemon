@@ -6,7 +6,7 @@ use shared::{JobSummary, Response as RpResponse};
 use std::collections::HashMap;
 
 pub async fn handle(state: AppState) -> RpResponse {
-    let jobs = match crate::db::job::list_all(&state.db).await {
+    let jobs = match crate::store::job::list_all(&state.db).await {
         Ok(j) => j,
         Err(e) => return RpResponse::err("DatabaseError", e.to_string()),
     };
@@ -20,7 +20,7 @@ pub async fn handle(state: AppState) -> RpResponse {
         let project_name = if let Some(n) = proj_cache.get(&job.project_id) {
             n.clone()
         } else {
-            let name = match crate::db::projects::get(&state.db, &job.project_id).await {
+            let name = match crate::store::projects::get(&state.db, &job.project_id).await {
                 Ok(Some(p)) => p.name,
                 _ => job.project_id.clone(),
             };
@@ -33,7 +33,7 @@ pub async fn handle(state: AppState) -> RpResponse {
             Some(sid) => Some(if let Some(n) = svc_cache.get(sid) {
                 n.clone()
             } else {
-                let name = match crate::db::services::get(&state.db, sid).await {
+                let name = match crate::store::services::get(&state.db, sid).await {
                     Ok(Some(s)) => s.spec.name,
                     _ => sid.clone(),
                 };
@@ -42,7 +42,7 @@ pub async fn handle(state: AppState) -> RpResponse {
             }),
         };
 
-        let last_run = crate::db::job_run::latest_for_job(&state.db, &job.id)
+        let last_run = crate::store::job_run::latest_for_job(&state.db, &job.id)
             .await
             .unwrap_or_default();
 

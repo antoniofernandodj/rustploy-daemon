@@ -4,8 +4,8 @@
 //! base (projeto + serviço gatilho, secrets incluídas) sem instanciar um
 //! `DeployExecutor` inteiro.
 
-use crate::db::Db;
 use crate::platform::secrets::SecretsManager;
+use crate::store::Db;
 use anyhow::Result;
 use shared::{EnvVarValue, Job, Service};
 use std::collections::HashMap;
@@ -20,7 +20,7 @@ async fn resolve_project_env(
     secrets: &SecretsManager,
     project_id: &str,
 ) -> Result<HashMap<String, String>> {
-    let project_env = match crate::db::projects::get(db, project_id).await {
+    let project_env = match crate::store::projects::get(db, project_id).await {
         Ok(Some(project)) => project.env_vars,
         Ok(None) => {
             warn!(
@@ -121,7 +121,7 @@ pub async fn resolve_job(
 ) -> Result<Vec<(String, String)>> {
     let base = match &job.trigger_service_id {
         Some(sid) => {
-            let svc = crate::db::services::get(db, sid)
+            let svc = crate::store::services::get(db, sid)
                 .await?
                 .ok_or_else(|| anyhow::anyhow!("serviço gatilho não encontrado: {sid}"))?;
             resolve(db, secrets, &svc).await?

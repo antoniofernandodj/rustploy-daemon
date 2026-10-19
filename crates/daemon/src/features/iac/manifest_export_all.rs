@@ -17,7 +17,7 @@ use tracing::{debug, info, warn};
 pub async fn handle(state: AppState) -> RpResponse {
     info!("manifest_export_all: exportando todos os projetos");
 
-    let projects = match crate::db::projects::list(&state.db).await {
+    let projects = match crate::store::projects::list(&state.db).await {
         Ok(p) => p,
         Err(e) => {
             tracing::error!(error = %e, "manifest_export_all: erro ao listar projetos");
@@ -27,7 +27,7 @@ pub async fn handle(state: AppState) -> RpResponse {
 
     let mut items = Vec::with_capacity(projects.len());
     for project in projects {
-        let services = match crate::db::services::list(&state.db, &project.id).await {
+        let services = match crate::store::services::list(&state.db, &project.id).await {
             Ok(s) => s,
             Err(e) => {
                 tracing::error!(error = %e, project_id = %project.id, "manifest_export_all: erro ao listar serviços");
@@ -38,7 +38,7 @@ pub async fn handle(state: AppState) -> RpResponse {
     }
 
     let providers: BTreeMap<String, shared::GitProvider> =
-        match crate::db::git_providers::list(&state.db).await {
+        match crate::store::git_providers::list(&state.db).await {
             Ok(list) => list
                 .into_iter()
                 .map(|p| (p.id.clone(), p.to_public()))

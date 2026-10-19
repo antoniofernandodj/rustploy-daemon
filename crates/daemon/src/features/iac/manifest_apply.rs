@@ -31,7 +31,7 @@ pub async fn handle(
 
     // Nome -> ID interno, para resolver `source.git.provider` de cada manifesto.
     let provider_ids: BTreeMap<String, String> =
-        match crate::db::git_providers::list(&state.db).await {
+        match crate::store::git_providers::list(&state.db).await {
             Ok(list) => list.into_iter().map(|p| (p.name, p.id)).collect(),
             Err(e) => {
                 tracing::error!(error = %e, "manifest_apply: erro ao listar git providers");
@@ -102,7 +102,7 @@ async fn apply_one(
     }
 
     // 1. Resolver projeto por nome.
-    let existing = crate::db::projects::list(&state.db)
+    let existing = crate::store::projects::list(&state.db)
         .await
         .map_err(db_err)?
         .into_iter()
@@ -114,10 +114,10 @@ async fn apply_one(
             // Lista vazia significa "manifesto sem env vars" (ex: export sem secrets),
             // não "apagar tudo" — preservar as existentes nesse caso.
             if !env_vars.is_empty() && p.env_vars != env_vars {
-                crate::db::projects::update(&state.db, &p.id, name.clone(), description)
+                crate::store::projects::update(&state.db, &p.id, name.clone(), description)
                     .await
                     .map_err(db_err)?;
-                crate::db::projects::update_env_vars(&state.db, &p.id, env_vars, Vec::new())
+                crate::store::projects::update_env_vars(&state.db, &p.id, env_vars, Vec::new())
                     .await
                     .map_err(db_err)?;
                 (p.id, ActionVerb::Updated)
@@ -126,24 +126,29 @@ async fn apply_one(
             }
         }
         Some(p) => {
-            crate::db::projects::update(&state.db, &p.id, name.clone(), description)
+            crate::store::projects::update(&state.db, &p.id, name.clone(), description)
                 .await
                 .map_err(db_err)?;
             if !env_vars.is_empty() {
-                crate::db::projects::update_env_vars(&state.db, &p.id, env_vars, Vec::new())
+                crate::store::projects::update_env_vars(&state.db, &p.id, env_vars, Vec::new())
                     .await
                     .map_err(db_err)?;
             }
             (p.id, ActionVerb::Updated)
         }
         None => {
-            let created = crate::db::projects::create(&state.db, name.clone(), description)
+            let created = crate::store::projects::create(&state.db, name.clone(), description)
                 .await
                 .map_err(db_err)?;
             if !env_vars.is_empty() {
-                crate::db::projects::update_env_vars(&state.db, &created.id, env_vars, Vec::new())
-                    .await
-                    .map_err(db_err)?;
+                crate::store::projects::update_env_vars(
+                    &state.db,
+                    &created.id,
+                    env_vars,
+                    Vec::new(),
+                )
+                .await
+                .map_err(db_err)?;
             }
             (created.id, ActionVerb::Created)
         }
@@ -156,7 +161,7 @@ async fn apply_one(
     });
 
     // 2. Reconciliar serviços por nome dentro do projeto.
-    let existing_services = crate::db::services::list(&state.db, &project_id)
+    let existing_services = crate::store::services::list(&state.db, &project_id)
         .await
         .map_err(db_err)?;
 
@@ -221,7 +226,7 @@ async fn apply_one(
                 if effective_spec.env_vars.is_empty() && !s.spec.env_vars.is_empty() {
                     effective_spec.env_vars = s.spec.env_vars.clone();
                 }
-                crate::db::services::update_spec(&state.db, &s.id, effective_spec.clone())
+                crate::store::services::update_spec(&state.db, &s.id, effective_spec.clone())
                     .await
                     .map_err(db_err)?;
                 crate::features::services::update::sync_firewall(
@@ -235,7 +240,7 @@ async fn apply_one(
                 (ActionVerb::Updated, Some(s.id.clone()))
             }
             None => {
-                let created = crate::db::services::create(&state.db, spec.clone())
+                let created = crate::store::services::create(&state.db, spec.clone())
                     .await
                     .map_err(db_err)?;
                 debug!(service = %label, service_id = %created.id, "manifest_apply: serviço criado (Created)");

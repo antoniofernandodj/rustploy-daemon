@@ -8,14 +8,14 @@ use shared::{
 };
 
 pub async fn handle(state: AppState, service_id: String) -> RpResponse {
-    let svc = match crate::db::services::get(&state.db, &service_id).await {
+    let svc = match crate::store::services::get(&state.db, &service_id).await {
         Ok(Some(s)) => s,
         Ok(None) => return RpResponse::err("NotFound", "serviço não encontrado"),
         Err(e) => return RpResponse::err("DatabaseError", e.to_string()),
     };
 
     // Marca o serviço como Stopping antes de qualquer operação bloqueante.
-    if let Err(e) = crate::db::services::update_status(
+    if let Err(e) = crate::store::services::update_status(
         &state.db,
         &service_id,
         &ServiceStatus::Stopping,
@@ -33,7 +33,7 @@ pub async fn handle(state: AppState, service_id: String) -> RpResponse {
     // Compose services are stopped via compose_down.
     if let ServiceSource::Compose(compose) = &svc.spec.source {
         let pid = &svc.spec.project_id;
-        let network_name = match crate::db::projects::network_name(&state.db, pid).await {
+        let network_name = match crate::store::projects::network_name(&state.db, pid).await {
             Ok(n) => n,
             Err(e) => return RpResponse::err("DatabaseError", e.to_string()),
         };
@@ -42,7 +42,7 @@ pub async fn handle(state: AppState, service_id: String) -> RpResponse {
         let mut env_map: std::collections::HashMap<String, String> =
             std::collections::HashMap::new();
 
-        if let Ok(Some(project)) = crate::db::projects::get(&state.db, pid).await {
+        if let Ok(Some(project)) = crate::store::projects::get(&state.db, pid).await {
             for ev in &project.env_vars {
                 let value = match &ev.value {
                     EnvVarValue::Plain(v) => v.clone(),
@@ -135,7 +135,7 @@ async fn stop_compose(
 }
 
 async fn finish_stop(state: &AppState, service_id: &str, container_id: Option<&str>) -> RpResponse {
-    if let Err(e) = crate::db::services::update_status(
+    if let Err(e) = crate::store::services::update_status(
         &state.db,
         service_id,
         &ServiceStatus::Stopped,
@@ -146,10 +146,10 @@ async fn finish_stop(state: &AppState, service_id: &str, container_id: Option<&s
         return RpResponse::err("DatabaseError", e.to_string());
     }
 
-    if let Ok(history) = crate::db::deployments::list_for_service(&state.db, service_id, 1).await
+    if let Ok(history) = crate::store::deployments::list_for_service(&state.db, service_id, 1).await
         && let Some(dep) = history.into_iter().find(|d| d.state == DeployState::Live)
     {
-        let _ = crate::db::deployments::transition(
+        let _ = crate::store::deployments::transition(
             &state.db,
             &dep.id,
             &DeployState::Live,

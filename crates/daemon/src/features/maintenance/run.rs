@@ -6,7 +6,7 @@
 
 use super::prune::{self as docker_prune, PruneStat};
 use crate::bootstrap::state::AppState;
-use crate::db::daemon_settings;
+use crate::store::daemon_settings;
 use chrono::Utc;
 use shared::{DockerCleanupConfig, DockerCleanupLastRun, DockerCleanupResourceResult, Event};
 use std::time::Duration;

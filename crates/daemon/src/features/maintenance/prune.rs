@@ -2,7 +2,7 @@
 //! (`api::handlers::docker_prune`) e a limpeza automática (`scheduler`/`run`) compartilham.
 
 use crate::bootstrap::state::AppState;
-use crate::db::{Db, daemon_settings};
+use crate::store::{Db, daemon_settings};
 use bollard::{
     container::PruneContainersOptions, image::PruneImagesOptions, network::PruneNetworksOptions,
     volume::PruneVolumesOptions,

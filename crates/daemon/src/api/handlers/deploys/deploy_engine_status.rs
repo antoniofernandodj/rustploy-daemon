@@ -10,17 +10,17 @@ use std::collections::HashMap;
 pub async fn handle(state: AppState) -> RpResponse {
     let db = &state.db;
 
-    let active_deps = match crate::db::deployments::get_non_terminal(db).await {
+    let active_deps = match crate::store::deployments::get_non_terminal(db).await {
         Ok(d) => d,
         Err(e) => return RpResponse::err("DatabaseError", e.to_string()),
     };
 
-    let recent_deps = match crate::db::deployments::list_terminal_last_24h(db, 20).await {
+    let recent_deps = match crate::store::deployments::list_terminal_last_24h(db, 20).await {
         Ok(d) => d,
         Err(e) => return RpResponse::err("DatabaseError", e.to_string()),
     };
 
-    let (total_24h, successful_24h, failed_24h) = crate::db::deployments::stats_last_24h(db)
+    let (total_24h, successful_24h, failed_24h) = crate::store::deployments::stats_last_24h(db)
         .await
         .unwrap_or_default();
 
@@ -48,7 +48,7 @@ pub async fn handle(state: AppState) -> RpResponse {
         if let Some(cached) = svc_cache.get(service_id) {
             return cached.clone();
         }
-        let (sname, pid) = match crate::db::services::get(&state.db, service_id).await {
+        let (sname, pid) = match crate::store::services::get(&state.db, service_id).await {
             Ok(Some(s)) => (s.spec.name, s.spec.project_id),
             _ => (service_id.to_string(), String::new()),
         };
@@ -57,7 +57,7 @@ pub async fn handle(state: AppState) -> RpResponse {
         } else if let Some(p) = proj_cache.get(&pid) {
             p.clone()
         } else {
-            let name = match crate::db::projects::get(&state.db, &pid).await {
+            let name = match crate::store::projects::get(&state.db, &pid).await {
                 Ok(Some(p)) => p.name,
                 _ => pid.clone(),
             };

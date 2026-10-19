@@ -1,9 +1,9 @@
 //! Visão de um banco gerenciado: monta a connection URL como o projeto consumidor a enxerga.
 
-use crate::db::managed_database::Row;
 use crate::features::databases::shared_db::Engine;
 use crate::features::deploy::shared_net;
 use crate::platform::connection::{self, ConnTarget};
+use crate::store::managed_database::Row;
 use shared::{ManagedDatabase, Service};
 
 /// Como o projeto consumidor enxerga o servidor: o alias global (outro projeto)

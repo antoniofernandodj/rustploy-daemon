@@ -10,7 +10,7 @@ use std::{
 };
 use ulid::Ulid;
 
-use crate::db::Db;
+use crate::store::Db;
 
 pub struct SecretsManager {
     passphrase: String,

@@ -2,10 +2,10 @@
 //! projeto) mais o `.env`, criando provedores git referenciados.
 
 use crate::bootstrap::state::AppState;
-use crate::db::git_providers::{self, StoredProvider};
 use crate::features::iac::manifest::{
     GitProviderDoc, ProjectEntry, ProjectManifest, ServerManifest,
 };
+use crate::store::git_providers::{self, StoredProvider};
 use chrono::Utc;
 use shared::{GitAuthMode, GitProviderKind, Response as RpResponse};
 use std::collections::BTreeMap;
@@ -155,7 +155,7 @@ pub async fn handle(
 /// token/secret — que o usuário completa depois pela GUI (OAuth ou colar o
 /// PAT). Segredos nunca trafegam pelo manifesto.
 async fn reconcile_git_providers(
-    db: &crate::db::Db,
+    db: &crate::store::Db,
     docs: &BTreeMap<String, GitProviderDoc>,
 ) -> Result<(), RpResponse> {
     if docs.is_empty() {
@@ -233,7 +233,7 @@ async fn reconcile_git_providers(
 /// linha do `MissingEnvVars`: nada é aplicado até o TOML ou o provider de
 /// destino serem corrigidos.
 async fn check_git_provider_refs(
-    db: &crate::db::Db,
+    db: &crate::store::Db,
     projects: &[ProjectManifest],
 ) -> Result<(), RpResponse> {
     let mut referenced: Vec<&str> = Vec::new();
@@ -317,9 +317,9 @@ mod git_provider_iac_tests {
     use super::*;
     use shared::{GitSource, ServiceSource, ServiceSpec};
 
-    async fn temp_db() -> crate::db::Db {
+    async fn temp_db() -> crate::store::Db {
         let dir = std::env::temp_dir().join(format!("rustploy-test-{}", Ulid::new()));
-        crate::db::connect(&dir).await.unwrap()
+        crate::store::connect(&dir).await.unwrap()
     }
 
     /// `AppState` completo (Docker/ingress/TLS/secrets reais, mas sem
@@ -327,7 +327,7 @@ mod git_provider_iac_tests {
     /// chega a fazer uma chamada de rede) para exercitar os handlers reais
     /// (`super::handle`, `manifest_apply::handle`) fim-a-fim, em vez de lógica
     /// replicada manualmente no teste.
-    async fn test_state(db: crate::db::Db) -> AppState {
+    async fn test_state(db: crate::store::Db) -> AppState {
         let tmp = std::env::temp_dir().join(format!("rustploy-test-state-{}", Ulid::new()));
         let config = crate::platform::config::RustployConfig::default();
         let docker = std::sync::Arc::new(
@@ -367,7 +367,7 @@ mod git_provider_iac_tests {
     async fn export_then_reimport_keeps_git_provider_link_same_daemon() {
         let db = temp_db().await;
 
-        let project = crate::db::projects::create(&db, "Chiquitos".into(), None)
+        let project = crate::store::projects::create(&db, "Chiquitos".into(), None)
             .await
             .unwrap();
 
@@ -413,7 +413,7 @@ mod git_provider_iac_tests {
             pre_deploy_job_ids: vec![],
             shared: None,
         };
-        crate::db::services::create(&db, spec).await.unwrap();
+        crate::store::services::create(&db, spec).await.unwrap();
 
         // ── EXPORT (mesma lógica de manifest_export_all::handle) ──
         let providers: BTreeMap<String, shared::GitProvider> = git_providers::list(&db)
@@ -422,10 +422,10 @@ mod git_provider_iac_tests {
             .into_iter()
             .map(|p| (p.id.clone(), p.to_public()))
             .collect();
-        let projects = crate::db::projects::list(&db).await.unwrap();
+        let projects = crate::store::projects::list(&db).await.unwrap();
         let mut items = Vec::new();
         for p in projects {
-            let services = crate::db::services::list(&db, &p.id).await.unwrap();
+            let services = crate::store::services::list(&db, &p.id).await.unwrap();
             items.push((p, services));
         }
         let (manifest, env_doc) = ServerManifest::from_existing_redacted(&items, &providers);
@@ -471,12 +471,14 @@ mod git_provider_iac_tests {
 
         // Persiste via o mesmo caminho de `apply_one` (update em serviço já
         // existente) e refaz a leitura, como a GUI faria ao abrir o serviço.
-        let existing = crate::db::services::list(&db, &project.id).await.unwrap();
-        let existing_svc = existing.iter().find(|s| s.spec.name == "api").unwrap();
-        crate::db::services::update_spec(&db, &existing_svc.id, specs[0].clone())
+        let existing = crate::store::services::list(&db, &project.id)
             .await
             .unwrap();
-        let refetched = crate::db::services::get(&db, &existing_svc.id)
+        let existing_svc = existing.iter().find(|s| s.spec.name == "api").unwrap();
+        crate::store::services::update_spec(&db, &existing_svc.id, specs[0].clone())
+            .await
+            .unwrap();
+        let refetched = crate::store::services::get(&db, &existing_svc.id)
             .await
             .unwrap()
             .unwrap();
@@ -493,7 +495,7 @@ mod git_provider_iac_tests {
         let src_db = temp_db().await;
         let dst_db = temp_db().await;
 
-        let project = crate::db::projects::create(&src_db, "Chiquitos".into(), None)
+        let project = crate::store::projects::create(&src_db, "Chiquitos".into(), None)
             .await
             .unwrap();
         let stored = StoredProvider {
@@ -537,7 +539,7 @@ mod git_provider_iac_tests {
             pre_deploy_job_ids: vec![],
             shared: None,
         };
-        crate::db::services::create(&src_db, spec).await.unwrap();
+        crate::store::services::create(&src_db, spec).await.unwrap();
 
         let providers: BTreeMap<String, shared::GitProvider> = git_providers::list(&src_db)
             .await
@@ -545,10 +547,10 @@ mod git_provider_iac_tests {
             .into_iter()
             .map(|p| (p.id.clone(), p.to_public()))
             .collect();
-        let projects = crate::db::projects::list(&src_db).await.unwrap();
+        let projects = crate::store::projects::list(&src_db).await.unwrap();
         let mut items = Vec::new();
         for p in projects {
-            let services = crate::db::services::list(&src_db, &p.id).await.unwrap();
+            let services = crate::store::services::list(&src_db, &p.id).await.unwrap();
             items.push((p, services));
         }
         let (manifest, env_doc) = ServerManifest::from_existing_redacted(&items, &providers);
@@ -578,7 +580,7 @@ mod git_provider_iac_tests {
             .map(|p| (p.name, p.id))
             .collect();
 
-        let dst_project = crate::db::projects::create(&dst_db, "Chiquitos".into(), None)
+        let dst_project = crate::store::projects::create(&dst_db, "Chiquitos".into(), None)
             .await
             .unwrap();
         let specs = projects[0].service_specs(&dst_project.id, &provider_ids);
@@ -591,10 +593,10 @@ mod git_provider_iac_tests {
         );
 
         // Cria (caminho `None => create` do apply_one) e refaz a leitura.
-        let created = crate::db::services::create(&dst_db, specs[0].clone())
+        let created = crate::store::services::create(&dst_db, specs[0].clone())
             .await
             .unwrap();
-        let refetched = crate::db::services::get(&dst_db, &created.id)
+        let refetched = crate::store::services::get(&dst_db, &created.id)
             .await
             .unwrap()
             .unwrap();
@@ -640,7 +642,7 @@ services:
     async fn end_to_end_export_then_import_preserves_provider_link() {
         let db = temp_db().await;
 
-        let project = crate::db::projects::create(&db, "Chiquitos".into(), None)
+        let project = crate::store::projects::create(&db, "Chiquitos".into(), None)
             .await
             .unwrap();
         let stored = StoredProvider {
@@ -686,7 +688,7 @@ services:
             pre_deploy_job_ids: vec![],
             shared: None,
         };
-        crate::db::services::create(&db, spec).await.unwrap();
+        crate::store::services::create(&db, spec).await.unwrap();
 
         let state = test_state(db).await;
 
@@ -712,7 +714,7 @@ services:
             "serviço api não apareceu no report: {report:?}"
         );
 
-        let services = crate::db::services::list(&state.db, &project.id)
+        let services = crate::store::services::list(&state.db, &project.id)
             .await
             .unwrap();
         let api = services.iter().find(|s| s.spec.name == "api").unwrap();
@@ -736,7 +738,7 @@ services:
         let src_db = temp_db().await;
         let dst_db = temp_db().await;
 
-        let project = crate::db::projects::create(&src_db, "Chiquitos".into(), None)
+        let project = crate::store::projects::create(&src_db, "Chiquitos".into(), None)
             .await
             .unwrap();
         let stored = StoredProvider {
@@ -781,7 +783,7 @@ services:
             pre_deploy_job_ids: vec![],
             shared: None,
         };
-        crate::db::services::create(&src_db, spec).await.unwrap();
+        crate::store::services::create(&src_db, spec).await.unwrap();
 
         let src_state = test_state(src_db).await;
         let export = super::super::manifest_export_all::handle(src_state).await;
@@ -806,13 +808,13 @@ services:
             "provider pendente não deveria ter token"
         );
 
-        let dst_project = crate::db::projects::list(&dst_state.db)
+        let dst_project = crate::store::projects::list(&dst_state.db)
             .await
             .unwrap()
             .into_iter()
             .find(|p| p.name == "Chiquitos")
             .unwrap();
-        let services = crate::db::services::list(&dst_state.db, &dst_project.id)
+        let services = crate::store::services::list(&dst_state.db, &dst_project.id)
             .await
             .unwrap();
         let api = services.iter().find(|s| s.spec.name == "api").unwrap();

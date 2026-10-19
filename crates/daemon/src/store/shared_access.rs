@@ -54,7 +54,7 @@ mod tests {
     #[tokio::test]
     async fn grant_e_idempotente_e_revoke_remove() {
         let dir = std::env::temp_dir().join(format!("rustploy_test_shared_{}", ulid::Ulid::new()));
-        let db = crate::db::connect(&dir).await.unwrap();
+        let db = crate::store::connect(&dir).await.unwrap();
         grant(&db, "svc_a", "prj_1").await.unwrap();
         grant(&db, "svc_a", "prj_1").await.unwrap();
         grant(&db, "svc_a", "prj_2").await.unwrap();

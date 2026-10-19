@@ -30,7 +30,7 @@ pub async fn handle(state: AppState, mut spec: ServiceSpec) -> RpResponse {
         "service_create: criando serviço"
     );
 
-    match crate::db::services::create(&state.db, spec).await {
+    match crate::store::services::create(&state.db, spec).await {
         Ok(s) => {
             info!(service_id = %s.id, name = %s.spec.name, "service_create: serviço criado no banco");
             if let Some(port) = s.spec.host_port {

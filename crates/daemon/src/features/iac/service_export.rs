@@ -14,12 +14,12 @@ use tracing::{error, info};
 
 /// Carrega o serviço e o projeto dele, ou já a resposta de erro.
 async fn load(state: &AppState, service_id: &str) -> Result<(Service, Project), RpResponse> {
-    let svc = match crate::db::services::get(&state.db, service_id).await {
+    let svc = match crate::store::services::get(&state.db, service_id).await {
         Ok(Some(s)) => s,
         Ok(None) => return Err(RpResponse::err("NotFound", "service not found")),
         Err(e) => return Err(RpResponse::err("DatabaseError", e.to_string())),
     };
-    let project = match crate::db::projects::get(&state.db, &svc.spec.project_id).await {
+    let project = match crate::store::projects::get(&state.db, &svc.spec.project_id).await {
         Ok(Some(p)) => p,
         Ok(None) => return Err(RpResponse::err("NotFound", "project not found")),
         Err(e) => return Err(RpResponse::err("DatabaseError", e.to_string())),
@@ -98,7 +98,7 @@ pub async fn export(
     }
 
     let providers: BTreeMap<String, shared::GitProvider> =
-        match crate::db::git_providers::list(&state.db).await {
+        match crate::store::git_providers::list(&state.db).await {
             Ok(list) => list
                 .into_iter()
                 .map(|p| (p.id.clone(), p.to_public()))

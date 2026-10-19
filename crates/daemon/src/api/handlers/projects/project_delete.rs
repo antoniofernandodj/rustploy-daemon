@@ -5,7 +5,7 @@ use crate::bootstrap::state::AppState;
 use shared::Response as RpResponse;
 
 pub async fn handle(state: AppState, id: String) -> RpResponse {
-    match crate::db::services::count_by_project(&state.db, &id).await {
+    match crate::store::services::count_by_project(&state.db, &id).await {
         Ok(count) if count > 0 => {
             return RpResponse::err(
                 "HasServices",
@@ -15,7 +15,7 @@ pub async fn handle(state: AppState, id: String) -> RpResponse {
         Err(e) => return RpResponse::err("DatabaseError", e.to_string()),
         _ => {}
     }
-    match crate::db::job::count_by_project(&state.db, &id).await {
+    match crate::store::job::count_by_project(&state.db, &id).await {
         Ok(count) if count > 0 => {
             return RpResponse::err(
                 "HasJobs",
@@ -25,7 +25,7 @@ pub async fn handle(state: AppState, id: String) -> RpResponse {
         Err(e) => return RpResponse::err("DatabaseError", e.to_string()),
         _ => {}
     }
-    match crate::db::projects::delete(&state.db, &id).await {
+    match crate::store::projects::delete(&state.db, &id).await {
         Ok(true) => RpResponse::Ok,
         Ok(false) => RpResponse::err("NotFound", "project not found"),
         Err(e) => RpResponse::err("DatabaseError", e.to_string()),

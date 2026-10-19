@@ -2,12 +2,12 @@
 //! Docker e restaura as rotas do ingress.
 
 use crate::{
-    db::Db,
     engine,
     engine::{DockerClient, containers},
     features::ingress::{IngressController, TlsManager},
     platform::event_bus::EventBus,
     platform::secrets::SecretsManager,
+    store::Db,
 };
 use shared::{DeployState, Service, ServiceStatus};
 use std::{path::PathBuf, sync::Arc};
@@ -33,7 +33,7 @@ pub async fn recover(
     // ponto do boot), preservando a fila entre restarts.
     let mut to_requeue: Vec<String> = Vec::new();
 
-    let pending = match crate::db::deployments::get_non_terminal(&db).await {
+    let pending = match crate::store::deployments::get_non_terminal(&db).await {
         Ok(v) => v,
         Err(e) => {
             warn!(error = %e, "failed to query non-terminal deployments");
@@ -52,14 +52,14 @@ pub async fn recover(
     info!(count = pending.len(), "recovering deployments");
 
     for dep in pending {
-        let svc = match crate::db::services::get(&db, &dep.service_id).await {
+        let svc = match crate::store::services::get(&db, &dep.service_id).await {
             Ok(Some(s)) => s,
             _ => {
                 warn!(
                     deployment_id = dep.id,
                     "service not found during recovery, marking failed"
                 );
-                let _ = crate::db::deployments::transition(
+                let _ = crate::store::deployments::transition(
                     &db,
                     &dep.id,
                     &dep.state,
@@ -76,9 +76,13 @@ pub async fn recover(
             // preservando a fila entre restarts. Mantém o serviço em Queued.
             DeployState::Pending => {
                 info!(deployment_id = dep.id, "re-enfileirando deploy pendente");
-                let _ =
-                    crate::db::services::update_status(&db, &svc.id, &ServiceStatus::Queued, None)
-                        .await;
+                let _ = crate::store::services::update_status(
+                    &db,
+                    &svc.id,
+                    &ServiceStatus::Queued,
+                    None,
+                )
+                .await;
                 to_requeue.push(dep.id.clone());
             }
 
@@ -112,7 +116,7 @@ pub async fn recover(
                         let _ = containers::remove(&docker.inner, &id).await;
                     }
                 }
-                let _ = crate::db::deployments::transition(
+                let _ = crate::store::deployments::transition(
                     &db,
                     &dep.id,
                     &dep.state,
@@ -120,7 +124,7 @@ pub async fn recover(
                     Some("daemon restarted during deploy".into()),
                 )
                 .await;
-                let _ = crate::db::services::update_status(
+                let _ = crate::store::services::update_status(
                     &db,
                     &svc.id,
                     &ServiceStatus::Error("deploy interrupted by restart".into()),
@@ -206,7 +210,7 @@ pub async fn reconcile(
     ingress: &IngressController,
     tls: &Arc<TlsManager>,
 ) {
-    let services = match crate::db::services::list_all(db).await {
+    let services = match crate::store::services::list_all(db).await {
         Ok(v) => v,
         Err(e) => {
             warn!(error = %e, "reconcile: falha ao listar serviços");
@@ -222,7 +226,7 @@ pub async fn reconcile(
             crate::features::deploy::shared_net::sync_server(db, docker, &svc).await;
         }
         let replicas = svc.spec.replicas.max(1);
-        let net = match crate::db::projects::network_name(db, &svc.spec.project_id).await {
+        let net = match crate::store::projects::network_name(db, &svc.spec.project_id).await {
             Ok(n) => n,
             Err(e) => {
                 warn!(service_id = %svc.id, error = %e, "recovery: falha ao ler a rede do projeto");
@@ -247,9 +251,13 @@ pub async fn reconcile(
                     service = svc.spec.name,
                     "reconcile: container encontrado, marcando Running"
                 );
-                let _ =
-                    crate::db::services::update_status(db, &svc.id, &ServiceStatus::Running, None)
-                        .await;
+                let _ = crate::store::services::update_status(
+                    db,
+                    &svc.id,
+                    &ServiceStatus::Running,
+                    None,
+                )
+                .await;
                 reconcile_routes(&svc, ips, ingress, tls).await;
             }
             (false, true) => {
@@ -257,9 +265,13 @@ pub async fn reconcile(
                     service = svc.spec.name,
                     "reconcile: container ausente, marcando Stopped"
                 );
-                let _ =
-                    crate::db::services::update_status(db, &svc.id, &ServiceStatus::Stopped, None)
-                        .await;
+                let _ = crate::store::services::update_status(
+                    db,
+                    &svc.id,
+                    &ServiceStatus::Stopped,
+                    None,
+                )
+                .await;
                 ingress.remove_domains(&svc.spec);
                 if let Some(host_port) = svc.spec.host_port {
                     ingress.remove_port_route(host_port);
@@ -336,7 +348,7 @@ async fn restore_routes(
     ingress: &IngressController,
     tls: &Arc<TlsManager>,
 ) {
-    let services = match crate::db::services::get_running(db).await {
+    let services = match crate::store::services::get_running(db).await {
         Ok(v) => v,
         Err(e) => {
             warn!(error = %e, "failed to restore routes");
@@ -351,7 +363,7 @@ async fn restore_routes(
 
     for svc in services {
         let replicas = svc.spec.replicas.max(1);
-        let net = match crate::db::projects::network_name(db, &svc.spec.project_id).await {
+        let net = match crate::store::projects::network_name(db, &svc.spec.project_id).await {
             Ok(n) => n,
             Err(e) => {
                 warn!(service_id = %svc.id, error = %e, "recovery: falha ao ler a rede do projeto");

@@ -12,7 +12,7 @@ use shared::{
 use tokio::io::AsyncWriteExt;
 
 pub async fn handle(state: AppState, service_id: String, tail: usize) -> RpResponse {
-    let svc = match crate::db::services::get(&state.db, &service_id).await {
+    let svc = match crate::store::services::get(&state.db, &service_id).await {
         Ok(Some(s)) => s,
         Ok(None) => return RpResponse::err("NotFound", "serviço não encontrado"),
         Err(e) => return RpResponse::err("DatabaseError", e.to_string()),
@@ -23,7 +23,7 @@ pub async fn handle(state: AppState, service_id: String, tail: usize) -> RpRespo
         let mut env_map = std::collections::HashMap::new();
 
         // 1. Carregar variáveis do Projeto
-        if let Ok(Some(project)) = crate::db::projects::get(&state.db, pid).await {
+        if let Ok(Some(project)) = crate::store::projects::get(&state.db, pid).await {
             for ev in &project.env_vars {
                 let value = match &ev.value {
                     EnvVarValue::Plain(v) => v.clone(),

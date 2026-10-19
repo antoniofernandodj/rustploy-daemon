@@ -2,7 +2,7 @@
 //! healthcheck, reinicia com limite de tentativas e, se o container sumiu, pede
 //! redeploy.
 
-use crate::{bootstrap::state::AppState, db::Db, platform::event_bus::EventBus};
+use crate::{bootstrap::state::AppState, platform::event_bus::EventBus, store::Db};
 use bollard::Docker;
 use shared::{Event, Healthcheck, HealthcheckKind, ServiceSource, ServiceStatus};
 use std::{
@@ -32,7 +32,7 @@ pub async fn watchdog_loop(state: AppState) {
     loop {
         sleep(BASE_TICK).await;
 
-        let services = match crate::db::services::get_watchable(&state.db).await {
+        let services = match crate::store::services::get_watchable(&state.db).await {
             Ok(s) => s,
             Err(e) => {
                 warn!(error = %e, "watchdog: failed to fetch watchable services");
@@ -258,7 +258,7 @@ async fn trigger_redeploy(state: &AppState, svc: &shared::Service) {
         ServiceSource::Compose(c) => format!("compose:{}", c.content),
     };
 
-    let dep = match crate::db::deployments::create(&state.db, &svc.id, &image).await {
+    let dep = match crate::store::deployments::create(&state.db, &svc.id, &image).await {
         Ok(d) => d,
         Err(e) => {
             warn!(service = %svc.spec.name, error = %e, "watchdog: falha ao criar deployment para redeploy");
@@ -276,8 +276,8 @@ async fn trigger_redeploy(state: &AppState, svc: &shared::Service) {
 
     // Redeploy também passa pela fila global (um por vez) em vez de spawnar o
     // executor direto — o serviço fica Queued até o worker pegar.
-    let _ =
-        crate::db::services::update_status(&state.db, &svc.id, &ServiceStatus::Queued, None).await;
+    let _ = crate::store::services::update_status(&state.db, &svc.id, &ServiceStatus::Queued, None)
+        .await;
     state.bus.publish(Event::ServiceStatusChanged {
         service_id: svc.id.clone(),
         status: ServiceStatus::Queued,
@@ -366,7 +366,7 @@ async fn mark_service(
     status: &ServiceStatus,
     container_id: Option<&str>,
 ) {
-    match crate::db::services::update_status(db, service_id, status, container_id).await {
+    match crate::store::services::update_status(db, service_id, status, container_id).await {
         Ok(_) => bus.publish(Event::ServiceStatusChanged {
             service_id: service_id.to_string(),
             status: status.clone(),

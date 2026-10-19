@@ -17,7 +17,8 @@ pub async fn handle(
         comments = env_comments.len(),
         "project_env_set: atualizando env vars do projeto"
     );
-    match crate::db::projects::update_env_vars(&state.db, &project_id, env_vars, env_comments).await
+    match crate::store::projects::update_env_vars(&state.db, &project_id, env_vars, env_comments)
+        .await
     {
         Ok(Some(project)) => {
             info!(project_id = %project.id, "project_env_set: env vars atualizadas");

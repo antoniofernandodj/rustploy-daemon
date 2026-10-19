@@ -110,7 +110,7 @@ async fn analyze(state: &AppState, req: &ServiceImportReq) -> Result<Analysis, F
     bundle.validate().map_err(|e| ("InvalidBundle", e))?;
 
     // ── destino: o projeto em que o usuário está ───────────────────────────
-    let project = match crate::db::projects::get(&state.db, &req.project_id).await {
+    let project = match crate::store::projects::get(&state.db, &req.project_id).await {
         Ok(Some(p)) => p,
         Ok(None) => return Err(("NotFound", "projeto de destino não encontrado".into())),
         Err(e) => return Err(("DatabaseError", e.to_string())),
@@ -129,7 +129,7 @@ async fn analyze(state: &AppState, req: &ServiceImportReq) -> Result<Analysis, F
     manifest.name = final_name.clone();
 
     // ── conflito de nome ─────────────────────
-    let existing_services: Vec<Service> = crate::db::services::list(&state.db, &project.id)
+    let existing_services: Vec<Service> = crate::store::services::list(&state.db, &project.id)
         .await
         .map_err(|e| ("DatabaseError", e.to_string()))?;
     let name_conflict = existing_services
@@ -225,7 +225,7 @@ async fn analyze(state: &AppState, req: &ServiceImportReq) -> Result<Analysis, F
     }
 
     // ── git provider (por nome) ────────────────────────────────────────────
-    let providers = crate::db::git_providers::list(&state.db)
+    let providers = crate::store::git_providers::list(&state.db)
         .await
         .map_err(|e| ("DatabaseError", e.to_string()))?;
     let provider_ids: BTreeMap<String, String> = providers
@@ -294,7 +294,7 @@ async fn analyze(state: &AppState, req: &ServiceImportReq) -> Result<Analysis, F
                     domains.join(", ")
                 ),
             ));
-            let others = crate::db::services::list_all(&state.db)
+            let others = crate::store::services::list_all(&state.db)
                 .await
                 .map_err(|e| ("DatabaseError", e.to_string()))?;
             let clash: Vec<String> = domains
@@ -392,7 +392,7 @@ async fn write_all(
     }
 
     if a.project_env_writes != a.project.env_vars {
-        crate::db::projects::update_env_vars(
+        crate::store::projects::update_env_vars(
             &state.db,
             project_id,
             a.project_env_writes.clone(),
@@ -523,7 +523,7 @@ mod e2e {
 
     async fn daemon() -> AppState {
         let tmp = std::env::temp_dir().join(format!("rustploy-test-state-{}", Ulid::new()));
-        let db = crate::db::connect(&tmp.join("data")).await.unwrap();
+        let db = crate::store::connect(&tmp.join("data")).await.unwrap();
         let config = crate::platform::config::RustployConfig::default();
         let docker = std::sync::Arc::new(
             crate::engine::DockerClient::connect(&config.docker.socket_path).unwrap(),
@@ -613,10 +613,10 @@ mod e2e {
     /// O servidor A: projeto "Flow" com 3 variáveis (uma é secret) e o serviço api.
     async fn server_a() -> (AppState, String) {
         let a = daemon().await;
-        let p = crate::db::projects::create(&a.db, "Flow".into(), None)
+        let p = crate::store::projects::create(&a.db, "Flow".into(), None)
             .await
             .unwrap();
-        crate::db::projects::update_env_vars(
+        crate::store::projects::update_env_vars(
             &a.db,
             &p.id,
             vec![
@@ -628,7 +628,7 @@ mod e2e {
         )
         .await
         .unwrap();
-        let svc = crate::db::services::create(&a.db, spec(&p.id))
+        let svc = crate::store::services::create(&a.db, spec(&p.id))
             .await
             .unwrap();
         (a, svc.id)
@@ -680,7 +680,7 @@ mod e2e {
 
     /// O projeto do servidor B em que o usuário está com a tela aberta.
     async fn project_b(b: &AppState) -> String {
-        crate::db::projects::create(&b.db, "Flow B".into(), None)
+        crate::store::projects::create(&b.db, "Flow B".into(), None)
             .await
             .unwrap()
             .id
@@ -739,7 +739,7 @@ mod e2e {
                 .iter()
                 .all(|s| s.state == ProjectEnvState::New)
         );
-        let antes = crate::db::projects::get(&b.db, &pid)
+        let antes = crate::store::projects::get(&b.db, &pid)
             .await
             .unwrap()
             .unwrap();
@@ -748,7 +748,7 @@ mod e2e {
             "dry_run não pode gravar variável"
         );
         assert!(
-            crate::db::services::list(&b.db, &pid)
+            crate::store::services::list(&b.db, &pid)
                 .await
                 .unwrap()
                 .is_empty(),
@@ -762,13 +762,13 @@ mod e2e {
         let sid = rep.service_id.clone().expect("criado");
         assert!(!rep.deployed);
 
-        let svc = crate::db::services::get(&b.db, &sid)
+        let svc = crate::store::services::get(&b.db, &sid)
             .await
             .unwrap()
             .unwrap();
         assert_eq!(svc.status, ServiceStatus::Stopped, "nunca deploya sozinho");
         assert_eq!(svc.spec.domains.len(), 2, "as duas rotas de domínio vieram");
-        let proj = crate::db::projects::get(&b.db, &svc.spec.project_id)
+        let proj = crate::store::projects::get(&b.db, &svc.spec.project_id)
             .await
             .unwrap()
             .unwrap();
@@ -788,10 +788,10 @@ mod e2e {
 
         let new_dest = || async {
             let b = daemon().await;
-            let p = crate::db::projects::create(&b.db, "Dest".into(), None)
+            let p = crate::store::projects::create(&b.db, "Dest".into(), None)
                 .await
                 .unwrap();
-            crate::db::projects::update_env_vars(
+            crate::store::projects::update_env_vars(
                 &b.db,
                 &p.id,
                 vec![plain("REDIS_URL", "redis://do-B:6379")],
@@ -813,11 +813,11 @@ mod e2e {
                     r.project_env.insert("REDIS_URL".into(), c);
                 }
                 let rep = report(handle_resp(&b, r).await);
-                let p = crate::db::projects::get(&b.db, &pid)
+                let p = crate::store::projects::get(&b.db, &pid)
                     .await
                     .unwrap()
                     .unwrap();
-                let s = crate::db::services::get(&b.db, rep.service_id.as_ref().unwrap())
+                let s = crate::store::services::get(&b.db, rep.service_id.as_ref().unwrap())
                     .await
                     .unwrap()
                     .unwrap();
@@ -864,10 +864,10 @@ mod e2e {
         let (a, id) = server_a().await;
         let yaml = export(&a, &id, true, &[]).await;
         let b = daemon().await;
-        let p = crate::db::projects::create(&b.db, "Dest".into(), None)
+        let p = crate::store::projects::create(&b.db, "Dest".into(), None)
             .await
             .unwrap();
-        crate::db::services::create(&b.db, spec(&p.id))
+        crate::store::services::create(&b.db, spec(&p.id))
             .await
             .unwrap(); // já tem "api"
 
@@ -882,7 +882,10 @@ mod e2e {
         r.dry_run = false;
         assert_eq!(err_code(handle_resp(&b, r.clone()).await), "NameConflict");
         assert_eq!(
-            crate::db::services::list(&b.db, &p.id).await.unwrap().len(),
+            crate::store::services::list(&b.db, &p.id)
+                .await
+                .unwrap()
+                .len(),
             1,
             "nada pode ter sido criado"
         );
@@ -913,7 +916,7 @@ mod e2e {
         r.dry_run = false;
         assert_eq!(err_code(handle_resp(&b, r.clone()).await), "MissingVars");
         assert!(
-            crate::db::services::list(&b.db, &pid)
+            crate::store::services::list(&b.db, &pid)
                 .await
                 .unwrap()
                 .is_empty(),
@@ -925,7 +928,7 @@ mod e2e {
         r.project_vars
             .insert("REDIS_URL".into(), "redis://novo:6379".into());
         let rep = report(handle_resp(&b, r).await);
-        let svc = crate::db::services::get(&b.db, rep.service_id.as_ref().unwrap())
+        let svc = crate::store::services::get(&b.db, rep.service_id.as_ref().unwrap())
             .await
             .unwrap()
             .unwrap();
@@ -940,12 +943,12 @@ mod e2e {
     #[tokio::test]
     async fn origem_por_zip_nao_exporta() {
         let a = daemon().await;
-        let p = crate::db::projects::create(&a.db, "Z".into(), None)
+        let p = crate::store::projects::create(&a.db, "Z".into(), None)
             .await
             .unwrap();
         let mut s = spec(&p.id);
         s.source = ServiceSource::Archive(shared::ArchiveSource::default());
-        let svc = crate::db::services::create(&a.db, s).await.unwrap();
+        let svc = crate::store::services::create(&a.db, s).await.unwrap();
 
         let Response::ServiceExportPlan(plan) =
             super::super::service_export::plan(a.clone(), svc.id.clone()).await
@@ -994,7 +997,7 @@ mod e2e {
         let mut r = req(&yaml, &pid);
         r.drop_domains = true;
         let rep = report(handle_resp(&b, r).await);
-        let svc = crate::db::services::get(&b.db, rep.service_id.as_ref().unwrap())
+        let svc = crate::store::services::get(&b.db, rep.service_id.as_ref().unwrap())
             .await
             .unwrap()
             .unwrap();

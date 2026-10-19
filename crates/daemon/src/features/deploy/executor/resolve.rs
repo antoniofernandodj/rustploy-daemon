@@ -40,7 +40,7 @@ impl DeployExecutor {
         let total = checks.len();
 
         for (idx, job_id) in checks.iter().enumerate() {
-            let job = crate::db::job::get(&self.db, job_id)
+            let job = crate::store::job::get(&self.db, job_id)
                 .await?
                 .ok_or_else(|| anyhow!("job de pré-deploy check não encontrado: {job_id}"))?;
 
@@ -59,7 +59,7 @@ impl DeployExecutor {
             )
             .await;
 
-            let run = crate::db::job_run::create(&self.db, &job.id).await?;
+            let run = crate::store::job_run::create(&self.db, &job.id).await?;
             self.bus.publish(Event::JobRunStateChanged {
                 job_id: job.id.clone(),
                 job_run_id: run.id.clone(),
@@ -88,7 +88,7 @@ impl DeployExecutor {
                         error = %e,
                         "step[PreDeployCheck]: falha ao executar job"
                     );
-                    let _ = crate::db::job_run::finish(&self.db, &run.id, -1).await;
+                    let _ = crate::store::job_run::finish(&self.db, &run.id, -1).await;
                     (-1, false)
                 }
             };

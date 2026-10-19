@@ -1,11 +1,11 @@
 //! Estado compartilhado do daemon (`AppState`) e os caches do inventário Docker.
 
 use crate::{
-    db::Db,
     engine::DockerClient,
     features::ingress::{IngressController, TlsManager},
     platform::event_bus::EventBus,
     platform::secrets::SecretsManager,
+    store::Db,
 };
 use shared::{DockerImageInfo, DockerNetworkInfo, DockerVolumeInfo};
 use std::{

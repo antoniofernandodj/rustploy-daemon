@@ -4,12 +4,12 @@
 
 use crate::platform::config::RustployConfig;
 use crate::{
-    db::Db,
     engine,
     engine::{DockerClient, containers, images, networks},
     features::ingress::{IngressController, TlsManager},
     platform::event_bus::EventBus,
     platform::secrets::SecretsManager,
+    store::Db,
 };
 use anyhow::{Result, anyhow};
 use bollard::models::HealthStatusEnum;
@@ -130,12 +130,12 @@ impl DeployExecutor {
     pub(super) async fn describe_service(&self, service_id: &str) -> String {
         let candidates = [service_id.to_string(), format!("svc_{service_id}")];
         for id in &candidates {
-            if let Ok(Some(owner)) = crate::db::services::get(&self.db, id).await {
-                let projeto = match crate::db::projects::get(&self.db, &owner.spec.project_id).await
-                {
-                    Ok(Some(p)) => p.name,
-                    _ => owner.spec.project_id.clone(),
-                };
+            if let Ok(Some(owner)) = crate::store::services::get(&self.db, id).await {
+                let projeto =
+                    match crate::store::projects::get(&self.db, &owner.spec.project_id).await {
+                        Ok(Some(p)) => p.name,
+                        _ => owner.spec.project_id.clone(),
+                    };
                 return format!("o serviço `{}` do projeto `{projeto}`", owner.spec.name);
             }
         }
@@ -170,7 +170,7 @@ impl DeployExecutor {
     /// Persiste uma linha de log de build no banco e a publica no event bus.
     pub(super) async fn log_step(&self, deployment_id: &str, service_id: &str, line: &str) {
         let ts = chrono::Utc::now();
-        let _ = crate::db::build_logs::append(&self.db, deployment_id, line, ts).await;
+        let _ = crate::store::build_logs::append(&self.db, deployment_id, line, ts).await;
         self.bus.publish(Event::BuildLog {
             deployment_id: deployment_id.to_string(),
             service_id: service_id.to_string(),
@@ -192,9 +192,9 @@ impl DeployExecutor {
         let port = RustployConfig::global().registry.port;
 
         let mut domain = RustployConfig::global().registry.domain.clone();
-        if let Ok(Some(d)) = crate::db::daemon_settings::get(
+        if let Ok(Some(d)) = crate::store::daemon_settings::get(
             &self.db,
-            crate::db::daemon_settings::KEY_REGISTRY_DOMAIN,
+            crate::store::daemon_settings::KEY_REGISTRY_DOMAIN,
         )
         .await
             && !d.trim().is_empty()
@@ -234,7 +234,7 @@ impl DeployExecutor {
 
     /// Nome da rede do projeto — o gravado em `project.network_name`.
     pub(super) async fn network_name(&self, project_id: &str) -> Result<String> {
-        crate::db::projects::network_name(&self.db, project_id).await
+        crate::store::projects::network_name(&self.db, project_id).await
     }
 
     pub(super) async fn ensure_network(&self, project_id: &str) -> Result<String> {
@@ -250,13 +250,13 @@ impl DeployExecutor {
     }
 
     pub(super) async fn load_deployment(&self, id: &str) -> Result<Deployment> {
-        crate::db::deployments::get(&self.db, id)
+        crate::store::deployments::get(&self.db, id)
             .await?
             .ok_or_else(|| anyhow!("deployment not found: {id}"))
     }
 
     pub(super) async fn load_service(&self, id: &str) -> Result<Option<Service>> {
-        crate::db::services::get(&self.db, id).await
+        crate::store::services::get(&self.db, id).await
     }
 
     pub(super) async fn transition(
@@ -273,7 +273,7 @@ impl DeployExecutor {
             message = ?message,
             "executor: gravando transição no banco"
         );
-        let dep = crate::db::deployments::transition(
+        let dep = crate::store::deployments::transition(
             &self.db,
             deployment_id,
             from,

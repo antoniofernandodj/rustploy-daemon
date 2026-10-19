@@ -6,7 +6,7 @@ use chrono::Utc;
 use shared::{DeployState, Event, Response as RpResponse, ServiceStatus};
 
 pub async fn handle(state: AppState, service_id: String) -> RpResponse {
-    let svc = match crate::db::services::get(&state.db, &service_id).await {
+    let svc = match crate::store::services::get(&state.db, &service_id).await {
         Ok(Some(s)) => s,
         Ok(None) => return RpResponse::err("NotFound", "serviço não encontrado"),
         Err(e) => return RpResponse::err("DatabaseError", e.to_string()),
@@ -25,7 +25,7 @@ pub async fn handle(state: AppState, service_id: String) -> RpResponse {
         return RpResponse::err("DockerError", format!("falha ao iniciar: {e}"));
     }
 
-    if let Err(e) = crate::db::services::update_status(
+    if let Err(e) = crate::store::services::update_status(
         &state.db,
         &service_id,
         &ServiceStatus::Running,
@@ -37,12 +37,13 @@ pub async fn handle(state: AppState, service_id: String) -> RpResponse {
     }
 
     // Se o deployment estava Stopped, volta para Live.
-    if let Ok(history) = crate::db::deployments::list_for_service(&state.db, &service_id, 1).await
+    if let Ok(history) =
+        crate::store::deployments::list_for_service(&state.db, &service_id, 1).await
         && let Some(dep) = history
             .into_iter()
             .find(|d| d.state == DeployState::Stopped)
     {
-        let _ = crate::db::deployments::transition(
+        let _ = crate::store::deployments::transition(
             &state.db,
             &dep.id,
             &DeployState::Stopped,

@@ -9,12 +9,12 @@ mod workers;
 
 use crate::api;
 use crate::bootstrap::state::AppState;
-use crate::db;
 use crate::engine;
 use crate::features::ingress::{IngressController, TlsManager};
 use crate::features::{deploy, jobs, registry};
 use crate::platform::config::RustployConfig;
 use crate::platform::{event_bus::EventBus, secrets};
+use crate::store;
 use anyhow::Result;
 use shared::Event;
 use std::{path::PathBuf, sync::Arc};
@@ -48,7 +48,7 @@ pub async fn run() -> Result<()> {
 
     // Database — resolve path with fallback
     let db_path = config::resolve_data_path(&config.daemon.db_path);
-    let db = Arc::new(db::connect(&db_path).await?);
+    let db = Arc::new(store::connect(&db_path).await?);
     info!("database connected");
 
     // Directório de backups de env vars: config ou <db_path>/env_backups/
@@ -77,7 +77,7 @@ pub async fn run() -> Result<()> {
     let acme_config = {
         let mut acme = config.ingress.acme.clone();
         if let Ok(Some(email)) =
-            db::daemon_settings::get(&db, db::daemon_settings::KEY_ACME_EMAIL).await
+            store::daemon_settings::get(&db, store::daemon_settings::KEY_ACME_EMAIL).await
             && !email.trim().is_empty()
         {
             info!(email = %email, "ACME: usando email do banco de dados");
@@ -111,7 +111,7 @@ pub async fn run() -> Result<()> {
     // está no Docker (nada muda de nome). Antes da recovery, que já lê o gravado.
     match engine::containers::list_compose_projects(&docker.inner).await {
         Ok(live) => {
-            if let Err(e) = db::services::backfill_compose_projects(&db, &live).await {
+            if let Err(e) = store::services::backfill_compose_projects(&db, &live).await {
                 error!(error = %e, "falha ao gravar o nome das stacks Compose");
             }
         }
@@ -180,7 +180,7 @@ pub async fn run() -> Result<()> {
     }
 
     // Migração deixada "Running" por um daemon que caiu: não retoma, vira Failed.
-    if let Ok(n) = db::migration::fail_orphans(&state.db).await
+    if let Ok(n) = store::migration::fail_orphans(&state.db).await
         && n > 0
     {
         tracing::warn!(

@@ -8,10 +8,10 @@
 
 use crate::{
     bootstrap::state::AppState,
-    db::{self, migration::Record},
     features::databases::env_switch,
     features::databases::shared_db::{self, Engine},
     features::deploy::{env_resolve, shared_net},
+    store::{self, migration::Record},
 };
 use anyhow::{Result, anyhow, bail};
 use chrono::Utc;
@@ -71,7 +71,7 @@ async fn step(state: &AppState, rec: &mut Record, i: usize, st: &str, detail: &s
     if !detail.is_empty() {
         rec.m.steps[i].detail = detail.into();
     }
-    let _ = db::migration::save(&state.db, rec).await;
+    let _ = store::migration::save(&state.db, rec).await;
 }
 
 async fn log(state: &AppState, rec: &mut Record, text: &str) {
@@ -82,7 +82,7 @@ async fn log(state: &AppState, rec: &mut Record, text: &str) {
     if n > 400 {
         rec.m.log.drain(..n - 400);
     }
-    let _ = db::migration::save(&state.db, rec).await;
+    let _ = store::migration::save(&state.db, rec).await;
 }
 
 // ── scripts por motor ───────────────────────────────────────────────────────
@@ -261,7 +261,7 @@ async fn dependents(
     env_var: &str,
 ) -> Result<Vec<Service>> {
     let mut out = vec![];
-    for s in db::services::list(&state.db, &source.spec.project_id).await? {
+    for s in store::services::list(&state.db, &source.spec.project_id).await? {
         if s.id == source.id || s.spec.db_kind.is_some() {
             continue;
         }
@@ -332,7 +332,7 @@ pub async fn run(state: AppState, mut rec: Record) {
     match res {
         Ok(()) => {
             rec.m.status = "Completed".into();
-            let _ = db::migration::save(&state.db, &rec).await;
+            let _ = store::migration::save(&state.db, &rec).await;
             info!(id = %rec.m.id, "migração concluída");
         }
         Err(e) => {
@@ -351,24 +351,24 @@ pub async fn run(state: AppState, mut rec: Record) {
                 .await;
             }
             rec.m.status = "Failed".into();
-            let _ = db::migration::save(&state.db, &rec).await;
+            let _ = store::migration::save(&state.db, &rec).await;
         }
     }
 }
 
 async fn run_inner(state: &AppState, rec: &mut Record, cur: &mut usize) -> Result<()> {
-    let source = db::services::get(&state.db, &rec.m.source_service_id)
+    let source = store::services::get(&state.db, &rec.m.source_service_id)
         .await?
         .ok_or_else(|| anyhow!("banco antigo não encontrado"))?;
-    let dest = db::managed_database::get(&state.db, &rec.m.dest_database_id)
+    let dest = store::managed_database::get(&state.db, &rec.m.dest_database_id)
         .await?
         .ok_or_else(|| anyhow!("database de destino não encontrado"))?;
-    let server = db::services::get(&state.db, &dest.server_service_id)
+    let server = store::services::get(&state.db, &dest.server_service_id)
         .await?
         .ok_or_else(|| anyhow!("servidor de destino não encontrado"))?;
     let engine = Engine::from_kind(source.spec.db_kind.as_deref())
         .ok_or_else(|| anyhow!("motor não suportado"))?;
-    let network = db::projects::network_name(&state.db, &source.spec.project_id).await?;
+    let network = store::projects::network_name(&state.db, &source.spec.project_id).await?;
     let src_db = rec.m.source_database.clone();
 
     // 1. Pré-checagem ────────────────────────────────────────────────────────
@@ -441,7 +441,7 @@ async fn run_inner(state: &AppState, rec: &mut Record, cur: &mut usize) -> Resul
     for d in &deps {
         rec.stopped_services.push(d.id.clone());
     }
-    let _ = db::migration::save(&state.db, rec).await;
+    let _ = store::migration::save(&state.db, rec).await;
     for d in &deps {
         let r = crate::features::deploy::stop::handle(state.clone(), d.id.clone()).await;
         if let shared::Response::Err { message, .. } = r {
@@ -591,7 +591,7 @@ pub async fn undo(state: &AppState, rec: &mut Record, source_stopped: bool) -> R
         let _ = crate::features::deploy::start::handle(state.clone(), id).await;
     }
     rec.stopped_services.clear();
-    let _ = db::migration::save(&state.db, rec).await;
+    let _ = store::migration::save(&state.db, rec).await;
     Ok(())
 }
 

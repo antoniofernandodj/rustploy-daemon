@@ -28,14 +28,14 @@ struct ServiceIndex {
 
 impl ServiceIndex {
     async fn build(state: &AppState) -> Self {
-        let projects = crate::db::projects::list(&state.db)
+        let projects = crate::store::projects::list(&state.db)
             .await
             .unwrap_or_default();
         let project_names: HashMap<String, String> = projects
             .iter()
             .map(|p| (p.id.clone(), p.name.clone()))
             .collect();
-        let network_of = crate::db::projects::network_names(&state.db)
+        let network_of = crate::store::projects::network_names(&state.db)
             .await
             .unwrap_or_default();
         let by_network = projects
@@ -43,7 +43,7 @@ impl ServiceIndex {
             .filter_map(|p| Some((network_of.get(&p.id)?.clone(), p.name.clone())))
             .collect();
 
-        let services = crate::db::services::list_all(&state.db)
+        let services = crate::store::services::list_all(&state.db)
             .await
             .unwrap_or_default();
         let mut by_safe_name = HashMap::new();
@@ -306,7 +306,7 @@ pub async fn list_containers(state: AppState) -> RpResponse {
 /// `Running`/`Degraded`, so nothing is missed due to state drift. Scoped to
 /// rustploy's own services; never touches unrelated containers on the host.
 pub async fn stop_all_managed(state: AppState) -> RpResponse {
-    let services = match crate::db::services::list_all(&state.db).await {
+    let services = match crate::store::services::list_all(&state.db).await {
         Ok(s) => s,
         Err(e) => return RpResponse::err("DatabaseError", e.to_string()),
     };

@@ -2,7 +2,7 @@
 //! OAuth ou token pessoal.
 
 use crate::bootstrap::state::AppState;
-use crate::db::git_providers::{self, StoredProvider};
+use crate::store::git_providers::{self, StoredProvider};
 use chrono::Utc;
 use shared::{GitAuthMode, GitProviderKind, Response};
 use ulid::Ulid;

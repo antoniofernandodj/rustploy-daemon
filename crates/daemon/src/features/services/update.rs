@@ -13,7 +13,7 @@ pub async fn handle(state: AppState, id: String, mut spec: ServiceSpec) -> RpRes
     {
         return RpResponse::err("PortAllocationError", e);
     }
-    let old_port = match crate::db::services::get(&state.db, &id).await {
+    let old_port = match crate::store::services::get(&state.db, &id).await {
         Ok(Some(s)) => s.spec.host_port,
         _ => None,
     };
@@ -28,7 +28,7 @@ pub async fn handle(state: AppState, id: String, mut spec: ServiceSpec) -> RpRes
         });
     }
 
-    match crate::db::services::update_spec(&state.db, &id, spec).await {
+    match crate::store::services::update_spec(&state.db, &id, spec).await {
         Ok(Some(s)) => {
             sync_firewall(&state, &s.id, old_port, s.spec.host_port).await;
             RpResponse::Service(s)

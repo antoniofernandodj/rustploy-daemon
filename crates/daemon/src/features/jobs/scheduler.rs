@@ -3,7 +3,7 @@
 //! vencidos e dispara cada um em background (não bloqueia o próprio ticker).
 
 use crate::bootstrap::state::AppState;
-use crate::db;
+use crate::store;
 use std::time::Duration;
 use tokio::time::MissedTickBehavior;
 use tracing::{debug, warn};
@@ -15,7 +15,7 @@ pub async fn scheduler_loop(state: AppState) {
     ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
     loop {
         ticker.tick().await;
-        let due = match db::job::list_due(&state.db, chrono::Utc::now()).await {
+        let due = match store::job::list_due(&state.db, chrono::Utc::now()).await {
             Ok(jobs) => jobs,
             Err(e) => {
                 warn!(error = %e, "scheduler_loop: falha ao listar jobs vencidos");
@@ -28,7 +28,7 @@ pub async fn scheduler_loop(state: AppState) {
             // exemplo, um job mais longo que o intervalo dele, ou preso atrás de
             // um deploy demorado): não empilha outra. O `next_run_at` só volta a
             // andar quando aquela terminar.
-            match db::job_run::has_unfinished(&state.db, &job_id).await {
+            match store::job_run::has_unfinished(&state.db, &job_id).await {
                 Ok(true) => {
                     debug!(job_id = %job_id, "scheduler_loop: job vencido, mas já tem execução em andamento — pulando");
                     continue;

@@ -5,7 +5,7 @@ use crate::bootstrap::state::AppState;
 use shared::Response;
 
 pub async fn handle(state: AppState, provider_id: String) -> Response {
-    let provider = match crate::db::git_providers::get(&state.db, &provider_id).await {
+    let provider = match crate::store::git_providers::get(&state.db, &provider_id).await {
         Ok(Some(p)) => p,
         Ok(None) => return Response::err("NotFound", "Provider não encontrado"),
         Err(e) => return Response::err("DatabaseError", e.to_string()),

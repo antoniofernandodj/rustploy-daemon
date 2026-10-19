@@ -1,7 +1,7 @@
 //! `Command::GetWebhookUrl`: URL de webhook de deploy de um serviço;
 //! `build_url` monta `{base}/webhook/{id}/{token}`.
 
-use crate::{bootstrap::state::AppState, db::webhook_tokens};
+use crate::{bootstrap::state::AppState, store::webhook_tokens};
 use shared::Response as RpResponse;
 
 pub async fn handle(state: AppState, service_id: String) -> RpResponse {

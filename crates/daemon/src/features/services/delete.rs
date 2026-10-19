@@ -9,7 +9,7 @@ use shared::{Response as RpResponse, ServiceSource};
 /// remove o que sobrar, inclusive staging e parados. Idempotente: sem container
 /// algum, é um no-op. Falha de motor = erro (o serviço não é apagado; dá para repetir).
 async fn remove_containers(state: &AppState, id: &str) -> Result<(), RpResponse> {
-    let Ok(Some(svc)) = crate::db::services::get(&state.db, id).await else {
+    let Ok(Some(svc)) = crate::store::services::get(&state.db, id).await else {
         return Ok(());
     };
     // Reaproveita o ServiceStop: Application para as réplicas; Compose roda `compose down`
@@ -38,14 +38,14 @@ pub async fn handle(state: AppState, id: String) -> RpResponse {
         return e;
     }
     let mut host_port = None;
-    if let Ok(Some(svc)) = crate::db::services::get(&state.db, &id).await {
+    if let Ok(Some(svc)) = crate::store::services::get(&state.db, &id).await {
         state.ingress.remove_domains(&svc.spec);
         if let Some(port) = svc.spec.host_port {
             state.ingress.remove_port_route(port);
             host_port = Some(port);
         }
     }
-    match crate::db::services::delete(&state.db, &id).await {
+    match crate::store::services::delete(&state.db, &id).await {
         Ok(true) => {
             // Sem regra órfã: com o serviço fora do DB, fecha a porta no
             // firewall (a menos que outro serviço compartilhe a mesma porta).
@@ -62,7 +62,7 @@ pub async fn handle(state: AppState, id: String) -> RpResponse {
             // Jobs gatilhados por este serviço vão junto (senão ficariam
             // órfãos, falhando em loop a cada recorrência) — a GUI avisa no
             // diálogo de confirmação antes de chegar aqui.
-            match crate::db::job::delete_by_trigger_service(&state.db, &id).await {
+            match crate::store::job::delete_by_trigger_service(&state.db, &id).await {
                 Ok(n) if n > 0 => {
                     tracing::info!(service_id = %id, jobs = n, "service_delete: jobs gatilhados removidos em cascata");
                 }

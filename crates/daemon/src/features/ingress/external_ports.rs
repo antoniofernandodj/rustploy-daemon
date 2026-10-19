@@ -5,8 +5,8 @@
 //! spec (redeploys/restarts reusam a mesma porta para sempre). Portas manuais
 //! passam por validação de duplicata contra os demais serviços.
 
-use crate::db::Db;
 use crate::platform::config::RustployConfig;
+use crate::store::Db;
 use shared::ServiceSpec;
 
 /// Sentinela em `ServiceSpec.host_port` que pede alocação automática.
@@ -61,7 +61,7 @@ async fn used_ports(db: &Db, exclude_id: Option<&str>) -> Result<Vec<u16>, Strin
         // A API também serve o webhook e o callback OAuth — uma porta só.
         cfg.api.port,
     ];
-    let services = crate::db::services::list_all(db)
+    let services = crate::store::services::list_all(db)
         .await
         .map_err(|e| format!("falha ao listar serviços para alocação de porta: {e}"))?;
     for s in services {

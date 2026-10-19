@@ -12,7 +12,7 @@ use hyper::{Method, Request, Response, StatusCode, body::Incoming};
 use tracing::{error, info, warn};
 
 use crate::bootstrap::state::AppState;
-use crate::db::webhook_tokens;
+use crate::store::webhook_tokens;
 
 /// `POST /webhook/{service_id}/{token}` — valida o token e dispara um deploy,
 /// a menos que o serviço seja git-sourced com uma branch configurada e o
@@ -64,7 +64,7 @@ pub async fn webhook(req: Request<Incoming>, state: AppState) -> Response<Full<B
         Err(_) => Bytes::new(),
     };
     if let Some(payload_branch) = extract_push_branch(&body)
-        && let Ok(Some(service)) = crate::db::services::get(&state.db, &service_id).await
+        && let Ok(Some(service)) = crate::store::services::get(&state.db, &service_id).await
         && let shared::ServiceSource::Git(git) = &service.spec.source
         && !git.branch.is_empty()
         && git.branch != payload_branch
@@ -131,7 +131,7 @@ fn html(status: StatusCode, title: &str, body: &str) -> Response<Full<Bytes>> {
 /// the connected account. The provider kind comes from the stored row (keyed by
 /// the CSRF `state`), so a single handler serves every provider.
 pub async fn oauth_callback(req: Request<Incoming>, state: AppState) -> Response<Full<Bytes>> {
-    use crate::db::git_providers;
+    use crate::store::git_providers;
 
     let query = req.uri().query().unwrap_or("");
     let mut code = None;
