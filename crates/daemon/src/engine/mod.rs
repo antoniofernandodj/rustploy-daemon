@@ -85,6 +85,16 @@ impl DockerClient {
         })
     }
 
+    /// Cliente para testes que não falam com o motor: o bollard só exige que o caminho do socket
+    /// exista, então aponta para um arquivo vazio e dispensa um Docker/Podman rodando.
+    #[cfg(test)]
+    pub fn for_tests() -> Self {
+        let path = std::env::temp_dir().join("rustploy-test-engine.sock");
+        let _ = std::fs::File::create(&path);
+        Self::connect(path.to_str().expect("caminho temporário em UTF-8"))
+            .expect("cliente de teste")
+    }
+
     pub async fn ping(&self) -> Result<()> {
         self.inner.ping().await?;
         Ok(())

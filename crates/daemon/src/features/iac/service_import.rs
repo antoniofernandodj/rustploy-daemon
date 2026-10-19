@@ -528,9 +528,7 @@ mod e2e {
         let tmp = std::env::temp_dir().join(format!("rustploy-test-state-{}", Ulid::new()));
         let db = crate::store::connect(&tmp.join("data")).await.unwrap();
         let config = crate::platform::config::RustployConfig::default();
-        let docker = std::sync::Arc::new(
-            crate::engine::DockerClient::connect(&config.docker.socket_path).unwrap(),
-        );
+        let docker = std::sync::Arc::new(crate::engine::DockerClient::for_tests());
         let db = std::sync::Arc::new(db);
         let bus = std::sync::Arc::new(crate::platform::event_bus::EventBus::new());
         let ingress = std::sync::Arc::new(crate::features::ingress::IngressController::new());

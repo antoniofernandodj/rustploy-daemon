@@ -83,7 +83,7 @@ mod pre_deploy_check_tests {
     pub(super) async fn test_executor() -> DeployExecutor {
         let dir = std::env::temp_dir().join(format!("rustploy_test_predeploy_{}", Ulid::new()));
         let db = Arc::new(store::connect(&dir).await.unwrap());
-        let docker = Arc::new(DockerClient::connect("/var/run/docker.sock").unwrap());
+        let docker = Arc::new(DockerClient::for_tests());
         let secrets = Arc::new(SecretsManager::new(&dir.join("master.key"), db.clone()).unwrap());
         let tls = Arc::new(
             TlsManager::new(
