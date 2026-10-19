@@ -12,7 +12,7 @@ pub async fn handle(state: AppState, service_id: String) -> RpResponse {
                 .skip(1)
                 .find(|d| d.state == shared::DeployState::Live);
             match prev {
-                Some(d) => RpResponse::Deployment(d.clone()),
+                Some(d) => RpResponse::Deployment(Box::new(d.clone())),
                 None => RpResponse::err("NotFound", "no previous successful deploy"),
             }
         }

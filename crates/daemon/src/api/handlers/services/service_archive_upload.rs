@@ -70,7 +70,7 @@ pub async fn handle(
     match crate::store::services::update_spec(&state.db, &service_id, spec).await {
         Ok(Some(updated)) => {
             info!(service_id = %service_id, archive_id = %archive_id, "service_archive_upload: archive associado ao serviço");
-            RpResponse::Service(updated)
+            RpResponse::Service(Box::new(updated))
         }
         Ok(None) => RpResponse::err("NotFound", "service not found"),
         Err(e) => {

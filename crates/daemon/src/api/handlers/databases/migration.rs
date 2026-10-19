@@ -78,12 +78,12 @@ pub async fn start(state: AppState, mut req: MigrationStartReq) -> RpResponse {
     }
     let out = rec.m.clone();
     tokio::spawn(migration::run(state.migration_ctx(), rec));
-    RpResponse::Migration(out)
+    RpResponse::Migration(Box::new(out))
 }
 
 pub async fn get(state: AppState, id: String) -> RpResponse {
     match store::migration::get(&state.db, &id).await {
-        Ok(Some(r)) => RpResponse::Migration(r.m),
+        Ok(Some(r)) => RpResponse::Migration(Box::new(r.m)),
         Ok(None) => err("NotFound", "migração não encontrada"),
         Err(e) => err("DatabaseError", e.to_string()),
     }
@@ -117,7 +117,7 @@ pub async fn rollback(state: AppState, id: String) -> RpResponse {
     if let Err(e) = store::migration::save(&state.db, &rec).await {
         return err("DatabaseError", e.to_string());
     }
-    RpResponse::Migration(rec.m)
+    RpResponse::Migration(Box::new(rec.m))
 }
 
 /// Descarta o banco antigo (já parado) — **apaga os dados dele**.
@@ -144,5 +144,5 @@ pub async fn discard(state: AppState, id: String) -> RpResponse {
     if let Err(e) = store::migration::save(&state.db, &rec).await {
         return err("DatabaseError", e.to_string());
     }
-    RpResponse::Migration(rec.m)
+    RpResponse::Migration(Box::new(rec.m))
 }

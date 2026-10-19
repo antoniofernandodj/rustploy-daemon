@@ -22,7 +22,7 @@ pub async fn handle(
     {
         Ok(Some(project)) => {
             info!(project_id = %project.id, "project_env_set: env vars atualizadas");
-            RpResponse::Project(project)
+            RpResponse::Project(Box::new(project))
         }
         Ok(None) => RpResponse::err("NotFound", "project not found"),
         Err(e) => {

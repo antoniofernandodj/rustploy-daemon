@@ -140,5 +140,5 @@ pub async fn handle(state: DeployContext, service_id: String) -> RpResponse {
     state.deploy_queue.enqueue(dep.id.clone());
     state.bus.publish(Event::DeployQueueChanged);
 
-    RpResponse::Deployment(dep)
+    RpResponse::Deployment(Box::new(dep))
 }

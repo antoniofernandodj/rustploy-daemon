@@ -40,7 +40,7 @@ pub async fn handle(
     )
     .await
     {
-        Ok(Some(job)) => RpResponse::Job(job),
+        Ok(Some(job)) => RpResponse::Job(Box::new(job)),
         Ok(None) => RpResponse::err("NotFound", "job not found"),
         Err(e) => RpResponse::err(
             "DatabaseError",

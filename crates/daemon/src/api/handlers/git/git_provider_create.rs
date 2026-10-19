@@ -79,7 +79,7 @@ pub async fn handle(
     };
 
     match git_providers::insert(&state.db, &stored).await {
-        Ok(()) => Response::GitProviderInfo(stored.to_public()),
+        Ok(()) => Response::GitProviderInfo(Box::new(stored.to_public())),
         Err(e) => Response::err("DatabaseError", e.to_string()),
     }
 }

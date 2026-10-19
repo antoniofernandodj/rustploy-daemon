@@ -31,7 +31,7 @@ pub async fn handle(state: ServicesContext, id: String, mut spec: ServiceSpec) -
     match crate::store::services::update_spec(&state.db, &id, spec).await {
         Ok(Some(s)) => {
             sync_firewall(&state, &s.id, old_port, s.spec.host_port).await;
-            RpResponse::Service(s)
+            RpResponse::Service(Box::new(s))
         }
         Ok(None) => RpResponse::err("NotFound", "service not found"),
         Err(e) => RpResponse::err("DatabaseError", e.to_string()),

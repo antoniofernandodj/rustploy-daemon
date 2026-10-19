@@ -5,7 +5,7 @@ use shared::Response as RpResponse;
 
 pub async fn handle(state: AppState, name: String, description: Option<String>) -> RpResponse {
     match crate::store::projects::create(&state.db, name, description).await {
-        Ok(p) => RpResponse::Project(p),
+        Ok(p) => RpResponse::Project(Box::new(p)),
         Err(e) => RpResponse::err(
             "DatabaseError",
             crate::platform::errors::humanize_db_error(&e, "projeto"),

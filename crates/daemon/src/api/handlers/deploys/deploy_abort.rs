@@ -62,7 +62,7 @@ pub async fn handle(state: AppState, deployment_id: String) -> RpResponse {
     )
     .await
     {
-        Ok(d) => RpResponse::Deployment(d),
+        Ok(d) => RpResponse::Deployment(Box::new(d)),
         Err(e) => RpResponse::err("DatabaseError", e.to_string()),
     }
 }

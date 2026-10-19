@@ -142,7 +142,7 @@ pub async fn handle(state: AppState) -> RpResponse {
         .filter_map(|id| queued_by_id.remove(id))
         .collect();
 
-    RpResponse::DeployEngineStatus(DeployEngineSummary {
+    RpResponse::DeployEngineStatus(Box::new(DeployEngineSummary {
         version: env!("CARGO_PKG_VERSION").to_string(),
         uptime_secs: state.started_at.elapsed().as_secs(),
         active: running_active,
@@ -152,5 +152,5 @@ pub async fn handle(state: AppState) -> RpResponse {
         failed_24h,
         queued,
         paused,
-    })
+    }))
 }

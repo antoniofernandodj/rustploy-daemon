@@ -371,7 +371,7 @@ async fn analyze(state: &IacContext, req: &ServiceImportReq) -> Result<Analysis,
 /// Grava o que a análise decidiu.
 async fn apply(state: &IacContext, req: &ServiceImportReq, mut a: Analysis) -> RpResponse {
     match write_all(state, req, &mut a).await {
-        Ok(()) => RpResponse::ServiceImportReport(a.report),
+        Ok(()) => RpResponse::ServiceImportReport(Box::new(a.report)),
         Err(r) => r,
     }
 }
@@ -446,7 +446,7 @@ pub async fn handle(state: IacContext, req: ServiceImportReq) -> RpResponse {
         Err((code, msg)) => return RpResponse::err(code, msg),
     };
     if req.dry_run {
-        return RpResponse::ServiceImportReport(analysis.report);
+        return RpResponse::ServiceImportReport(Box::new(analysis.report));
     }
 
     // Pendências que impedem criar (as demais viram só aviso no relatório).
@@ -660,7 +660,7 @@ mod e2e {
 
     fn report(r: Response) -> ServiceImportReport {
         match r {
-            Response::ServiceImportReport(r) => r,
+            Response::ServiceImportReport(r) => *r,
             other => panic!("esperava relatório: {other:?}"),
         }
     }

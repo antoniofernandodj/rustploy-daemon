@@ -36,7 +36,7 @@ pub async fn handle(state: ServicesContext, mut spec: ServiceSpec) -> RpResponse
             if let Some(port) = s.spec.host_port {
                 crate::features::ingress::firewall::ensure_allowed_bg(port);
             }
-            RpResponse::Service(s)
+            RpResponse::Service(Box::new(s))
         }
         Err(e) => {
             tracing::error!(error = %e, "service_create: falha ao criar serviço");
