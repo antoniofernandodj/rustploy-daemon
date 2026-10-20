@@ -156,7 +156,7 @@
           </row>
         </row>
 
-        <column class="u-fill-all" style="gap:18px;overflow-y:auto">
+        <column class="u-fill-all" style="gap:44px;overflow-y:auto">
           <template x-for="project in projects" :key="project.project_id">
             <column style="gap:12px;flex-shrink:0">
               <row class="card__head">
@@ -228,7 +228,7 @@
                     <button class="card__action card__action--open" type="button" style="width:100%"
                             @click="store.openService(svc.service_id)">Abrir serviço ›</button>
                     <row class="card__actions">
-                      <button class="card__action" type="button" title="Deploy" @click="store.deployServiceFromList(svc.service_id)">▶ Deploy</button>
+                      <button class="card__action card__action--icon" type="button" title="Deploy" @click="store.deployServiceFromList(svc.service_id)">▶ Deploy</button>
                       <button class="card__action card__action--icon" type="button" title="Parar" aria-label="Parar serviço"
                               @click="store.stopService(svc.service_id)">■</button>
                     </row>
