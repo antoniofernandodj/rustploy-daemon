@@ -8,6 +8,7 @@
 // var, novo domínio, form de origem).
 import {
   serviceStatusLabelKind,
+  serviceWarmLabel,
   sourceSummary,
   looksLikeGitUrl,
   dateDayMonthHourMinuteSecond,
@@ -285,6 +286,15 @@ document.addEventListener("alpine:init", () => {
     },
     get statusKind() {
       return this.svc ? serviceStatusLabelKind(this.svc.status)[1] : "muted";
+    },
+    get warm() {
+      return this.svc ? this.store.serviceWarmById?.[this.svc.id] : undefined;
+    },
+    get warmLabel() {
+      return serviceWarmLabel(this.warm)[0];
+    },
+    get warmKind() {
+      return serviceWarmLabel(this.warm)[1];
     },
     get sourceText() {
       return this.svc ? sourceSummary(this.svc.spec.source) : "—";

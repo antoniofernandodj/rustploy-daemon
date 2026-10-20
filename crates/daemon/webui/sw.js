@@ -23,6 +23,7 @@ const APP_SHELL = [
   "/screens/login.js",
   "/screens/service_bundle.js",
   "/screens/dashboard.js",
+  "/screens/running.js",
   "/screens/projects.js",
   "/screens/project_detail.js",
   "/screens/new_service.js",

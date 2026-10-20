@@ -29,7 +29,14 @@ pub async fn run_holding_slot(
     let outcome = tokio::time::timeout(RUN_TIMEOUT, run(state, config)).await;
     drop(permit);
     match outcome {
-        Ok(config) => config,
+        Ok(config) => {
+            // Já com a vaga solta: cada aquecimento pega a própria vaga, e um
+            // deploy que chegue no meio espera um build, não a fila inteira.
+            if config.warm_after_cleanup {
+                super::service_warm::warm_cold_services(state).await;
+            }
+            config
+        }
         Err(_) => finish_timed_out(state, fallback).await,
     }
 }

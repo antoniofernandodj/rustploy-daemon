@@ -48,6 +48,8 @@ pub struct AppState {
     /// Jobs com aquecimento em andamento (ou esperando a vaga da fila) — ver
     /// `jobs::warm`.
     pub warming_jobs: Arc<Mutex<std::collections::HashSet<String>>>,
+    /// Serviços com aquecimento em andamento — ver `maintenance::service_warm`.
+    pub warming_services: Arc<Mutex<std::collections::HashSet<String>>>,
     /// Fila global de deploys (um por vez). `deploy_start` enfileira aqui e o
     /// worker (`crate::features::deploy::queue::run_worker`) puxa serialmente.
     pub deploy_queue: Arc<crate::features::deploy::queue::DeployQueue>,
@@ -95,6 +97,7 @@ impl AppState {
             active_deploys: Arc::new(Mutex::new(HashMap::new())),
             active_jobs: Arc::new(Mutex::new(HashMap::new())),
             warming_jobs: Arc::new(Mutex::new(std::collections::HashSet::new())),
+            warming_services: Arc::new(Mutex::new(std::collections::HashSet::new())),
             deploy_queue: crate::features::deploy::queue::DeployQueue::new(),
             docker_cache: Arc::new(DockerCache::new()),
             registry_storage,
@@ -139,6 +142,9 @@ impl AppState {
             bus: self.bus.clone(),
             docker_cache: self.docker_cache.clone(),
             deploy_queue: self.deploy_queue.clone(),
+            secrets: self.secrets.clone(),
+            db_path: self.db_path.clone(),
+            warming_services: self.warming_services.clone(),
         }
     }
 

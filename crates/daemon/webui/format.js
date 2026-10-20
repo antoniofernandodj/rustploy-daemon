@@ -820,6 +820,14 @@ export function jobWarmLabel(warm) {
   return ["frio", "muted"];
 }
 
+/** Rótulo/cor do aquecimento de um serviço com build. `warm` é o
+ * `ServiceWarmStatus` do daemon (fonte única da verdade); `undefined` = o
+ * serviço não tem build (imagem pronta, compose) e não mostra selo. */
+export function serviceWarmLabel(warm) {
+  if (!warm) return ["", "muted"];
+  return jobWarmLabel(warm);
+}
+
 /** Tela global "Schedules": uma linha por job, de todos os projetos.
  * `inflight` (opcional): `store.jobsInflight` — job_id → true entre o click
  * em "Rodar agora" e a confirmação do servidor (ver app.js::jobRunNow). Sem

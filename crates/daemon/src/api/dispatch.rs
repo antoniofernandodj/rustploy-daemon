@@ -78,6 +78,8 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         Command::DockerCleanupConfigGet => "DockerCleanupConfigGet",
         Command::DockerCleanupConfigSet { .. } => "DockerCleanupConfigSet",
         Command::DockerCleanupRunNow => "DockerCleanupRunNow",
+        Command::ServiceWarmStatusList => "ServiceWarmStatusList",
+        Command::ServiceWarm { .. } => "ServiceWarm",
         Command::DockerImages => "DockerImages",
         Command::DockerVolumes => "DockerVolumes",
         Command::DockerNetworks => "DockerNetworks",
@@ -145,6 +147,8 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         | Command::DockerCleanupConfigGet
         | Command::DockerCleanupConfigSet { .. }
         | Command::DockerCleanupRunNow
+        | Command::ServiceWarmStatusList
+        | Command::ServiceWarm { .. }
         | Command::DockerImages
         | Command::DockerVolumes
         | Command::DockerNetworks

@@ -13,6 +13,7 @@
 //      listeners acima já registrados.
 import "./screens/login.js";
 import "./screens/dashboard.js";
+import "./screens/running.js";
 import "./screens/deploy_engine.js";
 import "./screens/monitoring.js";
 import "./screens/ingress.js";
@@ -128,6 +129,7 @@ document.addEventListener("alpine:init", () => {
     registryTokens: [],
 
     // ── Schedules (jobs one-shot) ────────────────────────────────────────
+    serviceWarmById: {}, // service_id -> ServiceWarmStatus (só serviços com build)
     jobsById: {}, // id -> Job cru (porta de State.jobs_by_id, precisa do
     // record completo pra reenviar em JobUpdate — só `enabled` muda)
     jobLogLines: [],
@@ -244,6 +246,7 @@ document.addEventListener("alpine:init", () => {
     dockerCleanupBuildCache: false,
     dockerCleanupBuildCacheOlderThanHours: "168",
     dockerCleanupImagesOlderThanHours: "168",
+    dockerCleanupWarmAfter: true,
     dockerCleanupNextRunLabel: "—",
     dockerCleanupLastRunAtRaw: null,
     dockerCleanupLastRunText: "ainda não rodou",
@@ -438,6 +441,12 @@ document.addEventListener("alpine:init", () => {
           else this.toastError(`${warmedJobName}: falha ao aquecer${warmEvent.error ? ` — ${warmEvent.error}` : ""}`);
         }
         this.refreshNow();
+      } else if (busEvent.ServiceWarmChanged) {
+        const warmEvent = busEvent.ServiceWarmChanged;
+        if (!warmEvent.warming && warmEvent.success === false) {
+          this.toastError(`falha ao aquecer o serviço${warmEvent.error ? ` — ${warmEvent.error}` : ""}`);
+        }
+        this.refreshNow();
       } else if (busEvent.DockerCleanupCompleted) {
         const cleanupEvent = busEvent.DockerCleanupCompleted;
         this.dockerCleanupRunning = false;
@@ -503,6 +512,9 @@ document.addEventListener("alpine:init", () => {
       const byId = {};
       for (const job of snapshot.jobs || []) byId[job.job.id] = job.job;
       this.jobsById = byId;
+      const warmById = {};
+      for (const warm of snapshot.service_warm || []) warmById[warm.service_id] = warm;
+      this.serviceWarmById = warmById;
       this.dataLoading = false;
     },
 
@@ -825,6 +837,16 @@ document.addEventListener("alpine:init", () => {
       const serviceDeleteResponse = await this.api.rpcChecked({ ServiceDelete: { id: serviceId } });
       if (serviceDeleteResponse.ok) this.toastOk("serviço parado e removido");
       else this.toastError("erro ao remover: " + serviceDeleteResponse.error);
+      await this.refreshNow();
+    },
+
+    /** Atalho "Deploy" do painel "Em execução": dispara o deploy de um serviço
+     * sem abrir a tela dele. O desfecho vira toast como no deploy da tela do
+     * serviço (`deployTrackId`). */
+    async deployServiceFromList(serviceId) {
+      const deployStartResponse = await this.api.rpcChecked({ DeployStart: { service_id: serviceId } });
+      if (deployStartResponse.ok) this.deployTrackId = serviceId;
+      this.toastResult(deployStartResponse, "deploy iniciado");
       await this.refreshNow();
     },
 
@@ -1755,6 +1777,7 @@ document.addEventListener("alpine:init", () => {
       this.dockerCleanupBuildCache = !!config.build_cache;
       this.dockerCleanupBuildCacheOlderThanHours = String(config.build_cache_older_than_hours ?? 168);
       this.dockerCleanupImagesOlderThanHours = String(config.images_older_than_hours ?? 168);
+      this.dockerCleanupWarmAfter = config.warm_after_cleanup ?? true;
       const recurrence = config.recurrence;
       if (recurrence && recurrence.IntervalHours != null) {
         this.dockerCleanupKind = "interval";
@@ -1819,6 +1842,7 @@ document.addEventListener("alpine:init", () => {
             build_cache: this.dockerCleanupBuildCache,
             build_cache_older_than_hours: retentionHours(this.dockerCleanupBuildCacheOlderThanHours),
             images_older_than_hours: retentionHours(this.dockerCleanupImagesOlderThanHours),
+            warm_after_cleanup: this.dockerCleanupWarmAfter,
             last_run_at: this.dockerCleanupLastRunAtRaw,
           },
         },

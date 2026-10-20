@@ -105,7 +105,7 @@ enum Verdict {
 /// O corte de idade da limpeza poupa o cache usado nas últimas N horas: o
 /// aquecimento sobreviveu se aconteceu depois do corte (`older_than_hours == 0`
 /// limpa tudo, sem corte).
-fn cache_pruned_since(warmed_at: DateTime<Utc>, prune: &BuildCachePrune) -> bool {
+pub(crate) fn cache_pruned_since(warmed_at: DateTime<Utc>, prune: &BuildCachePrune) -> bool {
     if prune.at <= warmed_at {
         return false;
     }

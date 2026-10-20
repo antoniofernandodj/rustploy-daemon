@@ -49,3 +49,6 @@ pub const KEY_DOCKER_CLEANUP_LAST_RUN: &str = "docker_cleanup_last_run";
 pub const KEY_BUILD_CACHE_LAST_PRUNE: &str = "build_cache_last_prune";
 /// Prefixo das chaves `job_warm:<job_id>` (JSON de `jobs::warm::WarmRecord`).
 pub const KEY_JOB_WARM_PREFIX: &str = "job_warm:";
+/// Prefixo das chaves `service_warm:<service_id>` (JSON de
+/// `maintenance::service_warm::WarmRecord`).
+pub const KEY_SERVICE_WARM_PREFIX: &str = "service_warm:";

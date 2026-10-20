@@ -8,5 +8,6 @@ mod context;
 pub mod prune;
 pub mod run;
 pub mod scheduler;
+pub mod service_warm;
 
 pub use context::MaintenanceContext;

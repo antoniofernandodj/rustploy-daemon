@@ -166,6 +166,7 @@ impl DeployExecutor {
             &self.bus,
         )
         .await?;
+        crate::features::maintenance::service_warm::record(&self.db, svc, &tag).await;
         self.log_step(&dep.id, &svc.id, "--> Build concluído").await;
         info!(
             deployment_id = %dep.id,

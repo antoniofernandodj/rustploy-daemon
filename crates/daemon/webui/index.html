@@ -78,6 +78,7 @@
     <column class="sidebar" x-show="$store.app.menuOpen" x-data="{
         groups: [
           { title: 'DEPLOYMENT OPS', items: [
+            { v: 'running',       label: 'Em execução',   icon: '●' },
             { v: 'deployments',   label: 'Deployments',   icon: '▶' },
             { v: 'deploy_engine', label: 'Deploy Engine', icon: '⚡' },
             { v: 'monitoring',    label: 'Monitoring',    icon: '◔' },
@@ -139,6 +140,107 @@
       <column class="content" x-show="$store.app.view === 'support'">
         <text class="page-head__title">Support</text>
         <text class="page-head__subtitle">github.com/antoniofernandodj/rustploy</text>
+      </column>
+
+      <column class="content" x-data="running" x-show="$store.app.view === 'running'">
+        <row class="page-head">
+          <column class="page-head__titles">
+            <text class="page-head__title">Em execução</text>
+            <text class="page-head__subtitle">Projetos e serviços rodando agora — projetos sem serviço no ar não aparecem.</text>
+          </column>
+          <row class="page-head__stats page-head__stats--hide-lg">
+            <column class="stat">
+              <text class="u-label-cap">SERVIÇOS NO AR</text>
+              <text class="stat__num" x-text="totalServices"></text>
+            </column>
+          </row>
+        </row>
+
+        <column class="u-fill-all" style="gap:18px;overflow-y:auto">
+          <template x-for="project in projects" :key="project.project_id">
+            <column class="panel" style="gap:12px">
+              <row class="card__head">
+                <row style="align-items:center;gap:8px">
+                  <text class="card__title" x-text="project.project_name"></text>
+                  <text class="u-muted" x-text="project.count + (project.count === 1 ? ' serviço' : ' serviços')"></text>
+                </row>
+                <button class="card__action card__action--open" type="button" @click="store.openProject(project.project_id)">Abrir projeto ›</button>
+              </row>
+              <column class="grid">
+                <template x-for="svc in project.services" :key="svc.service_id">
+                  <column class="card">
+                    <row class="card__head">
+                      <row style="align-items:center;gap:6px">
+                        <text class="card__title" x-text="svc.name"></text>
+                        <text class="card__port" x-text="':' + svc.port"></text>
+                      </row>
+                      <row style="gap:6px;align-items:center">
+                        <row class="badge" x-show="svc.hasWarm" :title="svc.warmReason">
+                          <text class="status-dot" :class="'state-cell--' + svc.warmKind">◐</text>
+                          <text class="badge__label" :class="'state-cell--' + svc.warmKind" x-text="svc.warmLabel"></text>
+                        </row>
+                        <row class="badge">
+                          <text class="status-dot" :class="svc.isDegraded ? 'state-cell--warn' : 'state-cell--ok'">●</text>
+                          <text class="badge__label" :class="svc.isDegraded ? 'state-cell--warn' : 'state-cell--ok'" x-text="svc.isDegraded ? 'degradado' : 'rodando'"></text>
+                        </row>
+                      </row>
+                    </row>
+
+                    <text class="u-label-cap" x-text="svc.kind_label"></text>
+
+                    <!-- Linha especializada por tipo -->
+                    <row style="gap:6px;align-items:center" x-show="svc.kind === 'git'">
+                      <text class="u-label-cap">BRANCH</text>
+                      <text class="card__title" x-text="svc.branch"></text>
+                    </row>
+                    <text class="u-muted" x-show="svc.kind === 'git'" x-text="svc.repo_url"></text>
+                    <text class="u-muted" x-show="svc.kind === 'registry'" x-text="'imagem: ' + svc.image"></text>
+                    <text class="u-muted" x-show="svc.kind === 'database' || svc.kind === 'broker'"
+                          x-text="'motor: ' + svc.engine + ' · porta ' + svc.port"></text>
+                    <text class="u-muted" x-show="svc.domains.length > 0" x-text="'domínio: ' + svc.domainsText"></text>
+
+                    <row class="card__stats">
+                      <column class="card__stat">
+                        <text class="u-label-cap">CPU</text>
+                        <text class="card__stat-num" x-text="svc.cpu"></text>
+                      </column>
+                      <column class="card__stat">
+                        <text class="u-label-cap">MEM</text>
+                        <text class="card__stat-num" x-text="svc.mem"></text>
+                      </column>
+                    </row>
+
+                    <hr class="rule" />
+                    <text class="u-label-cap">PRÉ-DEPLOY CHECKS</text>
+                    <text class="u-muted" x-show="!svc.hasChecks">nenhum</text>
+                    <template x-for="(check, checkIndex) in svc.pre_deploy_checks" :key="check.job_id">
+                      <text class="u-muted" x-text="(checkIndex + 1) + '. ' + check.name"></text>
+                    </template>
+
+                    <text class="u-label-cap">WEBHOOK DE DEPLOY</text>
+                    <text class="u-muted" x-show="!svc.webhook">sem webhook</text>
+                    <row class="webhook__row" x-show="svc.webhook">
+                      <input class="field__input webhook__url" type="text" readonly :value="svc.webhookShown" />
+                      <button class="btn btn--copy btn-icon" type="button" title="Copiar URL" @click="store.copyText(svc.webhook, 'webhook')">⧉</button>
+                      <button class="btn btn--ghost" type="button" @click="toggleReveal(svc.service_id)" x-text="svc.isRevealed ? 'Ocultar' : 'Mostrar'"></button>
+                    </row>
+
+                    <button class="card__action card__action--open" type="button" style="width:100%"
+                            @click="store.openService(svc.service_id)">Abrir serviço ›</button>
+                    <row class="card__actions">
+                      <button class="card__action" type="button" title="Deploy" @click="store.deployServiceFromList(svc.service_id)">▶ Deploy</button>
+                      <button class="card__action card__action--icon" type="button" title="Parar" aria-label="Parar serviço"
+                              @click="store.stopService(svc.service_id)">■</button>
+                    </row>
+                  </column>
+                </template>
+              </column>
+            </column>
+          </template>
+          <text class="u-muted" x-fallback="projects" style="padding:16px">
+            Nenhum serviço em execução agora.
+          </text>
+        </column>
       </column>
 
       <column class="content" x-data="dashboard" x-show="$store.app.view === 'deployments'">
@@ -1545,6 +1647,14 @@
               </column>
             </row>
 
+            <label class="check-row">
+              <input type="checkbox" x-model="store.dockerCleanupWarmAfter" /><span>Aquecer os builds depois da limpeza</span>
+            </label>
+            <text class="u-muted" style="margin-left:20px">
+              Depois de limpar, reconstrói a imagem de cada serviço com repositório Git ou zip, um de cada vez, na
+              fila de deploy. Sem isso, o primeiro deploy depois da limpeza paga o build inteiro.
+            </text>
+
             <hr class="rule" />
             <text class="u-label-cap u-error">VOLUMES — CUIDADO</text>
             <text class="u-muted">
@@ -1659,6 +1769,10 @@
                   <row class="badge">
                     <text class="status-dot" :class="'state-cell--' + service.statusKind">●</text>
                     <text class="badge__label" :class="'state-cell--' + service.statusKind" x-text="service.statusLabel"></text>
+                  </row>
+                  <row class="badge" x-show="service.hasWarm" :title="service.warmReason">
+                    <text class="status-dot" :class="'state-cell--' + service.warmKind">◐</text>
+                    <text class="badge__label" :class="'state-cell--' + service.warmKind" x-text="service.warmLabel"></text>
                   </row>
                 </row>
                 <row class="card__container" style="gap:6px;align-items:center">
@@ -2306,6 +2420,10 @@
               <row class="badge">
                 <text class="status-dot" :class="'state-cell--' + statusKind">●</text>
                 <text class="badge__label" :class="'state-cell--' + statusKind" x-text="statusLabel"></text>
+              </row>
+              <row class="badge" x-show="warm" :title="warm?.reason || ''">
+                <text class="status-dot" :class="'state-cell--' + warmKind">◐</text>
+                <text class="badge__label" :class="'state-cell--' + warmKind" x-text="warmLabel"></text>
               </row>
             </row>
             <text class="u-muted" x-show="store.serviceMessage" x-text="store.serviceMessage"></text>

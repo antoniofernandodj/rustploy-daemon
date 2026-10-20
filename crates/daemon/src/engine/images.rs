@@ -116,6 +116,48 @@ pub async fn build(
 ) -> Result<()> {
     use chrono::Utc;
 
+    build_with_output(
+        docker,
+        context_path,
+        dockerfile,
+        tag,
+        false,
+        |line| async move {
+            let now = Utc::now();
+            bus.publish(Event::BuildLog {
+                deployment_id: deployment_id.to_string(),
+                service_id: service_id.to_string(),
+                line: line.clone(),
+                timestamp: now,
+            });
+            if let Err(e) = db.append_build_line(deployment_id, &line, now).await {
+                warn!(
+                    deployment_id,
+                    error = %e,
+                    "failed to persist build log line"
+                );
+            }
+        },
+    )
+    .await
+}
+
+/// O build em si, sem destino para a saída: `on_line` recebe cada linha do
+/// build. O aquecimento de um serviço (`maintenance::service_warm`) o usa com um
+/// callback vazio — não há deployment a quem atribuir o log. `no_cache` refaz
+/// todas as camadas e rebaixa as imagens base.
+pub async fn build_with_output<F, Fut>(
+    docker: &Docker,
+    context_path: &Path,
+    dockerfile: &str,
+    tag: &str,
+    no_cache: bool,
+    mut on_line: F,
+) -> Result<()>
+where
+    F: FnMut(String) -> Fut,
+    Fut: std::future::Future<Output = ()>,
+{
     info!(tag, "building image from context");
 
     let tar_gz = create_tar_gz(context_path, dockerfile)?;
@@ -124,6 +166,8 @@ pub async fn build(
         t: tag.to_string(),
         rm: true,
         forcerm: true,
+        nocache: no_cache,
+        pull: no_cache,
         ..Default::default()
     };
 
@@ -140,20 +184,7 @@ pub async fn build(
                 if let Some(output_stream) = output.stream {
                     let line = output_stream.trim_end_matches('\n');
                     if !line.is_empty() {
-                        let now = Utc::now();
-                        bus.publish(Event::BuildLog {
-                            deployment_id: deployment_id.to_string(),
-                            service_id: service_id.to_string(),
-                            line: line.to_string(),
-                            timestamp: now,
-                        });
-                        if let Err(e) = db.append_build_line(deployment_id, line, now).await {
-                            warn!(
-                                deployment_id,
-                                error = %e,
-                                "failed to persist build log line"
-                            );
-                        }
+                        on_line(line.to_string()).await;
                     }
                 }
                 if let Some(err) = output.error {

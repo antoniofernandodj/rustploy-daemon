@@ -2,9 +2,13 @@
 
 use crate::engine::{DockerClient, inventory_cache::DockerCache};
 use crate::features::deploy::queue::DeployQueue;
-use crate::platform::event_bus::EventBus;
+use crate::platform::{event_bus::EventBus, secrets::SecretsManager};
 use crate::store::Db;
-use std::sync::Arc;
+use std::{
+    collections::HashSet,
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 
 #[derive(Clone)]
 pub struct MaintenanceContext {
@@ -13,4 +17,9 @@ pub struct MaintenanceContext {
     pub bus: Arc<EventBus>,
     pub docker_cache: Arc<DockerCache>,
     pub deploy_queue: Arc<DeployQueue>,
+    pub secrets: Arc<SecretsManager>,
+    pub db_path: PathBuf,
+    /// Serviços com aquecimento em andamento (ou esperando a vaga da fila) — ver
+    /// `service_warm`.
+    pub warming_services: Arc<Mutex<HashSet<String>>>,
 }

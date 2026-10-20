@@ -7,6 +7,7 @@
 // store (app.js), compartilhado com a tela "Schedules".
 import {
   serviceStatusLabelKind,
+  serviceWarmLabel,
   dotenvFromVars,
   parseDotenv,
   envRowsWithComments,
@@ -58,6 +59,7 @@ document.addEventListener("alpine:init", () => {
       const projectId = store.selectedProjectId;
       const services = (store.snap && store.snap.services) || [];
       const metricsById = store.metricsById || {};
+      const warmById = store.serviceWarmById || {};
       return services
         .filter((entry) => entry.service.spec.project_id === projectId)
         .map((entry) => {
@@ -65,7 +67,13 @@ document.addEventListener("alpine:init", () => {
           const [label, kind] = serviceStatusLabelKind(service.status);
           const metricsPoint = metricsById[service.id];
           const container = primaryContainer(service);
+          const warm = warmById[service.id];
+          const [warmLabel, warmKind] = serviceWarmLabel(warm);
           return {
+            hasWarm: !!warm,
+            warmLabel,
+            warmKind,
+            warmReason: warm?.reason || "",
             id: service.id,
             name: service.spec.name,
             port: service.spec.port,

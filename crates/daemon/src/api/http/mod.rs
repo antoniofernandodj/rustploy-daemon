@@ -21,6 +21,7 @@
 //!   the payload.
 //! - `GET /api/health` — liveness probe (`ok`).
 
+pub mod dashboard;
 pub mod public_routes;
 
 use std::convert::Infallible;
@@ -889,6 +890,20 @@ pub(crate) async fn snapshot(state: &AppState) -> String {
         obj.insert("projects".into(), Value::Array(projects_json));
 
         obj.insert("services".into(), Value::Array(services));
+    }
+    // Painel "Em execução": projetos e serviços rodando, já classificados.
+    obj.insert(
+        "dashboard".into(),
+        serde_json::to_value(dashboard::load(state).await).unwrap_or(Value::Null),
+    );
+    // Selo "aquecido/frio" de cada serviço com build (Git/zip); as telas só exibem.
+    if let RpResponse::ServiceWarmStatuses(list) =
+        dispatch(state.clone(), Command::ServiceWarmStatusList).await
+    {
+        obj.insert(
+            "service_warm".into(),
+            serde_json::to_value(list).unwrap_or(Value::Null),
+        );
     }
     if let RpResponse::DockerImages(list) = dispatch(state.clone(), Command::DockerImages).await {
         obj.insert(
