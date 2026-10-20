@@ -1172,9 +1172,10 @@ async fn running_screen_lists_running_services() {
         s.view = 'running';
         return 'ok';
     })()"#;
-    assert_eq!(
-        eval_str(&page, &format!("(() => {seed})()")).await.len() > 0,
-        true
+    assert!(
+        !eval_str(&page, &format!("(() => {seed})()"))
+            .await
+            .is_empty()
     );
     assert!(
         visible(&page, "[x-data=\"running\"]").await,

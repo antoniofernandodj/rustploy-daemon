@@ -158,15 +158,15 @@
 
         <column class="u-fill-all" style="gap:18px;overflow-y:auto">
           <template x-for="project in projects" :key="project.project_id">
-            <column class="panel" style="gap:12px">
+            <column style="gap:12px;flex-shrink:0">
               <row class="card__head">
                 <row style="align-items:center;gap:8px">
                   <text class="card__title" x-text="project.project_name"></text>
                   <text class="u-muted" x-text="project.count + (project.count === 1 ? ' serviço' : ' serviços')"></text>
                 </row>
-                <button class="card__action card__action--open" type="button" @click="store.openProject(project.project_id)">Abrir projeto ›</button>
+                <button class="card__action card__action--open" type="button" style="width:auto" @click="store.openProject(project.project_id)">Abrir projeto ›</button>
               </row>
-              <column class="grid">
+              <column class="grid grid--two">
                 <template x-for="svc in project.services" :key="svc.service_id">
                   <column class="card">
                     <row class="card__head">
