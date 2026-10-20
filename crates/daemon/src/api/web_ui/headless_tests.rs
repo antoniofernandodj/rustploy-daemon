@@ -324,6 +324,7 @@ async fn all_main_screens_render() {
 
     let views: &[(&str, &str)] = &[
         ("deployments", "[x-data=\"dashboard\"]"),
+        ("running", "[x-data=\"running\"]"),
         ("projects", "[x-data=\"projects\"]"),
         ("monitoring", "[x-data=\"monitoring\"]"),
         ("ingress", "[x-data=\"ingress\"]"),
@@ -1144,6 +1145,73 @@ async fn iac_zip_export_import() {
     .await;
     assert_eq!(cancelled, r##"{"sent":null,"msg":"cancelado"}"##);
 
+    assert_eq!(
+        errors(&page).await,
+        Vec::<String>::new(),
+        "sem erros de JS no console"
+    );
+}
+
+/// Tela "Em execução": só o que `snapshot.dashboard` traz, com o webhook mascarado até
+/// "Mostrar", os pré-deploy checks na ordem e os atalhos de abrir/deploy/parar.
+#[tokio::test]
+async fn running_screen_lists_running_services() {
+    let addr = spawn_static_server().await;
+    let (browser, _handler) = launch().await;
+    let page = open_page(&browser, addr).await;
+    seed_connected(&page).await;
+
+    let seed = r#"(() => {
+        const s = Alpine.store('app');
+        s.snap.dashboard = [{ project_id: 'prj_1', project_name: 'acme', services: [{
+            service_id: 'svc_1', name: 'api', status: 'Running', kind: 'git', kind_label: 'App · Git',
+            branch: 'release', repo_url: 'https://github.com/acme/api.git', image: null, engine: null,
+            port: 8080, domains: ['api.acme.dev'], webhook: 'https://h/webhook/svc_1/segredo',
+            pre_deploy_checks: [{ job_id: 'j1', name: 'migrate' }, { job_id: 'j2', name: 'seed' }],
+            warm: { service_id: 'svc_1', warm: false, warming: false, reason: 'nunca aquecido', warmed_at: null } }] }];
+        s.view = 'running';
+        return 'ok';
+    })()"#;
+    assert_eq!(
+        eval_str(&page, &format!("(() => {seed})()")).await.len() > 0,
+        true
+    );
+    assert!(
+        visible(&page, "[x-data=\"running\"]").await,
+        "tela running visível"
+    );
+
+    let text = eval_str(
+        &page,
+        "document.querySelector('[x-data=\"running\"]').innerText",
+    )
+    .await;
+    for esperado in [
+        "acme",
+        "api",
+        "release",
+        "migrate",
+        "seed",
+        "Deploy",
+        "Abrir serviço",
+        "Abrir projeto",
+    ] {
+        assert!(
+            text.contains(esperado),
+            "faltou {esperado:?} na tela: {text}"
+        );
+    }
+    // A URL fica no `value` do input (não no innerText): mascarada até "Mostrar".
+    let url = eval_str(
+        &page,
+        r#"document.querySelector('[x-data="running"] .webhook__url').value"#,
+    )
+    .await;
+    assert_eq!(url, "https://h/webhook/svc_1/••••••••");
+    assert!(
+        !text.contains("segredo"),
+        "o token do webhook não pode aparecer: {text}"
+    );
     assert_eq!(
         errors(&page).await,
         Vec::<String>::new(),
