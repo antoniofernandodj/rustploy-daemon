@@ -994,7 +994,7 @@
                   </text>
                   <pre class="log-panel__pre" x-text="newRegistryTokenLoginCommand" style="margin-top:10px"></pre>
                   <row class="env__add" style="margin-top:10px">
-                    <button class="btn btn--copy" type="button" @click="navigator.clipboard.writeText(newRegistryTokenLoginCommand)">Copiar</button>
+                    <button class="btn btn--copy" type="button" @click="$store.app.copyText(newRegistryTokenLoginCommand, 'texto')">Copiar</button>
                     <button class="btn btn--primary" type="button" @click="closeTokenModal()">Concluir</button>
                   </row>
                 </column>
@@ -1336,7 +1336,7 @@
             <text class="u-label-cap">URL PÚBLICA DA API</text>
             <row class="kv-list__row">
               <text class="kv-list__val kv-list__val--compact" x-text="store.serverSettingsPublicBase || '—'"></text>
-              <button class="btn btn--copy" type="button" @click="navigator.clipboard.writeText(store.serverSettingsPublicBase)">Copiar</button>
+              <button class="btn btn--copy" type="button" @click="$store.app.copyText(store.serverSettingsPublicBase, 'texto')">Copiar</button>
             </row>
             <text class="u-muted">
               Derivada de [api] domain/port no daemon — é a base das URLs de webhook dos serviços e
@@ -1347,7 +1347,7 @@
             <row class="kv-list__row">
               <text class="kv-list__val kv-list__val--compact" x-text="store.serverAccessKey ? store.serverAccessKey.slice(0, 12) + '…' + store.serverAccessKey.slice(-6) : '—'"></text>
               <button class="btn btn--copy" type="button" :disabled="!store.serverAccessKey"
-                      @click="navigator.clipboard.writeText(store.serverAccessKey)">Copiar</button>
+                      @click="$store.app.copyText(store.serverAccessKey, 'token')">Copiar</button>
             </row>
             <text class="u-muted">
               base64 de host:porta::token — endereço do servidor + token numa string só. É o que se cola
@@ -1355,14 +1355,26 @@
               o deixa no config.toml, em [api].connection_token. Vale tanto quanto o token: não compartilhe à toa.
             </text>
 
-            <text class="u-label-cap" style="margin-top:14px">CONECTAR UM AGENTE (CLAUDE CODE)</text>
+            <text class="u-label-cap" style="margin-top:14px">CONECTAR UM AGENTE DE IA — CLAUDE CODE</text>
             <row class="kv-list__row">
               <text class="kv-list__val kv-list__val--compact">claude mcp add … rustploy …/mcp</text>
-              <button class="btn btn--copy" type="button" @click="navigator.clipboard.writeText(store.serverMcpCommand)">Copiar</button>
+              <button class="btn btn--copy" type="button" @click="store.copyText(store.serverMcpCommand, 'comando')">Copiar</button>
+            </row>
+            <text class="u-label-cap" style="margin-top:14px">CODEX (~/.codex/config.toml)</text>
+            <row class="kv-list__row">
+              <text class="kv-list__val kv-list__val--compact">[mcp_servers.rustploy] url = …/mcp</text>
+              <button class="btn btn--copy" type="button" @click="store.copyText(store.serverMcpCommandCodex, 'comando')">Copiar</button>
+            </row>
+            <text class="u-label-cap" style="margin-top:14px">GEMINI CLI</text>
+            <row class="kv-list__row">
+              <text class="kv-list__val kv-list__val--compact">gemini mcp add … rustploy …/mcp</text>
+              <button class="btn btn--copy" type="button" @click="store.copyText(store.serverMcpCommandGemini, 'comando')">Copiar</button>
             </row>
             <text class="u-muted">
-              Copia o comando que registra o MCP deste servidor no Claude Code, já com o token. Cole num
-              terminal e abra uma sessão nova do Claude Code; confira com /mcp. Contém o token: não cole em lugar público.
+              Cada botão copia o registro do MCP deste servidor para o agente correspondente, já com o
+              token. Claude Code e Gemini: cole num terminal; Codex: acrescente o bloco ao
+              ~/.codex/config.toml. Abra uma sessão nova do agente e confira com /mcp. Contém o token:
+              não cole em lugar público.
             </text>
 
             <text class="u-label-cap" style="margin-top:14px">E-MAIL LET'S ENCRYPT (HTTPS AUTOMÁTICO)</text>
@@ -1443,7 +1455,7 @@
                 <text class="u-label-cap">REDIRECT URI (cole no app OAuth do provedor)</text>
                 <row class="kv-list__row">
                   <text class="kv-list__val kv-list__val--compact" x-text="store.gitProviderRedirect"></text>
-                  <button class="btn btn--copy" type="button" @click="navigator.clipboard.writeText(store.gitProviderRedirect)">Copiar</button>
+                  <button class="btn btn--copy" type="button" @click="$store.app.copyText(store.gitProviderRedirect, 'texto')">Copiar</button>
                 </row>
                 <text class="u-muted" x-show="store.gitProviderKind !== 'github'">
                   No Gitea: Settings → Applications → crie um OAuth2 app e cole a Redirect URI acima.
@@ -1495,12 +1507,12 @@
               <column>
                 <row class="env__head">
                   <text class="u-label-cap">rustploy.yml</text>
-                  <button class="btn btn--copy" type="button" @click="navigator.clipboard.writeText(store.manifestYaml)">Copiar</button>
+                  <button class="btn btn--copy" type="button" @click="$store.app.copyText(store.manifestYaml, 'texto')">Copiar</button>
                 </row>
                 <textarea class="env__editor" readonly x-model="store.manifestYaml"></textarea>
                 <row class="env__head">
                   <text class="u-label-cap">rustploy.vars.toml</text>
-                  <button class="btn btn--copy" type="button" @click="navigator.clipboard.writeText(store.manifestDotenv)">Copiar</button>
+                  <button class="btn btn--copy" type="button" @click="$store.app.copyText(store.manifestDotenv, 'texto')">Copiar</button>
                 </row>
                 <textarea class="env__editor" readonly x-model="store.manifestDotenv"></textarea>
               </column>

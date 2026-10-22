@@ -535,8 +535,9 @@ document.addEventListener("alpine:init", () => {
         await navigator.clipboard.writeText(text || "");
         this.copyMessage = "copiado!";
         setTimeout(() => (this.copyMessage = ""), 1500);
+        this.store.toastOk("Copiado");
       } catch {
-        /* clipboard indisponível (ex. contexto não-seguro) — sem drama */
+        this.store.toastError("não foi possível copiar");
       }
     },
 

@@ -93,6 +93,8 @@ document.addEventListener("alpine:init", () => {
     serverAccessKey: "",
     // O `claude mcp add …` deste servidor, com o token, para Settings → copiar.
     serverMcpCommand: "",
+    serverMcpCommandCodex: "",
+    serverMcpCommandGemini: "",
 
     // ── Sessão ativa ─────────────────────────────────────────────────
     api: null,
@@ -1511,6 +1513,13 @@ document.addEventListener("alpine:init", () => {
       this.serverMcpCommand =
         "claude mcp add --transport http --scope user rustploy " + this.api.baseUrl + "/mcp" +
         (this.api.token ? ' --header "Authorization: Bearer ' + this.api.token + '"' : "");
+      this.serverMcpCommandCodex =
+        '[mcp_servers.rustploy]\nurl = "' + this.api.baseUrl + '/mcp"' +
+        (this.api.token ? '\nhttp_headers = { Authorization = "Bearer ' + this.api.token + '" }' : "");
+      this.serverMcpCommandGemini =
+        "gemini mcp add --transport http --scope user " +
+        (this.api.token ? '--header "Authorization: Bearer ' + this.api.token + '" ' : "") +
+        "rustploy " + this.api.baseUrl + "/mcp";
       await this.gitProviderRefresh();
       await this.dockerCleanupLoad();
     },
