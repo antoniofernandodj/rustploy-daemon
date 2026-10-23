@@ -25,6 +25,9 @@ RuntimeDirectoryMode=0755
 RuntimeDirectoryPreserve=yes
 StateDirectory=rustploy
 ConfigurationDirectory=rustploy
+# O postinst deixa /etc/rustploy em 0750 (tem o master.key); sem isto o padrão
+# 0755 do systemd não bate e cada start avisa "the mode is different".
+ConfigurationDirectoryMode=0750
 
 Environment=RUSTPLOY_DB_PATH=/var/lib/rustploy/db
 Environment=RUST_LOG=info
