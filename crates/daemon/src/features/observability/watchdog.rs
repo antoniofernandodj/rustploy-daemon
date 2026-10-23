@@ -89,7 +89,11 @@ pub async fn watchdog_loop(state: WatchdogContext) {
             .await;
 
             if ok {
-                if svc_state.consecutive_failures > 0 {
+                // Decide pelo status do banco, não pelo contador: o contador
+                // é só memória e zera num restart do daemon (ou depois de um
+                // `try_restart`), o que deixava o serviço Degraded para sempre
+                // com o healthcheck passando.
+                if svc.status != ServiceStatus::Running {
                     info!(
                         service = %svc.spec.name,
                         prev_failures = svc_state.consecutive_failures,

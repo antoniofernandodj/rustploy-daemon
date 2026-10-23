@@ -1135,6 +1135,18 @@ document.addEventListener("alpine:init", () => {
       await this.refreshNow();
     },
 
+    /** Aquece o serviço (constrói a imagem para popular o cache de build) sem
+     * fazer deploy: o container no ar não muda. Já quente: o daemon não dispara
+     * nada e só avisa. O fim chega em `Event::ServiceWarmChanged`; o selo do
+     * detalhe acompanha pelo snapshot. */
+    async serviceWarm(serviceId) {
+      const serviceWarmResponse = await this.api.rpcChecked({ ServiceWarm: { service_id: serviceId } });
+      if (!this.toastResult(serviceWarmResponse)) return;
+      if (serviceWarmResponse.value.ServiceWarmRequested.already_warm) this.toastOk("serviço já está aquecido");
+      else this.toastOk("aquecimento iniciado");
+      await this.refreshNow();
+    },
+
     openJobActions(jobId) {
       this.jobActionsJobId = jobId;
     },

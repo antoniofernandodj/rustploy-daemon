@@ -2438,12 +2438,16 @@
                 <text class="badge__label" :class="'state-cell--' + warmKind" x-text="warmLabel"></text>
               </row>
             </row>
+            <text class="u-muted" x-show="warm?.reason && !warm?.warming" x-text="'frio: ' + (warm?.reason || '')"></text>
             <text class="u-muted" x-show="store.serviceMessage" x-text="store.serviceMessage"></text>
             <template x-if="svc"><row class="service__actions service__actions--compact">
               <button class="btn btn--primary" type="button" title="Deploy" @click="store.deployStart()">▶</button>
               <button class="btn btn--blue" type="button" title="Reload" @click="store.serviceReload()">⟳</button>
               <button class="btn btn--blue" type="button" title="Rollback" @click="store.deployRollback()">↩</button>
               <button class="btn btn--danger" type="button" title="Stop" @click="store.serviceStop()">■</button>
+              <button class="btn btn--ghost" type="button" x-show="warm" :disabled="warm?.warming"
+                      title="Aquecer: constrói a imagem para o próximo deploy achar o cache, sem mexer no container no ar"
+                      @click="store.serviceWarm(store.selectedServiceId)">◐</button>
               <button class="btn btn--ghost" type="button" title="Exportar serviço"
                       @click="store.openExportWin(store.selectedServiceId)">⇪</button>
             </row></template>
@@ -2453,6 +2457,9 @@
             <button class="btn btn--blue" type="button" @click="store.serviceReload()">Reload</button>
             <button class="btn btn--blue" type="button" @click="store.deployRollback()">Rollback</button>
             <button class="btn btn--danger" type="button" @click="store.serviceStop()">Stop</button>
+            <button class="btn btn--ghost" type="button" x-show="warm" :disabled="warm?.warming"
+                    title="Constrói a imagem para o próximo deploy achar o cache, sem mexer no container no ar"
+                    @click="store.serviceWarm(store.selectedServiceId)">Aquecer</button>
             <button class="btn btn--ghost" type="button" title="Gera um arquivo para recriar este serviço em outro servidor"
                     @click="store.openExportWin(store.selectedServiceId)">Exportar</button>
           </row></template>
