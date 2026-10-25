@@ -1,6 +1,6 @@
 [package]
 name = "rustploy"
-version = "0.1.10"
+version = "0.1.11"
 edition = "2024"
 default-run = "rustployd"
 description = "Rustploy PaaS daemon — lightweight self-hosted deployment platform"
@@ -17,6 +17,10 @@ path = "src/main.rs"
 [[bin]]
 name = "rustployd-fw"
 path = "src/bin/rustployd-fw.rs"
+
+[[bin]]
+name = "rustployd-update"
+path = "src/bin/rustployd-update/main.rs"
 
 [package.metadata.deb]
 name                 = "rustployd"
@@ -35,12 +39,15 @@ assets = [
     ["../../packaging/rustployd.service",    "lib/systemd/system/rustployd.service",    "644"],
     ["../../packaging/rustployd-fw.socket",  "lib/systemd/system/rustployd-fw.socket",  "644"],
     ["../../packaging/rustployd-fw.service", "lib/systemd/system/rustployd-fw.service", "644"],
+    ["target/release/rustployd-update",       "usr/libexec/rustployd-update",             "755"],
+    ["../../packaging/rustployd-update.socket",  "lib/systemd/system/rustployd-update.socket",  "644"],
+    ["../../packaging/rustployd-update.service", "lib/systemd/system/rustployd-update.service", "644"],
 ]
 
 [dependencies]
 fs_extra = "1.3.0" # Nova dependência para copiar diretórios
-shared = { package = "rustploy-shared", version = "0.9.0" }
-update-core = { package = "rustploy-update-core", version = "0.1.0" }
+shared = { package = "rustploy-shared", version = "0.10.0" }
+update-core = { package = "rustploy-update-core", version = "0.2.0" }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
@@ -125,4 +132,5 @@ serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 
 [dev-dependencies]
+tempfile = "3"
 chromiumoxide = "0.9.1"

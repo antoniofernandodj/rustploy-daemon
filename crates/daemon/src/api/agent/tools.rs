@@ -192,6 +192,17 @@ pub async fn call(state: &AppState, name: &str, args: &Value) -> Result<Value, T
 pub async fn rpc(state: &AppState, command: Value) -> Result<Value, ToolError> {
     let cmd: Command = serde_json::from_value(command)
         .map_err(|e| ToolError::bad_request(format!("Command inválido: {e}")))?;
+    // Atualizar derruba a API e troca o binário: é decisão de uma pessoa, na UI. O agente só
+    // pode se o dono ligar `[update] allow_agent_apply` no config.toml.
+    if matches!(cmd, Command::ApplyUpdate { .. } | Command::UpdateRollback)
+        && !state.update_applier.allow_agent_apply()
+    {
+        return Err(ToolError::new(
+            "forbidden",
+            "atualizar o daemon não é permitido ao agente: ligue `allow_agent_apply = true` em [update] \
+             no config.toml, ou peça a uma pessoa que use Settings → Atualizações",
+        ));
+    }
     let resposta = serde_json::to_value(
         // No heap: o future do `dispatch` é enorme (um `match` com todo
         // handler), e aninhado no da ferramenta estourava a pilha da thread

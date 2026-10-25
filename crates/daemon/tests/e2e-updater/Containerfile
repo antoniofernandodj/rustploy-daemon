@@ -1,0 +1,10 @@
+# Um "servidor" mínimo com systemd de verdade, para o teste de ponta a ponta do helper de
+# atualização (run.sh). A imagem tem a mesma glibc da máquina de desenvolvimento, porque o
+# helper de teste é compilado nela.
+FROM docker.io/library/ubuntu:26.04
+ENV container=podman DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends systemd systemd-sysv dbus socat ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+STOPSIGNAL SIGRTMIN+3
+CMD ["/sbin/init"]

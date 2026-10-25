@@ -1718,8 +1718,24 @@
             </row>
             <text class="u-muted" x-text="store.updateMessage"></text>
 
+            <column x-show="store.updateIsHelperAvailable">
+              <text class="u-label-cap" style="margin-top:14px">ATUALIZAR PELO APP</text>
+              <text class="u-muted">
+                O daemon baixa a versão nova, confere a assinatura e a instala por um helper root do próprio
+                pacote. O daemon reinicia (os containers dos serviços continuam rodando) e esta tela fica sem
+                resposta por alguns segundos. Antes, o daemon guarda um snapshot do banco.
+              </text>
+              <row class="healthcheck__grid">
+                <button class="btn btn--primary btn--sm" type="button" x-show="store.updateIsAvailable"
+                        @click="$store.app.updateApply()">Atualizar daemon</button>
+                <button class="btn btn--ghost btn--sm" type="button"
+                        @click="$store.app.updateRollback()">Reverter para a versão anterior</button>
+              </row>
+            </column>
+            <text class="u-muted" x-text="store.updateProgressMessage"></text>
+
             <column x-show="store.updateIsAvailable">
-              <text class="u-label-cap" style="margin-top:14px">COMO ATUALIZAR</text>
+              <text class="u-label-cap" style="margin-top:14px">COMO ATUALIZAR À MÃO</text>
               <text class="u-muted">
                 Há uma versão nova. Por enquanto a atualização é manual: rode o comando abaixo na VPS.
                 Seus dados, o config.toml e a master.key são preservados, e os containers dos serviços

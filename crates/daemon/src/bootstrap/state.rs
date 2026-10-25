@@ -65,6 +65,8 @@ pub struct AppState {
     pub registry_internal_token: Option<Arc<str>>,
     /// Verificação de versão nova, com cache (ver `features::update`).
     pub update_checker: Arc<crate::features::update::UpdateChecker>,
+    /// Baixa o pacote e o entrega ao helper root de instalação (ver `features::update::apply`).
+    pub update_applier: Arc<crate::features::update::UpdateApplier>,
 }
 
 impl AppState {
@@ -106,6 +108,7 @@ impl AppState {
             registry_storage,
             registry_internal_token,
             update_checker: Arc::new(crate::features::update::UpdateChecker::new(update)),
+            update_applier: Arc::new(crate::features::update::UpdateApplier::new(update)),
         }
     }
 

@@ -8,9 +8,9 @@
 
 use anyhow::{Context, Result, anyhow, bail};
 use http_body_util::{BodyExt, Empty, Limited};
-use hyper::{Request, body::Bytes};
+use hyper::{Request, body::Bytes, body::Incoming};
 use hyper_util::rt::TokioIo;
-use std::{sync::Arc, time::Duration};
+use std::{path::Path, sync::Arc, time::Duration};
 use tokio::net::TcpStream;
 use tokio_rustls::{
     TlsConnector,
@@ -94,6 +94,25 @@ async fn get_inner(
     headers: &[(&str, &str)],
     max_body_bytes: usize,
 ) -> Result<HttpsResponse> {
+    let (status, response_headers, body) = open(url, headers).await?;
+    let body = Limited::new(body, max_body_bytes)
+        .collect()
+        .await
+        .map_err(|error| anyhow!("resposta grande demais ou interrompida: {error}"))?
+        .to_bytes()
+        .to_vec();
+    Ok(HttpsResponse {
+        status,
+        headers: response_headers,
+        body,
+    })
+}
+
+/// Conecta, faz o `GET` e devolve status, cabeçalhos e o corpo **ainda por ler**.
+async fn open(
+    url: &str,
+    headers: &[(&str, &str)],
+) -> Result<(u16, Vec<(String, String)>, Incoming)> {
     let parts = split_https_url(url)?;
 
     let tcp = TcpStream::connect((parts.host.as_str(), parts.port))
@@ -141,18 +160,115 @@ async fn get_inner(
                 .map(|value| (name.as_str().to_string(), value.to_string()))
         })
         .collect();
-    let body = Limited::new(response.into_body(), max_body_bytes)
-        .collect()
-        .await
-        .map_err(|error| anyhow!("resposta grande demais ou interrompida: {error}"))?
-        .to_bytes()
-        .to_vec();
+    Ok((status, response_headers, response.into_body()))
+}
 
-    Ok(HttpsResponse {
-        status,
-        headers: response_headers,
-        body,
-    })
+const MAX_REDIRECTS: usize = 5;
+
+/// `host` é um dos `allowed` ou um subdomínio de algum (`objects.githubusercontent.com`
+/// casa com `githubusercontent.com`; `evilgithubusercontent.com` não).
+fn host_allowed(host: &str, allowed: &[&str]) -> bool {
+    allowed
+        .iter()
+        .any(|allowed| host == *allowed || host.ends_with(&format!(".{allowed}")))
+}
+
+/// Para onde seguir depois desta resposta: `None` se não é redirecionamento.
+/// Só aceita destino absoluto em `https`.
+fn redirect_target(status: u16, headers: &[(String, String)]) -> Result<Option<String>> {
+    if !matches!(status, 301 | 302 | 303 | 307 | 308) {
+        return Ok(None);
+    }
+    let location = headers
+        .iter()
+        .find(|(name, _)| name == "location")
+        .map(|(_, value)| value.as_str())
+        .ok_or_else(|| anyhow!("redirecionamento (HTTP {status}) sem Location"))?;
+    if !location.starts_with("https://") {
+        bail!("redirecionamento para um destino que não é https: {location}");
+    }
+    Ok(Some(location.to_string()))
+}
+
+/// Baixa `url` para `destination`, seguindo até [`MAX_REDIRECTS`] redirecionamentos, **somente
+/// para hosts de `allowed_hosts`** (um redirecionamento para fora da lista é recusado). Grava
+/// em `<destination>.partial` e só renomeia no fim, então um download interrompido nunca deixa
+/// um arquivo que pareça completo. `timeout` vale para o download inteiro.
+pub async fn download(
+    url: &str,
+    headers: &[(&str, &str)],
+    destination: &Path,
+    max_bytes: u64,
+    timeout: Duration,
+    allowed_hosts: &[&str],
+) -> Result<()> {
+    let mut partial = destination.as_os_str().to_owned();
+    partial.push(".partial");
+    let partial = std::path::PathBuf::from(partial);
+
+    let result = tokio::time::timeout(
+        timeout,
+        download_inner(url, headers, &partial, max_bytes, allowed_hosts),
+    )
+    .await
+    .map_err(|_| anyhow!("tempo esgotado ao baixar {url}"))
+    .and_then(|result| result);
+
+    match result {
+        Ok(()) => tokio::fs::rename(&partial, destination)
+            .await
+            .with_context(|| format!("não consegui gravar {}", destination.display())),
+        Err(error) => {
+            let _ = tokio::fs::remove_file(&partial).await;
+            Err(error)
+        }
+    }
+}
+
+async fn download_inner(
+    url: &str,
+    headers: &[(&str, &str)],
+    partial: &Path,
+    max_bytes: u64,
+    allowed_hosts: &[&str],
+) -> Result<()> {
+    use tokio::io::AsyncWriteExt;
+
+    let mut current = url.to_string();
+    for _ in 0..=MAX_REDIRECTS {
+        let host = split_https_url(&current)?.host;
+        if !host_allowed(&host, allowed_hosts) {
+            bail!("download recusado: {host} não está na lista de origens permitidas");
+        }
+        let (status, response_headers, mut body) = open(&current, headers).await?;
+        if let Some(next) = redirect_target(status, &response_headers)? {
+            current = next;
+            continue;
+        }
+        if status != 200 {
+            bail!("o servidor respondeu HTTP {status} em {host}");
+        }
+
+        let mut file = tokio::fs::File::create(partial)
+            .await
+            .with_context(|| format!("não consegui criar {}", partial.display()))?;
+        let mut written: u64 = 0;
+        while let Some(frame) = body.frame().await {
+            let frame = frame.map_err(|error| anyhow!("download interrompido: {error}"))?;
+            if let Ok(data) = frame.into_data() {
+                written += data.len() as u64;
+                if written > max_bytes {
+                    bail!("o arquivo passa do limite de {max_bytes} bytes");
+                }
+                file.write_all(&data)
+                    .await
+                    .context("falha ao gravar o download")?;
+            }
+        }
+        file.flush().await.context("falha ao gravar o download")?;
+        return Ok(());
+    }
+    bail!("redirecionamentos demais (mais de {MAX_REDIRECTS})")
 }
 
 #[cfg(test)]
@@ -193,6 +309,70 @@ mod tests {
         assert!(split_https_url("http://example.com/").is_err());
         assert!(split_https_url("ftp://example.com/").is_err());
         assert!(split_https_url("não é url").is_err());
+    }
+
+    #[test]
+    fn allowed_hosts_match_exactly_or_as_subdomains_only() {
+        let allowed = ["github.com", "githubusercontent.com"];
+        for host in [
+            "github.com",
+            "objects.githubusercontent.com",
+            "release-assets.githubusercontent.com",
+        ] {
+            assert!(host_allowed(host, &allowed), "{host}");
+        }
+        for host in [
+            "evilgithub.com",
+            "github.com.evil.com",
+            "githubusercontent.com.evil.org",
+            "example.com",
+            "",
+        ] {
+            assert!(!host_allowed(host, &allowed), "{host}");
+        }
+    }
+
+    fn headers(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
+        pairs
+            .iter()
+            .map(|(name, value)| (name.to_string(), value.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn redirects_are_followed_only_to_absolute_https() {
+        let location = headers(&[("location", "https://objects.githubusercontent.com/x")]);
+        for status in [301, 302, 303, 307, 308] {
+            assert_eq!(
+                redirect_target(status, &location).unwrap().as_deref(),
+                Some("https://objects.githubusercontent.com/x")
+            );
+        }
+        assert_eq!(redirect_target(200, &location).unwrap(), None);
+        assert!(redirect_target(302, &headers(&[])).is_err());
+        assert!(redirect_target(302, &headers(&[("location", "http://example.com/x")])).is_err());
+        assert!(redirect_target(302, &headers(&[("location", "/relativo")])).is_err());
+    }
+
+    #[tokio::test]
+    async fn download_refuses_a_host_outside_the_list_before_connecting() {
+        let directory = std::env::temp_dir().join(format!("rp-dl-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let destination = directory.join("a.deb");
+        let error = download(
+            "https://example.invalid/a.deb",
+            &[],
+            &destination,
+            1024,
+            Duration::from_secs(5),
+            &["github.com"],
+        )
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains("não está na lista"), "{error}");
+        assert!(!destination.exists());
+        assert!(!directory.join("a.deb.partial").exists());
+        let _ = std::fs::remove_dir_all(&directory);
     }
 
     #[test]

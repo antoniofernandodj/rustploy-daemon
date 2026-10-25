@@ -12,6 +12,9 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         Command::Ping => "Ping",
         Command::DaemonStatus => "DaemonStatus",
         Command::CheckUpdate { .. } => "CheckUpdate",
+        Command::ApplyUpdate { .. } => "ApplyUpdate",
+        Command::UpdateStatus => "UpdateStatus",
+        Command::UpdateRollback => "UpdateRollback",
         Command::DeployEngineStatus => "DeployEngineStatus",
         Command::ProjectCreate { .. } => "ProjectCreate",
         Command::ProjectList => "ProjectList",
@@ -186,6 +189,9 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         Command::Ping
         | Command::DaemonStatus
         | Command::CheckUpdate { .. }
+        | Command::ApplyUpdate { .. }
+        | Command::UpdateStatus
+        | Command::UpdateRollback
         | Command::IngressRoutes
         | Command::IngressReconcile { .. }
         | Command::LogsGet { .. } => handlers::observability::dispatch(state, cmd).await,

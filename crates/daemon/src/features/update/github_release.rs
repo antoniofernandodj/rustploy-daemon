@@ -11,12 +11,20 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 /// O JSON de uma release cabe em poucos KB; o teto só protege de uma resposta absurda.
 const MAX_BODY_BYTES: usize = 512 * 1024;
 
+/// Um arquivo anexado à release (`rustployd_0.1.10-1_amd64.deb`, o `.minisig`…).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReleaseAsset {
+    pub name: String,
+    pub url: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LatestRelease {
     /// A tag como publicada (`v0.1.7`).
     pub tag: String,
     pub url: String,
     pub published_at: Option<DateTime<Utc>>,
+    pub assets: Vec<ReleaseAsset>,
 }
 
 #[derive(Deserialize)]
@@ -25,6 +33,14 @@ struct ReleasePayload {
     html_url: String,
     #[serde(default)]
     published_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    assets: Vec<AssetPayload>,
+}
+
+#[derive(Deserialize)]
+struct AssetPayload {
+    name: String,
+    browser_download_url: String,
 }
 
 /// `dono/nome`, só com os caracteres que o GitHub aceita. Vem da config, mas vira
@@ -89,6 +105,14 @@ fn parse_response(
                 tag: payload.tag_name,
                 url: payload.html_url,
                 published_at: payload.published_at,
+                assets: payload
+                    .assets
+                    .into_iter()
+                    .map(|asset| ReleaseAsset {
+                        name: asset.name,
+                        url: asset.browser_download_url,
+                    })
+                    .collect(),
             })
         }
         404 => bail!("o repositório não tem nenhuma release publicada (ou não é público)"),
@@ -111,7 +135,11 @@ mod tests {
         "published_at": "2026-10-20T15:04:05Z",
         "draft": false,
         "prerelease": false,
-        "assets": []
+        "assets": [
+            {"name": "rustployd_0.1.10-1_amd64.deb", "size": 6653000,
+             "browser_download_url": "https://github.com/o/r/releases/download/v0.1.8/rustployd_0.1.10-1_amd64.deb"},
+            {"name": "checksums.sha256", "browser_download_url": "https://github.com/o/r/releases/download/v0.1.8/checksums.sha256"}
+        ]
     }"#;
 
     #[test]
@@ -119,6 +147,13 @@ mod tests {
         let release = parse_response(200, Some("59"), SAMPLE.as_bytes()).unwrap();
         assert_eq!(release.tag, "v0.1.8");
         assert!(release.url.ends_with("/releases/tag/v0.1.8"));
+        assert_eq!(release.assets.len(), 2);
+        assert_eq!(release.assets[0].name, "rustployd_0.1.10-1_amd64.deb");
+        assert!(
+            release.assets[0]
+                .url
+                .starts_with("https://github.com/o/r/releases/download/")
+        );
         assert_eq!(
             release.published_at.unwrap().to_rfc3339(),
             "2026-10-20T15:04:05+00:00"

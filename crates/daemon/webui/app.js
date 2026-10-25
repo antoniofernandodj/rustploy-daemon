@@ -211,6 +211,8 @@ document.addEventListener("alpine:init", () => {
     updateIsAvailable: false,
     updateReleaseUrl: "",
     updateMessage: "",
+    updateProgressMessage: "",
+    updateIsHelperAvailable: false,
     updateInstallCommand: "curl -fsSL https://raw.githubusercontent.com/antoniofernandodj/rustploy/main/install.sh | sudo sh",
     gitProviders: [],
     gitProviderKind: "gitea", // "gitea" | "github"
@@ -1572,6 +1574,111 @@ document.addEventListener("alpine:init", () => {
       this.updateMessage = updateInfo.is_update_available
         ? "Há uma versão nova: " + updateInfo.latest_version
         : "Você está na versão mais recente.";
+      await this.updateLoadProgress();
+    },
+
+    // Texto do que o daemon sabe sobre a atualização em curso ou a última tentativa
+    // (Command::UpdateStatus). Mesmas frases da GUI (handlers/settings.luau).
+    updateProgressText(updateProgress) {
+      const target = updateProgress.target_version;
+      const message = updateProgress.message || "";
+      switch (updateProgress.stage) {
+        case "Downloading":
+          return "Atualizando… " + message;
+        case "Installing":
+          return "Instalando" + (target ? " " + target : "") + "… o daemon vai reiniciar.";
+        case "RollingBack":
+          return "Revertendo… o daemon vai reiniciar.";
+        case "Succeeded":
+          return "Atualizado" + (target ? " para " + target : "") + ".";
+        case "Failed":
+          return "A atualização falhou: " + message;
+        case "RolledBack":
+          return "A atualização foi revertida: " + message;
+        default:
+          return "";
+      }
+    },
+
+    // Busca o estado da atualização; devolve o `stage` (ou `null` se o daemon não respondeu,
+    // por exemplo enquanto reinicia).
+    async updateLoadProgress() {
+      const updateStatusResponse = await this.api.rpc("UpdateStatus");
+      const updateProgress = updateStatusResponse.ok ? updateStatusResponse.value?.UpdateProgress : null;
+      if (!updateProgress) return null;
+      this.updateIsHelperAvailable = updateProgress.is_helper_available;
+      this.updateProgressMessage = this.updateProgressText(updateProgress);
+      return updateProgress.stage;
+    },
+
+    // Atualiza o daemon pelo app (Command::ApplyUpdate). A confirmação diz o que vai acontecer;
+    // se há deploy em andamento o daemon recusa e a pessoa decide de novo.
+    async updateApply() {
+      if (
+        !confirm(
+          "O daemon baixa a versão " + this.updateLatestVersion + ", confere a assinatura e a instala. " +
+            "Ele reinicia (os containers dos serviços continuam rodando) e esta tela fica sem resposta por " +
+            "alguns segundos. Um snapshot do banco é guardado antes."
+        )
+      ) {
+        return;
+      }
+      this.updateProgressMessage = "pedindo a atualização…";
+      let applyResponse = await this.api.rpcChecked({ ApplyUpdate: { allow_active_deploys: false } });
+      if (!applyResponse.ok && String(applyResponse.error).includes("deploy em andamento")) {
+        if (!confirm("Atualizar agora interrompe o deploy que está rodando ou na fila. Atualizar mesmo assim?")) {
+          this.updateProgressMessage = "";
+          return;
+        }
+        applyResponse = await this.api.rpcChecked({ ApplyUpdate: { allow_active_deploys: true } });
+      }
+      if (!applyResponse.ok) {
+        this.updateProgressMessage = String(applyResponse.error);
+        this.toastError(String(applyResponse.error));
+        return;
+      }
+      this.toastOk("Atualização iniciada");
+      await this.updateFollowProgress();
+    },
+
+    // Acompanha a atualização até um estado final. O daemon reinicia no meio: as consultas que
+    // falham nesse intervalo são esperadas e só mostram "reiniciando".
+    async updateFollowProgress() {
+      const finalStages = ["Succeeded", "Failed", "RolledBack"];
+      let finalStage = null;
+      for (let attempt = 0; attempt < 150 && !finalStages.includes(finalStage); attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        finalStage = await this.updateLoadProgress();
+        if (finalStage === null) this.updateProgressMessage = "reiniciando o daemon…";
+      }
+      if (finalStage === "Succeeded" || finalStage === "RolledBack") {
+        await this.updateCheck(true);
+        this.toastOk(finalStage === "Succeeded" ? "Daemon atualizado" : "Versão anterior restaurada");
+      } else if (finalStage === null) {
+        this.updateProgressMessage = "O daemon não voltou a responder em 5 minutos; confira o servidor.";
+      }
+    },
+
+    // Volta os binários para os do backup da última atualização (Command::UpdateRollback).
+    async updateRollback() {
+      if (
+        !confirm(
+          "Restaura os binários do backup da última atualização e reinicia o daemon. O banco não é " +
+            "revertido: se a versão nova migrou o esquema, o snapshot guardado antes da atualização " +
+            "fica no diretório do banco."
+        )
+      ) {
+        return;
+      }
+      this.updateProgressMessage = "revertendo…";
+      const rollbackResponse = await this.api.rpcChecked("UpdateRollback");
+      if (!rollbackResponse.ok) {
+        this.updateProgressMessage = String(rollbackResponse.error);
+        this.toastError(String(rollbackResponse.error));
+        return;
+      }
+      this.toastOk("Reversão iniciada");
+      await this.updateFollowProgress();
     },
 
     async updateCheckNow() {

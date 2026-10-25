@@ -73,6 +73,10 @@ pub struct UpdateConfig {
     /// consultas/h por IP, e o cache evita estourar isso com a UI aberta.
     #[serde(default = "default_update_cache_hours")]
     pub cache_hours: u64,
+    /// `false` (padrão): o agente MCP não pode pedir `ApplyUpdate`/`UpdateRollback`. Atualizar
+    /// derruba a API e troca o binário; isso é decisão de uma pessoa, na UI.
+    #[serde(default)]
+    pub allow_agent_apply: bool,
 }
 
 fn default_update_enabled() -> bool {
@@ -91,6 +95,7 @@ impl Default for UpdateConfig {
             enabled: default_update_enabled(),
             repo: default_update_repo(),
             cache_hours: default_update_cache_hours(),
+            allow_agent_apply: false,
         }
     }
 }
@@ -501,5 +506,9 @@ enabled = true
         let cfg: UpdateConfig = toml::from_str("enabled = false").unwrap();
         assert!(!cfg.enabled);
         assert_eq!(cfg.repo, "antoniofernandodj/rustploy");
+        // O agente MCP não aplica atualização, a menos que a config diga.
+        assert!(!cfg.allow_agent_apply);
+        let cfg: UpdateConfig = toml::from_str("allow_agent_apply = true").unwrap();
+        assert!(cfg.allow_agent_apply);
     }
 }

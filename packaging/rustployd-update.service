@@ -1,0 +1,24 @@
+[Unit]
+Description=Rustploy update helper (instala pacotes assinados do rustploy)
+# SEM `Requires=rustployd-update.socket` (ao contrário do rustployd-fw.service): reiniciar ou parar
+# o socket mataria este serviço no meio do `dpkg -i`, deixando o pacote pela metade. O
+# systemd já liga o socket ao serviço de mesmo nome para a ativação.
+
+[Service]
+Type=simple
+# Root de propósito: instalar um .deb exige. A superfície é mínima por construção (só confere
+# a assinatura e instala o pacote rustployd; ver crates/daemon/src/bin/rustployd-update/main.rs).
+ExecStart=/usr/libexec/rustployd-update
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rustployd-update
+
+# Hardening possível: o helper NÃO usa a rede (quem baixa é o daemon), então ela é cortada.
+# O `systemctl` do dpkg continua alcançando o systemd por socket de caminho em /run.
+# Não dá para usar ProtectSystem=strict: o dpkg escreve em todo o sistema.
+PrivateNetwork=yes
+ProtectHome=yes
+PrivateTmp=yes
+# /var/lib/rustploy-update: cópias de trabalho, backup dos binários e o último resultado.
+StateDirectory=rustploy-update
+StateDirectoryMode=0755

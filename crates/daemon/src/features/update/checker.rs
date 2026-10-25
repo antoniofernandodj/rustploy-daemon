@@ -21,6 +21,8 @@ const FORCE_MIN_SPACING: Duration = Duration::from_secs(60);
 struct Cached {
     fetched_at: Instant,
     info: UpdateInfo,
+    /// A release inteira (com a lista de arquivos), de onde `ApplyUpdate` tira o pacote.
+    release: LatestRelease,
 }
 
 pub struct UpdateChecker {
@@ -48,6 +50,20 @@ impl UpdateChecker {
             force_spacing,
             cached: Mutex::new(None),
         }
+    }
+
+    /// A última release vista por [`check`](Self::check), com os arquivos dela.
+    pub async fn cached_release(&self) -> Option<LatestRelease> {
+        self.cached
+            .lock()
+            .await
+            .as_ref()
+            .map(|entry| entry.release.clone())
+    }
+
+    /// O repositório consultado (`dono/nome`); `ApplyUpdate` só baixa de URLs dele.
+    pub fn repo(&self) -> &str {
+        &self.repo
     }
 
     /// Consulta o GitHub de verdade (a menos que o cache sirva).
@@ -90,6 +106,7 @@ impl UpdateChecker {
         *cached = Some(Cached {
             fetched_at: Instant::now(),
             info: info.clone(),
+            release,
         });
         Ok(info)
     }
@@ -124,6 +141,7 @@ mod tests {
             tag: tag.into(),
             url: format!("https://github.com/o/r/releases/tag/{tag}"),
             published_at: None,
+            assets: vec![],
         }
     }
 

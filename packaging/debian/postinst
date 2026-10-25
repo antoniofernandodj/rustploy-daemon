@@ -46,6 +46,12 @@ if [ "$1" = "configure" ]; then
     # allow/deny de portas externas via /run/rustploy/fw.sock.
     systemctl enable  rustployd-fw.socket >/dev/null 2>&1 || true
     systemctl restart rustployd-fw.socket >/dev/null 2>&1 || true
+    # Helper de atualização (socket activation): só HABILITA e INICIA o socket, nunca reinicia.
+    # Quem está rodando este postinst pode ser o próprio rustployd-update (uma atualização
+    # pelo Settings); reiniciar o socket dele mataria o dpkg no meio. O serviço sai sozinho
+    # ao fim de cada pedido, então o próximo já sobe o binário novo.
+    systemctl enable  rustployd-update.socket >/dev/null 2>&1 || true
+    systemctl start   rustployd-update.socket >/dev/null 2>&1 || true
     systemctl restart rustployd          >/dev/null 2>&1 || true
 fi
 
