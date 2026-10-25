@@ -54,6 +54,45 @@ pub struct RustployConfig {
     pub external_ports: ExternalPortsConfig,
     #[serde(default)]
     pub registry: RegistryConfig,
+    #[serde(default)]
+    pub update: UpdateConfig,
+}
+
+/// Verificação de versão nova (`Command::CheckUpdate`). Só consulta; instalar é
+/// outra etapa (ver `docs/plano-updaters-daemon-e-gui.md`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateConfig {
+    /// `false`: o daemon nem consulta o GitHub (VPS sem saída para a internet).
+    #[serde(default = "default_update_enabled")]
+    pub enabled: bool,
+    /// Repositório `dono/nome` cujas releases são consultadas. Fixo na config:
+    /// a UI não escolhe de onde vem uma atualização.
+    #[serde(default = "default_update_repo")]
+    pub repo: String,
+    /// Por quantas horas o resultado vale. O GitHub limita a API anônima a 60
+    /// consultas/h por IP, e o cache evita estourar isso com a UI aberta.
+    #[serde(default = "default_update_cache_hours")]
+    pub cache_hours: u64,
+}
+
+fn default_update_enabled() -> bool {
+    true
+}
+fn default_update_repo() -> String {
+    "antoniofernandodj/rustploy".into()
+}
+fn default_update_cache_hours() -> u64 {
+    6
+}
+
+impl Default for UpdateConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_update_enabled(),
+            repo: default_update_repo(),
+            cache_hours: default_update_cache_hours(),
+        }
+    }
 }
 
 /// Faixa de portas de host que o rustploy pode alocar automaticamente para
@@ -284,6 +323,7 @@ impl Default for RustployConfig {
             env_backup: EnvBackupConfig::default(),
             external_ports: ExternalPortsConfig::default(),
             registry: RegistryConfig::default(),
+            update: UpdateConfig::default(),
         }
     }
 }
@@ -449,5 +489,17 @@ enabled = true
     #[derive(Deserialize)]
     struct WrapRegistry {
         registry: RegistryConfig,
+    }
+
+    /// Sem `[update]` na config (todo `config.toml` existente) vale o padrão; e um
+    /// bloco parcial só sobrescreve o que foi escrito.
+    #[test]
+    fn update_block_is_optional_and_partial() {
+        assert!(UpdateConfig::default().enabled);
+        assert_eq!(UpdateConfig::default().cache_hours, 6);
+
+        let cfg: UpdateConfig = toml::from_str("enabled = false").unwrap();
+        assert!(!cfg.enabled);
+        assert_eq!(cfg.repo, "antoniofernandodj/rustploy");
     }
 }

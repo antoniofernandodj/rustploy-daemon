@@ -198,7 +198,8 @@ Comandos, por área (campos entre chaves):
 - **Provedores git**: `GitProviderList` · `GitProviderCreate{…}` ·
   `GitProviderDelete{id}` · `GitRepoList{provider_id}` ·
   `GitBranchList{provider_id, repo_full_name}`
-- **Daemon**: `Ping` · `DaemonStatus` · `Snapshot` (o painel inteiro, JSON
+- **Daemon**: `Ping` · `DaemonStatus` · `CheckUpdate{force?}` (há release nova? só
+  consulta, nunca instala; cache de horas) · `Snapshot` (o painel inteiro, JSON
   dentro de uma string) · `GetDaemonSettings` ·
   `SetDaemonSettings{acme_email?, registry_domain?}` · `EnvBackupList` ·
   `EnvBackupRestore{snapshot}`

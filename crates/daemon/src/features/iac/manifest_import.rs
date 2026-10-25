@@ -356,6 +356,7 @@ mod git_provider_iac_tests {
             tmp.join("backup"),
             30,
             config.api,
+            &config.update,
             None,
             None,
         )

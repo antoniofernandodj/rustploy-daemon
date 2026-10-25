@@ -68,6 +68,9 @@ async fn launch() -> (Browser, tokio::task::JoinHandle<()>) {
     let config = BrowserConfig::builder()
         .chrome_executable("/usr/bin/google-chrome")
         .no_sandbox()
+        // O `--headless` antigo não existe mais nos Chrome recentes (o launch estoura
+        // em LaunchTimeout com stderr vazio); o modo novo é o `--headless=new`.
+        .new_headless_mode()
         .user_data_dir(user_data_dir)
         .build()
         .expect("BrowserConfig");

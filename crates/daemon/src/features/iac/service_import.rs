@@ -554,6 +554,7 @@ mod e2e {
             tmp.join("backup"),
             30,
             config.api,
+            &config.update,
             None,
             None,
         )

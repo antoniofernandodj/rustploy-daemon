@@ -63,6 +63,8 @@ pub struct AppState {
     /// `crate::features::registry::internal_token`), usado pelo `DeployExecutor` pra se
     /// autenticar sozinho ao puxar imagens do registry embutido.
     pub registry_internal_token: Option<Arc<str>>,
+    /// Verificação de versão nova, com cache (ver `features::update`).
+    pub update_checker: Arc<crate::features::update::UpdateChecker>,
 }
 
 impl AppState {
@@ -78,6 +80,7 @@ impl AppState {
         backup_dir: PathBuf,
         drain_secs: u64,
         api: crate::platform::config::ApiConfig,
+        update: &crate::platform::config::UpdateConfig,
         registry_storage: Option<Arc<crate::features::registry::storage::RegistryStorage>>,
         registry_internal_token: Option<Arc<str>>,
     ) -> Self {
@@ -102,6 +105,7 @@ impl AppState {
             docker_cache: Arc::new(DockerCache::new()),
             registry_storage,
             registry_internal_token,
+            update_checker: Arc::new(crate::features::update::UpdateChecker::new(update)),
         }
     }
 

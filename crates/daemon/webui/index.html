@@ -1327,6 +1327,8 @@
                   @click="store.settingsTab = 'iac'">Infra as Code</button>
           <button type="button" :class="store.settingsTab === 'maintenance' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'"
                   @click="store.settingsTab = 'maintenance'">Manutenção</button>
+          <button type="button" :class="store.settingsTab === 'updates' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'"
+                  @click="store.settingsTab = 'updates'">Atualizações</button>
         </row>
         <hr class="rule" />
 
@@ -1692,6 +1694,47 @@
             <hr class="rule" />
             <text class="u-label-cap">ÚLTIMA EXECUÇÃO</text>
             <text class="u-muted" x-text="store.dockerCleanupLastRunText"></text>
+          </column>
+        </column>
+
+        <!-- Atualizações: Command::CheckUpdate (só consulta; instalar é manual por enquanto) -->
+        <column class="u-fill-all" x-show="store.settingsTab === 'updates'">
+          <column class="form-panel">
+            <text class="u-label-cap">DAEMON</text>
+            <row class="kv-list__row">
+              <text class="kv-list__key">Versão instalada</text>
+              <text class="kv-list__val kv-list__val--compact" x-text="store.updateCurrentVersion || '—'"></text>
+            </row>
+            <row class="kv-list__row">
+              <text class="kv-list__key">Última versão</text>
+              <text class="kv-list__val kv-list__val--compact" x-text="store.updateLatestVersion || '—'"></text>
+            </row>
+            <row class="kv-list__row">
+              <text class="kv-list__key">Verificado em</text>
+              <text class="kv-list__val kv-list__val--compact" x-text="store.updateCheckedAtLabel || '—'"></text>
+            </row>
+            <row class="healthcheck__grid">
+              <button class="btn btn--ghost btn--sm" type="button" @click="$store.app.updateCheckNow()">Verificar atualizações</button>
+            </row>
+            <text class="u-muted" x-text="store.updateMessage"></text>
+
+            <column x-show="store.updateIsAvailable">
+              <text class="u-label-cap" style="margin-top:14px">COMO ATUALIZAR</text>
+              <text class="u-muted">
+                Há uma versão nova. Por enquanto a atualização é manual: rode o comando abaixo na VPS.
+                Seus dados, o config.toml e a master.key são preservados, e os containers dos serviços
+                continuam rodando.
+              </text>
+              <row class="kv-list__row">
+                <text class="kv-list__val kv-list__val--compact" x-text="store.updateInstallCommand"></text>
+                <button class="btn btn--copy" type="button" @click="$store.app.copyText(store.updateInstallCommand, 'comando')">Copiar</button>
+              </row>
+              <row class="kv-list__row">
+                <text class="kv-list__key">Notas da release</text>
+                <text class="kv-list__val kv-list__val--compact" x-text="store.updateReleaseUrl"></text>
+                <button class="btn btn--copy" type="button" @click="$store.app.copyText(store.updateReleaseUrl, 'endereço')">Copiar</button>
+              </row>
+            </column>
           </column>
         </column>
       </column>

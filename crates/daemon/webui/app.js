@@ -204,6 +204,14 @@ document.addEventListener("alpine:init", () => {
     serverSettingsEmail: "",
     serverSettingsRegistryDomain: "",
     settingsMessage: "",
+    // Aba Atualizações (Command::CheckUpdate); mesmos nomes da GUI (handlers/settings.luau).
+    updateCurrentVersion: "",
+    updateLatestVersion: "",
+    updateCheckedAtLabel: "",
+    updateIsAvailable: false,
+    updateReleaseUrl: "",
+    updateMessage: "",
+    updateInstallCommand: "curl -fsSL https://raw.githubusercontent.com/antoniofernandodj/rustploy/main/install.sh | sudo sh",
     gitProviders: [],
     gitProviderKind: "gitea", // "gitea" | "github"
     gitProviderMode: "oauth", // "oauth" | "pat"
@@ -386,6 +394,9 @@ document.addEventListener("alpine:init", () => {
       this.dataLoading = true;
       await this.loadSettings();
       this.openStream();
+      // Depois do stream e sem `await`: se o daemon não alcançar o GitHub, a
+      // consulta leva até ~15 s, e o painel ao vivo não pode esperar por isso.
+      this.updateCheck(false);
     },
 
     disconnect() {
@@ -1534,6 +1545,37 @@ document.addEventListener("alpine:init", () => {
         "rustploy " + this.api.baseUrl + "/mcp";
       await this.gitProviderRefresh();
       await this.dockerCleanupLoad();
+    },
+
+    // Pergunta ao daemon se há release mais nova (Command::CheckUpdate: só leitura,
+    // com cache de horas no daemon por causa do limite de 60 req/h do GitHub).
+    // `force` ignora o cache — o daemon ainda espaça consultas forçadas em ~1 min.
+    async updateCheck(force) {
+      this.updateMessage = "verificando…";
+      const updateCheckResponse = await this.api.rpcChecked({ CheckUpdate: { force } });
+      if (!updateCheckResponse.ok) {
+        // Sem GitHub, limite de consultas, `enabled = false`: o texto do daemon já diz
+        // a causa. Mantém a última resposta boa na tela.
+        this.updateMessage = String(updateCheckResponse.error);
+        return;
+      }
+      const updateInfo = updateCheckResponse.value?.UpdateInfo;
+      if (!updateInfo) {
+        this.updateMessage = "resposta inesperada do daemon";
+        return;
+      }
+      this.updateCurrentVersion = updateInfo.current_version;
+      this.updateLatestVersion = updateInfo.latest_version;
+      this.updateIsAvailable = updateInfo.is_update_available;
+      this.updateReleaseUrl = updateInfo.release_url;
+      this.updateCheckedAtLabel = dateDayMonthHourMinute(updateInfo.checked_at);
+      this.updateMessage = updateInfo.is_update_available
+        ? "Há uma versão nova: " + updateInfo.latest_version
+        : "Você está na versão mais recente.";
+    },
+
+    async updateCheckNow() {
+      await this.updateCheck(true);
     },
 
     async settingsSave() {

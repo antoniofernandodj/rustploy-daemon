@@ -157,6 +157,7 @@ pub async fn run() -> Result<()> {
         backup_dir,
         config.deploy.drain_secs,
         config.api.clone(),
+        &config.update,
         registry_storage.clone(),
         registry_internal_token.clone(),
     );

@@ -11,6 +11,7 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
     let cmd_name = match &cmd {
         Command::Ping => "Ping",
         Command::DaemonStatus => "DaemonStatus",
+        Command::CheckUpdate { .. } => "CheckUpdate",
         Command::DeployEngineStatus => "DeployEngineStatus",
         Command::ProjectCreate { .. } => "ProjectCreate",
         Command::ProjectList => "ProjectList",
@@ -184,6 +185,7 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         | Command::JobWarm { .. } => handlers::jobs::dispatch(state, cmd).await,
         Command::Ping
         | Command::DaemonStatus
+        | Command::CheckUpdate { .. }
         | Command::IngressRoutes
         | Command::IngressReconcile { .. }
         | Command::LogsGet { .. } => handlers::observability::dispatch(state, cmd).await,

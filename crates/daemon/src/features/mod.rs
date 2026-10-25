@@ -12,4 +12,5 @@ pub mod observability;
 pub mod registry;
 pub mod services;
 pub mod templates;
+pub mod update;
 pub mod wizard;
