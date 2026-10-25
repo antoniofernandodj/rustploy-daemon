@@ -7,7 +7,7 @@
 //! O `dpkg` reinicia o daemon no meio, então o resultado final **não** volta pela conexão com
 //! o helper: ele está em `/var/lib/rustploy-update/last.json`, que [`UpdateApplier::status`] lê.
 
-use super::github_release::{LatestRelease, ReleaseAsset};
+use super::github_release::LatestRelease;
 use crate::{
     platform::{config::UpdateConfig, https_client},
     store::Db,
@@ -24,7 +24,10 @@ use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::UnixStream,
 };
-use update_core::outcome::{OutcomeKind, UpdateOutcome, read_outcome};
+use update_core::{
+    outcome::{OutcomeKind, UpdateOutcome, read_outcome},
+    release::{debian_architecture, select_package_assets},
+};
 
 /// Onde o helper escuta (`rustployd-update.socket`).
 const HELPER_SOCKET: &str = "/run/rustploy/update.sock";
@@ -219,8 +222,13 @@ impl UpdateApplier {
             .await
             .map_err(|error| format!("snapshot do banco: {error}"))?;
 
-        let (deb_asset, signature_asset) =
-            select_assets(&plan.release, &plan.repo, deb_architecture()?)?;
+        let (deb_asset, signature_asset) = select_package_assets(
+            &plan.release.assets,
+            &plan.repo,
+            "rustployd",
+            debian_architecture()?,
+            &plan.release.tag,
+        )?;
         self.set(
             UpdateStage::Downloading,
             format!("baixando {}", deb_asset.name),
@@ -381,55 +389,6 @@ fn package_matches_running(package_version: &str, running_version: &str) -> bool
     upstream == running_version
 }
 
-/// Arquitetura no vocabulário do Debian, a que aparece no nome do `.deb`.
-fn deb_architecture() -> Result<&'static str, String> {
-    deb_architecture_of(std::env::consts::ARCH)
-}
-
-fn deb_architecture_of(rust_arch: &str) -> Result<&'static str, String> {
-    match rust_arch {
-        "x86_64" => Ok("amd64"),
-        "aarch64" => Ok("arm64"),
-        other => Err(format!("não há pacote para a arquitetura {other}")),
-    }
-}
-
-/// O `.deb` do daemon e a `.minisig` dele, desta arquitetura, **dentro do repositório configurado**
-/// (uma URL fora de `https://github.com/<repo>/releases/download/` nunca é baixada).
-fn select_assets(
-    release: &LatestRelease,
-    repo: &str,
-    architecture: &str,
-) -> Result<(ReleaseAsset, ReleaseAsset), String> {
-    let allowed_prefix = format!("https://github.com/{repo}/releases/download/");
-    let from_repo = |asset: &&ReleaseAsset| asset.url.starts_with(&allowed_prefix);
-    let suffix = format!("_{architecture}.deb");
-    let deb = release
-        .assets
-        .iter()
-        .filter(from_repo)
-        .find(|asset| asset.name.starts_with("rustployd_") && asset.name.ends_with(&suffix))
-        .ok_or_else(|| {
-            format!(
-                "a release {} não tem pacote do daemon para {architecture}",
-                release.tag
-            )
-        })?;
-    let signature_name = format!("{}.minisig", deb.name);
-    let signature = release
-        .assets
-        .iter()
-        .filter(from_repo)
-        .find(|asset| asset.name == signature_name)
-        .ok_or_else(|| {
-            format!(
-                "a release {} não tem a assinatura ({signature_name}); só instalo pacote assinado",
-                release.tag
-            )
-        })?;
-    Ok((deb.clone(), signature.clone()))
-}
-
 /// Cria o diretório e tira o que sobrou de tentativas anteriores (pacote velho não pode ser
 /// confundido com o novo).
 fn prepare_updates_dir(directory: &Path) -> std::io::Result<()> {
@@ -557,85 +516,6 @@ async fn helper_call(
 mod tests {
     use super::*;
     use update_core::outcome::write_outcome;
-
-    fn asset(name: &str, repo: &str) -> ReleaseAsset {
-        ReleaseAsset {
-            name: name.into(),
-            url: format!("https://github.com/{repo}/releases/download/v0.1.16/{name}"),
-        }
-    }
-
-    fn release(assets: Vec<ReleaseAsset>) -> LatestRelease {
-        LatestRelease {
-            tag: "v0.1.16".into(),
-            url: "https://github.com/o/r/releases/tag/v0.1.16".into(),
-            published_at: None,
-            assets,
-        }
-    }
-
-    fn full_release(repo: &str) -> LatestRelease {
-        release(
-            [
-                "checksums.sha256",
-                "rustploy-gui_0.1.20-1_amd64.deb",
-                "rustploy-gui_0.1.20-1_amd64.deb.minisig",
-                "rustployd_0.1.10-1_amd64.deb",
-                "rustployd_0.1.10-1_amd64.deb.minisig",
-                "rustployd_0.1.10-1_arm64.deb",
-                "rustployd_0.1.10-1_arm64.deb.minisig",
-            ]
-            .map(|name| asset(name, repo))
-            .to_vec(),
-        )
-    }
-
-    #[test]
-    fn picks_the_daemon_package_for_this_architecture_and_its_signature() {
-        let (deb, signature) = select_assets(&full_release("o/r"), "o/r", "arm64").unwrap();
-        assert_eq!(deb.name, "rustployd_0.1.10-1_arm64.deb");
-        assert_eq!(signature.name, "rustployd_0.1.10-1_arm64.deb.minisig");
-        // Nunca o app desktop, mesmo existindo na mesma release.
-        let (deb, _) = select_assets(&full_release("o/r"), "o/r", "amd64").unwrap();
-        assert_eq!(deb.name, "rustployd_0.1.10-1_amd64.deb");
-    }
-
-    #[test]
-    fn a_release_without_a_signature_is_not_installable() {
-        let mut release = full_release("o/r");
-        release
-            .assets
-            .retain(|asset| !asset.name.ends_with(".minisig"));
-        let error = select_assets(&release, "o/r", "amd64").unwrap_err();
-        assert!(error.contains("só instalo pacote assinado"), "{error}");
-    }
-
-    #[test]
-    fn a_release_without_a_package_for_the_architecture_is_refused() {
-        let error = select_assets(&full_release("o/r"), "o/r", "riscv64").unwrap_err();
-        assert!(error.contains("riscv64"), "{error}");
-    }
-
-    #[test]
-    fn urls_outside_the_configured_repo_are_ignored() {
-        // Os arquivos apontam para OUTRO repositório: nada é elegível.
-        let error = select_assets(&full_release("atacante/repo"), "o/r", "amd64").unwrap_err();
-        assert!(error.contains("não tem pacote"), "{error}");
-
-        // Nem uma URL de outro host com o nome certo.
-        let mut hostile = full_release("o/r");
-        for asset in &mut hostile.assets {
-            asset.url = format!("https://evil.example/{}", asset.name);
-        }
-        assert!(select_assets(&hostile, "o/r", "amd64").is_err());
-    }
-
-    #[test]
-    fn rust_architectures_map_to_debian_ones() {
-        assert_eq!(deb_architecture_of("x86_64"), Ok("amd64"));
-        assert_eq!(deb_architecture_of("aarch64"), Ok("arm64"));
-        assert!(deb_architecture_of("riscv64").is_err());
-    }
 
     #[test]
     fn package_version_matches_the_crate_version() {

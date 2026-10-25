@@ -3,6 +3,8 @@
 
 use crate::platform::https_client;
 use anyhow::{Result, anyhow, bail};
+pub use update_core::release::ReleaseAsset;
+
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use std::time::Duration;
@@ -10,13 +12,6 @@ use std::time::Duration;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 /// O JSON de uma release cabe em poucos KB; o teto só protege de uma resposta absurda.
 const MAX_BODY_BYTES: usize = 512 * 1024;
-
-/// Um arquivo anexado à release (`rustployd_0.1.10-1_amd64.deb`, o `.minisig`…).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ReleaseAsset {
-    pub name: String,
-    pub url: String,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LatestRelease {

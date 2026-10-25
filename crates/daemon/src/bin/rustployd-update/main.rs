@@ -13,11 +13,8 @@
 //! Atende **um** pedido por ativação e sai: o systemd o sobe de novo no próximo.
 //! Desenho e motivos: `docs/plano-updaters-daemon-e-gui.md`, seção 4.
 
-mod install;
 mod protocol;
-mod system;
 
-use install::{Paths, Settings, Updater};
 use protocol::{Request, Response};
 use std::{
     io::{BufRead, BufReader, Read, Write},
@@ -26,8 +23,11 @@ use std::{
     path::PathBuf,
     time::Duration,
 };
-use system::{RealSystem, System};
-use update_core::signature::TRUSTED_PUBLIC_KEYS;
+use update_core::{
+    installer::{Paths, Settings, Updater},
+    signature::TRUSTED_PUBLIC_KEYS,
+    system::{RealSystem, System},
+};
 
 const ALLOWED_DIR: &str = "/var/lib/rustploy/updates";
 const STATE_DIR: &str = "/var/lib/rustploy-update";
@@ -96,7 +96,7 @@ fn main() {
     };
     let settings = Settings {
         package: "rustployd".into(),
-        service: "rustployd".into(),
+        service: Some("rustployd".into()),
         trusted_keys: trusted_keys(),
         max_deb_bytes: MAX_DEB_BYTES,
         poll_interval: Duration::from_secs(1),
@@ -187,7 +187,7 @@ fn handle_line<S: System>(updater: &Updater<'_, S>, line: &str, reply: &mut dyn 
 mod tests {
     use super::*;
     use std::{cell::RefCell, io, time::Duration};
-    use system::CommandOutput;
+    use update_core::system::CommandOutput;
 
     /// Sem sistema nenhum: qualquer comando é um erro (estes testes não devem chegar a rodar um).
     struct Nothing;
@@ -213,7 +213,7 @@ mod tests {
         std::fs::create_dir_all(&paths.allowed_dir).unwrap();
         let settings = Settings {
             package: "rustployd".into(),
-            service: "rustployd".into(),
+            service: Some("rustployd".into()),
             trusted_keys: vec![],
             max_deb_bytes: 1024,
             poll_interval: Duration::ZERO,
