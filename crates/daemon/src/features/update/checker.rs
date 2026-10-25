@@ -12,7 +12,10 @@ use chrono::Utc;
 use shared::UpdateInfo;
 use std::{future::Future, time::Duration};
 use tokio::{sync::Mutex, time::Instant};
-use update_core::{is_newer, parse_version};
+use update_core::{
+    is_newer,
+    release::{debian_architecture, package_version},
+};
 
 /// Uma consulta *forçada* ("Verificar agora") ainda respeita este intervalo mínimo:
 /// um botão clicado em sequência não pode queimar a cota do GitHub.
@@ -102,7 +105,7 @@ impl UpdateChecker {
         }
 
         let release = fetch().await?;
-        let info = build_info(current_version, &release)?;
+        let info = build_info(current_version, &release, &self.repo)?;
         *cached = Some(Cached {
             fetched_at: Instant::now(),
             info: info.clone(),
@@ -112,18 +115,23 @@ impl UpdateChecker {
     }
 }
 
-fn build_info(current_version: &str, release: &LatestRelease) -> Result<UpdateInfo> {
-    let latest = parse_version(&release.tag).map_err(|_| {
-        anyhow!(
-            "a tag da última release ({:?}) não é uma versão",
-            release.tag
-        )
-    })?;
-    let is_update_available = is_newer(&release.tag, current_version)
+/// Compara o que roda com o daemon que a release **traz** (a versão do pacote `rustployd_<v>_<arq>.deb`),
+/// e não com a tag: a tag da release (`v0.1.18`) e a versão do daemon (`0.1.12`) são numerações
+/// independentes, e comparar as duas dizia "há versão nova" para sempre.
+fn build_info(current_version: &str, release: &LatestRelease, repo: &str) -> Result<UpdateInfo> {
+    let architecture = debian_architecture().map_err(|error| anyhow!(error))?;
+    let package =
+        package_version(&release.assets, repo, "rustployd", architecture).ok_or_else(|| {
+            anyhow!(
+                "a release {} não traz um pacote do daemon para {architecture}",
+                release.tag
+            )
+        })?;
+    let is_update_available = is_newer(&package.upstream, current_version)
         .map_err(|error| anyhow!("não consegui comparar com a versão do daemon: {error}"))?;
     Ok(UpdateInfo {
         current_version: current_version.to_string(),
-        latest_version: latest.to_string(),
+        latest_version: package.upstream,
         is_update_available,
         release_url: release.url.clone(),
         published_at: release.published_at,
@@ -136,12 +144,26 @@ mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    /// Uma release cuja tag é `tag` e cujo daemon tem a MESMA versão que a tag (`v0.1.8` traz
+    /// `rustployd_0.1.8-1_<arq>.deb`), o caso simples. Para numerações diferentes, `release_with`.
     fn release(tag: &str) -> LatestRelease {
+        release_with(tag, tag.trim_start_matches('v'))
+    }
+
+    fn release_with(tag: &str, daemon_version: &str) -> LatestRelease {
+        let architecture = debian_architecture().unwrap();
+        let name = format!("rustployd_{daemon_version}-1_{architecture}.deb");
         LatestRelease {
             tag: tag.into(),
             url: format!("https://github.com/o/r/releases/tag/{tag}"),
             published_at: None,
-            assets: vec![],
+            assets: vec![update_core::release::ReleaseAsset {
+                url: format!(
+                    "https://github.com/{}/releases/download/{tag}/{name}",
+                    UpdateConfig::default().repo
+                ),
+                name,
+            }],
         }
     }
 
@@ -172,13 +194,50 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_non_version_tag_is_an_error() {
+    async fn the_release_tag_does_not_matter_only_the_daemon_package_does() {
+        // A tag é v0.1.18, mas o daemon que ela traz é o 0.1.12 (numerações independentes).
+        // Quem já roda o 0.1.12 está em dia; quem roda o 0.1.11 tem atualização.
+        let up_to_date = checker(Duration::ZERO, Duration::ZERO)
+            .check_with(false, "0.1.12", || async {
+                Ok(release_with("v0.1.18", "0.1.12"))
+            })
+            .await
+            .unwrap();
+        assert!(!up_to_date.is_update_available);
+        assert_eq!(up_to_date.latest_version, "0.1.12");
+
+        let behind = checker(Duration::ZERO, Duration::ZERO)
+            .check_with(false, "0.1.11", || async {
+                Ok(release_with("v0.1.18", "0.1.12"))
+            })
+            .await
+            .unwrap();
+        assert!(behind.is_update_available);
+        assert_eq!(behind.latest_version, "0.1.12");
+    }
+
+    #[tokio::test]
+    async fn a_release_without_a_daemon_package_is_an_error_not_an_update() {
+        let mut only_the_app = release_with("v0.1.20", "0.1.20");
+        only_the_app.assets.clear();
         let error = checker(Duration::ZERO, Duration::ZERO)
-            .check_with(false, "0.1.7", || async { Ok(release("nightly")) })
+            .check_with(false, "0.1.7", || async { Ok(only_the_app) })
             .await
             .unwrap_err()
             .to_string();
-        assert!(error.contains("nightly"), "{error}");
+        assert!(error.contains("não traz um pacote do daemon"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn a_package_from_another_repository_does_not_count() {
+        let mut hostile = release_with("v9.9.9", "9.9.9");
+        hostile.assets[0].url = "https://evil.example/rustployd_9.9.9-1_amd64.deb".into();
+        let error = checker(Duration::ZERO, Duration::ZERO)
+            .check_with(false, "0.1.7", || async { Ok(hostile) })
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("não traz um pacote do daemon"), "{error}");
     }
 
     #[tokio::test]
