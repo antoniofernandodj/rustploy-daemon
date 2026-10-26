@@ -113,6 +113,7 @@
               :class="$store.app.view === 'settings' ? 'nav-item nav-item--active' : 'nav-item'">
         <span class="nav-item__icon" x-text="'⌥'"></span>
         <text class="nav-item__label">Settings</text>
+        <span class="nav-item__badge" x-show="$store.app.updateIsAvailable" title="Há uma versão nova do daemon" x-text="'●'"></span>
       </button>
       <button type="button" @click="$store.app.nav('support')" title="Support"
               :class="$store.app.view === 'support' ? 'nav-item nav-item--active' : 'nav-item'">
@@ -1328,7 +1329,7 @@
           <button type="button" :class="store.settingsTab === 'maintenance' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'"
                   @click="store.settingsTab = 'maintenance'">Manutenção</button>
           <button type="button" :class="store.settingsTab === 'updates' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'"
-                  @click="store.settingsTab = 'updates'">Atualizações</button>
+                  @click="store.settingsTab = 'updates'">Atualizações<span class="nav-item__badge" x-show="store.updateIsAvailable" x-text="' ●'"></span></button>
         </row>
         <hr class="rule" />
 

@@ -214,6 +214,7 @@ hr, .rule   { width: 100%; height: 1px; border: none; background: var(--border);
    mesmo desenho do nav_item.gv: antes eram pares *_on/*_off por filho). */
 .nav-item__icon   { font-size: 14px; color: var(--faint); }
 .nav-item__label  { color: var(--muted); }
+.nav-item__badge  { font-size: 10px; color: var(--green); }
 .nav-item--active > .nav-item__icon  { color: var(--text); }
 .nav-item--active > .nav-item__label { color: var(--text); }
 
