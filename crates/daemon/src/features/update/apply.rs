@@ -451,7 +451,7 @@ fn prune_snapshots(directory: &Path) {
         })
         .filter_map(|entry| Some((entry.metadata().ok()?.modified().ok()?, entry.path())))
         .collect();
-    snapshots.sort_by(|left, right| right.0.cmp(&left.0));
+    snapshots.sort_by_key(|snapshot| std::cmp::Reverse(snapshot.0));
     for (_, path) in snapshots.into_iter().skip(SNAPSHOTS_KEPT) {
         let _ = std::fs::remove_file(path);
     }
@@ -732,9 +732,11 @@ mod tests {
             "{\"ok\":false,\"error\":\"não há backup\"}\n",
         )
         .await;
-        let mut paths = HelperPaths::default();
-        paths.socket = socket;
-        paths.outcome_file = directory.path().join("last.json");
+        let paths = HelperPaths {
+            socket,
+            outcome_file: directory.path().join("last.json"),
+            ..HelperPaths::default()
+        };
         let applier = UpdateApplier::with_paths(&UpdateConfig::default(), paths);
 
         assert_eq!(applier.rollback().await.unwrap_err(), "não há backup");
