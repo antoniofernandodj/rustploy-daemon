@@ -1222,3 +1222,75 @@ async fn running_screen_lists_running_services() {
         "sem erros de JS no console"
     );
 }
+
+/// O selo de versão nova acende pelo snapshot, sem ninguém clicar em "Verificar": o campo `update`
+/// traz a última consulta do daemon (inclusive a periódica). Um snapshot com o mesmo `checked_at`
+/// não reescreve a aba; um com `checked_at` novo, sim.
+#[tokio::test]
+async fn update_badge_lights_up_from_the_snapshot() {
+    let addr = spawn_static_server().await;
+    let (browser, _handler) = launch().await;
+    let page = open_page(&browser, addr).await;
+    seed_connected(&page).await;
+    assert!(
+        !visible(&page, ".nav-item__badge").await,
+        "sem `update` no snapshot o selo fica apagado"
+    );
+
+    let applied = eval_str(
+        &page,
+        &format!(
+            r#"(() => {{
+                const s = Alpine.store('app');
+                const snapshot = {SNAPSHOT_JS};
+                snapshot.update = {{ current_version: '0.1.14', latest_version: '0.1.15',
+                    is_update_available: true, release_url: 'https://github.com/o/r/releases/tag/v0.1.21',
+                    published_at: null, checked_at: '2026-10-27T10:00:00Z' }};
+                s.applySnapshot(snapshot);
+                return JSON.stringify([s.updateIsAvailable, s.updateLatestVersion, s.updateMessage]);
+            }})()"#
+        ),
+    )
+    .await;
+    let v: serde_json::Value = serde_json::from_str(&applied).unwrap();
+    assert_eq!(v[0], true);
+    assert_eq!(v[1], "0.1.15");
+    assert_eq!(v[2], "Há uma versão nova: 0.1.15");
+    assert!(
+        visible(&page, ".nav-item__badge").await,
+        "o selo do Settings deveria acender"
+    );
+
+    let after = eval_str(
+        &page,
+        &format!(
+            r#"(() => {{
+                const s = Alpine.store('app');
+                const snapshot = {SNAPSHOT_JS};
+                snapshot.update = {{ current_version: '0.1.14', latest_version: '0.1.15',
+                    is_update_available: true, release_url: '', published_at: null,
+                    checked_at: '2026-10-27T10:00:00Z' }};
+                s.updateMessage = 'mensagem da tela';
+                s.applySnapshot(snapshot);
+                const kept = s.updateMessage;
+                snapshot.update = {{ ...snapshot.update, latest_version: '0.1.14',
+                    is_update_available: false, checked_at: '2026-10-27T16:00:00Z' }};
+                s.applySnapshot(snapshot);
+                return JSON.stringify([kept, s.updateIsAvailable]);
+            }})()"#
+        ),
+    )
+    .await;
+    let v: serde_json::Value = serde_json::from_str(&after).unwrap();
+    assert_eq!(
+        v[0], "mensagem da tela",
+        "mesmo checked_at: a aba não é reescrita"
+    );
+    assert_eq!(v[1], false, "checked_at novo: a aba segue a consulta nova");
+
+    assert_eq!(
+        errors(&page).await,
+        Vec::<String>::new(),
+        "sem erros de JS no console"
+    );
+}

@@ -1,4 +1,4 @@
-//! Tarefas de fundo do daemon: backup de env, métricas, logs, GC do registry, watchdog, agendadores e renovação de TLS.
+//! Tarefas de fundo do daemon: backup de env, métricas, logs, GC do registry, watchdog, agendadores, consulta de versão nova e renovação de TLS.
 
 use crate::bootstrap::state::AppState;
 use crate::engine::DockerClient;
@@ -129,6 +129,15 @@ pub fn spawn_stateful(
         let state2 = state.clone();
         tokio::spawn(async move {
             maintenance::scheduler::scheduler_loop(state2.maintenance_ctx()).await;
+        });
+    }
+
+    // Consulta periódica de versão nova (`[update] check_interval_hours`); o snapshot leva o
+    // resultado às UIs abertas.
+    {
+        let update_checker = state.update_checker.clone();
+        tokio::spawn(async move {
+            update_checker.periodic_loop().await;
         });
     }
 

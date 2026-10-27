@@ -207,6 +207,7 @@ document.addEventListener("alpine:init", () => {
     // Aba Atualizações (Command::CheckUpdate); mesmos nomes da GUI (handlers/settings.luau).
     updateCurrentVersion: "",
     updateLatestVersion: "",
+    updateCheckedAt: "",
     updateCheckedAtLabel: "",
     updateIsAvailable: false,
     updateReleaseUrl: "",
@@ -530,6 +531,9 @@ document.addEventListener("alpine:init", () => {
       const warmById = {};
       for (const warm of snapshot.service_warm || []) warmById[warm.service_id] = warm;
       this.serviceWarmById = warmById;
+      if (snapshot.update && snapshot.update.checked_at !== this.updateCheckedAt) {
+        this.applyUpdateInfo(snapshot.update);
+      }
       this.dataLoading = false;
     },
 
@@ -1566,6 +1570,15 @@ document.addEventListener("alpine:init", () => {
         this.updateMessage = "resposta inesperada do daemon";
         return;
       }
+      this.applyUpdateInfo(updateInfo);
+      await this.updateLoadProgress();
+    },
+
+    // Preenche a aba Atualizações e o selo com um `UpdateInfo`. Vem do `CheckUpdate` ou do
+    // campo `update` do snapshot, que traz a última consulta (inclusive a periódica do
+    // daemon); `updateCheckedAt` evita reescrever a tela a cada snapshot sem novidade.
+    applyUpdateInfo(updateInfo) {
+      this.updateCheckedAt = updateInfo.checked_at;
       this.updateCurrentVersion = updateInfo.current_version;
       this.updateLatestVersion = updateInfo.latest_version;
       this.updateIsAvailable = updateInfo.is_update_available;
@@ -1574,7 +1587,6 @@ document.addEventListener("alpine:init", () => {
       this.updateMessage = updateInfo.is_update_available
         ? "Há uma versão nova: " + updateInfo.latest_version
         : "Você está na versão mais recente.";
-      await this.updateLoadProgress();
     },
 
     // Texto do que o daemon sabe sobre a atualização em curso ou a última tentativa

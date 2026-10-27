@@ -2722,7 +2722,7 @@ dependencies = [
 
 [[package]]
 name = "rustploy"
-version = "0.1.14"
+version = "0.1.15"
 dependencies = [
  "age",
  "anyhow",
@@ -2815,9 +2815,9 @@ dependencies = [
 
 [[package]]
 name = "rustploy-update-core"
-version = "0.3.2"
+version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bdb802477daa9ac3ba01e8f1b9329dff995bc93fd5cb854a223a3b24b78e54a2"
+checksum = "52f805ff9a3503ff882e2861f83bc504d5046797e8985bd36030120f03e55def"
 dependencies = [
  "libc",
  "minisign-verify",

@@ -73,6 +73,10 @@ pub struct UpdateConfig {
     /// consultas/h por IP, e o cache evita estourar isso com a UI aberta.
     #[serde(default = "default_update_cache_hours")]
     pub cache_hours: u64,
+    /// De quantas em quantas horas o daemon consulta sozinho, para o selo de versão nova
+    /// acender nas UIs abertas sem ninguém clicar em "Verificar". `0`: só quando pedem.
+    #[serde(default = "default_update_check_interval_hours")]
+    pub check_interval_hours: u64,
     /// `false` (padrão): o agente MCP não pode pedir `ApplyUpdate`/`UpdateRollback`. Atualizar
     /// derruba a API e troca o binário; isso é decisão de uma pessoa, na UI.
     #[serde(default)]
@@ -88,6 +92,9 @@ fn default_update_repo() -> String {
 fn default_update_cache_hours() -> u64 {
     6
 }
+fn default_update_check_interval_hours() -> u64 {
+    6
+}
 
 impl Default for UpdateConfig {
     fn default() -> Self {
@@ -95,6 +102,7 @@ impl Default for UpdateConfig {
             enabled: default_update_enabled(),
             repo: default_update_repo(),
             cache_hours: default_update_cache_hours(),
+            check_interval_hours: default_update_check_interval_hours(),
             allow_agent_apply: false,
         }
     }
@@ -502,6 +510,7 @@ enabled = true
     fn update_block_is_optional_and_partial() {
         assert!(UpdateConfig::default().enabled);
         assert_eq!(UpdateConfig::default().cache_hours, 6);
+        assert_eq!(UpdateConfig::default().check_interval_hours, 6);
 
         let cfg: UpdateConfig = toml::from_str("enabled = false").unwrap();
         assert!(!cfg.enabled);

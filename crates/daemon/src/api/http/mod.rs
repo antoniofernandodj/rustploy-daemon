@@ -891,6 +891,12 @@ pub(crate) async fn snapshot(state: &AppState) -> String {
 
         obj.insert("services".into(), Value::Array(services));
     }
+    // Última consulta de versão nova (sem ir ao GitHub): acende o selo nas UIs abertas
+    // quando a consulta periódica acha uma release. `null` enquanto ninguém consultou.
+    obj.insert(
+        "update".into(),
+        serde_json::to_value(state.update_checker.cached_info().await).unwrap_or(Value::Null),
+    );
     // Painel "Em execução": projetos e serviços rodando, já classificados.
     obj.insert(
         "dashboard".into(),

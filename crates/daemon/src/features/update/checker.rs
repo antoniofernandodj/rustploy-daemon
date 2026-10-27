@@ -4,13 +4,17 @@
 //! IP): sem ele, abrir a tela de Settings em alguns navegadores esgotaria a cota.
 //! O lock fica preso durante a consulta de propósito: chamadas simultâneas esperam
 //! e reaproveitam o resultado em vez de cada uma ir ao GitHub.
+//!
+//! [`periodic_loop`](UpdateChecker::periodic_loop) consulta sozinho de tempos em tempos e
+//! o snapshot das UIs lê o resultado de [`cached_info`](UpdateChecker::cached_info), para o
+//! selo de versão nova acender numa janela aberta sem ninguém clicar em "Verificar".
 
 use super::github_release::LatestRelease;
 use crate::platform::config::UpdateConfig;
 use anyhow::{Result, anyhow};
 use chrono::Utc;
 use shared::UpdateInfo;
-use std::{future::Future, time::Duration};
+use std::{future::Future, sync::Arc, time::Duration};
 use tokio::{sync::Mutex, time::Instant};
 use update_core::{
     is_newer,
@@ -20,6 +24,10 @@ use update_core::{
 /// Uma consulta *forçada* ("Verificar agora") ainda respeita este intervalo mínimo:
 /// um botão clicado em sequência não pode queimar a cota do GitHub.
 const FORCE_MIN_SPACING: Duration = Duration::from_secs(60);
+
+/// A primeira consulta automática espera o daemon terminar de subir (e não disputa a
+/// rede com a recuperação de deploys logo no boot).
+const PERIODIC_FIRST_DELAY: Duration = Duration::from_secs(60);
 
 struct Cached {
     fetched_at: Instant,
@@ -33,6 +41,8 @@ pub struct UpdateChecker {
     repo: String,
     ttl: Duration,
     force_spacing: Duration,
+    /// Zero: sem consulta automática.
+    check_interval: Duration,
     cached: Mutex<Option<Cached>>,
 }
 
@@ -51,6 +61,7 @@ impl UpdateChecker {
             repo: config.repo.clone(),
             ttl,
             force_spacing,
+            check_interval: Duration::from_secs(config.check_interval_hours * 3600),
             cached: Mutex::new(None),
         }
     }
@@ -62,6 +73,39 @@ impl UpdateChecker {
             .await
             .as_ref()
             .map(|entry| entry.release.clone())
+    }
+
+    /// O último resultado, sem ir ao GitHub: o snapshot de 2 s das UIs lê daqui.
+    pub async fn cached_info(&self) -> Option<UpdateInfo> {
+        self.cached
+            .lock()
+            .await
+            .as_ref()
+            .map(|entry| entry.info.clone())
+    }
+
+    /// Consulta o GitHub a cada `check_interval_hours` (`[update]`). Não roda com a verificação
+    /// desligada nem com o intervalo `0`. A consulta é forçada para não depender do `cache_hours`;
+    /// uma falha só vai para o log e a próxima volta tenta de novo.
+    pub async fn periodic_loop(self: Arc<Self>) {
+        if !self.enabled || self.check_interval.is_zero() {
+            return;
+        }
+        tokio::time::sleep(PERIODIC_FIRST_DELAY).await;
+        let mut interval = tokio::time::interval(self.check_interval);
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            interval.tick().await;
+            match self.check(true).await {
+                Ok(info) if info.is_update_available => tracing::info!(
+                    current = %info.current_version,
+                    latest = %info.latest_version,
+                    "update: há versão nova do daemon"
+                ),
+                Ok(_) => {}
+                Err(error) => tracing::warn!(error = %error, "update: falha na consulta periódica"),
+            }
+        }
     }
 
     /// O repositório consultado (`dono/nome`); `ApplyUpdate` só baixa de URLs dele.
@@ -309,6 +353,41 @@ mod tests {
             .await
             .unwrap();
         assert!(info.is_update_available);
+    }
+
+    #[tokio::test]
+    async fn cached_info_never_asks_github_and_follows_the_last_check() {
+        let checker = checker(Duration::from_secs(3600), Duration::ZERO);
+        assert!(checker.cached_info().await.is_none());
+        checker
+            .check_with(false, "0.1.7", || async { Ok(release("v0.1.8")) })
+            .await
+            .unwrap();
+        let info = checker.cached_info().await.unwrap();
+        assert!(info.is_update_available);
+        assert_eq!(info.latest_version, "0.1.8");
+    }
+
+    #[tokio::test]
+    async fn periodic_loop_does_not_run_when_disabled_or_interval_is_zero() {
+        for config in [
+            UpdateConfig {
+                enabled: false,
+                ..UpdateConfig::default()
+            },
+            UpdateConfig {
+                check_interval_hours: 0,
+                ..UpdateConfig::default()
+            },
+        ] {
+            // Um laço ligado dormiria o `PERIODIC_FIRST_DELAY` inteiro: voltar logo é a prova.
+            let finished = tokio::time::timeout(
+                Duration::from_secs(1),
+                Arc::new(UpdateChecker::new(&config)).periodic_loop(),
+            )
+            .await;
+            assert!(finished.is_ok(), "{config:?}");
+        }
     }
 
     #[tokio::test]
