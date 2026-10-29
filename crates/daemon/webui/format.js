@@ -471,6 +471,7 @@ export function ingressRows(pairs) {
           domain: route.domain,
           url: `${route.tls ? "https" : "http"}://${route.domain}`,
           service: spec.name,
+          serviceId: pair.svc.id,
           project: pair.proj,
           upstream: `:${cport}`,
           tls: route.tls ? "TLS" : "—",
@@ -489,7 +490,9 @@ export function hostPortRows(pairs) {
     if (spec.host_port != null) {
       rows.push({
         service: spec.name,
+        serviceId: pair.svc.id,
         project: pair.proj,
+        projectId: spec.project_id,
         hostPort: spec.host_port,
         containerPort: spec.port,
       });
@@ -508,7 +511,9 @@ export function monitoringRows(pairs, metricsById) {
     if (metricsPoint) {
       rows.push({
         name: pair.svc.spec.name,
+        serviceId: pair.svc.id,
         project: pair.proj,
+        projectId: pair.svc.spec.project_id,
         cpu: `${(metricsPoint.cpu_percent || 0).toFixed(1)}%`,
         mem: formatBytes(metricsPoint.mem_used_bytes),
         rx: formatBytes(metricsPoint.net_rx_bytes),

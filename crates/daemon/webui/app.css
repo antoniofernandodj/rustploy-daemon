@@ -123,6 +123,10 @@ button, input {
 .table__row       { width: 100%; padding: 13px 18px; align-items: center; }
 .table__cell         { font-size: 13px; color: var(--text-2); }
 .table__cell--key     { font-size: 13px; font-weight: 700; color: var(--accent); }
+/* Hiperlink de célula (nome de serviço/projeto → abre a tela dele). Botão sem
+   moldura; no hover o azul clareia e o texto fica em negrito. */
+.table-link        { background: none; border: 0; padding: 0; font: inherit; font-size: 13px; color: var(--accent); text-align: left; cursor: pointer; white-space: nowrap; text-overflow: ellipsis; }
+.table-link:hover  { color: #A5D6FF; font-weight: 700; }
 /* Colunas que exibem texto puro (não badge/botão): truncam com reticências em
    vez de vazar pra fora da célula ou esticar a linha (nomes/tags/imagens
    longos). `min-width:0` é necessário além de `overflow:hidden` — <text> não

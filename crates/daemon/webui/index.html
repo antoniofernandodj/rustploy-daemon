@@ -283,8 +283,8 @@
               <template x-for="row in rows" :key="row.service + row.start">
                 <column class="list-row">
                   <row class="table__row">
-                    <text class="table__cell table__cell--key table__col-svc" x-text="row.service"></text>
-                    <text class="table__cell table__col-proj" x-text="row.project"></text>
+                    <button class="table-link table__col-svc" @click="$store.app.openService(row.serviceId)" x-text="row.service"></button>
+                    <button class="table-link table__col-proj" @click="$store.app.openProject(row.projectId)" x-text="row.project"></button>
                     <row class="state-cell table__col-state" :class="'state-cell--' + row.stateKind">
                       <text class="status-dot">●</text>
                       <text class="state-cell__label" x-text="row.stateLabel"></text>
@@ -545,8 +545,8 @@
               <template x-for="row in rows" :key="row.name + row.project">
                 <column class="list-row">
                   <row class="table__row">
-                    <text class="table__cell table__cell--key table__col-svc" x-text="row.name"></text>
-                    <text class="table__cell table__col-proj" x-text="row.project"></text>
+                    <button class="table-link table__col-svc" @click="$store.app.openService(row.serviceId)" x-text="row.name"></button>
+                    <button class="table-link table__col-proj" @click="$store.app.openProject(row.projectId)" x-text="row.project"></button>
                     <text class="table__cell table__col-dur" x-text="row.cpu"></text>
                     <text class="table__cell table__col-dur" x-text="row.mem"></text>
                     <text class="u-muted table__col-dur" x-text="row.rx"></text>
@@ -594,7 +594,7 @@
                 <column class="list-row">
                   <row class="table__row">
                     <text class="table__cell table__cell--key table__col-svc" x-text="route.domain"></text>
-                    <text class="table__cell table__col-proj" x-text="route.service"></text>
+                    <button class="table-link table__col-proj" @click="$store.app.openService(route.serviceId)" x-text="route.service"></button>
                     <text class="table__cell table__col-dur" x-text="route.upstream"></text>
                     <text class="u-muted table__col-start" x-text="route.tls"></text>
                   </row>
@@ -618,8 +618,8 @@
             <template x-for="hostPortEntry in hostPorts" :key="hostPortEntry.service">
               <column class="list-row">
                 <row class="table__row">
-                  <text class="table__cell table__cell--key table__col-svc" x-text="hostPortEntry.service"></text>
-                  <text class="table__cell table__col-proj" x-text="hostPortEntry.project"></text>
+                  <button class="table-link table__col-svc" @click="$store.app.openService(hostPortEntry.serviceId)" x-text="hostPortEntry.service"></button>
+                  <button class="table-link table__col-proj" @click="$store.app.openProject(hostPortEntry.projectId)" x-text="hostPortEntry.project"></button>
                   <text class="table__cell table__col-dur" x-text="hostPortEntry.hostPort"></text>
                   <text class="u-muted table__col-start" x-text="hostPortEntry.containerPort"></text>
                 </row>

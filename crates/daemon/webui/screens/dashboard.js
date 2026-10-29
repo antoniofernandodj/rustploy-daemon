@@ -14,6 +14,10 @@ document.addEventListener("alpine:init", () => {
       const store = this.store;
       const term = (store.search || "").toLowerCase();
       const list = (store.snap && store.snap.deployments) || [];
+      // O resumo traz só o id do serviço; o do projeto sai da lista de serviços.
+      const projectByService = new Map(
+        ((store.snap && store.snap.services) || []).map((entry) => [entry.service.id, entry.service.spec.project_id]),
+      );
       return list
         .filter((entry) => {
           if (!term) return true;
@@ -27,7 +31,9 @@ document.addEventListener("alpine:init", () => {
           const [label, kind] = stateLabelKind(deployment.state);
           return {
             service: entry.service_name,
+            serviceId: deployment.service_id,
             project: entry.project_name,
+            projectId: projectByService.get(deployment.service_id) || "",
             stateLabel: label,
             stateKind: kind,
             duration: formatDuration(deployment),
