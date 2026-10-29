@@ -11,6 +11,9 @@ pub async fn handle(
     env_vars: Vec<EnvVar>,
     env_comments: Vec<EnvComment>,
 ) -> RpResponse {
+    if let Some(reason) = crate::platform::env_validation::validate(&env_vars) {
+        return RpResponse::err("InvalidInput", reason);
+    }
     info!(
         project_id = %project_id,
         count = env_vars.len(),

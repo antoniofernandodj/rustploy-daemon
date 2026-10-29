@@ -34,6 +34,10 @@ pub async fn handle(
         return RpResponse::err("NotFound", "serviço gatilho não encontrado");
     }
 
+    if let Some(reason) = crate::platform::env_validation::validate(&env_vars) {
+        return RpResponse::err("InvalidInput", reason);
+    }
+
     if let Some(git) = &git_source
         && (git.url.trim().is_empty() || git.branch.trim().is_empty())
     {

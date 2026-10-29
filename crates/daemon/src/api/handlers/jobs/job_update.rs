@@ -26,6 +26,10 @@ pub async fn handle(
         );
     }
 
+    if let Some(reason) = crate::platform::env_validation::validate(&env_vars) {
+        return RpResponse::err("InvalidInput", reason);
+    }
+
     match crate::store::job::update(
         &state.db,
         &id,

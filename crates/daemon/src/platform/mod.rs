@@ -2,6 +2,7 @@
 
 pub mod config;
 pub mod connection;
+pub mod env_validation;
 pub mod errors;
 pub mod event_bus;
 pub mod health;

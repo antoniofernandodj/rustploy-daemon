@@ -42,6 +42,7 @@ import {
   dateDayMonthHourMinuteSecond,
   dateDayMonthHourMinute,
   parseDotenv,
+  dotenvErrorsMessage,
   dotenvFromVars,
   dockerCleanupLastRunSummary,
   shortReason,
@@ -1367,7 +1368,12 @@ document.addEventListener("alpine:init", () => {
       }
       this.newJobError = "";
       this.newJobSubmitting = true;
-      const { vars: envVars, comments: envComments } = parseDotenv(this.newJobEnvText);
+      const { vars: envVars, comments: envComments, errors: envErrors } = parseDotenv(this.newJobEnvText);
+      if (envErrors.length) {
+        this.newJobError = dotenvErrorsMessage(envErrors);
+        this.newJobSubmitting = false;
+        return;
+      }
       let saveResponse;
       if (this.newJobEditId) {
         saveResponse = await this.api.rpcChecked({

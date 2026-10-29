@@ -6,6 +6,9 @@ use shared::{Response as RpResponse, ServiceSource, ServiceSpec};
 use tracing::info;
 
 pub async fn handle(state: ServicesContext, mut spec: ServiceSpec) -> RpResponse {
+    if let Some(reason) = crate::platform::env_validation::validate(&spec.env_vars) {
+        return RpResponse::err("InvalidInput", reason);
+    }
     // Sentinela 0 → aloca porta externa da faixa configurada; porta manual
     // duplicada → erro antes de persistir.
     if let Err(e) =

@@ -10,6 +10,8 @@ import {
   serviceWarmLabel,
   dotenvFromVars,
   parseDotenv,
+  dotenvErrorsMessage,
+  confirmEnvKey,
   envRowsWithComments,
   jobSummaryRows,
   formatBytes,
@@ -130,6 +132,7 @@ document.addEventListener("alpine:init", () => {
 
     async addEnvVar() {
       if (!this.newEnvKey.trim()) return;
+      if (!confirmEnvKey(this.store, this.newEnvKey.trim(), this.project.env_vars)) return;
       const project = this.project;
       const vars = (project.env_vars || []).filter((envVar) => envVar.key !== this.newEnvKey.trim());
       vars.push({ key: this.newEnvKey.trim(), value: { Plain: this.newEnvValue } });
@@ -155,7 +158,11 @@ document.addEventListener("alpine:init", () => {
       this.envTextOpen = false;
     },
     async saveEnvText() {
-      const { vars, comments } = parseDotenv(this.envText);
+      const { vars, comments, errors } = parseDotenv(this.envText);
+      if (errors.length) {
+        this.store.toastError(dotenvErrorsMessage(errors));
+        return;
+      }
       const saveProjectEnvResult = await this.store.saveProjectEnv(vars, comments);
       if (saveProjectEnvResult.ok) this.envTextOpen = false;
     },

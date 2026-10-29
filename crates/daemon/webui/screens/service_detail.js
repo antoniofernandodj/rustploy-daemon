@@ -16,6 +16,8 @@ import {
   stateLabelKind,
   dotenvFromVars,
   parseDotenv,
+  dotenvErrorsMessage,
+  confirmEnvKey,
   stripAnsi,
   timeHms,
   safeName,
@@ -588,6 +590,7 @@ document.addEventListener("alpine:init", () => {
 
     async addEnvVar() {
       if (!this.newEnvKey.trim()) return;
+      if (!confirmEnvKey(this.store, this.newEnvKey.trim(), this.svc.spec.env_vars)) return;
       // JSON round-trip (não structuredClone): this.svc.spec é um Proxy
       // reativo do Alpine — o clonador estrutural nativo do browser não
       // sabe copiá-lo (DataCloneError). O JSON round-trip descarta a
@@ -625,7 +628,11 @@ document.addEventListener("alpine:init", () => {
       this.envTextOpen = false;
     },
     async saveEnvText() {
-      const { vars, comments } = parseDotenv(this.envText);
+      const { vars, comments, errors } = parseDotenv(this.envText);
+      if (errors.length) {
+        this.store.toastError(dotenvErrorsMessage(errors));
+        return;
+      }
       // JSON round-trip (não structuredClone): this.svc.spec é um Proxy
       // reativo do Alpine — o clonador estrutural nativo do browser não
       // sabe copiá-lo (DataCloneError). O JSON round-trip descarta a

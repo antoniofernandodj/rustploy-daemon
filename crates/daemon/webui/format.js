@@ -256,33 +256,78 @@ export function stripAnsi(text) {
   return cleanedText;
 }
 
-/** Texto `.env` → { vars, comments } (env_vars/env_comments do ServiceSpec/
- * Project). Porta literal de handlers/services.luau::parse_dotenv — linhas
- * `# ...` acumulam e ancoram (`before_key`) na próxima `KEY=VALUE` real;
- * sobras no fim viram comentários soltos (`before_key: null`). */
+/** Nome aceito: começa com letra ou `_`; o resto são letras, dígitos, `_`, `.`
+ * e `-`. Espelha platform/env_validation.rs no daemon, que é quem garante de
+ * fato; aqui é só para avisar antes de enviar. */
+export function validEnvKey(key) {
+  return /^[A-Za-z_][A-Za-z0-9_.-]*$/.test(key || "");
+}
+
+/** Texto de um toast com as 3 primeiras de `errors` e "+N". */
+export function dotenvErrorsMessage(errors) {
+  const shown = errors.slice(0, 3).join("\n");
+  return errors.length > 3 ? `${shown}\n… e mais ${errors.length - 3}` : shown;
+}
+
+/** Valida a chave nova do campo "adicionar": nome inválido avisa e aborta;
+ * chave que já existe pede confirmação (gravar substitui o valor e manda a
+ * var para o fim). `true` = pode seguir. */
+export function confirmEnvKey(store, key, existingVars) {
+  if (!validEnvKey(key)) {
+    store.toastError(`Nome inválido: "${key}" — use letras, dígitos e _, sem começar por dígito`);
+    return false;
+  }
+  if ((existingVars || []).some((envVar) => envVar.key === key)) {
+    return confirm(`${key} já existe; o valor atual será substituído. Sobrescrever?`);
+  }
+  return true;
+}
+
+/** Parseia um blob .env em `{vars, comments, errors}`. `errors` lista, com o
+ * número da linha, o que NÃO pôde ser lido (linha sem `=`, nome inválido,
+ * chave repetida); quem chama não grava com erro, senão a variável sumiria
+ * calada. Porta literal de helpers.luau::parse_dotenv. */
 export function parseDotenv(text) {
   const vars = [];
   const comments = [];
+  const errors = [];
+  const firstLineOf = new Map();
   let pending = [];
-  for (const rawLine of (text || "").split("\n")) {
+  (text || "").split("\n").forEach((rawLine, index) => {
+    const lineNumber = index + 1;
     const trimmedLine = rawLine.trim();
-    if (trimmedLine === "") continue;
+    if (trimmedLine === "") return;
     if (trimmedLine.startsWith("#")) {
       pending.push(trimmedLine);
-      continue;
+      return;
     }
     const equalsIndex = trimmedLine.indexOf("=");
-    if (equalsIndex < 0) continue;
+    if (equalsIndex < 0) {
+      errors.push(`linha ${lineNumber}: falta o '=' (${trimmedLine})`);
+      return;
+    }
     const key = trimmedLine.slice(0, equalsIndex).trim();
-    if (!key) continue;
+    if (!key) {
+      errors.push(`linha ${lineNumber}: falta o nome antes do '='`);
+      return;
+    }
+    if (!validEnvKey(key)) {
+      errors.push(`linha ${lineNumber}: nome inválido "${key}"`);
+      return;
+    }
+    if (firstLineOf.has(key)) {
+      errors.push(`linha ${lineNumber}: ${key} repetida (já definida na linha ${firstLineOf.get(key)})`);
+      return;
+    }
+    firstLineOf.set(key, lineNumber);
     const rawValue = trimmedLine.slice(equalsIndex + 1).trim();
     for (const commentText of pending) comments.push({ text: commentText, before_key: key });
     pending = [];
     const secret = parseSecretRef(rawValue);
     vars.push({ key, value: secret ? { Secret: secret } : { Plain: rawValue } });
-  }
+  });
   for (const commentText of pending) comments.push({ text: commentText, before_key: null });
-  return { vars, comments };
+  return { vars, comments, errors };
 }
 
 // ── Connection tab: URLs de conexão por tipo de serviço/banco ────────────
