@@ -364,7 +364,10 @@
                         @dragleave="overId === queuedDeployment.deploymentId && (overId = null)" @drop.prevent="dropOn(queuedDeployment.deploymentId)" @dragend="dragEnd()">
                   <row class="table__row">
                     <span class="drag-grip" title="Arraste para reordenar">⠿</span>
-                    <text class="table__cell table__cell--key table__col-svc" x-text="queuedDeployment.pos + '. ' + queuedDeployment.service"></text>
+                    <row class="table__col-svc">
+                      <text class="table__cell table__cell--key" x-text="queuedDeployment.pos + '.'" style="margin-right:6px"></text>
+                      <button class="table-link" @click="$store.app.openService(queuedDeployment.serviceId)" x-text="queuedDeployment.service"></button>
+                    </row>
                     <text class="table__cell table__col-start" x-text="queuedDeployment.project"></text>
                     <button class="btn btn--copy" type="button" @click="store.queuePromote(queuedDeployment.deploymentId)">↑ topo</button>
                     <button class="env__del" type="button" @click="store.queueCancel(queuedDeployment.deploymentId)">✕</button>
@@ -395,7 +398,7 @@
               <template x-for="activeDeployment in active" :key="activeDeployment.serviceId">
                 <column class="list-row">
                   <row class="table__row">
-                    <text class="table__cell table__cell--key table__col-svc" x-text="activeDeployment.service"></text>
+                    <button class="table-link table__col-svc" @click="$store.app.openService(activeDeployment.serviceId)" x-text="activeDeployment.service"></button>
                     <text class="table__cell table__col-proj" x-text="activeDeployment.project"></text>
                     <row class="state-cell table__col-state" :class="'state-cell--' + activeDeployment.stateKind">
                       <text class="status-dot">●</text>
@@ -450,7 +453,7 @@
                 <column class="list-row">
                   <row class="table__row">
                     <text class="table__cell table__col-icon" x-text="recentDeployment.icon"></text>
-                    <text class="table__cell table__cell--key table__col-svc" x-text="recentDeployment.service"></text>
+                    <button class="table-link table__col-svc" @click="$store.app.openService(recentDeployment.serviceId)" x-text="recentDeployment.service"></button>
                     <text class="table__cell table__col-proj" x-text="recentDeployment.project"></text>
                     <row class="state-cell table__col-state" :class="'state-cell--' + recentDeployment.stateKind">
                       <text class="status-dot">●</text>

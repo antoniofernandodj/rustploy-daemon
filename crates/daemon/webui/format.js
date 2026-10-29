@@ -612,6 +612,7 @@ export function deployEngineQueuedRows(queued) {
   return (queued || []).map((info, index) => ({
     deploymentId: info.deployment_id,
     pos: index + 1,
+    serviceId: info.service_id,
     service: info.service_name,
     project: info.project_name,
   }));
@@ -957,6 +958,7 @@ export function deployEngineRecentRows(recent) {
     else if (info.state === "Failed") icon = "✕";
     return {
       icon,
+      serviceId: info.service_id,
       service: info.service_name,
       project: info.project_name,
       stateLabel: label,
