@@ -26,6 +26,7 @@ import {
   externalUrl,
   envRowsWithComments,
 } from "../format.js";
+import { t } from "../i18n.js";
 
 document.addEventListener("alpine:init", () => {
   Alpine.data("serviceDetail", () => ({
@@ -77,15 +78,15 @@ document.addEventListener("alpine:init", () => {
       if (getWebhookUrlResponse.ok && typeof getWebhookUrlResponse.value?.WebhookUrl === "string") this.webhookUrl = getWebhookUrlResponse.value.WebhookUrl;
     },
     async regenWebhook() {
-      if (!confirm("Regenerar o token do webhook? A URL anterior deixa de funcionar na hora.")) return;
+      if (!confirm(t("Regenerar o token do webhook? A URL anterior deixa de funcionar na hora."))) return;
       this.webhookBusy = true;
       const regenerateWebhookTokenResponse = await this.store.api.rpcChecked({ RegenerateWebhookToken: { service_id: this.store.selectedServiceId } });
       this.webhookBusy = false;
       if (regenerateWebhookTokenResponse.ok && typeof regenerateWebhookTokenResponse.value?.WebhookUrl === "string") {
         this.webhookUrl = regenerateWebhookTokenResponse.value.WebhookUrl;
-        this.store.toastOk("token do webhook regenerado");
+        this.store.toastOk(t("token do webhook regenerado"));
       } else {
-        this.store.toastError("erro: " + (regenerateWebhookTokenResponse.error || "resposta inesperada"));
+        this.store.toastError("erro: " + (regenerateWebhookTokenResponse.error || t("resposta inesperada")));
       }
     },
 
@@ -132,10 +133,10 @@ document.addEventListener("alpine:init", () => {
     },
     async startMigration() {
       if (!this.serviceFormMigration.dest || !this.serviceFormMigration.db.trim()) {
-        this.store.toastError("Escolha o database de destino e informe o de origem");
+        this.store.toastError(t("Escolha o database de destino e informe o de origem"));
         return;
       }
-      if (!confirm("Os serviços do projeto que usam este banco serão parados durante o dump/restore e subirão de novo no banco novo. O banco antigo é mantido (parado) para rollback. Iniciar?")) return;
+      if (!confirm(t("Os serviços do projeto que usam este banco serão parados durante o dump/restore e subirão de novo no banco novo. O banco antigo é mantido (parado) para rollback. Iniciar?"))) return;
       const migrationStartResponse = await this.store.api.rpcChecked({
         MigrationStart: {
           source_service_id: this.svc.id,
@@ -148,23 +149,23 @@ document.addEventListener("alpine:init", () => {
         this.store.toastError(migrationStartResponse.error);
         return;
       }
-      this.store.toastOk("Migração iniciada");
+      this.store.toastOk(t("Migração iniciada"));
       await this.loadMigration();
     },
     async rollbackMigration() {
-      if (!confirm("A app volta ao banco antigo. O que foi escrito no banco novo depois da migração se perde. Reverter?")) return;
+      if (!confirm(t("A app volta ao banco antigo. O que foi escrito no banco novo depois da migração se perde. Reverter?"))) return;
       const migrationRollbackResponse = await this.store.api.rpcChecked({ MigrationRollback: { id: this.mig.id } });
       if (!migrationRollbackResponse.ok) this.store.toastError(migrationRollbackResponse.error);
       await this.loadMigration();
     },
     async discardOldDatabase() {
-      if (!confirm("O serviço do banco antigo é removido, com os dados dele. Sem volta. Descartar?")) return;
+      if (!confirm(t("O serviço do banco antigo é removido, com os dados dele. Sem volta. Descartar?"))) return;
       const migrationDiscardResponse = await this.store.api.rpcChecked({ MigrationDiscard: { id: this.mig.id } });
       if (!migrationDiscardResponse.ok) {
         this.store.toastError(migrationDiscardResponse.error);
         return;
       }
-      this.store.toastOk("Banco antigo descartado");
+      this.store.toastOk(t("Banco antigo descartado"));
       this.store.nav("projects");
     },
 
@@ -211,13 +212,13 @@ document.addEventListener("alpine:init", () => {
     },
     async setShared(on) {
       if (!on && this.mdbs.length > 0) {
-        this.store.toastError("Remova os databases deste servidor antes de deixar de compartilhar");
+        this.store.toastError(t("Remova os databases deste servidor antes de deixar de compartilhar"));
         return;
       }
       const spec = JSON.parse(JSON.stringify(this.svc.spec));
       if (on) spec.shared = {};
       else delete spec.shared;
-      await this.store.saveServiceSpec(spec, on ? "servidor compartilhado" : "compartilhamento desligado");
+      await this.store.saveServiceSpec(spec, on ? t("servidor compartilhado") : t("compartilhamento desligado"));
     },
     showSharedDatabase(database) {
       this.sharedDatabaseUrl = database.url;
@@ -226,7 +227,7 @@ document.addEventListener("alpine:init", () => {
     async createSharedDatabase() {
       const form = this.serviceFormSharedDatabase;
       if (!form.name.trim() || !form.project) {
-        this.store.toastError("Informe o nome e o projeto consumidor");
+        this.store.toastError(t("Informe o nome e o projeto consumidor"));
         return;
       }
       const toNumberOrNull = (value) => (String(value).trim() === "" ? null : Number(value));
@@ -246,12 +247,12 @@ document.addEventListener("alpine:init", () => {
         this.store.toastError(managedDatabaseCreateResponse.error);
         return;
       }
-      this.store.toastOk("Database criado");
+      this.store.toastOk(t("Database criado"));
       this.serviceFormSharedDatabase.name = "";
       await this.loadSharedState();
     },
     async deleteSharedDatabase(database) {
-      if (!confirm("Remover o database e o usuário do servidor, com todos os dados? Irreversível.")) return;
+      if (!confirm(t("Remover o database e o usuário do servidor, com todos os dados? Irreversível."))) return;
       const managedDatabaseDeleteResponse = await this.store.api.rpcChecked({ ManagedDatabaseDelete: { id: database.id } });
       if (!managedDatabaseDeleteResponse.ok) {
         this.store.toastError(managedDatabaseDeleteResponse.error);
@@ -384,29 +385,29 @@ document.addEventListener("alpine:init", () => {
     /** O que o rename muda (ou não) para este tipo de serviço. */
     get renameNote() {
       return this.isCompose
-        ? "A stack e os volumes do Docker não mudam com o nome: os dados continuam os mesmos."
-        : "O hostname interno (rp_<nome>) só passa a valer no próximo deploy. " +
-            "Outros serviços que usam o nome antigo em variáveis de ambiente precisam ser atualizados.";
+        ? t("A stack e os volumes do Docker não mudam com o nome: os dados continuam os mesmos.")
+        : t("O hostname interno (rp_<nome>) só passa a valer no próximo deploy. ") +
+            t("Outros serviços que usam o nome antigo em variáveis de ambiente precisam ser atualizados.");
     },
 
     /** Unicidade dentro do projeto é checada no daemon (a mensagem volta no toast). */
     async renameService() {
       const name = this.editName.trim();
       if (!name) {
-        this.store.toastError("Informe o nome do serviço");
+        this.store.toastError(t("Informe o nome do serviço"));
         return;
       }
       if (name === this.svc.spec.name) return;
       const spec = JSON.parse(JSON.stringify(this.svc.spec));
       spec.name = name;
-      const saveServiceSpecResult = await this.store.saveServiceSpec(spec, "serviço renomeado");
+      const saveServiceSpecResult = await this.store.saveServiceSpec(spec, t("serviço renomeado"));
       if (saveServiceSpecResult.ok) this.editName = name;
     },
 
     async saveCompose() {
       const spec = JSON.parse(JSON.stringify(this.svc.spec));
       spec.source = { Compose: { content: this.composeText } };
-      await this.store.saveServiceSpec(spec, "compose salvo");
+      await this.store.saveServiceSpec(spec, t("compose salvo"));
     },
     cancelCompose() {
       this.composeText = this.composeOriginal;
@@ -415,14 +416,14 @@ document.addEventListener("alpine:init", () => {
     async setProviderTab(tab) {
       this.providerTab = tab;
       if (tab === "gitea" && this.giteaProviders.length === 0) {
-        this.giteaMessage = "carregando contas…";
+        this.giteaMessage = t("carregando contas…");
         const gitProviderListResponse = await this.store.api.rpc("GitProviderList");
         if (gitProviderListResponse.ok && gitProviderListResponse.value?.GitProviders) {
           this.giteaProviders = gitProviderListResponse.value.GitProviders;
           this.giteaMessage = "";
         } else {
           this.giteaMessage = "";
-          this.store.toastError("erro ao listar contas conectadas");
+          this.store.toastError(t("erro ao listar contas conectadas"));
         }
       }
     },
@@ -433,14 +434,14 @@ document.addEventListener("alpine:init", () => {
       this.giteaRepos = [];
       this.giteaBranches = [];
       if (!this.giteaProviderId) return;
-      this.giteaMessage = "carregando repositórios…";
+      this.giteaMessage = t("carregando repositórios…");
       const gitRepoListResponse = await this.store.api.rpc({ GitRepoList: { provider_id: this.giteaProviderId } });
       if (gitRepoListResponse.ok && gitRepoListResponse.value?.GitRepos) {
         this.giteaRepos = gitRepoListResponse.value.GitRepos;
-        this.giteaMessage = `${gitRepoListResponse.value.GitRepos.length} repositório(s)`;
+        this.giteaMessage = t`${gitRepoListResponse.value.GitRepos.length} repositório(s)`;
       } else {
         this.giteaMessage = "";
-        this.store.toastError("erro ao listar repositórios");
+        this.store.toastError(t("erro ao listar repositórios"));
       }
     },
 
@@ -452,7 +453,7 @@ document.addEventListener("alpine:init", () => {
       if (repo?.default_branch) this.serviceFormBranch = repo.default_branch;
       this.giteaBranches = [];
       if (!this.giteaProviderId) return;
-      this.giteaMessage = "carregando branches…";
+      this.giteaMessage = t("carregando branches…");
       const gitBranchListResponse = await this.store.api.rpc({
         GitBranchList: { provider_id: this.giteaProviderId, repo_full_name: fullName },
       });
@@ -461,7 +462,7 @@ document.addEventListener("alpine:init", () => {
         this.giteaMessage = "";
       } else {
         this.giteaMessage = "";
-        this.store.toastError("erro ao listar branches");
+        this.store.toastError(t("erro ao listar branches"));
       }
     },
 
@@ -496,7 +497,7 @@ document.addEventListener("alpine:init", () => {
       } else {
         spec.source = { Registry: { image: repo } };
       }
-      await this.store.saveServiceSpec(spec, "origem salva");
+      await this.store.saveServiceSpec(spec, t("origem salva"));
     },
 
     onArchiveFileChange(event) {
@@ -505,15 +506,15 @@ document.addEventListener("alpine:init", () => {
 
     async uploadArchive() {
       if (!this.archiveFile) {
-        this.store.toastWarn("selecione um arquivo .zip");
+        this.store.toastWarn(t("selecione um arquivo .zip"));
         return;
       }
-      this.archiveMessage = "enviando zip…";
+      this.archiveMessage = t("enviando zip…");
       const uploadArchiveResult = await this.store.api.uploadArchive(this.svc.id, this.archiveFile);
       if (uploadArchiveResult.ok) {
         this.archiveMessage = "";
         this.archiveFile = null;
-        this.store.toastOk("zip enviado");
+        this.store.toastOk(t("zip enviado"));
         await this.store.fetchServiceDetail(this.svc.id);
         await this.store.refreshNow();
       } else {
@@ -539,7 +540,7 @@ document.addEventListener("alpine:init", () => {
         setTimeout(() => (this.copyMessage = ""), 1500);
         this.store.toastOk("Copiado");
       } catch {
-        this.store.toastError("não foi possível copiar");
+        this.store.toastError(t("não foi possível copiar"));
       }
     },
 
@@ -599,7 +600,7 @@ document.addEventListener("alpine:init", () => {
       const spec = JSON.parse(JSON.stringify(this.svc.spec));
       spec.env_vars = spec.env_vars.filter((envVar) => envVar.key !== this.newEnvKey.trim());
       spec.env_vars.push({ key: this.newEnvKey.trim(), value: { Plain: this.newEnvValue } });
-      const saveServiceSpecResult = await this.store.saveServiceSpec(spec, "variável salva");
+      const saveServiceSpecResult = await this.store.saveServiceSpec(spec, t("variável salva"));
       if (saveServiceSpecResult.ok) {
         this.newEnvKey = "";
         this.newEnvValue = "";
@@ -614,7 +615,7 @@ document.addEventListener("alpine:init", () => {
       // planos (sem funções/Date/referências circulares).
       const spec = JSON.parse(JSON.stringify(this.svc.spec));
       spec.env_vars = spec.env_vars.filter((envVar) => envVar.key !== key);
-      await this.store.saveServiceSpec(spec, "variável removida");
+      await this.store.saveServiceSpec(spec, t("variável removida"));
     },
 
     // ── Editor .env de texto (toggle "Exportar"/".env") ───────────────
@@ -641,7 +642,7 @@ document.addEventListener("alpine:init", () => {
       const spec = JSON.parse(JSON.stringify(this.svc.spec));
       spec.env_vars = vars;
       spec.env_comments = comments;
-      const saveServiceSpecResult = await this.store.saveServiceSpec(spec, "variáveis salvas");
+      const saveServiceSpecResult = await this.store.saveServiceSpec(spec, t("variáveis salvas"));
       if (saveServiceSpecResult.ok) this.envTextOpen = false;
     },
 
@@ -669,7 +670,7 @@ document.addEventListener("alpine:init", () => {
         port: this.newDomainPort ? Number(this.newDomainPort) : null,
         tls: this.newDomainTls,
       });
-      const saveServiceSpecResult = await this.store.saveServiceSpec(spec, "domínio adicionado");
+      const saveServiceSpecResult = await this.store.saveServiceSpec(spec, t("domínio adicionado"));
       if (saveServiceSpecResult.ok) {
         this.newDomain = "";
         this.newDomainPort = "";
@@ -685,7 +686,7 @@ document.addEventListener("alpine:init", () => {
       // planos (sem funções/Date/referências circulares).
       const spec = JSON.parse(JSON.stringify(this.svc.spec));
       spec.domains = (spec.domains || []).filter((route) => route.domain !== domain);
-      await this.store.saveServiceSpec(spec, "domínio removido");
+      await this.store.saveServiceSpec(spec, t("domínio removido"));
     },
 
     // ── Healthcheck ───────────────────────────────────────────────────
@@ -736,7 +737,7 @@ document.addEventListener("alpine:init", () => {
         retries: Number(this.healthcheckRetries) || currentHealthcheck.retries,
         start_period_secs: Number(this.healthcheckStart) || currentHealthcheck.start_period_secs,
       };
-      await this.store.saveServiceSpec(spec, "healthcheck salvo");
+      await this.store.saveServiceSpec(spec, t("healthcheck salvo"));
     },
 
     // ── Advanced ──────────────────────────────────────────────────────
@@ -763,7 +764,7 @@ document.addEventListener("alpine:init", () => {
       spec.replicas = Math.floor(replicas);
       const runCommand = this.advancedRunCommand.trim();
       spec.run_command = runCommand || null;
-      await this.store.saveServiceSpec(spec, "advanced salvo");
+      await this.store.saveServiceSpec(spec, t("advanced salvo"));
     },
 
     // ── Fila de pré-deploy check ────────────────────────────────────────
@@ -794,7 +795,7 @@ document.addEventListener("alpine:init", () => {
       return this.preDeployQueueIds.map((preDeployQueueId, index) => ({
         id: preDeployQueueId,
         index: index + 1,
-        name: byId.get(preDeployQueueId) || `(job removido: ${preDeployQueueId})`,
+        name: byId.get(preDeployQueueId) || t`(job removido: ${preDeployQueueId})`,
       }));
     },
 
@@ -819,7 +820,7 @@ document.addEventListener("alpine:init", () => {
       const spec = JSON.parse(JSON.stringify(this.svc.spec));
       spec.pre_deploy_job_ids = jobIds;
       spec.pre_deploy_job_id = null;
-      const saveServiceSpecResult = await this.store.saveServiceSpec(spec, "check adicionado à fila");
+      const saveServiceSpecResult = await this.store.saveServiceSpec(spec, t("check adicionado à fila"));
       if (saveServiceSpecResult.ok) this.advancedPreDeployCheckAddJobId = "";
     },
 
@@ -827,7 +828,7 @@ document.addEventListener("alpine:init", () => {
       const spec = JSON.parse(JSON.stringify(this.svc.spec));
       spec.pre_deploy_job_ids = this.preDeployQueueIds.filter((preDeployQueueId) => preDeployQueueId !== jobId);
       spec.pre_deploy_job_id = null;
-      await this.store.saveServiceSpec(spec, "check removido da fila");
+      await this.store.saveServiceSpec(spec, t("check removido da fila"));
     },
 
     // Sem drag-and-drop na web UI (sem lib de DnD): reordena com botões
@@ -841,7 +842,7 @@ document.addEventListener("alpine:init", () => {
       const spec = JSON.parse(JSON.stringify(this.svc.spec));
       spec.pre_deploy_job_ids = jobIds;
       spec.pre_deploy_job_id = null;
-      await this.store.saveServiceSpec(spec, "fila reordenada");
+      await this.store.saveServiceSpec(spec, t("fila reordenada"));
     },
 
     get deployments() {

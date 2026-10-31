@@ -1,3 +1,4 @@
+import { t } from "./i18n.js";
 // format.js — timestamps, durações e paleta de estado. Porta de
 // crates/rustploy-gui/views/scripts/format/time.luau e format/util.luau (só as
 // partes usadas pelo dashboard nesta fase).
@@ -104,7 +105,7 @@ export function stateLabelKind(state) {
   if (state === "Live") return ["LIVE", "ok"];
   if (state === "Stopped") return ["STOPPED", "muted"];
   if (state === "Failed") return ["FAILED", "bad"];
-  if (state === "PreDeployCheck") return ["PRÉ-DEPLOY CHECK", "info"];
+  if (state === "PreDeployCheck") return [t("PRÉ-DEPLOY CHECK"), "info"];
   return ["BUILDING", "info"];
 }
 
@@ -118,7 +119,7 @@ export function serviceStatusLabelKind(status) {
     case "Deploying":
       return ["Deploying", "info"];
     case "Queued":
-      return ["Na fila", "muted"];
+      return [t("Na fila"), "muted"];
     case "Degraded":
       return ["Degraded", "warn"];
     case "Stopping":
@@ -161,7 +162,7 @@ export function sourceSummary(source) {
   if (!source || typeof source !== "object") return "—";
   if (source.Registry) return source.Registry.image || "—";
   if (source.Git) return `${source.Git.url} @ ${source.Git.branch}`;
-  if (source.Archive) return source.Archive.original_filename || source.Archive.archive_id || "zip enviado";
+  if (source.Archive) return source.Archive.original_filename || source.Archive.archive_id || t("zip enviado");
   if (source.Compose) return "docker-compose";
   return "—";
 }
@@ -266,7 +267,7 @@ export function validEnvKey(key) {
 /** Texto de um toast com as 3 primeiras de `errors` e "+N". */
 export function dotenvErrorsMessage(errors) {
   const shown = errors.slice(0, 3).join("\n");
-  return errors.length > 3 ? `${shown}\n… e mais ${errors.length - 3}` : shown;
+  return errors.length > 3 ? t`${shown}\n… e mais ${errors.length - 3}` : shown;
 }
 
 /** Valida a chave nova do campo "adicionar": nome inválido avisa e aborta;
@@ -274,11 +275,11 @@ export function dotenvErrorsMessage(errors) {
  * var para o fim). `true` = pode seguir. */
 export function confirmEnvKey(store, key, existingVars) {
   if (!validEnvKey(key)) {
-    store.toastError(`Nome inválido: "${key}" — use letras, dígitos e _, sem começar por dígito`);
+    store.toastError(t`Nome inválido: "${key}" — use letras, dígitos e _, sem começar por dígito`);
     return false;
   }
   if ((existingVars || []).some((envVar) => envVar.key === key)) {
-    return confirm(`${key} já existe; o valor atual será substituído. Sobrescrever?`);
+    return confirm(t`${key} já existe; o valor atual será substituído. Sobrescrever?`);
   }
   return true;
 }
@@ -303,20 +304,20 @@ export function parseDotenv(text) {
     }
     const equalsIndex = trimmedLine.indexOf("=");
     if (equalsIndex < 0) {
-      errors.push(`linha ${lineNumber}: falta o '=' (${trimmedLine})`);
+      errors.push(t`linha ${lineNumber}: falta o '=' (${trimmedLine})`);
       return;
     }
     const key = trimmedLine.slice(0, equalsIndex).trim();
     if (!key) {
-      errors.push(`linha ${lineNumber}: falta o nome antes do '='`);
+      errors.push(t`linha ${lineNumber}: falta o nome antes do '='`);
       return;
     }
     if (!validEnvKey(key)) {
-      errors.push(`linha ${lineNumber}: nome inválido "${key}"`);
+      errors.push(t`linha ${lineNumber}: nome inválido "${key}"`);
       return;
     }
     if (firstLineOf.has(key)) {
-      errors.push(`linha ${lineNumber}: ${key} repetida (já definida na linha ${firstLineOf.get(key)})`);
+      errors.push(t`linha ${lineNumber}: ${key} repetida (já definida na linha ${firstLineOf.get(key)})`);
       return;
     }
     firstLineOf.set(key, lineNumber);
@@ -608,7 +609,7 @@ export function deployStepper(info) {
     currentStep = failed;
   }
   return DEPLOY_STEPS.map((step, index) => ({
-    label: step.label,
+    label: t(step.label),
     status: index === failed ? "failed" : index < currentStep ? "done" : index === currentStep ? "current" : "pending",
   }));
 }
@@ -735,7 +736,7 @@ export function dockerImageRows(list, term) {
       service: image.service || "—",
       owner: `${image.project || "—"} / ${image.service || "—"}`,
       inUse,
-      inUseLabel: inUse ? "EM USO" : "SEM USO",
+      inUseLabel: inUse ? t("EM USO") : t("SEM USO"),
       inUseKind: inUse ? "ok" : "muted",
     });
   }
@@ -755,7 +756,7 @@ export function dockerVolumeRows(list, term) {
       mountpoint: volume.mountpoint,
       size: volume.size_bytes != null && volume.size_bytes >= 0 ? formatBytes(volume.size_bytes) : "—",
       inUse: !!volume.in_use,
-      inUseLabel: volume.in_use ? "EM USO" : "SEM USO",
+      inUseLabel: volume.in_use ? t("EM USO") : t("SEM USO"),
       inUseKind: volume.in_use ? "ok" : "muted",
     });
   }
@@ -776,7 +777,7 @@ export function dockerNetworkRows(list, term) {
       project: network.project || "—",
       containers: network.container_count || 0,
       inUse: !!network.in_use,
-      inUseLabel: network.in_use ? "EM USO" : "SEM USO",
+      inUseLabel: network.in_use ? t("EM USO") : t("SEM USO"),
       inUseKind: network.in_use ? "ok" : "muted",
     });
   }
@@ -831,16 +832,16 @@ const WEEKDAYS = ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"];
 /** Resumo textual de uma `Recurrence?` (nil = só manual). Porta literal de
  * format/jobs.luau::recurrence_label. */
 export function recurrenceLabel(recurrence) {
-  if (recurrence == null) return "manual";
-  if (recurrence.IntervalHours != null) return `a cada ${recurrence.IntervalHours}h`;
+  if (recurrence == null) return t("manual");
+  if (recurrence.IntervalHours != null) return t`a cada ${recurrence.IntervalHours}h`;
   if (recurrence.Daily) {
     const padTwoDigits = (value) => String(value).padStart(2, "0");
-    return `diariamente às ${padTwoDigits(recurrence.Daily.hour)}:${padTwoDigits(recurrence.Daily.minute)}`;
+    return t`diariamente às ${padTwoDigits(recurrence.Daily.hour)}:${padTwoDigits(recurrence.Daily.minute)}`;
   }
   if (recurrence.Weekly) {
     const padTwoDigits = (value) => String(value).padStart(2, "0");
-    const weekdayName = WEEKDAYS[((recurrence.Weekly.weekday % 7) + 7) % 7] || "?";
-    return `semanalmente ${weekdayName} às ${padTwoDigits(recurrence.Weekly.hour)}:${padTwoDigits(recurrence.Weekly.minute)}`;
+    const weekdayName = t(WEEKDAYS[((recurrence.Weekly.weekday % 7) + 7) % 7] || "?");
+    return t`semanalmente ${weekdayName} às ${padTwoDigits(recurrence.Weekly.hour)}:${padTwoDigits(recurrence.Weekly.minute)}`;
   }
   return "—";
 }
@@ -849,9 +850,9 @@ export function recurrenceLabel(recurrence) {
  * `run.success == null` (rodando agora) / `true`/`false` (ok/falhou). Porta
  * literal de format/jobs.luau::run_status. */
 export function jobRunStateLabel(run) {
-  if (run == null) return ["nunca rodou", "muted"];
-  if (run.success == null) return ["rodando…", "warn"];
-  return run.success ? ["ok", "ok"] : ["falhou", "bad"];
+  if (run == null) return [t("nunca rodou"), "muted"];
+  if (run.success == null) return [t("rodando…"), "warn"];
+  return run.success ? ["ok", "ok"] : [t("falhou"), "bad"];
 }
 
 /** Horas de retenção da limpeza do Docker, do formulário → inteiro >= 0. Vazio
@@ -866,9 +867,9 @@ export function retentionHours(text) {
 /** Rótulo/cor do aquecimento de um job. `warm` é o `JobWarmStatus` do daemon
  * (fonte única da verdade: aqui só se formata, nunca se deduz). */
 export function jobWarmLabel(warm) {
-  if (warm?.warming) return ["aquecendo…", "warn"];
-  if (warm?.warm) return ["quente", "ok"];
-  return ["frio", "muted"];
+  if (warm?.warming) return [t("aquecendo…"), "warn"];
+  if (warm?.warm) return [t("quente"), "ok"];
+  return [t("frio"), "muted"];
 }
 
 /** Rótulo/cor do aquecimento de um serviço com build. `warm` é o
@@ -930,7 +931,7 @@ export function jobSummaryRows(list, term, inflight) {
 export function oauthRedirectUri(base, kind) {
   const providerSegment = kind === "github" ? "github" : "gitea";
   const trimmedBase = (base || "").trim().replace(/\/+$/, "");
-  if (trimmedBase === "") return `<URL pública do daemon indisponível>/oauth/${providerSegment}/callback`;
+  if (trimmedBase === "") return t`<URL pública do daemon indisponível>/oauth/${providerSegment}/callback`;
   return `${trimmedBase}/oauth/${providerSegment}/callback`;
 }
 
@@ -949,10 +950,10 @@ export function gitProviderRows(list) {
       id: item.id,
       name: item.name,
       kind: gitKindLabel(item.kind),
-      display: connected ? `${item.name || ""} (@${login})` : `${item.name || ""} — não conectado`,
+      display: connected ? `${item.name || ""} (@${login})` : t`${item.name || ""} — não conectado`,
       baseUrl: item.base_url,
       authMode: item.auth_mode === "OAuth" ? "OAuth2" : "PAT",
-      account: connected ? `@${login}` : "(pendente — autorize no navegador)",
+      account: connected ? `@${login}` : t("(pendente — autorize no navegador)"),
       connected,
     };
   });
@@ -966,7 +967,7 @@ const DOCKER_CLEANUP_LABELS = {
   images: "imagens",
   volumes: "volumes",
   networks: "redes",
-  build_cache: "cache de build",
+  build_cache: t("cache de build"),
 };
 
 export function dockerCleanupResourceLabel(name) {
@@ -976,21 +977,21 @@ export function dockerCleanupResourceLabel(name) {
 /** `lr`: `DockerCleanupLastRun?` (`{ at, results: [{ resource, count,
  * reclaimed_bytes, error }] }`). `null`/`undefined` = nunca rodou. */
 export function dockerCleanupLastRunSummary(lastRun) {
-  if (!lastRun) return "ainda não rodou";
+  if (!lastRun) return t("ainda não rodou");
   let totalBytes = 0;
   let anyError = false;
   const parts = (lastRun.results || []).map((result) => {
     totalBytes += result.reclaimed_bytes || 0;
     if (result.error != null) {
       anyError = true;
-      return `${dockerCleanupResourceLabel(result.resource)}: erro`;
+      return t`${dockerCleanupResourceLabel(result.resource)}: erro`;
     }
     return `${dockerCleanupResourceLabel(result.resource)} ${result.count || 0}`;
   });
-  const head = `${dateDayMonthHourMinuteSecond(lastRun.at)} · ${formatBytes(totalBytes)} liberados`;
+  const head = t`${dateDayMonthHourMinuteSecond(lastRun.at)} · ${formatBytes(totalBytes)} liberados`;
   if (parts.length === 0) return head;
   let suffix = ` (${parts.join(", ")})`;
-  if (anyError) suffix += " — alguns recursos falharam, ver logs do daemon";
+  if (anyError) suffix += t(" — alguns recursos falharam, ver logs do daemon");
   return head + suffix;
 }
 

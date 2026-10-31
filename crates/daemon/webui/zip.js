@@ -1,3 +1,4 @@
+import { t } from "./i18n.js";
 // zip.js — o `.zip` do Infra as Code no navegador.
 //
 // O app desktop exporta/importa o manifesto como UM arquivo `.zip` com exatamente
@@ -92,7 +93,7 @@ export function buildManifestZip(yaml, toml) {
 
 async function inflateRaw(bytes) {
   if (typeof DecompressionStream === "undefined") {
-    throw new Error("este navegador não descomprime zip — use um navegador recente");
+    throw new Error(t("este navegador não descomprime zip — use um navegador recente"));
   }
   const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
   return new Uint8Array(await new Response(stream).arrayBuffer());
@@ -111,17 +112,17 @@ async function readEntries(buffer) {
       break;
     }
   }
-  if (eocd < 0) throw new Error("zip inválido: não achei o fim do arquivo (não é um .zip?)");
+  if (eocd < 0) throw new Error(t("zip inválido: não achei o fim do arquivo (não é um .zip?)"));
 
   const count = view.getUint16(eocd + 10, true);
   let pos = view.getUint32(eocd + 16, true);
-  if (count === 0xffff || pos === 0xffffffff) throw new Error("zip inválido: zip64 não é suportado");
+  if (count === 0xffff || pos === 0xffffffff) throw new Error(t("zip inválido: zip64 não é suportado"));
 
   const decoder = new TextDecoder("utf-8", { fatal: false });
   const entries = [];
   for (let i = 0; i < count; i++) {
     if (pos + 46 > bytes.length || view.getUint32(pos, true) !== 0x02014b50) {
-      throw new Error(`erro ao ler a entrada ${i} do zip`);
+      throw new Error(t`erro ao ler a entrada ${i} do zip`);
     }
     const flags = view.getUint16(pos + 8, true);
     const method = view.getUint16(pos + 10, true);
@@ -138,15 +139,15 @@ async function readEntries(buffer) {
       entries.push({ name, isDir, bytes: new Uint8Array(0) });
       continue;
     }
-    if (flags & 1) throw new Error(`${name}: o zip está protegido por senha`);
+    if (flags & 1) throw new Error(t`${name}: o zip está protegido por senha`);
     if (localOffset + 30 > bytes.length || view.getUint32(localOffset, true) !== 0x04034b50) {
-      throw new Error(`erro ao ler a entrada ${i} do zip`);
+      throw new Error(t`erro ao ler a entrada ${i} do zip`);
     }
     const dataStart = localOffset + 30 + view.getUint16(localOffset + 26, true) + view.getUint16(localOffset + 28, true);
     const raw = bytes.subarray(dataStart, dataStart + compressedSize);
     if (method === 0) entries.push({ name, isDir, bytes: raw });
     else if (method === 8) entries.push({ name, isDir, bytes: await inflateRaw(raw) });
-    else throw new Error(`${name}: método de compressão ${method} não suportado`);
+    else throw new Error(t`${name}: método de compressão ${method} não suportado`);
   }
   return entries;
 }
@@ -162,7 +163,7 @@ export async function readManifestZip(file) {
     entries = await readEntries(await file.arrayBuffer());
   } catch (error) {
     const message = String(error?.message || error);
-    return { ok: false, error: message.startsWith("zip inválido") ? message : `zip inválido: ${message}` };
+    return { ok: false, error: message.startsWith(t("zip inválido")) ? message : t`zip inválido: ${message}` };
   }
 
   const decoder = new TextDecoder("utf-8", { fatal: true });
@@ -185,18 +186,18 @@ export async function readManifestZip(file) {
     try {
       content = decoder.decode(entry.bytes);
     } catch {
-      return { ok: false, error: `${entry.name} não é texto UTF-8 válido` };
+      return { ok: false, error: t`${entry.name} não é texto UTF-8 válido` };
     }
     if (isYaml) {
-      if (yaml !== null) return { ok: false, error: "o zip tem mais de um arquivo .yml" };
+      if (yaml !== null) return { ok: false, error: t("o zip tem mais de um arquivo .yml") };
       yaml = content;
     } else {
-      if (toml !== null) return { ok: false, error: "o zip tem mais de um arquivo .toml" };
+      if (toml !== null) return { ok: false, error: t("o zip tem mais de um arquivo .toml") };
       toml = content;
     }
   }
-  if (extras.length) return { ok: false, error: `o zip só pode ter um .yml e um .toml — sobrou: ${extras.join(", ")}` };
-  if (yaml === null) return { ok: false, error: "o zip não tem um arquivo .yml" };
-  if (toml === null) return { ok: false, error: "o zip não tem um arquivo .toml" };
+  if (extras.length) return { ok: false, error: t`o zip só pode ter um .yml e um .toml — sobrou: ${extras.join(", ")}` };
+  if (yaml === null) return { ok: false, error: t("o zip não tem um arquivo .yml") };
+  if (toml === null) return { ok: false, error: t("o zip não tem um arquivo .toml") };
   return { ok: true, yaml, toml };
 }

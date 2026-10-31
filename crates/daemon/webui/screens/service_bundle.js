@@ -1,3 +1,4 @@
+import { t } from "../i18n.js";
 // screens/service_bundle.js — copiar um serviço entre servidores
 // (docs/plano-copiar-servico-entre-servidores.md).
 //
@@ -45,7 +46,7 @@ document.addEventListener("alpine:init", () => {
       const serviceExportPlanResponse = await this.store.api.rpcChecked({ ServiceExportPlan: { service_id: serviceId } });
       this.loading = false;
       if (!serviceExportPlanResponse.ok || !serviceExportPlanResponse.value?.ServiceExportPlan) {
-        this.error = serviceExportPlanResponse.ok ? "resposta inesperada do daemon" : serviceExportPlanResponse.error;
+        this.error = serviceExportPlanResponse.ok ? t("resposta inesperada do daemon") : serviceExportPlanResponse.error;
         return;
       }
       this.plan = serviceExportPlanResponse.value.ServiceExportPlan;
@@ -85,7 +86,7 @@ document.addEventListener("alpine:init", () => {
         },
       });
       if (!serviceExportResponse.ok || !serviceExportResponse.value?.ServiceBundleYaml) {
-        this.error = serviceExportResponse.ok ? "resposta inesperada do daemon" : serviceExportResponse.error;
+        this.error = serviceExportResponse.ok ? t("resposta inesperada do daemon") : serviceExportResponse.error;
         return null;
       }
       return serviceExportResponse.value.ServiceBundleYaml;
@@ -102,7 +103,7 @@ document.addEventListener("alpine:init", () => {
       link.click();
       link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-      this.store.toastOk(`arquivo gerado: ${bundle.filename}`);
+      this.store.toastOk(t`arquivo gerado: ${bundle.filename}`);
     },
 
     async copy() {
@@ -110,9 +111,9 @@ document.addEventListener("alpine:init", () => {
       if (!bundle) return;
       try {
         await navigator.clipboard.writeText(bundle.yaml);
-        this.store.toastOk("pacote copiado como texto");
+        this.store.toastOk(t("pacote copiado como texto"));
       } catch {
-        this.error = "o navegador não deixou copiar; use \"Baixar .yml\"";
+        this.error = t("o navegador não deixou copiar; use \"Baixar .yml\"");
       }
     },
 
@@ -194,7 +195,7 @@ document.addEventListener("alpine:init", () => {
      * quando o nome ainda vem do pacote. */
     async analyze(first = false) {
       if (!this.text.trim()) {
-        this.error = "escolha um arquivo ou cole o texto do pacote";
+        this.error = t("escolha um arquivo ou cole o texto do pacote");
         return;
       }
       if (first) this.name = "";
@@ -206,7 +207,7 @@ document.addEventListener("alpine:init", () => {
       this.analyzing = false;
       if (!serviceImportResponse.ok || !serviceImportResponse.value?.ServiceImportReport) {
         this.report = null;
-        this.error = serviceImportResponse.ok ? "resposta inesperada do daemon" : serviceImportResponse.error;
+        this.error = serviceImportResponse.ok ? t("resposta inesperada do daemon") : serviceImportResponse.error;
         return;
       }
       this.report = serviceImportResponse.value.ServiceImportReport;
@@ -222,7 +223,7 @@ document.addEventListener("alpine:init", () => {
 
     /** Sobrescrever mexe no projeto e vale para os outros serviços dele. */
     chooseEnv(key, choice) {
-      if (choice === "Overwrite" && !confirm(`Sobrescrever ${key} no projeto? Os outros serviços do projeto também passam a ver o valor novo.`)) {
+      if (choice === "Overwrite" && !confirm(t`Sobrescrever ${key} no projeto? Os outros serviços do projeto também passam a ver o valor novo.`)) {
         this.projectEnv[key] = "Keep";
         return;
       }
@@ -239,14 +240,14 @@ document.addEventListener("alpine:init", () => {
     },
 
     stateLabel(state) {
-      return { New: "nova", Same: "igual", Conflict: "em conflito" }[state] || state;
+      return { New: "nova", Same: "igual", Conflict: t("em conflito") }[state] || state;
     },
     choiceLabel(statusEntry, choice) {
-      if (choice === "Keep") return statusEntry.state === "New" ? "criar no projeto" : "manter a do projeto";
-      return { Overwrite: "sobrescrever a do projeto", ServiceOnly: "só neste serviço", Ignore: "não trazer" }[choice];
+      if (choice === "Keep") return statusEntry.state === "New" ? t("criar no projeto") : t("manter a do projeto");
+      return { Overwrite: t("sobrescrever a do projeto"), ServiceOnly: t("só neste serviço"), Ignore: t("não trazer") }[choice];
     },
     choicesFor(statusEntry) {
-      return statusEntry.state === "Conflict" ? ["Keep", "Overwrite", "ServiceOnly", "Ignore"] : ["Keep", "ServiceOnly", "Ignore"];
+      return statusEntry.state === "Conflict" ? ["Keep", t("Overwrite"), "ServiceOnly", "Ignore"] : ["Keep", "ServiceOnly", "Ignore"];
     },
 
     async create() {
@@ -255,11 +256,11 @@ document.addEventListener("alpine:init", () => {
       const serviceImportResponse = await this.store.api.rpcChecked({ ServiceImport: this.buildReq(false) });
       this.creating = false;
       if (!serviceImportResponse.ok || !serviceImportResponse.value?.ServiceImportReport) {
-        this.error = serviceImportResponse.ok ? "resposta inesperada do daemon" : serviceImportResponse.error;
+        this.error = serviceImportResponse.ok ? t("resposta inesperada do daemon") : serviceImportResponse.error;
         return;
       }
       const done = serviceImportResponse.value.ServiceImportReport;
-      this.store.toastOk(`serviço '${done.service_name}' criado`);
+      this.store.toastOk(t`serviço '${done.service_name}' criado`);
       for (const warning of done.warnings.filter((warning) => warning.code === "deploy_not_started")) this.store.toastWarn(warning.message);
       await this.store.refreshNow();
       this.store.closeNewService();

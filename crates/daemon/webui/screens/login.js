@@ -3,6 +3,7 @@
 // fluxo de reconexão também precisam dele; este componente só encapsula o
 // submit do formulário e o aviso de token de outro servidor.
 import { decodeAccessKey } from "../net/api.js";
+import { t } from "../i18n.js";
 
 document.addEventListener("alpine:init", () => {
   Alpine.data("login", () => ({
@@ -17,7 +18,7 @@ document.addEventListener("alpine:init", () => {
       if (!decodedKey) return "";
       // `location.host` omite a porta padrão; o token de conexão sempre a tem.
       const here = window.location.hostname + ":" + (window.location.port || (window.location.protocol === "https:" ? "443" : "80"));
-      return decodedKey.address === here ? "" : "este token é de " + decodedKey.address + " — você está em " + here;
+      return decodedKey.address === here ? "" : t("este token é de ") + decodedKey.address + t(" — você está em ") + here;
     },
     submit() {
       this.store.connect();

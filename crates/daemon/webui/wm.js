@@ -1,3 +1,4 @@
+import { t } from "./i18n.js";
 // wm.js — gerenciador de janelas da webui (diretiva Alpine `x-win`).
 //
 // A GUI abre "Novo projeto", "Novo serviço", logs etc. em janelas próprias do
@@ -105,27 +106,27 @@ export function registerWindows(Alpine) {
     layer.classList.add("win__layer");
 
     // ── Barra de título: pontos de controle à esquerda ─────────────────
-    const closeBtn = [...head.querySelectorAll("button")].find((button) => button.textContent.trim() === "Fechar");
+    const closeBtn = [...head.querySelectorAll("button")].find((button) => ["Fechar", "Close"].includes(button.textContent.trim()));
     const controls = document.createElement("div");
     controls.className = "win__ctls";
     const dClose = document.createElement("button");
     dClose.type = "button";
     dClose.className = "win__dot win__dot--close";
-    dClose.title = "Fechar (Esc)";
-    dClose.setAttribute("aria-label", "Fechar janela");
+    dClose.title = t("Fechar (Esc)");
+    dClose.setAttribute("aria-label", t("Fechar janela"));
     const dMax = document.createElement("button");
     dMax.type = "button";
     dMax.className = "win__dot win__dot--max";
-    dMax.title = "Maximizar / restaurar";
-    dMax.setAttribute("aria-label", "Maximizar janela");
+    dMax.title = t("Maximizar / restaurar");
+    dMax.setAttribute("aria-label", t("Maximizar janela"));
     controls.append(dClose, dMax);
     head.prepend(controls);
     // O "Fechar" do markup continua visível, agora como ✕ à direita da barra
     // (o ponto vermelho de 12px sozinho passava despercebido).
     if (closeBtn) {
       closeBtn.textContent = "✕";
-      closeBtn.title = "Fechar (Esc)";
-      closeBtn.setAttribute("aria-label", "Fechar janela");
+      closeBtn.title = t("Fechar (Esc)");
+      closeBtn.setAttribute("aria-label", t("Fechar janela"));
       closeBtn.classList.add("win__x");
     }
     dClose.addEventListener("click", () => {

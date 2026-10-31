@@ -1,3 +1,4 @@
+import { t } from "../i18n.js";
 // net/sse.js — consumidor de endpoints SSE do daemon: o firehose
 // `/api/events` (porta de crates/rustploy-gui/views/scripts/handlers/
 // stream.luau — só a parte de transporte, a aplicação do snapshot/bus mora
@@ -31,7 +32,7 @@ export function openStream(baseUrl, token, path, handlers) {
         signal: controller.signal,
       });
     } catch (error) {
-      if (!closedByUs) handlers.onError?.(error && error.message ? error.message : "falha ao conectar");
+      if (!closedByUs) handlers.onError?.(error && error.message ? error.message : t("falha ao conectar"));
       handlers.onClose?.();
       return;
     }
@@ -70,7 +71,7 @@ export function openStream(baseUrl, token, path, handlers) {
         }
       }
     } catch (error) {
-      if (!closedByUs) handlers.onError?.(error && error.message ? error.message : "stream interrompida");
+      if (!closedByUs) handlers.onError?.(error && error.message ? error.message : t("stream interrompida"));
     }
     if (!closedByUs) handlers.onClose?.();
   })();

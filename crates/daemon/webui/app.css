@@ -835,3 +835,6 @@ button:focus-visible, [tabindex]:focus-visible, select:focus-visible, summary:fo
 /* ✕ de fechar na barra de título das janelas flutuantes (wm.js). */
 .modal__head .win__x { margin-left: auto; padding: 5px 11px; flex-shrink: 0; font-size: 13px; line-height: 1; }
 .modal__head .win__x:hover { background: var(--danger); border-color: var(--danger); filter: none; color: #fff; }
+
+/* Seletor de idioma (English / Português): dois botões lado a lado. */
+.language-switch { display: flex; gap: 6px; align-items: center; }

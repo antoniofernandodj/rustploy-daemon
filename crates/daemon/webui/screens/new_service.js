@@ -1,3 +1,4 @@
+import { t } from "../i18n.js";
 // screens/new_service.js — wizard "Novo serviço", porta de new_service.gv
 // (client iced): passo pick_type → passo específico por tipo. Application usa
 // `ServiceCreate` direto (coleta a origem Git/registry já na criação — ver
@@ -166,13 +167,13 @@ document.addEventListener("alpine:init", () => {
     async submitApp() {
       this.error = "";
       if (!this.appName.trim()) {
-        this.error = "nome obrigatório";
+        this.error = t("nome obrigatório");
         return;
       }
       let source;
       if (this.sourceKind === "git") {
         if (!this.gitUrl.trim()) {
-          this.error = "URL do repositório obrigatória";
+          this.error = t("URL do repositório obrigatória");
           return;
         }
         source = {
@@ -192,7 +193,7 @@ document.addEventListener("alpine:init", () => {
         };
       } else {
         if (!this.registryImage.trim()) {
-          this.error = "imagem obrigatória";
+          this.error = t("imagem obrigatória");
           return;
         }
         source = { Registry: { image: this.registryImage.trim() } };
@@ -206,11 +207,11 @@ document.addEventListener("alpine:init", () => {
     async submitCompose() {
       this.error = "";
       if (!this.composeName.trim()) {
-        this.error = "nome obrigatório";
+        this.error = t("nome obrigatório");
         return;
       }
       if (!this.composeText.trim()) {
-        this.error = "compose YAML obrigatório";
+        this.error = t("compose YAML obrigatório");
         return;
       }
       // WizardCreateReq (kind="compose") não carrega o YAML — o wizard iced
@@ -228,15 +229,15 @@ document.addEventListener("alpine:init", () => {
       this.error = "";
       const database = this.selectedDatabase;
       if (database.has_db_name && !this.databaseName.trim()) {
-        this.error = "nome do banco obrigatório";
+        this.error = t("nome do banco obrigatório");
         return;
       }
       if (database.has_user && !this.databaseUser.trim()) {
-        this.error = "usuário obrigatório";
+        this.error = t("usuário obrigatório");
         return;
       }
       if (!this.databasePassword.trim()) {
-        this.error = "senha obrigatória";
+        this.error = t("senha obrigatória");
         return;
       }
       const createRequest = this.baseReq("database", database.id);
@@ -257,7 +258,7 @@ document.addEventListener("alpine:init", () => {
       this.error = "";
       const broker = this.selectedBroker;
       if (broker.has_user && !this.brokerUser.trim()) {
-        this.error = "usuário obrigatório";
+        this.error = t("usuário obrigatório");
         return;
       }
       const createRequest = this.baseReq("broker", broker.id);

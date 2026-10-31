@@ -257,7 +257,7 @@ async fn login_with_access_key() {
     .await;
     assert_eq!(
         eval_str(&page, "Alpine.store('app').error").await,
-        "isso não é um token de conexão — cole o token de conexão inteiro (base64 de host:porta::token), não só o token da API"
+        "that is not a connection token — paste the whole connection token (base64 of host:port::token), not just the API token"
     );
     assert_eq!(eval_str(&page, "Alpine.store('app').screen").await, "login");
 
@@ -551,7 +551,7 @@ async fn rename_service_in_general_tab() {
             "(() => JSON.stringify({ saved: window.__saved.length, toasts: window.__toasts }))()"
         )
         .await,
-        r#"{"saved":0,"toasts":["Informe o nome do serviço"]}"#,
+        r#"{"saved":0,"toasts":["Enter the service name"]}"#,
         "mesmo nome não salva; vazio só avisa"
     );
 
@@ -563,7 +563,7 @@ async fn rename_service_in_general_tab() {
     .await;
     let v: serde_json::Value = serde_json::from_str(&saved).unwrap();
     assert_eq!(v["n"], 1);
-    assert_eq!(v["msg"], "serviço renomeado");
+    assert_eq!(v["msg"], "service renamed");
     assert_eq!(v["name"], "meu-banco", "o nome é aparado");
     assert_eq!(v["port"], 5432);
     assert_eq!(v["kind"], "postgres");
@@ -587,7 +587,7 @@ async fn rename_service_in_general_tab() {
     )
     .await;
     let a: serde_json::Value = serde_json::from_str(&app).unwrap();
-    assert!(a["note"].as_str().unwrap().contains("próximo deploy"));
+    assert!(a["note"].as_str().unwrap().contains("next deploy"));
     assert_eq!(a["url"], "—", "sem a URL do daemon, não inventa uma");
 
     assert_eq!(
@@ -735,7 +735,7 @@ async fn shared_server_databases_tab() {
         })()"#,
     )
     .await
-    .expect("abre o servidor compartilhado");
+    .expect("abre o shared server");
 
     assert!(
         visible(
@@ -894,7 +894,7 @@ async fn job_actions_window_lists_actions_and_warm_status() {
 
     eval_str(
         &page,
-        "(() => { document.querySelector('[title=\"Ações do job\"]').click(); return 'ok'; })()",
+        "(() => { document.querySelector('[title=\"Job actions\"]').click(); return 'ok'; })()",
     )
     .await;
     assert!(
@@ -907,7 +907,7 @@ async fn job_actions_window_lists_actions_and_warm_status() {
     )
     .await;
     assert_eq!(
-        items, r#"["▶ Rodar agora","◐ Aquecer","‖ Pausar","✎ Editar","✕ Remover"]"#,
+        items, r#"["▶ Run now","◐ Warm","‖ Pause","✎ Edit","✕ Remove"]"#,
         "job parado e sem execução: sem cancelar nem logs"
     );
     assert!(
@@ -932,7 +932,7 @@ async fn job_actions_window_lists_actions_and_warm_status() {
     );
     eval_str(
         &page,
-        "(() => { [...document.querySelectorAll('.job-actions__item')].find(el => el.textContent.includes('Aquecer')).click(); return 'ok'; })()",
+        "(() => { [...document.querySelectorAll('.job-actions__item')].find(el => el.textContent.includes('Warm')).click(); return 'ok'; })()",
     )
     .await;
     tokio::time::sleep(Duration::from_millis(300)).await;
@@ -946,14 +946,14 @@ async fn job_actions_window_lists_actions_and_warm_status() {
             "JSON.stringify(Alpine.store('app').toasts.map(t => t.message))"
         )
         .await
-        .contains("job já está aquecido"),
+        .contains("job is already warm"),
         "job quente: o toast avisa que já estava aquecido"
     );
 
     // Quente: "Reconstruir (sem cache)" aparece, confirma e manda `force: true`.
     eval_str(
         &page,
-        "(() => { window.confirm = () => true; window.__commands = []; [...document.querySelectorAll('.job-actions__item')].find(el => el.textContent.includes('Reconstruir')).click(); return 'ok'; })()",
+        "(() => { window.confirm = () => true; window.__commands = []; [...document.querySelectorAll('.job-actions__item')].find(el => el.textContent.includes('Rebuild')).click(); return 'ok'; })()",
     )
     .await;
     tokio::time::sleep(Duration::from_millis(300)).await;
@@ -967,7 +967,7 @@ async fn job_actions_window_lists_actions_and_warm_status() {
             "JSON.stringify(Alpine.store('app').toasts.map(t => t.message))"
         )
         .await
-        .contains("reconstrução iniciada"),
+        .contains("rebuild started"),
         "o toast confirma que a reconstrução começou"
     );
 
@@ -985,7 +985,7 @@ async fn job_actions_window_lists_actions_and_warm_status() {
     .await;
     assert_eq!(
         items,
-        r#"["■ Cancelar execução","◐ Aquecer","↻ Reconstruir (sem cache)","≡ Ver logs","‖ Pausar","✎ Editar","✕ Remover"]"#
+        r#"["■ Cancel run","◐ Warm","↻ Rebuild (no cache)","≡ View logs","‖ Pause","✎ Edit","✕ Remove"]"#
     );
 
     assert_eq!(
@@ -1061,10 +1061,10 @@ async fn iac_zip_export_import() {
     .await;
     assert_eq!(
         exported,
-        r##"{"name":"rustploy-infra.zip","ok":true,"yaml":"projects: []","toml":"# vars","msg":"baixado como rustploy-infra.zip"}"##
+        r##"{"name":"rustploy-infra.zip","ok":true,"yaml":"projects: []","toml":"# vars","msg":"downloaded as rustploy-infra.zip"}"##
     );
 
-    // Escolher um zip inválido (arquivo sobrando) é recusado; um válido preenche os campos.
+    // Escolher um invalid zip (arquivo sobrando) é recusado; um válido preenche os campos.
     let picked = eval_str(
         &page,
         r#"(async () => {
@@ -1080,7 +1080,7 @@ async fn iac_zip_export_import() {
     .await;
     assert_eq!(
         picked,
-        r##"{"bad":"zip inválido: não achei o fim do arquivo (não é um .zip?)","yaml":"a: 1","toml":"b = 2","zip":"infra.zip"}"##
+        r##"{"bad":"invalid zip: could not find the end of the file (is it a .zip?)","yaml":"a: 1","toml":"b = 2","zip":"infra.zip"}"##
     );
 
     // Importar com prune: confirma antes, manda o pedido certo e mostra o que foi removido.
@@ -1105,7 +1105,7 @@ async fn iac_zip_export_import() {
     );
     let confirm = imported["confirm"].as_str().unwrap();
     assert!(
-        confirm.contains("Do zip infra.zip") && confirm.contains("prune): SIM"),
+        confirm.contains("From the zip infra.zip") && confirm.contains("prune): YES"),
         "{confirm}"
     );
     assert_eq!(
@@ -1113,11 +1113,11 @@ async fn iac_zip_export_import() {
         serde_json::json!([
             "[Updated] Service loja/web",
             "[Deleted] Service loja/velho",
-            "removidos (prune): loja/velho",
-            "deploy ligado — nada mudou para disparar"
+            "removed (prune): loja/velho",
+            "deploy on — nothing changed to trigger"
         ])
     );
-    assert_eq!(imported["msg"], "import concluído ✓");
+    assert_eq!(imported["msg"], "import finished ✓");
 
     // Variável sem valor: nada é aplicado e a lista aparece.
     let missing = eval_str(
@@ -1132,7 +1132,7 @@ async fn iac_zip_export_import() {
     .await;
     assert_eq!(
         missing,
-        r##"{"has":true,"vars":"loja/web: APP_PORT","msg":"faltam variáveis — nada foi aplicado"}"##
+        r##"{"has":true,"vars":"loja/web: APP_PORT","msg":"variables missing — nothing was applied"}"##
     );
 
     // Cancelar na confirmação não manda nada.
@@ -1146,7 +1146,7 @@ async fn iac_zip_export_import() {
         })()"#,
     )
     .await;
-    assert_eq!(cancelled, r##"{"sent":null,"msg":"cancelado"}"##);
+    assert_eq!(cancelled, r##"{"sent":null,"msg":"cancelled"}"##);
 
     assert_eq!(
         errors(&page).await,
@@ -1197,8 +1197,8 @@ async fn running_screen_lists_running_services() {
         "migrate",
         "seed",
         "Deploy",
-        "Abrir serviço",
-        "Abrir projeto",
+        "Open service",
+        "Open project",
     ] {
         assert!(
             text.contains(esperado),
@@ -1255,7 +1255,7 @@ async fn update_badge_lights_up_from_the_snapshot() {
     let v: serde_json::Value = serde_json::from_str(&applied).unwrap();
     assert_eq!(v[0], true);
     assert_eq!(v[1], "0.1.15");
-    assert_eq!(v[2], "Há uma versão nova: 0.1.15");
+    assert_eq!(v[2], "There is a new version: 0.1.15");
     assert!(
         visible(&page, ".nav-item__badge").await,
         "o selo do Settings deveria acender"

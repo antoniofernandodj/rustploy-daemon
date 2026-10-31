@@ -51,8 +51,10 @@ import {
   jobSummaryRows,
   retentionHours,
 } from "./format.js";
+import { registerI18n, t } from "./i18n.js";
 
 window.Alpine = Alpine;
+registerI18n(Alpine);
 registerDirectives(Alpine);
 registerWindows(Alpine);
 registerIcons(Alpine);
@@ -81,7 +83,7 @@ document.addEventListener("alpine:init", () => {
     view: "deployments",
     menuOpen: true,
     connected: false,
-    statusLine: "pronto para conectar",
+    statusLine: t("pronto para conectar"),
     error: "",
 
     // ── Formulário de login ───────────────────────────────────────────
@@ -263,7 +265,7 @@ document.addEventListener("alpine:init", () => {
     dockerCleanupWarmAfter: true,
     dockerCleanupNextRunLabel: "—",
     dockerCleanupLastRunAtRaw: null,
-    dockerCleanupLastRunText: "ainda não rodou",
+    dockerCleanupLastRunText: t("ainda não rodou"),
     dockerCleanupRunning: false,
     dockerCleanupMessage: "",
 
@@ -315,9 +317,9 @@ document.addEventListener("alpine:init", () => {
     async copyText(text, what) {
       try {
         await navigator.clipboard.writeText(text);
-        this.toastOk(`${what} copiado`);
+        this.toastOk(t`${what} copiado`);
       } catch (e) {
-        this.toastError(`não foi possível copiar o ${what}`);
+        this.toastError(t`não foi possível copiar o ${what}`);
       }
     },
     toastOk(message) {
@@ -349,7 +351,7 @@ document.addEventListener("alpine:init", () => {
 
     serviceNameById(serviceId) {
       const entry = (this.snap?.services || []).find((service) => service.service.id === serviceId);
-      return entry?.service?.spec?.name || "serviço";
+      return entry?.service?.spec?.name || t("serviço");
     },
 
     nav(view) {
@@ -369,15 +371,15 @@ document.addEventListener("alpine:init", () => {
       // daemon, então a origem da página É o servidor.
       const base = window.location.origin;
       this.persistPrefs();
-      this.statusLine = "conectando…";
+      this.statusLine = t("conectando…");
       this.error = "";
 
       // O token de conexão é `host:porta::token` em base64: o token da API sai
       // dele e vai direto como Bearer — sem `/api/login` no meio.
       const decodedKey = decodeAccessKey(this.accessKey);
       if (!decodedKey) {
-        this.error = "isso não é um token de conexão — cole o token de conexão inteiro (base64 de host:porta::token), não só o token da API";
-        this.statusLine = "falha na conexão";
+        this.error = t("isso não é um token de conexão — cole o token de conexão inteiro (base64 de host:porta::token), não só o token da API");
+        this.statusLine = t("falha na conexão");
         this.connected = false;
         return;
       }
@@ -386,14 +388,14 @@ document.addEventListener("alpine:init", () => {
       const daemonStatusResponse = await client.rpc("DaemonStatus");
       if (!daemonStatusResponse.ok) {
         this.error = daemonStatusResponse.error;
-        this.statusLine = "falha na conexão";
+        this.statusLine = t("falha na conexão");
         this.connected = false;
         return;
       }
 
       this.api = client;
       this.connected = true;
-      this.statusLine = "conectado";
+      this.statusLine = t("conectado");
       this.screen = "shell";
       this.dataLoading = true;
       await this.loadSettings();
@@ -411,7 +413,7 @@ document.addEventListener("alpine:init", () => {
       this.snap = null;
       this.connected = false;
       this.screen = "login";
-      this.statusLine = "desconectado";
+      this.statusLine = t("desconectado");
       this.view = "deployments";
       this.selectedProjectId = null;
       this.selectedServiceId = null;
@@ -428,7 +430,7 @@ document.addEventListener("alpine:init", () => {
         onClose: () => {
           this.stream = null;
           if (this.connected) {
-            this.statusLine = "conexão encerrada";
+            this.statusLine = t("conexão encerrada");
             this.connected = false;
             this.screen = "login";
           }
@@ -454,7 +456,7 @@ document.addEventListener("alpine:init", () => {
         const warmEvent = busEvent.JobWarmChanged;
         if (!warmEvent.warming) {
           const warmedJobName = this.jobsById[warmEvent.job_id]?.name || "job";
-          if (warmEvent.success) this.toastOk(`${warmedJobName} aquecido`);
+          if (warmEvent.success) this.toastOk(t`${warmedJobName} aquecido`);
           else this.toastError(`${warmedJobName}: falha ao aquecer${warmEvent.error ? ` — ${warmEvent.error}` : ""}`);
         }
         this.refreshNow();
@@ -492,13 +494,13 @@ document.addEventListener("alpine:init", () => {
           if (terminal) {
             this.serviceMessage =
               deployEvent.state === "Live"
-                ? "deploy concluído"
+                ? t("deploy concluído")
                 : motivo
-                  ? `deploy falhou: ${motivo}`
-                  : `deploy: ${deployEvent.state}`;
+                  ? t`deploy falhou: ${motivo}`
+                  : t`deploy: ${deployEvent.state}`;
             this.fetchServiceDetail(deployEvent.service_id);
           } else {
-            this.serviceMessage = `deploy · ${deployEvent.state}`;
+            this.serviceMessage = t`deploy · ${deployEvent.state}`;
           }
         }
         // Desfecho do deploy que ESTE usuário disparou, mesmo que ele já
@@ -510,7 +512,7 @@ document.addEventListener("alpine:init", () => {
           this.deployTrackId = null;
           const nome = this.serviceNameById(deployEvent.service_id);
           if (deployEvent.state === "Live") {
-            this.toastOk(`${nome}: deploy concluído`);
+            this.toastOk(t`${nome}: deploy concluído`);
           } else {
             this.toastError(`${nome}: ${motivo || "deploy " + deployEvent.state}`);
           }
@@ -543,14 +545,14 @@ document.addEventListener("alpine:init", () => {
     },
 
     async stopAll() {
-      if (!confirm("Parar todos os serviços? Todos os serviços em execução serão parados agora.")) {
+      if (!confirm(t("Parar todos os serviços? Todos os serviços em execução serão parados agora."))) {
         return;
       }
       if (!this.api) return;
-      this.statusLine = "parando todos…";
+      this.statusLine = t("parando todos…");
       const stopAllManagedResponse = await this.api.rpcChecked("StopAllManaged");
-      this.statusLine = stopAllManagedResponse.ok ? "todos os serviços parados" : "falha ao parar";
-      this.toastResult(stopAllManagedResponse, "todos os serviços parados");
+      this.statusLine = stopAllManagedResponse.ok ? t("todos os serviços parados") : t("falha ao parar");
+      this.toastResult(stopAllManagedResponse, t("todos os serviços parados"));
     },
 
     async clearFinished() {
@@ -560,17 +562,17 @@ document.addEventListener("alpine:init", () => {
         .filter((deployment) => deployment.state === "Stopped" || deployment.state === "Failed")
         .map((deployment) => deployment.id);
       if (deploymentIds.length === 0) {
-        this.toastWarn("nada para limpar");
+        this.toastWarn(t("nada para limpar"));
         return;
       }
       if (
         !confirm(
-          `Remove do histórico ${deploymentIds.length} deployment(s) em estado Stopped ou Failed, e seus build logs. Ação irreversível.`
+          t`Remove do histórico ${deploymentIds.length} deployment(s) em estado Stopped ou Failed, e seus build logs. Ação irreversível.`
         )
       ) {
         return;
       }
-      this.deploymentsMessage = `removendo ${deploymentIds.length} deployment(s)…`;
+      this.deploymentsMessage = t`removendo ${deploymentIds.length} deployment(s)…`;
       let removed = 0,
         failed = 0;
       for (const deploymentId of deploymentIds) {
@@ -579,8 +581,8 @@ document.addEventListener("alpine:init", () => {
         else failed++;
       }
       this.deploymentsMessage = "";
-      if (failed === 0) this.toastOk(`${removed} deployment(s) removido(s)`);
-      else this.toastError(`${removed} removido(s), ${failed} falharam`);
+      if (failed === 0) this.toastOk(t`${removed} deployment(s) removido(s)`);
+      else this.toastError(t`${removed} removido(s), ${failed} falharam`);
     },
 
     async refreshNow() {
@@ -598,12 +600,12 @@ document.addEventListener("alpine:init", () => {
     // ── Projects ─────────────────────────────────────────────────────
 
     async createProject(name, description) {
-      if (!name || !name.trim()) return { ok: false, error: "nome obrigatório" };
+      if (!name || !name.trim()) return { ok: false, error: t("nome obrigatório") };
       const projectCreateResponse = await this.api.rpcChecked({
         ProjectCreate: { name: name.trim(), description: description?.trim() || null },
       });
       if (projectCreateResponse.ok) {
-        this.toastOk("projeto criado");
+        this.toastOk(t("projeto criado"));
         await this.refreshNow();
       }
       return projectCreateResponse;
@@ -613,17 +615,17 @@ document.addEventListener("alpine:init", () => {
       const projectUpdateResponse = await this.api.rpcChecked({
         ProjectUpdate: { id: projectId, name: name.trim(), description: description?.trim() || null },
       });
-      this.toastResult(projectUpdateResponse, "projeto atualizado");
+      this.toastResult(projectUpdateResponse, t("projeto atualizado"));
       if (projectUpdateResponse.ok) await this.refreshNow();
       return projectUpdateResponse;
     },
 
     async deleteProject(projectId) {
-      if (!confirm("Remover este projeto? Só funciona se não houver serviços nele.")) {
-        return { ok: false, error: "cancelado" };
+      if (!confirm(t("Remover este projeto? Só funciona se não houver serviços nele."))) {
+        return { ok: false, error: t("cancelado") };
       }
       const projectDeleteResponse = await this.api.rpcChecked({ ProjectDelete: { id: projectId } });
-      this.toastResult(projectDeleteResponse, "projeto removido");
+      this.toastResult(projectDeleteResponse, t("projeto removido"));
       if (projectDeleteResponse.ok) {
         await this.refreshNow();
         this.nav("projects");
@@ -644,29 +646,29 @@ document.addEventListener("alpine:init", () => {
           env_comments: envComments,
         },
       });
-      this.toastResult(projectEnvSetResponse, "variáveis salvas");
+      this.toastResult(projectEnvSetResponse, t("variáveis salvas"));
       if (projectEnvSetResponse.ok) await this.refreshNow();
       return projectEnvSetResponse;
     },
 
     async addSecret(name, value) {
-      if (!name.trim()) return { ok: false, error: "nome obrigatório" };
+      if (!name.trim()) return { ok: false, error: t("nome obrigatório") };
       const secretSetResponse = await this.api.rpcChecked({
         SecretSet: { project_id: this.selectedProjectId, name: name.trim(), value },
       });
-      this.toastResult(secretSetResponse, `secret ${name.trim()} salvo`);
+      this.toastResult(secretSetResponse, t`secret ${name.trim()} salvo`);
       if (secretSetResponse.ok) await this.refreshNow();
       return secretSetResponse;
     },
 
     async deleteSecret(name) {
-      if (!confirm(`Remover o secret "${name}"? Serviços que o referenciam vão falhar no próximo deploy.`)) {
+      if (!confirm(t`Remover o secret "${name}"? Serviços que o referenciam vão falhar no próximo deploy.`)) {
         return;
       }
       const secretDeleteResponse = await this.api.rpcChecked({
         SecretDelete: { project_id: this.selectedProjectId, name },
       });
-      this.toastResult(secretDeleteResponse, `secret ${name} removido`);
+      this.toastResult(secretDeleteResponse, t`secret ${name} removido`);
       if (secretDeleteResponse.ok) await this.refreshNow();
     },
 
@@ -717,7 +719,7 @@ document.addEventListener("alpine:init", () => {
     async wizardCreate(createRequest) {
       const wizardCreateResponse = await this.api.rpcChecked({ WizardCreate: createRequest });
       if (wizardCreateResponse.ok) {
-        this.toastOk("serviço criado");
+        this.toastOk(t("serviço criado"));
         await this.refreshNow();
         this.closeNewService();
         const created = wizardCreateResponse.value?.Service;
@@ -761,7 +763,7 @@ document.addEventListener("alpine:init", () => {
       };
       const serviceCreateResponse = await this.api.rpcChecked({ ServiceCreate: spec });
       if (serviceCreateResponse.ok) {
-        this.toastOk("serviço criado");
+        this.toastOk(t("serviço criado"));
         await this.refreshNow();
         this.closeNewService();
         const created = serviceCreateResponse.value?.Service;
@@ -784,7 +786,7 @@ document.addEventListener("alpine:init", () => {
     async fetchServiceDetail(serviceId) {
       const serviceGetResponse = await this.api.rpc({ ServiceGet: { id: serviceId } });
       if (!serviceGetResponse.ok || !serviceGetResponse.value?.Service) {
-        this.serviceMessage = serviceGetResponse.ok ? "serviço não encontrado" : serviceGetResponse.error;
+        this.serviceMessage = serviceGetResponse.ok ? t("serviço não encontrado") : serviceGetResponse.error;
         this.serviceLoading = false;
         return;
       }
@@ -798,7 +800,7 @@ document.addEventListener("alpine:init", () => {
       const serviceId = this.selectedServiceId;
       const serviceUpdateResponse = await this.api.rpcChecked({ ServiceUpdate: { id: serviceId, spec } });
       if (serviceUpdateResponse.ok) {
-        this.toastOk(okMessage || "salvo");
+        this.toastOk(okMessage || t("salvo"));
         await this.fetchServiceDetail(serviceId);
         await this.refreshNow();
       } else {
@@ -808,27 +810,27 @@ document.addEventListener("alpine:init", () => {
     },
 
     async deleteService(serviceId) {
-      if (!confirm("Remover este serviço? Para o container e apaga o histórico. Ação irreversível.")) {
+      if (!confirm(t("Remover este serviço? Para o container e apaga o histórico. Ação irreversível."))) {
         return;
       }
       const serviceDeleteResponse = await this.api.rpcChecked({ ServiceDelete: { id: serviceId } });
       if (serviceDeleteResponse.ok) {
         await this.refreshNow();
         this.nav("project");
-        this.toastOk("serviço removido");
+        this.toastOk(t("serviço removido"));
       } else {
-        this.toastError("erro ao remover: " + serviceDeleteResponse.error);
+        this.toastError(t("erro ao remover: ") + serviceDeleteResponse.error);
       }
     },
 
     /** Botão "Parar" do card de serviço (grid do projeto) — porta de
      * handlers/projects.luau::svc_stop_id. */
     async stopService(serviceId) {
-      if (!confirm("Parar serviço? O tráfego para ele será interrompido até um novo deploy.")) {
+      if (!confirm(t("Parar serviço? O tráfego para ele será interrompido até um novo deploy."))) {
         return;
       }
       const serviceStopResponse = await this.api.rpcChecked({ ServiceStop: { service_id: serviceId } });
-      this.toastResult(serviceStopResponse, "serviço parado");
+      this.toastResult(serviceStopResponse, t("serviço parado"));
       await this.refreshNow();
     },
 
@@ -842,21 +844,21 @@ document.addEventListener("alpine:init", () => {
         .filter((job) => job.job.trigger_service_id === serviceId)
         .map((job) => job.job.name)
         .sort();
-      let message = "O serviço será parado e removido.";
+      let message = t("O serviço será parado e removido.");
       if (deploymentJobs.length > 0) {
-        message += ` Os jobs de Schedules que dependem dele também serão removidos, com histórico: ${deploymentJobs.join(", ")}.`;
+        message += t` Os jobs de Schedules que dependem dele também serão removidos, com histórico: ${deploymentJobs.join(", ")}.`;
       }
-      message += " Essa ação não pode ser desfeita.";
+      message += t(" Essa ação não pode ser desfeita.");
       if (!confirm(message)) return;
 
       const serviceStopResponse = await this.api.rpcChecked({ ServiceStop: { service_id: serviceId } });
       if (!serviceStopResponse.ok) {
-        this.toastError("erro ao parar: " + serviceStopResponse.error);
+        this.toastError(t("erro ao parar: ") + serviceStopResponse.error);
         return;
       }
       const serviceDeleteResponse = await this.api.rpcChecked({ ServiceDelete: { id: serviceId } });
-      if (serviceDeleteResponse.ok) this.toastOk("serviço parado e removido");
-      else this.toastError("erro ao remover: " + serviceDeleteResponse.error);
+      if (serviceDeleteResponse.ok) this.toastOk(t("serviço parado e removido"));
+      else this.toastError(t("erro ao remover: ") + serviceDeleteResponse.error);
       await this.refreshNow();
     },
 
@@ -866,42 +868,42 @@ document.addEventListener("alpine:init", () => {
     async deployServiceFromList(serviceId) {
       const deployStartResponse = await this.api.rpcChecked({ DeployStart: { service_id: serviceId } });
       if (deployStartResponse.ok) this.deployTrackId = serviceId;
-      this.toastResult(deployStartResponse, "deploy iniciado");
+      this.toastResult(deployStartResponse, t("deploy iniciado"));
       await this.refreshNow();
     },
 
     async deployStart() {
       const serviceId = this.selectedServiceId;
-      this.serviceMessage = "iniciando deploy…";
+      this.serviceMessage = t("iniciando deploy…");
       const deployStartResponse = await this.api.rpcChecked({ DeployStart: { service_id: serviceId } });
       this.serviceMessage = "";
       // Guarda quem o USUÁRIO mandou deployar: o desfecho (DeployStateChanged)
       // vira toast mesmo que ele já tenha navegado para outra tela — é o par
       // do `State.deploy_track` da GUI desktop.
       if (deployStartResponse.ok) this.deployTrackId = serviceId;
-      this.toastResult(deployStartResponse, "deploy iniciado");
+      this.toastResult(deployStartResponse, t("deploy iniciado"));
       await this.fetchServiceDetail(serviceId);
       await this.refreshNow();
     },
 
     async deployAbort(deploymentId) {
       const deployAbortResponse = await this.api.rpcChecked({ DeployAbort: { deployment_id: deploymentId } });
-      this.toastResult(deployAbortResponse, "deploy cancelado");
+      this.toastResult(deployAbortResponse, t("deploy cancelado"));
       await this.fetchServiceDetail(this.selectedServiceId);
     },
 
     async deployRollback() {
-      if (!confirm("Reverter para o deploy anterior?")) return;
+      if (!confirm(t("Reverter para o deploy anterior?"))) return;
       const serviceId = this.selectedServiceId;
       const deployRollbackResponse = await this.api.rpcChecked({ DeployRollback: { service_id: serviceId } });
       if (deployRollbackResponse.ok) this.deployTrackId = serviceId;
-      this.toastResult(deployRollbackResponse, "rollback iniciado");
+      this.toastResult(deployRollbackResponse, t("rollback iniciado"));
       await this.fetchServiceDetail(serviceId);
     },
 
     async deleteDeployment(deploymentId) {
       const deployDeleteResponse = await this.api.rpcChecked({ DeployDelete: { deployment_id: deploymentId } });
-      this.toastResult(deployDeleteResponse, "deployment removido");
+      this.toastResult(deployDeleteResponse, t("deployment removido"));
       if (deployDeleteResponse.ok) await this.fetchServiceDetail(this.selectedServiceId);
       return deployDeleteResponse;
     },
@@ -914,26 +916,26 @@ document.addEventListener("alpine:init", () => {
      * (o daemon já trata remoção da fila como caso do abort). */
     async queueCancel(deploymentId) {
       const deployAbortResponse = await this.api.rpcChecked({ DeployAbort: { deployment_id: deploymentId } });
-      this.toastResult(deployAbortResponse, "deploy cancelado");
+      this.toastResult(deployAbortResponse, t("deploy cancelado"));
       await this.refreshNow();
     },
 
     async queuePromote(deploymentId) {
       const deployQueuePromoteResponse = await this.api.rpcChecked({ DeployQueuePromote: { deployment_id: deploymentId } });
-      this.toastResult(deployQueuePromoteResponse, "deploy movido para o topo da fila");
+      this.toastResult(deployQueuePromoteResponse, t("deploy movido para o topo da fila"));
       await this.refreshNow();
     },
 
     async queueReorder(order) {
       const deployQueueReorderResponse = await this.api.rpcChecked({ DeployQueueReorder: { order } });
-      this.toastResult(deployQueueReorderResponse, "fila reordenada");
+      this.toastResult(deployQueueReorderResponse, t("fila reordenada"));
       await this.refreshNow();
     },
 
     async queueTogglePause() {
       const paused = !!this.snap?.engine?.paused;
       const deployQueuePauseResponse = await this.api.rpcChecked({ DeployQueuePause: { paused: !paused } });
-      this.toastResult(deployQueuePauseResponse, paused ? "fila retomada" : "fila pausada");
+      this.toastResult(deployQueuePauseResponse, paused ? t("fila retomada") : t("fila pausada"));
       await this.refreshNow();
     },
 
@@ -950,8 +952,8 @@ document.addEventListener("alpine:init", () => {
       const pruneResult = result.value?.PruneResult;
       return this.toastOk(
         pruneResult
-          ? `removidos: ${pruneResult.count} · ${formatBytes(pruneResult.reclaimed_bytes)} liberados`
-          : "limpeza concluída"
+          ? t`removidos: ${pruneResult.count} · ${formatBytes(pruneResult.reclaimed_bytes)} liberados`
+          : t("limpeza concluída")
       );
     },
 
@@ -978,22 +980,22 @@ document.addEventListener("alpine:init", () => {
 
     async dockerRemoveContainer(containerId) {
       const removeContainerResponse = await this.api.rpcChecked({ RemoveContainer: { id: containerId } });
-      this.toastResult(removeContainerResponse, "removido");
+      this.toastResult(removeContainerResponse, t("removido"));
       if (removeContainerResponse.ok) await this.refreshNow();
     },
     async dockerRemoveImage(imageId) {
       const removeImageResponse = await this.api.rpcChecked({ RemoveImage: { id: imageId } });
-      this.toastResult(removeImageResponse, "removido");
+      this.toastResult(removeImageResponse, t("removido"));
       if (removeImageResponse.ok) await this.refreshNow();
     },
     async dockerRemoveVolume(name) {
       const removeVolumeResponse = await this.api.rpcChecked({ RemoveVolume: { name } });
-      this.toastResult(removeVolumeResponse, "removido");
+      this.toastResult(removeVolumeResponse, t("removido"));
       if (removeVolumeResponse.ok) await this.refreshNow();
     },
     async dockerRemoveNetwork(networkId) {
       const removeNetworkResponse = await this.api.rpcChecked({ RemoveNetwork: { id: networkId } });
-      this.toastResult(removeNetworkResponse, "removido");
+      this.toastResult(removeNetworkResponse, t("removido"));
       if (removeNetworkResponse.ok) await this.refreshNow();
     },
 
@@ -1028,7 +1030,7 @@ document.addEventListener("alpine:init", () => {
     async registryRemoveTag(tag) {
       const repo = this.registrySelectedRepo;
       const registryTagDeleteResponse = await this.api.rpcChecked({ RegistryTagDelete: { repo, tag } });
-      this.toastResult(registryTagDeleteResponse, `tag ${tag} removida`);
+      this.toastResult(registryTagDeleteResponse, t`tag ${tag} removida`);
       if (registryTagDeleteResponse.ok) {
         await this.registryOpenRepo(repo);
         await this.refreshNow();
@@ -1036,7 +1038,7 @@ document.addEventListener("alpine:init", () => {
     },
     async registryRemoveRepo(name) {
       const registryRepoDeleteResponse = await this.api.rpcChecked({ RegistryRepoDelete: { repo: name } });
-      this.toastResult(registryRepoDeleteResponse, `repositório ${name} removido`);
+      this.toastResult(registryRepoDeleteResponse, t`repositório ${name} removido`);
       if (registryRepoDeleteResponse.ok) {
         if (this.registrySelectedRepo === name) this.registryCloseRepo();
         await this.refreshNow();
@@ -1048,8 +1050,8 @@ document.addEventListener("alpine:init", () => {
         const gcResult = registryGcResponse.value?.RegistryGcResult;
         this.toastOk(
           gcResult
-            ? `GC: ${gcResult.blobs_removed} arquivo(s) removido(s) · ${formatBytes(gcResult.bytes_freed)} liberados`
-            : "GC concluído"
+            ? t`GC: ${gcResult.blobs_removed} arquivo(s) removido(s) · ${formatBytes(gcResult.bytes_freed)} liberados`
+            : t("GC concluído")
         );
         await this.refreshNow();
       } else {
@@ -1058,7 +1060,7 @@ document.addEventListener("alpine:init", () => {
     },
     async registryRemoveToken(name) {
       const registryTokenRevokeResponse = await this.api.rpcChecked({ RegistryTokenRevoke: { name } });
-      this.toastResult(registryTokenRevokeResponse, `token ${name} revogado`);
+      this.toastResult(registryTokenRevokeResponse, t`token ${name} revogado`);
       if (registryTokenRevokeResponse.ok) await this.registryRefreshTokens();
     },
 
@@ -1079,7 +1081,7 @@ document.addEventListener("alpine:init", () => {
       this.jobsInflight[jobId] = true;
       try {
         const jobRunNowResponse = await this.api.rpcChecked({ JobRunNow: { id: jobId } });
-        this.toastResult(jobRunNowResponse, "job disparado");
+        this.toastResult(jobRunNowResponse, t("job disparado"));
         await this.refreshNow();
       } finally {
         delete this.jobsInflight[jobId];
@@ -1095,7 +1097,7 @@ document.addEventListener("alpine:init", () => {
     async jobRunCancel(jobRunId) {
       if (!jobRunId) return;
       const jobRunCancelResponse = await this.api.rpcChecked({ JobRunCancel: { job_run_id: jobRunId } });
-      this.toastResult(jobRunCancelResponse, "cancelamento solicitado");
+      this.toastResult(jobRunCancelResponse, t("cancelamento solicitado"));
       await this.refreshNow();
     },
 
@@ -1104,7 +1106,7 @@ document.addEventListener("alpine:init", () => {
     async jobToggle(jobId) {
       const job = this.jobsById[jobId];
       if (!job) {
-        this.toastWarn("job não encontrado no snapshot atual");
+        this.toastWarn(t("job não encontrado no snapshot atual"));
         return;
       }
       const jobUpdateResponse = await this.api.rpcChecked({
@@ -1120,14 +1122,14 @@ document.addEventListener("alpine:init", () => {
           recurrence: job.recurrence,
         },
       });
-      this.toastResult(jobUpdateResponse, job.enabled ? "job desativado" : "job ativado");
+      this.toastResult(jobUpdateResponse, job.enabled ? t("job desativado") : t("job ativado"));
       await this.refreshNow();
     },
 
     async jobDelete(jobId) {
-      if (!confirm("Remover este job? Ação irreversível.")) return;
+      if (!confirm(t("Remover este job? Ação irreversível."))) return;
       const jobDeleteResponse = await this.api.rpcChecked({ JobDelete: { id: jobId } });
-      this.toastResult(jobDeleteResponse, "job removido");
+      this.toastResult(jobDeleteResponse, t("job removido"));
       await this.refreshNow();
     },
 
@@ -1137,8 +1139,8 @@ document.addEventListener("alpine:init", () => {
     async jobWarm(jobId) {
       const jobWarmResponse = await this.api.rpcChecked({ JobWarm: { job_id: jobId } });
       if (!this.toastResult(jobWarmResponse)) return;
-      if (jobWarmResponse.value.JobWarmRequested.already_warm) this.toastOk("job já está aquecido");
-      else this.toastOk("aquecimento iniciado");
+      if (jobWarmResponse.value.JobWarmRequested.already_warm) this.toastOk(t("job já está aquecido"));
+      else this.toastOk(t("aquecimento iniciado"));
       await this.refreshNow();
     },
 
@@ -1146,10 +1148,10 @@ document.addEventListener("alpine:init", () => {
      * o build sem cache, mesmo com o job quente. Leva minutos e segura a vaga única
      * da fila de jobs, por isso pede confirmação. O fim chega em `Event::JobWarmChanged`. */
     async jobRebuild(jobId) {
-      if (!confirm("Reconstruir este job do zero (sem cache, com as imagens base rebaixadas)? Pode levar vários minutos e ocupa a fila de jobs enquanto roda.")) return;
+      if (!confirm(t("Reconstruir este job do zero (sem cache, com as imagens base rebaixadas)? Pode levar vários minutos e ocupa a fila de jobs enquanto roda."))) return;
       const jobRebuildResponse = await this.api.rpcChecked({ JobWarm: { job_id: jobId, force: true } });
       if (!this.toastResult(jobRebuildResponse)) return;
-      this.toastOk("reconstrução iniciada");
+      this.toastOk(t("reconstrução iniciada"));
       await this.refreshNow();
     },
 
@@ -1160,8 +1162,8 @@ document.addEventListener("alpine:init", () => {
     async serviceWarm(serviceId) {
       const serviceWarmResponse = await this.api.rpcChecked({ ServiceWarm: { service_id: serviceId } });
       if (!this.toastResult(serviceWarmResponse)) return;
-      if (serviceWarmResponse.value.ServiceWarmRequested.already_warm) this.toastOk("serviço já está aquecido");
-      else this.toastOk("aquecimento iniciado");
+      if (serviceWarmResponse.value.ServiceWarmRequested.already_warm) this.toastOk(t("serviço já está aquecido"));
+      else this.toastOk(t("aquecimento iniciado"));
       await this.refreshNow();
     },
 
@@ -1245,7 +1247,7 @@ document.addEventListener("alpine:init", () => {
     },
     newJobPickNoService() {
       this.newJobServiceId = "";
-      this.newJobServiceName = "nenhum (autônomo)";
+      this.newJobServiceName = t("nenhum (autônomo)");
       this.newJobStep = "form";
     },
     newJobBack() {
@@ -1266,13 +1268,13 @@ document.addEventListener("alpine:init", () => {
     async newJobSetSourceTab(kind) {
       this.newJobSourceTab = kind;
       if (kind === "git" && this.newJobGitProviders.length === 0) {
-        this.newJobGitMessage = "carregando contas…";
+        this.newJobGitMessage = t("carregando contas…");
         const gitProviderListResponse = await this.api.rpc("GitProviderList");
         if (gitProviderListResponse.ok && gitProviderListResponse.value?.GitProviders) {
           this.newJobGitProviders = gitProviderListResponse.value.GitProviders;
           this.newJobGitMessage = "";
         } else {
-          this.newJobGitMessage = "erro ao listar contas conectadas";
+          this.newJobGitMessage = t("erro ao listar contas conectadas");
         }
       }
     },
@@ -1282,13 +1284,13 @@ document.addEventListener("alpine:init", () => {
       this.newJobGitRepos = [];
       this.newJobGitBranches = [];
       if (!this.newJobGitProviderId) return;
-      this.newJobGitMessage = "carregando repositórios…";
+      this.newJobGitMessage = t("carregando repositórios…");
       const gitRepoListResponse = await this.api.rpc({ GitRepoList: { provider_id: this.newJobGitProviderId } });
       if (gitRepoListResponse.ok && gitRepoListResponse.value?.GitRepos) {
         this.newJobGitRepos = gitRepoListResponse.value.GitRepos;
-        this.newJobGitMessage = `${gitRepoListResponse.value.GitRepos.length} repositório(s)`;
+        this.newJobGitMessage = t`${gitRepoListResponse.value.GitRepos.length} repositório(s)`;
       } else {
-        this.newJobGitMessage = "erro ao listar repositórios";
+        this.newJobGitMessage = t("erro ao listar repositórios");
       }
     },
     async newJobGitRepoPick(fullName) {
@@ -1298,7 +1300,7 @@ document.addEventListener("alpine:init", () => {
       if (repo?.default_branch) this.newJobGitBranch = repo.default_branch;
       this.newJobGitBranches = [];
       if (!this.newJobGitProviderId) return;
-      this.newJobGitMessage = "carregando branches…";
+      this.newJobGitMessage = t("carregando branches…");
       const gitBranchListResponse = await this.api.rpc({
         GitBranchList: { provider_id: this.newJobGitProviderId, repo_full_name: fullName },
       });
@@ -1306,7 +1308,7 @@ document.addEventListener("alpine:init", () => {
         this.newJobGitBranches = gitBranchListResponse.value.GitBranches;
         this.newJobGitMessage = "";
       } else {
-        this.newJobGitMessage = "erro ao listar branches";
+        this.newJobGitMessage = t("erro ao listar branches");
       }
     },
 
@@ -1334,7 +1336,7 @@ document.addEventListener("alpine:init", () => {
 
     async newJobCreate() {
       if (!this.newJobName.trim() || !this.newJobMainService.trim()) {
-        this.newJobError = "nome e main service são obrigatórios";
+        this.newJobError = t("nome e main service são obrigatórios");
         return;
       }
       let compose = "";
@@ -1342,13 +1344,13 @@ document.addEventListener("alpine:init", () => {
       if (this.newJobSourceTab === "git") {
         const branch = this.newJobGitBranch.trim();
         if (!this.newJobGitRepoFullName || !branch) {
-          this.newJobError = "selecione repositório e branch";
+          this.newJobError = t("selecione repositório e branch");
           return;
         }
         const composePath = this.newJobComposePath.trim() || "docker-compose.yml";
         const repo = this.newJobGitRepos.find((newJobGitRepo) => newJobGitRepo.full_name === this.newJobGitRepoFullName);
         if (!repo?.clone_url) {
-          this.newJobError = "não foi possível resolver a URL do repositório — selecione de novo";
+          this.newJobError = t("não foi possível resolver a URL do repositório — selecione de novo");
           return;
         }
         gitSource = {
@@ -1362,7 +1364,7 @@ document.addEventListener("alpine:init", () => {
       } else {
         compose = this.newJobCompose;
         if (!compose.trim()) {
-          this.newJobError = "cole o docker-compose.yml do job";
+          this.newJobError = t("cole o docker-compose.yml do job");
           return;
         }
       }
@@ -1408,7 +1410,7 @@ document.addEventListener("alpine:init", () => {
       }
       this.newJobSubmitting = false;
       if (saveResponse.ok) {
-        this.toastOk(this.newJobEditId ? "job atualizado" : "job criado");
+        this.toastOk(this.newJobEditId ? t("job atualizado") : t("job criado"));
         this.closeNewJob();
       } else {
         this.newJobError = saveResponse.error;
@@ -1423,7 +1425,7 @@ document.addEventListener("alpine:init", () => {
     async openEditJob(jobId) {
       const job = this.jobsById[jobId];
       if (!job) {
-        this.toastWarn("job não encontrado no snapshot atual");
+        this.toastWarn(t("job não encontrado no snapshot atual"));
         return;
       }
       this.showNewJob = true;
@@ -1460,7 +1462,7 @@ document.addEventListener("alpine:init", () => {
           // O modal já está visível neste ponto (showNewJob=true lá em cima)
           // — sem esta mensagem os selects de repo/branch ficam vazios,
           // sem nenhuma explicação, durante os 2-3 round-trips abaixo.
-          this.newJobGitMessage = "carregando repositórios…";
+          this.newJobGitMessage = t("carregando repositórios…");
           const gitProviderListResponse = await this.api.rpc("GitProviderList");
           if (gitProviderListResponse.ok && gitProviderListResponse.value?.GitProviders) this.newJobGitProviders = gitProviderListResponse.value.GitProviders;
           const gitRepoListResponse = await this.api.rpc({ GitRepoList: { provider_id: this.newJobGitProviderId } });
@@ -1469,7 +1471,7 @@ document.addEventListener("alpine:init", () => {
             const match = this.newJobGitRepos.find((repo) => repo.clone_url === job.git_source.url);
             this.newJobGitRepoFullName = match?.full_name || "";
             if (this.newJobGitRepoFullName) {
-              this.newJobGitMessage = "carregando branches…";
+              this.newJobGitMessage = t("carregando branches…");
               const gitBranchListResponse = await this.api.rpc({
                 GitBranchList: {
                   provider_id: this.newJobGitProviderId,
@@ -1563,7 +1565,7 @@ document.addEventListener("alpine:init", () => {
     // com cache de horas no daemon por causa do limite de 60 req/h do GitHub).
     // `force` ignora o cache — o daemon ainda espaça consultas forçadas em ~1 min.
     async updateCheck(force) {
-      this.updateMessage = "verificando…";
+      this.updateMessage = t("verificando…");
       const updateCheckResponse = await this.api.rpcChecked({ CheckUpdate: { force } });
       if (!updateCheckResponse.ok) {
         // Sem GitHub, limite de consultas, `enabled = false`: o texto do daemon já diz
@@ -1573,7 +1575,7 @@ document.addEventListener("alpine:init", () => {
       }
       const updateInfo = updateCheckResponse.value?.UpdateInfo;
       if (!updateInfo) {
-        this.updateMessage = "resposta inesperada do daemon";
+        this.updateMessage = t("resposta inesperada do daemon");
         return;
       }
       this.applyUpdateInfo(updateInfo);
@@ -1591,8 +1593,8 @@ document.addEventListener("alpine:init", () => {
       this.updateReleaseUrl = updateInfo.release_url;
       this.updateCheckedAtLabel = dateDayMonthHourMinute(updateInfo.checked_at);
       this.updateMessage = updateInfo.is_update_available
-        ? "Há uma versão nova: " + updateInfo.latest_version
-        : "Você está na versão mais recente.";
+        ? t("Há uma versão nova: ") + updateInfo.latest_version
+        : t("Você está na versão mais recente.");
     },
 
     // Texto do que o daemon sabe sobre a atualização em curso ou a última tentativa
@@ -1602,17 +1604,17 @@ document.addEventListener("alpine:init", () => {
       const message = updateProgress.message || "";
       switch (updateProgress.stage) {
         case "Downloading":
-          return "Atualizando… " + message;
+          return t("Atualizando… ") + message;
         case "Installing":
-          return "Instalando" + (target ? " " + target : "") + "… o daemon vai reiniciar.";
+          return t("Instalando") + (target ? " " + target : "") + t("… o daemon vai reiniciar.");
         case "RollingBack":
-          return "Revertendo… o daemon vai reiniciar.";
+          return t("Revertendo… o daemon vai reiniciar.");
         case "Succeeded":
-          return "Atualizado" + (target ? " para " + target : "") + ".";
+          return t("Atualizado") + (target ? t(" para ") + target : "") + ".";
         case "Failed":
-          return "A atualização falhou: " + message;
+          return t("A atualização falhou: ") + message;
         case "RolledBack":
-          return "A atualização foi revertida: " + message;
+          return t("A atualização foi revertida: ") + message;
         default:
           return "";
       }
@@ -1634,17 +1636,17 @@ document.addEventListener("alpine:init", () => {
     async updateApply() {
       if (
         !confirm(
-          "O daemon baixa a versão " + this.updateLatestVersion + ", confere a assinatura e a instala. " +
-            "Ele reinicia (os containers dos serviços continuam rodando) e esta tela fica sem resposta por " +
-            "alguns segundos. Um snapshot do banco é guardado antes."
+          t("O daemon baixa a versão ") + this.updateLatestVersion + t(", confere a assinatura e a instala. ") +
+            t("Ele reinicia (os containers dos serviços continuam rodando) e esta tela fica sem resposta por ") +
+            t("alguns segundos. Um snapshot do banco é guardado antes.")
         )
       ) {
         return;
       }
-      this.updateProgressMessage = "pedindo a atualização…";
+      this.updateProgressMessage = t("pedindo a atualização…");
       let applyResponse = await this.api.rpcChecked({ ApplyUpdate: { allow_active_deploys: false } });
-      if (!applyResponse.ok && String(applyResponse.error).includes("deploy em andamento")) {
-        if (!confirm("Atualizar agora interrompe o deploy que está rodando ou na fila. Atualizar mesmo assim?")) {
+      if (!applyResponse.ok && String(applyResponse.error).includes(t("deploy em andamento"))) {
+        if (!confirm(t("Atualizar agora interrompe o deploy que está rodando ou na fila. Atualizar mesmo assim?"))) {
           this.updateProgressMessage = "";
           return;
         }
@@ -1655,7 +1657,7 @@ document.addEventListener("alpine:init", () => {
         this.toastError(String(applyResponse.error));
         return;
       }
-      this.toastOk("Atualização iniciada");
+      this.toastOk(t("Atualização iniciada"));
       await this.updateFollowProgress();
     },
 
@@ -1667,13 +1669,13 @@ document.addEventListener("alpine:init", () => {
       for (let attempt = 0; attempt < 150 && !finalStages.includes(finalStage); attempt++) {
         await new Promise((resolve) => setTimeout(resolve, 2000));
         finalStage = await this.updateLoadProgress();
-        if (finalStage === null) this.updateProgressMessage = "reiniciando o daemon…";
+        if (finalStage === null) this.updateProgressMessage = t("reiniciando o daemon…");
       }
       if (finalStage === "Succeeded" || finalStage === "RolledBack") {
         await this.updateCheck(true);
-        this.toastOk(finalStage === "Succeeded" ? "Daemon atualizado" : "Versão anterior restaurada");
+        this.toastOk(finalStage === "Succeeded" ? t("Daemon atualizado") : t("Versão anterior restaurada"));
       } else if (finalStage === null) {
-        this.updateProgressMessage = "O daemon não voltou a responder em 5 minutos; confira o servidor.";
+        this.updateProgressMessage = t("O daemon não voltou a responder em 5 minutos; confira o servidor.");
       }
     },
 
@@ -1681,21 +1683,21 @@ document.addEventListener("alpine:init", () => {
     async updateRollback() {
       if (
         !confirm(
-          "Restaura os binários do backup da última atualização e reinicia o daemon. O banco não é " +
-            "revertido: se a versão nova migrou o esquema, o snapshot guardado antes da atualização " +
-            "fica no diretório do banco."
+          t("Restaura os binários do backup da última atualização e reinicia o daemon. O banco não é ") +
+            t("revertido: se a versão nova migrou o esquema, o snapshot guardado antes da atualização ") +
+            t("fica no diretório do banco.")
         )
       ) {
         return;
       }
-      this.updateProgressMessage = "revertendo…";
+      this.updateProgressMessage = t("revertendo…");
       const rollbackResponse = await this.api.rpcChecked("UpdateRollback");
       if (!rollbackResponse.ok) {
         this.updateProgressMessage = String(rollbackResponse.error);
         this.toastError(String(rollbackResponse.error));
         return;
       }
-      this.toastOk("Reversão iniciada");
+      this.toastOk(t("Reversão iniciada"));
       await this.updateFollowProgress();
     },
 
@@ -1706,7 +1708,7 @@ document.addEventListener("alpine:init", () => {
     async settingsSave() {
       const email = this.serverSettingsEmail.trim();
       const registryDomain = this.serverSettingsRegistryDomain.trim();
-      this.settingsMessage = "salvando…";
+      this.settingsMessage = t("salvando…");
       const setDaemonSettingsResponse = await this.api.rpcChecked({
         SetDaemonSettings: {
           acme_email: email || null,
@@ -1714,7 +1716,7 @@ document.addEventListener("alpine:init", () => {
         },
       });
       this.settingsMessage = "";
-      this.toastResult(setDaemonSettingsResponse, "configurações salvas");
+      this.toastResult(setDaemonSettingsResponse, t("configurações salvas"));
     },
 
     async gitProviderRefresh() {
@@ -1734,7 +1736,7 @@ document.addEventListener("alpine:init", () => {
       if (!base) {
         if (isGithub) base = "https://github.com";
         else {
-          this.toastWarn("informe a Base URL do Gitea");
+          this.toastWarn(t("informe a Base URL do Gitea"));
           return;
         }
       }
@@ -1745,7 +1747,7 @@ document.addEventListener("alpine:init", () => {
         const clientId = this.gitProviderClientId.trim();
         const csec = this.gitProviderClientSecret || "";
         if (!clientId || !csec.trim()) {
-          this.toastWarn("Client ID e Client Secret são obrigatórios");
+          this.toastWarn(t("Client ID e Client Secret são obrigatórios"));
           return;
         }
         providerCommand = {
@@ -1762,7 +1764,7 @@ document.addEventListener("alpine:init", () => {
       } else {
         const personalAccessToken = this.gitProviderPersonalAccessToken || "";
         if (!personalAccessToken.trim()) {
-          this.toastWarn("informe o Personal Access Token");
+          this.toastWarn(t("informe o Personal Access Token"));
           return;
         }
         providerCommand = {
@@ -1777,11 +1779,11 @@ document.addEventListener("alpine:init", () => {
           },
         };
       }
-      this.gitProviderMessage = "conectando…";
+      this.gitProviderMessage = t("conectando…");
       const rpcResponse = await this.api.rpc(providerCommand);
       if (!rpcResponse.ok || !rpcResponse.value?.GitProviderInfo) {
         this.gitProviderMessage = "";
-        this.toastError("erro: " + (rpcResponse.ok ? "resposta inesperada" : rpcResponse.error));
+        this.toastError("erro: " + (rpcResponse.ok ? t("resposta inesperada") : rpcResponse.error));
         return;
       }
       const providerId = rpcResponse.value.GitProviderInfo.id;
@@ -1791,14 +1793,14 @@ document.addEventListener("alpine:init", () => {
         const gitOAuthStartResponse = await this.api.rpc({ GitOAuthStart: { provider_id: providerId } });
         if (gitOAuthStartResponse.ok && gitOAuthStartResponse.value?.OAuthUrl) {
           this.gitProviderOauthUrl = gitOAuthStartResponse.value.OAuthUrl;
-          this.gitProviderMessage = "autorize a janela aberta e depois clique em Atualizar";
+          this.gitProviderMessage = t("autorize a janela aberta e depois clique em Atualizar");
           window.open(gitOAuthStartResponse.value.OAuthUrl, "_blank");
         } else {
-          this.gitProviderMessage = "provider criado; inicie o OAuth manualmente";
+          this.gitProviderMessage = t("provider criado; inicie o OAuth manualmente");
         }
       } else {
         this.gitProviderMessage = "";
-        this.toastOk(`conta ${label} conectada`);
+        this.toastOk(t`conta ${label} conectada`);
       }
       this.gitProviderName = "";
       this.gitProviderBaseUrl = "";
@@ -1811,7 +1813,7 @@ document.addEventListener("alpine:init", () => {
     async gitProviderDelete(providerId) {
       const gitProviderDeleteResponse = await this.api.rpcChecked({ GitProviderDelete: { id: providerId } });
       this.gitProviderMessage = "";
-      this.toastResult(gitProviderDeleteResponse, "provider removido");
+      this.toastResult(gitProviderDeleteResponse, t("provider removido"));
       await this.gitProviderRefresh();
     },
 
@@ -1819,10 +1821,10 @@ document.addEventListener("alpine:init", () => {
      * app desktop (handlers/settings.luau::manifest_export). O texto continua
      * visível abaixo para conferir ou copiar. */
     async manifestExport() {
-      this.manifestExportMessage = "exportando…";
+      this.manifestExportMessage = t("exportando…");
       const manifestExportAllResponse = await this.api.rpcChecked("ManifestExportAll");
       if (!manifestExportAllResponse.ok || !manifestExportAllResponse.value?.ManifestBundle) {
-        const reason = manifestExportAllResponse.ok ? "resposta inesperada" : manifestExportAllResponse.error;
+        const reason = manifestExportAllResponse.ok ? t("resposta inesperada") : manifestExportAllResponse.error;
         this.manifestExportMessage = "erro: " + reason;
         this.toastError("erro: " + reason);
         return;
@@ -1842,8 +1844,8 @@ document.addEventListener("alpine:init", () => {
       link.remove();
       setTimeout(() => URL.revokeObjectURL(zipUrl), 10000);
 
-      this.manifestExportMessage = "baixado como " + zipName;
-      this.toastOk("Infra as Code exportado");
+      this.manifestExportMessage = t("baixado como ") + zipName;
+      this.toastOk(t("Infra as Code exportado"));
     },
 
     /** "Importar de um .zip…": lê e VALIDA o zip (exatamente um .yml e um .toml
@@ -1855,14 +1857,16 @@ document.addEventListener("alpine:init", () => {
       if (!file) return;
       const zipManifest = await readManifestZip(file);
       if (!zipManifest.ok) {
-        this.manifestImportMessage = "zip inválido: " + zipManifest.error.replace(/^zip inválido: /, "");
-        this.toastError(zipManifest.error.replace(/^zip inválido: /, ""));
+        const invalidZipPrefix = t("zip inválido: ");
+        const zipErrorDetail = zipManifest.error.startsWith(invalidZipPrefix) ? zipManifest.error.slice(invalidZipPrefix.length) : zipManifest.error;
+        this.manifestImportMessage = invalidZipPrefix + zipErrorDetail;
+        this.toastError(zipErrorDetail);
         return;
       }
       this.manifestImportYaml = zipManifest.yaml;
       this.manifestImportDotenv = zipManifest.toml;
       this.manifestZipName = file.name;
-      this.manifestImportMessage = "zip lido: " + file.name + " — confira as opções e clique em Importar";
+      this.manifestImportMessage = t("zip lido: ") + file.name + t(" — confira as opções e clique em Importar");
     },
 
     /** 3 formas de resposta possíveis (mesma distinção de handlers/
@@ -1876,7 +1880,7 @@ document.addEventListener("alpine:init", () => {
 
       const yaml = this.manifestImportYaml || "";
       if (!yaml.trim()) {
-        this.toastWarn("escolha o .zip do manifesto (ou cole o YAML)");
+        this.toastWarn(t("escolha o .zip do manifesto (ou cole o YAML)"));
         return;
       }
       const dotenv = this.manifestImportDotenv || "";
@@ -1885,19 +1889,19 @@ document.addEventListener("alpine:init", () => {
 
       // Prune remove serviços: o usuário vê o que marcou antes de aplicar
       // (o desktop abre a mesma confirmação, destrutiva quando prune está ligado).
-      const origin = this.manifestZipName ? "Do zip " + this.manifestZipName + ": " : "";
+      const origin = this.manifestZipName ? t("Do zip ") + this.manifestZipName + ": " : "";
       const confirmed = confirm(
-        "Aplicar este manifesto?\n\n" +
-          origin + yaml.length + " B de YAML + " + dotenv.length + " B de TOML.\n\n" +
-          "• Remover serviços ausentes (prune): " + (prune ? "SIM" : "não") + "\n" +
-          "• Disparar deploy dos alterados: " + (deploy ? "SIM" : "não")
+        t("Aplicar este manifesto?\n\n") +
+          origin + yaml.length + t(" B de YAML + ") + dotenv.length + t(" B de TOML.\n\n") +
+          t("• Remover serviços ausentes (prune): ") + (prune ? t("SIM") : t("não")) + "\n" +
+          t("• Disparar deploy dos alterados: ") + (deploy ? t("SIM") : t("não"))
       );
       if (!confirmed) {
-        this.manifestImportMessage = "cancelado";
+        this.manifestImportMessage = t("cancelado");
         return;
       }
 
-      this.manifestImportMessage = "importando…";
+      this.manifestImportMessage = t("importando…");
       const manifestImportResponse = await this.api.rpc({
         ManifestImport: { yaml, dotenv, prune, deploy },
       });
@@ -1910,8 +1914,8 @@ document.addEventListener("alpine:init", () => {
       if (applyResult?.MissingEnvVars) {
         this.manifestHasMissing = true;
         this.manifestMissingVars = applyResult.MissingEnvVars.join(", ");
-        this.manifestImportMessage = "faltam variáveis — nada foi aplicado";
-        this.toastError("Faltam variáveis no TOML: " + this.manifestMissingVars);
+        this.manifestImportMessage = t("faltam variáveis — nada foi aplicado");
+        this.toastError(t("Faltam variáveis no TOML: ") + this.manifestMissingVars);
         return;
       }
       if (applyResult?.Err) {
@@ -1920,7 +1924,7 @@ document.addEventListener("alpine:init", () => {
         return;
       }
       if (!applyResult?.ManifestReport) {
-        this.manifestImportMessage = "resposta inesperada do daemon";
+        this.manifestImportMessage = t("resposta inesperada do daemon");
         return;
       }
       const actions = applyResult.ManifestReport.actions || [];
@@ -1929,20 +1933,20 @@ document.addEventListener("alpine:init", () => {
       // `actions` com o verbo Deleted.
       const pruned = actions.filter((action) => action.action === "Deleted").map((action) => action.name);
       if (pruned.length > 0) {
-        lines.push("removidos (prune): " + pruned.join(", "));
+        lines.push(t("removidos (prune): ") + pruned.join(", "));
       } else if (prune) {
-        lines.push("prune ligado — nenhum serviço ausente para remover");
+        lines.push(t("prune ligado — nenhum serviço ausente para remover"));
       }
       const deployed = applyResult.ManifestReport.deployed || [];
       if (deployed.length > 0) {
-        lines.push("deploy disparado: " + deployed.join(", "));
+        lines.push(t("deploy disparado: ") + deployed.join(", "));
       } else if (deploy) {
-        lines.push("deploy ligado — nada mudou para disparar");
+        lines.push(t("deploy ligado — nada mudou para disparar"));
       }
       this.manifestReportLines = lines;
       this.manifestHasReport = true;
-      this.manifestImportMessage = "import concluído ✓";
-      this.toastOk("Infra as Code importado");
+      this.manifestImportMessage = t("import concluído ✓");
+      this.toastOk(t("Infra as Code importado"));
       await this.refreshNow();
     },
 
@@ -2015,7 +2019,7 @@ document.addEventListener("alpine:init", () => {
     },
 
     async dockerCleanupSave() {
-      this.dockerCleanupMessage = "salvando…";
+      this.dockerCleanupMessage = t("salvando…");
       const dockerCleanupConfigSetResponse = await this.api.rpcChecked({
         DockerCleanupConfigSet: {
           config: {
@@ -2039,7 +2043,7 @@ document.addEventListener("alpine:init", () => {
         this.dockerCleanupApplyConfig(dockerCleanupConfigSetResponse.value.DockerCleanupConfig.config);
         this.dockerCleanupLastRunText = dockerCleanupLastRunSummary(dockerCleanupConfigSetResponse.value.DockerCleanupConfig.last_run);
         this.dockerCleanupMessage = "";
-        this.toastOk("configurações salvas");
+        this.toastOk(t("configurações salvas"));
       } else {
         this.dockerCleanupMessage = "";
         this.toastError("erro: " + dockerCleanupConfigSetResponse.error);
@@ -2054,18 +2058,18 @@ document.addEventListener("alpine:init", () => {
       const anySelected =
         this.dockerCleanupContainers || this.dockerCleanupImages || this.dockerCleanupVolumes || this.dockerCleanupNetworks || this.dockerCleanupBuildCache;
       if (!anySelected) {
-        this.toastWarn("marque pelo menos um recurso");
+        this.toastWarn(t("marque pelo menos um recurso"));
         return;
       }
       if (
         !confirm(
-          "Roda a limpeza dos recursos marcados imediatamente, fora do horário agendado. Ação irreversível."
+          t("Roda a limpeza dos recursos marcados imediatamente, fora do horário agendado. Ação irreversível.")
         )
       ) {
         return;
       }
       this.dockerCleanupRunning = true;
-      this.dockerCleanupMessage = "executando…";
+      this.dockerCleanupMessage = t("executando…");
       const dockerCleanupRunNowResponse = await this.api.rpcChecked("DockerCleanupRunNow");
       if (!dockerCleanupRunNowResponse.ok) {
         this.dockerCleanupRunning = false;
@@ -2077,7 +2081,7 @@ document.addEventListener("alpine:init", () => {
     async serviceStop() {
       const serviceId = this.selectedServiceId;
       const serviceStopResponse = await this.api.rpcChecked({ ServiceStop: { service_id: serviceId } });
-      this.toastResult(serviceStopResponse, "serviço parado");
+      this.toastResult(serviceStopResponse, t("serviço parado"));
       await this.fetchServiceDetail(serviceId);
       await this.refreshNow();
     },
@@ -2085,7 +2089,7 @@ document.addEventListener("alpine:init", () => {
     async serviceReload() {
       const serviceId = this.selectedServiceId;
       const serviceReloadResponse = await this.api.rpcChecked({ ServiceReload: { service_id: serviceId } });
-      this.toastResult(serviceReloadResponse, "serviço recarregado");
+      this.toastResult(serviceReloadResponse, t("serviço recarregado"));
       await this.fetchServiceDetail(serviceId);
     },
 

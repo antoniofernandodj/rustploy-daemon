@@ -1,3 +1,4 @@
+import { t } from "../i18n.js";
 // net/api.js — cliente HTTP/JSON do daemon. Porta de
 // crates/rustploy-gui/views/scripts/net/api.luau: mesma convenção de
 // Command/Response (serde externally-tagged) e mesma autenticação Bearer.
@@ -20,7 +21,7 @@ async function fetchTimeout(url, init, timeoutMs) {
     const text = await httpResponse.text();
     return { ok: httpResponse.ok, status: httpResponse.status, json: async () => JSON.parse(text) };
   } catch (error) {
-    if (abortController.signal.aborted) throw new Error("tempo esgotado (" + Math.round(timeoutMs / 1000) + "s) sem resposta do daemon");
+    if (abortController.signal.aborted) throw new Error(t("tempo esgotado (") + Math.round(timeoutMs / 1000) + t("s) sem resposta do daemon"));
     throw error;
   } finally {
     clearTimeout(timer);
@@ -83,7 +84,7 @@ export async function login(baseUrl, accessKey) {
       RPC_TIMEOUT_MS,
     );
   } catch (error) {
-    return { ok: false, error: error && error.message ? error.message : "falha de rede" };
+    return { ok: false, error: error && error.message ? error.message : t("falha de rede") };
   }
   let decoded;
   try {
@@ -119,7 +120,7 @@ export class Api {
         RPC_TIMEOUT_MS,
       );
     } catch (error) {
-      return { ok: false, error: error && error.message ? error.message : "falha de rede" };
+      return { ok: false, error: error && error.message ? error.message : t("falha de rede") };
     }
     if (!httpResponse.ok) {
       return { ok: false, error: "HTTP " + httpResponse.status };
@@ -128,7 +129,7 @@ export class Api {
     try {
       decoded = await httpResponse.json();
     } catch {
-      return { ok: false, error: "resposta inválida do daemon" };
+      return { ok: false, error: t("resposta inválida do daemon") };
     }
     return { ok: true, value: decoded };
   }
@@ -159,7 +160,7 @@ export class Api {
         UPLOAD_TIMEOUT_MS,
       );
     } catch (error) {
-      return { ok: false, error: error && error.message ? error.message : "falha de rede" };
+      return { ok: false, error: error && error.message ? error.message : t("falha de rede") };
     }
     if (!httpResponse.ok) {
       return { ok: false, error: "HTTP " + httpResponse.status };
@@ -168,7 +169,7 @@ export class Api {
     try {
       decoded = await httpResponse.json();
     } catch {
-      return { ok: false, error: "resposta inválida do daemon" };
+      return { ok: false, error: t("resposta inválida do daemon") };
     }
     if (decoded && typeof decoded === "object" && decoded.Err) {
       return { ok: false, error: decoded.Err.message || decoded.Err.code || "erro" };

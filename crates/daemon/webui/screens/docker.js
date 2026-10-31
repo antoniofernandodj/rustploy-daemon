@@ -13,6 +13,7 @@ import {
   registryTagRows,
   registryTokenRows,
 } from "../format.js";
+import { t } from "../i18n.js";
 
 document.addEventListener("alpine:init", () => {
   Alpine.data("docker", () => ({
@@ -52,7 +53,7 @@ document.addEventListener("alpine:init", () => {
     get registryStatusLabel() {
       const registryStatus = this.store.snap?.registry_status;
       if (!registryStatus) return "desabilitado";
-      return registryStatus.enabled ? `ativo em ${this.registryHost}` : "desabilitado";
+      return registryStatus.enabled ? t`ativo em ${this.registryHost}` : "desabilitado";
     },
 
     // ── Modal "novo token" ───────────────────────────────────────────────
@@ -76,7 +77,7 @@ document.addEventListener("alpine:init", () => {
     },
     async newRegistryTokenCreate() {
       if (!this.newRegistryTokenName.trim()) {
-        this.newRegistryTokenError = "nome obrigatório";
+        this.newRegistryTokenError = t("nome obrigatório");
         return;
       }
       this.newRegistryTokenError = "";
