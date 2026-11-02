@@ -57,6 +57,29 @@ pub struct RustployConfig {
     pub registry: RegistryConfig,
     #[serde(default)]
     pub update: UpdateConfig,
+    #[serde(default)]
+    pub state_git: StateGitConfig,
+}
+
+/// `[state_git]`: só o ritmo do `fetch`. Modo, repositório e provider são configurados pela UI e
+/// ficam no banco (ver `features::state_git`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StateGitConfig {
+    /// De quanto em quanto tempo o daemon consulta o remoto por commits novos (mínimo efetivo: 10 s).
+    #[serde(default = "default_fetch_interval_secs")]
+    pub fetch_interval_secs: u64,
+}
+
+fn default_fetch_interval_secs() -> u64 {
+    60
+}
+
+impl Default for StateGitConfig {
+    fn default() -> Self {
+        Self {
+            fetch_interval_secs: default_fetch_interval_secs(),
+        }
+    }
 }
 
 /// Verificação de versão nova (`Command::CheckUpdate`). Só consulta; instalar é
@@ -351,6 +374,7 @@ impl Default for RustployConfig {
             external_ports: ExternalPortsConfig::default(),
             registry: RegistryConfig::default(),
             update: UpdateConfig::default(),
+            state_git: StateGitConfig::default(),
         }
     }
 }

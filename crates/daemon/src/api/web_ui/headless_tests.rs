@@ -1294,3 +1294,185 @@ async fn update_badge_lights_up_from_the_snapshot() {
         "sem erros de JS no console"
     );
 }
+
+/// A sincronização do estado com o git (Fases 6 e 7 do plano de estado em git): o aviso do topo, a
+/// aba "Sync" do Settings (situação, divergência, commit recusado, removidos, auditoria), o selo
+/// "mudança pendente de deploy" e o container órfão em Runtime → Containers. Tudo vem do snapshot.
+#[tokio::test]
+async fn git_sync_screens_render_from_the_snapshot() {
+    let addr = spawn_static_server().await;
+    let (browser, _handler) = launch().await;
+    let page = open_page(&browser, addr).await;
+    seed_connected(&page).await;
+
+    // Sem `state_git` no snapshot (daemon antigo, ou ainda carregando): nada de aviso e nada quebra.
+    assert!(
+        !eval_str(
+            &page,
+            "String(Alpine.store('app').stateGitAlertMessage === '')"
+        )
+        .await
+        .is_empty()
+    );
+    assert_eq!(
+        eval_str(&page, "Alpine.store('app').stateGitAlertMessage").await,
+        ""
+    );
+
+    let seeded = eval_str(
+        &page,
+        &format!(
+            r#"(() => {{
+                const s = Alpine.store('app');
+                const snapshot = {SNAPSHOT_JS};
+                snapshot.state_git = {{
+                    mode: 'sync', remote: 'https://github.com/o/estado.git', branch: 'main', provider_id: null,
+                    git_available: true, recovery_configured: false,
+                    last_commit: {{ sha: 'da3da09aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', at: '2026-11-02T06:28:44Z', subject: 'Atualiza projeto E2E' }},
+                    last_push_ok: true, last_push_at: '2026-11-02T06:28:50Z', last_fetch_at: '2026-11-02T06:29:00Z',
+                    last_error: null, blocked_by_plaintext: 0, needs_push: false, ahead: 1, behind: 1,
+                    paused_reason: 'o histórico divergiu',
+                    incoming_rejected: {{ sha: '40c22c1240580bde3cac6512dab507c663335a85', reason: 'traz 1 valor(es) em claro' }},
+                    removed_in_git: [{{ id: 'serviço:svc_web', kind: 'serviço', name: 'web', project: 'E2E',
+                                       sha: 'da3da09aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', at: '2026-11-02T06:28:44Z' }}],
+                    pending_deploy: ['svc_pendente'],
+                }};
+                snapshot.infra_audit = [
+                    {{ definite: false, allowed: false, project: 'E2E', scope: 'projeto', what: 'env PASSWORD_MIN_LENGTH' }},
+                    {{ definite: true, allowed: false, project: 'E2E', scope: 'serviço api', what: 'token de webhook sem cifra' }},
+                ];
+                snapshot.docker_containers = [
+                    {{ id: 'a'.repeat(64), name: 'orfao_vivo', image: 'debian', state: 'running', status: 'Up',
+                       managed: true, project: null, service: null, removed_in_git: 'web' }},
+                    {{ id: 'b'.repeat(64), name: 'servico_vivo', image: 'debian', state: 'running', status: 'Up',
+                       managed: true, project: 'E2E', service: 'api', removed_in_git: null }},
+                ];
+                s.applySnapshot(snapshot);
+                return JSON.stringify([s.stateGitAlertMessage, s.stateGitPendingDeploy('svc_pendente'),
+                                       s.stateGitPendingDeploy('outro'), s.stateGitAuditFindings.length]);
+            }})()"#
+        ),
+    )
+    .await;
+    let v: serde_json::Value = serde_json::from_str(&seeded).unwrap();
+    assert!(
+        v[0].as_str().unwrap().contains("paused"),
+        "a pausa tem prioridade no aviso: {}",
+        v[0]
+    );
+    assert_eq!(v[1], true, "serviço com mudança pendente de deploy");
+    assert_eq!(v[2], false);
+    assert_eq!(v[3], 2, "a auditoria vem no snapshot");
+    assert!(
+        visible(&page, ".banner--warn").await,
+        "o aviso do topo aparece (pausada)"
+    );
+
+    // Settings → Sync
+    let page_text = eval_str(
+        &page,
+        r#"(() => {
+            const s = Alpine.store('app');
+            s.nav('settings');
+            s.settingsTab = 'gitsync';
+            s.stateGitFormLoad();
+            return 'ok';
+        })()"#,
+    )
+    .await;
+    assert!(!page_text.is_empty());
+    // O Alpine aplica `x-show`/`x-if` num microtask: espera a tela de fato aparecer antes de medir
+    // (senão `innerText` de um elemento ainda oculto devolve o texto todo e o teste passa em falso).
+    assert!(
+        visible(&page, "[x-data=\"settings\"]").await,
+        "Settings visível"
+    );
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    let text = eval_str(
+        &page,
+        "document.querySelector('[x-data=\"settings\"]').innerText",
+    )
+    .await;
+    for esperado in [
+        "GIT SYNC",
+        "DIVERGED HISTORY",
+        "Use the repository's",
+        "Use the server's",
+        "Resume",
+        "REPOSITORY COMMIT REJECTED",
+        "REMOVED IN GIT",
+        "Dismiss",
+        "PLAINTEXT VALUES (2)",
+        "env PASSWORD_MIN_LENGTH",
+        "Not a secret",
+        "da3da09 · Atualiza projeto E2E",
+    ] {
+        assert!(
+            text.contains(esperado),
+            "faltou {esperado:?} na aba Sync:\n{text}"
+        );
+    }
+    // O formulário parte do status gravado no daemon.
+    assert_eq!(
+        eval_str(&page, "Alpine.store('app').stateGitRemote").await,
+        "https://github.com/o/estado.git"
+    );
+    // A certeza (token de webhook) NÃO pode ser liberada: só a suspeita tem o botão.
+    let buttons = eval_str(
+        &page,
+        r#"JSON.stringify([...document.querySelectorAll('[x-data="settings"] button')]
+            .filter(b => b.getClientRects().length > 0).map(b => b.innerText.trim()))"#,
+    )
+    .await;
+    let buttons: Vec<String> = serde_json::from_str(&buttons).unwrap();
+    assert_eq!(
+        buttons
+            .iter()
+            .filter(|b| b.as_str() == "Not a secret")
+            .count(),
+        1,
+        "só a suspeita tem o botão; botões visíveis: {buttons:?}"
+    );
+
+    // Runtime → Containers: o órfão que ainda roda oferece "Stop"; o container de serviço vivo, não.
+    eval_str(
+        &page,
+        "(() => { Alpine.store('app').nav('docker'); return 'ok'; })()",
+    )
+    .await;
+    assert!(
+        visible(&page, "[x-data=\"docker\"]").await,
+        "Runtime visível"
+    );
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    let rows = eval_str(
+        &page,
+        "document.querySelector('[x-data=\"docker\"]').innerText",
+    )
+    .await;
+    assert!(
+        rows.contains("removed in git (web)"),
+        "dono do órfão:\n{rows}"
+    );
+    let docker_buttons = eval_str(
+        &page,
+        r#"JSON.stringify([...document.querySelectorAll('[x-data="docker"] button')]
+            .filter(b => b.getClientRects().length > 0).map(b => b.innerText.trim()))"#,
+    )
+    .await;
+    let docker_buttons: Vec<String> = serde_json::from_str(&docker_buttons).unwrap();
+    assert_eq!(
+        docker_buttons
+            .iter()
+            .filter(|b| b.as_str() == "Stop")
+            .count(),
+        1,
+        "só o órfão tem o botão Stop; botões visíveis: {docker_buttons:?}"
+    );
+
+    assert_eq!(
+        errors(&page).await,
+        Vec::<String>::new(),
+        "sem erros de JS no console"
+    );
+}

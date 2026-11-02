@@ -197,6 +197,9 @@ fn proibido_ao_agente(cmd: &Command) -> Option<&'static str> {
         Command::SecretReveal { .. } => {
             Some("revelar segredos é ação de uma pessoa na GUI/webui, não do agente")
         }
+        Command::StateGitResolve { .. } => Some(
+            "resolver um histórico divergido descarta um dos lados: é decisão de uma pessoa na GUI/webui",
+        ),
         _ => None,
     }
 }

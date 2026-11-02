@@ -15,7 +15,7 @@ fn erro(e: StateGitError) -> RpResponse {
 pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
     match cmd {
         Command::StateGitStatus => match state.state_git.status().await {
-            Ok(s) => RpResponse::StateGit(s),
+            Ok(s) => RpResponse::StateGit(Box::new(s)),
             Err(e) => RpResponse::err("StateGitFailed", format!("{e:#}")),
         },
         Command::StateGitConfigure {
@@ -28,13 +28,27 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
             .configure(&mode, remote, branch, provider_id)
             .await
         {
-            Ok(s) => RpResponse::StateGit(s),
+            Ok(s) => RpResponse::StateGit(Box::new(s)),
             Err(e) => erro(e),
         },
         Command::StateGitSyncNow => match state.state_git.sync_now().await {
-            Ok(s) => RpResponse::StateGit(s),
+            Ok(s) => RpResponse::StateGit(Box::new(s)),
             Err(e) => erro(e),
         },
+        Command::StateGitResume => match state.state_git.resume().await {
+            Ok(s) => RpResponse::StateGit(Box::new(s)),
+            Err(e) => erro(e),
+        },
+        Command::StateGitResolve { choice } => match state.state_git.resolve(choice).await {
+            Ok(s) => RpResponse::StateGit(Box::new(s)),
+            Err(e) => erro(e),
+        },
+        Command::StateGitDismissRemoval { id } => {
+            match state.state_git.dismiss_removal(&id).await {
+                Ok(()) => RpResponse::Ok,
+                Err(e) => erro(e),
+            }
+        }
         Command::InfraAuditAllow {
             project,
             scope,

@@ -177,6 +177,14 @@ const MANIFEST: &str = "MANIFEST.json";
 const SETTINGS: &str = "settings.yml";
 const PROVIDERS: &str = "providers.yml";
 
+/// O caminho é um arquivo do estado (e não um `README`, `.gitignore`…)?
+pub fn is_state_file(rel: &str) -> bool {
+    rel == MANIFEST
+        || rel == SETTINGS
+        || rel == PROVIDERS
+        || (rel.starts_with("projects/") && rel.ends_with("/project.yml"))
+}
+
 fn project_path(id: &str) -> String {
     format!("projects/{id}/project.yml")
 }
@@ -296,29 +304,46 @@ impl InfraState {
 
     /// Lê o estado de uma árvore de arquivos. `Ok(None)` = não há infra gravada (sem `MANIFEST.json`).
     pub fn read(tree: &FileTree) -> Result<Option<InfraState>> {
-        let Some(m) = tree.read(MANIFEST)? else {
+        if tree.read(MANIFEST)?.is_none() {
+            return Ok(None);
+        }
+        let mut files = BTreeMap::new();
+        for rel in tree.list()? {
+            if is_state_file(&rel) {
+                let b = tree.read(&rel)?.with_context(|| format!("{rel} sumiu"))?;
+                files.insert(rel, b);
+            }
+        }
+        Self::from_files(&files)
+    }
+
+    /// Monta o estado a partir de `caminho → bytes` (de um disco **ou de uma árvore do git**, sem
+    /// checkout). É a mesma função para a leitura local, a migração e o que chega por `pull`.
+    /// Arquivos que não são do estado (um `README.md` no repositório, por exemplo) são ignorados.
+    /// `Ok(None)` = não há `MANIFEST.json`.
+    pub fn from_files(files: &BTreeMap<String, Vec<u8>>) -> Result<Option<InfraState>> {
+        let Some(m) = files.get(MANIFEST) else {
             return Ok(None);
         };
-        let m: ManifestFile = serde_json::from_slice(&m).context("lendo MANIFEST.json")?;
+        let m: ManifestFile = serde_json::from_slice(m).context("lendo MANIFEST.json")?;
         if m.schema > SCHEMA {
             bail!(
                 "o estado de infra está no formato v{}, mas este daemon só entende até v{SCHEMA}; atualize o rustployd",
                 m.schema
             );
         }
-        let settings = match tree.read(SETTINGS)? {
-            Some(b) => from_yaml(&b).context(SETTINGS)?,
+        let settings = match files.get(SETTINGS) {
+            Some(b) => from_yaml(b).context(SETTINGS)?,
             None => SettingsInfra::default(),
         };
-        let providers = match tree.read(PROVIDERS)? {
-            Some(b) => from_yaml::<ProvidersFile>(&b).context(PROVIDERS)?.providers,
+        let providers = match files.get(PROVIDERS) {
+            Some(b) => from_yaml::<ProvidersFile>(b).context(PROVIDERS)?.providers,
             None => vec![],
         };
         let mut projects = vec![];
-        for rel in tree.list()? {
+        for (rel, b) in files {
             if rel.starts_with("projects/") && rel.ends_with("/project.yml") {
-                let b = tree.read(&rel)?.with_context(|| format!("{rel} sumiu"))?;
-                projects.push(from_yaml::<ProjectInfra>(&b).with_context(|| rel.clone())?);
+                projects.push(from_yaml::<ProjectInfra>(b).with_context(|| rel.clone())?);
             }
         }
         let mut st = InfraState {

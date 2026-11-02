@@ -64,6 +64,9 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         Command::StateGitStatus => "StateGitStatus",
         Command::StateGitConfigure { .. } => "StateGitConfigure",
         Command::StateGitSyncNow => "StateGitSyncNow",
+        Command::StateGitResume => "StateGitResume",
+        Command::StateGitResolve { .. } => "StateGitResolve",
+        Command::StateGitDismissRemoval { .. } => "StateGitDismissRemoval",
         Command::InfraAuditAllow { .. } => "InfraAuditAllow",
         Command::SecretMove { .. } => "SecretMove",
         Command::ManifestApply { .. } => "ManifestApply",
@@ -95,6 +98,7 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         Command::DockerVolumes => "DockerVolumes",
         Command::DockerNetworks => "DockerNetworks",
         Command::DockerContainers => "DockerContainers",
+        Command::StopContainer { .. } => "StopContainer",
         Command::RemoveContainer { .. } => "RemoveContainer",
         Command::RemoveImage { .. } => "RemoveImage",
         Command::RemoveVolume { .. } => "RemoveVolume",
@@ -164,6 +168,7 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         | Command::DockerVolumes
         | Command::DockerNetworks
         | Command::DockerContainers
+        | Command::StopContainer { .. }
         | Command::RemoveContainer { .. }
         | Command::RemoveImage { .. }
         | Command::RemoveVolume { .. }
@@ -225,6 +230,9 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         Command::StateGitStatus
         | Command::StateGitConfigure { .. }
         | Command::StateGitSyncNow
+        | Command::StateGitResume
+        | Command::StateGitResolve { .. }
+        | Command::StateGitDismissRemoval { .. }
         | Command::InfraAuditAllow { .. } => handlers::state_git::dispatch(state, cmd).await,
         Command::ServiceCreate(_)
         | Command::ServiceList { .. }

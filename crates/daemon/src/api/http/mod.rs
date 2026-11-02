@@ -968,6 +968,22 @@ pub(crate) async fn snapshot(state: &AppState) -> String {
             serde_json::to_value(list).unwrap_or(Value::Null),
         );
     }
+    // O que está em claro (ou parece) no estado: a trava da sincronização com o git. Vem no snapshot
+    // (e não num RPC à parte) para os dois clientes mostrarem a lista sem polling próprio.
+    if let RpResponse::InfraAudit(list) = dispatch(state.clone(), Command::InfraAudit).await {
+        obj.insert(
+            "infra_audit".into(),
+            serde_json::to_value(list).unwrap_or(Value::Null),
+        );
+    }
+    // Situação da sincronização do estado com o git: alimenta o aviso do topo, os selos "mudança
+    // pendente de deploy" e a tela Settings → Sincronização, nos dois clientes, sem polling próprio.
+    if let RpResponse::StateGit(status) = dispatch(state.clone(), Command::StateGitStatus).await {
+        obj.insert(
+            "state_git".into(),
+            serde_json::to_value(status).unwrap_or(Value::Null),
+        );
+    }
 
     Value::Object(obj).to_string()
 }

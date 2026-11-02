@@ -671,16 +671,20 @@ export function deployEngineQueuedRows(queued) {
 
 /** Containers do host (rodando + parados). `canRemove` só nos parados (o
  * Docker recusa `rm` de um rodando sem force). `owner` mostra projeto/serviço
- * quando atribuído, senão "rustploy" (managed) ou "—". */
+ * quando atribuído, senão "rustploy" (managed) ou "—". Um container cujo serviço
+ * sumiu do estado por um commit externo ("removido no git") é um **órfão**: `owner`
+ * diz isso, e `canStop` oferece parar (depois, Remover) enquanto ele ainda roda. */
 export function dockerContainerRows(list, term) {
   const searchTerm = (term || "").toLowerCase();
   const sorted = [...(list || [])].sort((left, right) => (left.name || "").localeCompare(right.name || ""));
   const rows = [];
   for (const container of sorted) {
-    if (!matchesTerm(searchTerm, [container.name, container.image, container.state, container.project || "", container.service || ""])) continue;
+    if (!matchesTerm(searchTerm, [container.name, container.image, container.state, container.project || "", container.service || "", container.removed_in_git || ""])) continue;
     const stateLabel = containerStateLabel(container.state);
+    const removedInGit = container.removed_in_git || "";
     let owner;
-    if (container.project && container.service) owner = `${container.project} / ${container.service}`;
+    if (removedInGit) owner = t`removido no git (${removedInGit})`;
+    else if (container.project && container.service) owner = `${container.project} / ${container.service}`;
     else if (container.managed) owner = "rustploy";
     else owner = "—";
     const image = (container.image || "—").replace(/^sha256:/, "");
@@ -693,6 +697,8 @@ export function dockerContainerRows(list, term) {
       stateLabel: stateLabel[0],
       stateKind: stateLabel[1],
       canRemove: containerStopped(container.state),
+      isOrphan: Boolean(removedInGit),
+      canStop: Boolean(removedInGit) && container.state === "running",
     });
   }
   return rows;

@@ -78,6 +78,65 @@ impl Repo {
         self.state.read().unwrap().clone()
     }
 
+    /// Aplica uma **árvore inteira vinda de fora** (o `pull` do git) como UMA transação: lê com
+    /// [`InfraState::from_files`], valida, deixa `check` recusar, grava **os bytes exatos** que
+    /// vieram (para o disco ficar idêntico ao commit — senão reserializar geraria um diff e um
+    /// commit de volta, o laço que a R6 proíbe), apaga os projetos que sumiram e só então troca o
+    /// estado em memória. Tudo com o lock de escrita tomado. `check(raiz, antigo, novo)` roda antes
+    /// de gravar qualquer coisa; `finish(raiz)` roda depois de gravar (ex.: mover o HEAD do git) e,
+    /// se falhar, o erro volta mas o estado já está aplicado. Devolve `(antigo, novo)`.
+    pub fn apply_files(
+        &self,
+        files: &std::collections::BTreeMap<String, Vec<u8>>,
+        check: impl FnOnce(&std::path::Path, &InfraState, &InfraState) -> Result<()>,
+        finish: impl FnOnce(&std::path::Path) -> Result<()>,
+    ) -> Result<(Arc<InfraState>, Arc<InfraState>)> {
+        use super::model::is_state_file;
+        let _g = self.gate.lock().unwrap();
+        let new = InfraState::from_files(files)?
+            .ok_or_else(|| anyhow::anyhow!("a árvore recebida não tem MANIFEST.json"))?;
+        new.validate()?;
+        let old = self.state.read().unwrap().clone();
+        check(self.tree.root(), &old, &new)?;
+
+        let mut tx = super::txn::Tx::new();
+        for (rel, bytes) in files.iter().filter(|(r, _)| is_state_file(r)) {
+            if self.tree.read(rel)?.as_deref() != Some(bytes.as_slice()) {
+                tx.write(rel.clone(), bytes.clone());
+            }
+        }
+        for rel in self.tree.list()? {
+            if rel.starts_with("projects/") && is_state_file(&rel) && !files.contains_key(&rel) {
+                tx.delete(rel);
+            }
+        }
+        self.tree.commit(tx)?;
+        let new = Arc::new(new);
+        *self.state.write().unwrap() = new.clone();
+        self.changes.send_modify(|v| *v += 1);
+        finish(self.tree.root())?;
+        Ok((old, new))
+    }
+
+    /// Relê a pasta do disco, **valida** e só então troca o estado em memória. É o que "retomar" faz
+    /// depois de alguém ter mexido nos arquivos à mão (um `merge` por SSH, por exemplo): o daemon
+    /// guarda o estado em memória e, sem isto, a próxima escrita sobrescreveria o que a pessoa
+    /// resolveu. Se a pasta não for um estado válido (marcador de conflito no YAML, referência
+    /// quebrada…), devolve o erro e **nada muda**. Devolve `(antigo, novo)`.
+    pub fn reload_checked(&self) -> Result<(Arc<InfraState>, Arc<InfraState>)> {
+        let _g = self.gate.lock().unwrap();
+        let new = InfraState::read(&self.tree)?
+            .ok_or_else(|| anyhow::anyhow!("a pasta não tem MANIFEST.json"))?;
+        new.validate()?;
+        let old = self.state.read().unwrap().clone();
+        let new = Arc::new(new);
+        if *old != *new {
+            *self.state.write().unwrap() = new.clone();
+            self.changes.send_modify(|v| *v += 1);
+        }
+        Ok((old, new))
+    }
+
     /// Substitui o estado em memória pelo que está no disco (depois da migração).
     pub fn reload(&self) -> Result<()> {
         let _g = self.gate.lock().unwrap();

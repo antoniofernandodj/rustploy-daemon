@@ -137,6 +137,12 @@ pub async fn handle(state: DeployContext, service_id: String) -> RpResponse {
     });
     info!(service_id = %service_id, "deploy_start: evento ServiceStatusChanged(Queued) publicado");
 
+    // Um deploy faz o que está rodando alcançar o declarado: some a marca de "mudança pendente de
+    // deploy" deixada por um commit externo (Fase 7 do plano de estado em git).
+    if let Err(e) = crate::store::state_git_marks::clear_pending(&state.db, &service_id).await {
+        warn!(service_id = %service_id, error = %e, "deploy_start: não limpei a marca de deploy pendente");
+    }
+
     // Auto-cria webhook token na primeira vez para serviços Application (não Compose)
     if !matches!(svc.spec.source, ServiceSource::Compose(_))
         && let Ok(None) =

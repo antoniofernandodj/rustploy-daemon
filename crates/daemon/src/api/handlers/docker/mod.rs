@@ -28,6 +28,7 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         Command::DockerVolumes => docker_inventory::list_volumes(state).await,
         Command::DockerNetworks => docker_inventory::list_networks(state).await,
         Command::DockerContainers => docker_inventory::list_containers(state).await,
+        Command::StopContainer { id } => docker_remove::stop_container(state, id).await,
         Command::RemoveContainer { id } => docker_remove::remove_container(state, id).await,
         Command::RemoveImage { id } => docker_remove::remove_image(state, id).await,
         Command::RemoveVolume { name } => docker_remove::remove_volume(state, name).await,

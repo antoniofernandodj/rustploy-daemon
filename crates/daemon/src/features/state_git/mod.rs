@@ -23,7 +23,7 @@ use crate::store::infra::audit::{Certainty, Finding, plaintext_findings};
 use crate::store::infra::model::InfraState;
 use crate::store::{Db, daemon_settings};
 use git::{Auth, CommitInfo};
-use shared::{StateGitCommit, StateGitStatus};
+use shared::{StateGitCommit, StateGitRejected, StateGitRemoved, StateGitStatus};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -36,8 +36,9 @@ const KEY_PROVIDER: &str = "state_git_provider_id";
 const KEY_ALLOW: &str = "state_git_audit_allow";
 const DEFAULT_BRANCH: &str = "main";
 const DEBOUNCE: Duration = Duration::from_secs(10);
-/// Mesmo sem mudança, tenta de novo o que falhou (push) neste intervalo.
-const RETRY_EVERY: Duration = Duration::from_secs(300);
+/// Padrão do `fetch` nos testes (em produção vem de `[state_git] fetch_interval_secs`).
+#[cfg(test)]
+const DEFAULT_FETCH_EVERY: Duration = Duration::from_secs(60);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
@@ -85,8 +86,41 @@ pub enum StateGitError {
     Other(#[from] anyhow::Error),
 }
 
+/// O que aconteceu ao tentar aplicar um commit vindo de fora.
+enum Applied {
+    Yes,
+    /// Adiado (mudança local ainda não commitada): tenta de novo no próximo ciclo.
+    Later,
+    /// Recusado, com o motivo.
+    No(String),
+}
+
+enum Reconciled {
+    /// Siga para o push (se houver o que enviar).
+    Push,
+    /// Nada mais a fazer neste ciclo (já igual, pausado ou aplicado).
+    Done,
+}
+
+/// O pull precisa esperar: há mudança local ainda não commitada. Não é erro; tenta de novo.
+#[derive(thiserror::Error, Debug)]
+#[error("mudanças locais ainda não commitadas")]
+struct RetryLater;
+
+/// O estado foi aplicado, mas o `git reset` que alinha o repositório falhou.
+#[derive(thiserror::Error, Debug)]
+#[error("{0}")]
+struct GitStuck(String);
+
 #[derive(Default)]
 struct Runtime {
+    /// A sincronização está pausada (histórico divergiu) até alguém retomar.
+    paused: Option<String>,
+    /// O último commit do remoto que foi recusado: `(sha, motivo)`.
+    incoming_error: Option<(String, String)>,
+    last_fetch_at: Option<String>,
+    ahead: usize,
+    behind: usize,
     last_commit: Option<CommitInfo>,
     last_push_ok: Option<bool>,
     last_push_at: Option<String>,
@@ -105,6 +139,8 @@ pub struct StateGit {
     cycle_lock: tokio::sync::Mutex<()>,
     /// Quanto esperar depois da última mudança antes de commitar.
     debounce: Duration,
+    /// De quanto em quanto tempo fazer `fetch` (e repetir o que falhou) sem que nada tenha mudado.
+    fetch_every: Duration,
 }
 
 fn fingerprint(project: &str, scope: &str, what: &str) -> String {
@@ -120,6 +156,163 @@ fn blocking(state: &InfraState, allow: &BTreeSet<String>) -> Vec<Finding> {
                 || !allow.contains(&fingerprint(&f.project, &f.scope, &f.what))
         })
         .collect()
+}
+
+/// Valida uma árvore vinda de fora ANTES de aplicar qualquer coisa (R6, itens 1 e 2): sem valor em
+/// claro, dependências coerentes, e todo segredo cifrado precisa decifrar com a identidade deste
+/// servidor (senão o deploy falharia depois, longe de quem causou).
+fn validate_incoming(
+    root: &std::path::Path,
+    new: &InfraState,
+    allow: &BTreeSet<String>,
+    secrets: &SecretsManager,
+    require_clean: bool,
+) -> anyhow::Result<()> {
+    // No pull comum, mudança local não commitada adia a aplicação. Ao RESOLVER uma divergência
+    // ("usar o do remoto") o local é descartado de propósito (depois de salvo numa branch).
+    if require_clean && !git::is_clean(root)? {
+        return Err(anyhow::Error::new(RetryLater));
+    }
+    let bad = blocking(new, allow);
+    if !bad.is_empty() {
+        let lista: Vec<String> = bad
+            .iter()
+            .take(5)
+            .map(|f| format!("{} / {} / {}", f.project, f.scope, f.what))
+            .collect();
+        anyhow::bail!(
+            "traz {} valor(es) em claro (nada em claro pode entrar): {}{}",
+            bad.len(),
+            lista.join("; "),
+            if bad.len() > 5 { "; …" } else { "" }
+        );
+    }
+    for p in &new.projects {
+        let all: Vec<(String, String, Vec<String>)> = p
+            .services
+            .iter()
+            .map(|s| (s.id.clone(), s.spec.name.clone(), s.spec.depends_on.clone()))
+            .collect();
+        for svc in &p.services {
+            crate::features::deploy::deps::validate(&all, Some(&svc.id), &svc.spec.depends_on)
+                .map_err(|e| {
+                    anyhow::anyhow!(
+                        "dependências do serviço '{}' (projeto '{}'): {}",
+                        svc.spec.name,
+                        p.name,
+                        e.message
+                    )
+                })?;
+        }
+        let decifra = |what: String, v: &str| -> anyhow::Result<()> {
+            if crate::platform::secrets::is_enc(v) {
+                secrets.decrypt(v).map(|_| ()).map_err(|_| {
+                    anyhow::anyhow!("{what} não decifra com a identidade deste servidor")
+                })?;
+            }
+            Ok(())
+        };
+        for sec in &p.secrets {
+            decifra(
+                format!("o secret '{}' do projeto '{}'", sec.key, p.name),
+                &sec.value,
+            )?;
+        }
+        for svc in &p.services {
+            for sec in &svc.secrets {
+                decifra(
+                    format!("o secret '{}' do serviço '{}'", sec.key, svc.spec.name),
+                    &sec.value,
+                )?;
+            }
+            if let Some(t) = &svc.webhook_token {
+                decifra(format!("o webhook do serviço '{}'", svc.spec.name), t)?;
+            }
+        }
+    }
+    for prov in &new.providers {
+        if let Some(v) = &prov.oauth_client_secret_enc {
+            decifra_provider(secrets, &prov.name, v)?;
+        }
+    }
+    Ok(())
+}
+
+fn decifra_provider(secrets: &SecretsManager, name: &str, v: &str) -> anyhow::Result<()> {
+    if crate::platform::secrets::is_enc(v) {
+        secrets.decrypt(v).map(|_| ()).map_err(|_| {
+            anyhow::anyhow!(
+                "o client_secret do provider '{name}' não decifra com a identidade deste servidor"
+            )
+        })?;
+    }
+    Ok(())
+}
+
+struct RemovedItem {
+    id: String,
+    kind: String,
+    name: String,
+    project: String,
+    compose_project: Option<String>,
+}
+
+struct StateDiff {
+    removed: Vec<RemovedItem>,
+    /// Serviços (que existem nos dois lados) cujo declarado mudou.
+    spec_changed: Vec<String>,
+}
+
+/// O que um `pull` mudou de relevante para quem opera: o que sumiu e o que precisa de redeploy.
+fn diff_states(old: &InfraState, new: &InfraState) -> StateDiff {
+    let mut removed = vec![];
+    let mut spec_changed = vec![];
+    for op in &old.projects {
+        match new.projects.iter().find(|p| p.id == op.id) {
+            None => {
+                removed.push(RemovedItem {
+                    id: format!("projeto:{}", op.id),
+                    kind: "projeto".into(),
+                    name: op.name.clone(),
+                    project: String::new(),
+                    compose_project: None,
+                });
+                for s in &op.services {
+                    removed.push(RemovedItem {
+                        id: format!("serviço:{}", s.id),
+                        kind: "serviço".into(),
+                        name: s.spec.name.clone(),
+                        project: op.name.clone(),
+                        compose_project: s.compose_project.clone(),
+                    });
+                }
+            }
+            Some(np) => {
+                // env/secrets de projeto mudaram: todo serviço do projeto precisa de redeploy
+                let project_changed = op.env_vars != np.env_vars || op.secrets != np.secrets;
+                for s in &op.services {
+                    match np.services.iter().find(|x| x.id == s.id) {
+                        None => removed.push(RemovedItem {
+                            id: format!("serviço:{}", s.id),
+                            kind: "serviço".into(),
+                            name: s.spec.name.clone(),
+                            project: op.name.clone(),
+                            compose_project: s.compose_project.clone(),
+                        }),
+                        Some(ns) => {
+                            if project_changed || ns.spec != s.spec || ns.secrets != s.secrets {
+                                spec_changed.push(s.id.clone());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    StateDiff {
+        removed,
+        spec_changed,
+    }
 }
 
 /// Assunto do commit a partir dos arquivos alterados (nomes legíveis, não ids).
@@ -155,16 +348,32 @@ fn subject(paths: &[String], state: &InfraState) -> String {
 
 impl StateGit {
     pub fn new(db: Arc<Db>, secrets: Arc<SecretsManager>) -> Arc<Self> {
-        Self::with_debounce(db, secrets, DEBOUNCE)
+        // `[state_git] fetch_interval_secs` (padrão 60 s; nunca menos de 10 s).
+        let secs = crate::platform::config::RustployConfig::global()
+            .state_git
+            .fetch_interval_secs
+            .max(10);
+        Self::with_intervals(db, secrets, DEBOUNCE, Duration::from_secs(secs))
     }
 
+    #[cfg(test)]
     pub fn with_debounce(
         db: Arc<Db>,
         secrets: Arc<SecretsManager>,
         debounce: Duration,
     ) -> Arc<Self> {
+        Self::with_intervals(db, secrets, debounce, DEFAULT_FETCH_EVERY)
+    }
+
+    pub fn with_intervals(
+        db: Arc<Db>,
+        secrets: Arc<SecretsManager>,
+        debounce: Duration,
+        fetch_every: Duration,
+    ) -> Arc<Self> {
         Arc::new(Self {
             debounce,
+            fetch_every,
             db,
             secrets,
             rt: Mutex::new(Runtime::default()),
@@ -250,6 +459,19 @@ impl StateGit {
 
     pub async fn status(&self) -> anyhow::Result<StateGitStatus> {
         let s = self.settings().await?;
+        let removed = crate::store::state_git_marks::list_removed(&self.db)
+            .await?
+            .into_iter()
+            .map(|r| StateGitRemoved {
+                id: r.id,
+                kind: r.kind,
+                name: r.name,
+                project: r.project,
+                sha: r.sha,
+                at: r.at,
+            })
+            .collect();
+        let pending = crate::store::state_git_marks::list_pending(&self.db).await?;
         let rt = self.rt.lock().unwrap();
         Ok(StateGitStatus {
             mode: s.mode.as_str().into(),
@@ -268,6 +490,19 @@ impl StateGit {
             last_error: rt.last_error.clone(),
             blocked_by_plaintext: rt.blocked,
             needs_push: rt.needs_push,
+            last_fetch_at: rt.last_fetch_at.clone(),
+            ahead: rt.ahead,
+            behind: rt.behind,
+            paused_reason: rt.paused.clone(),
+            incoming_rejected: rt
+                .incoming_error
+                .as_ref()
+                .map(|(sha, msg)| StateGitRejected {
+                    sha: sha.clone(),
+                    reason: msg.clone(),
+                }),
+            removed_in_git: removed,
+            pending_deploy: pending,
         })
     }
 
@@ -346,6 +581,7 @@ impl StateGit {
         {
             let mut rt = self.rt.lock().unwrap();
             rt.last_error = None;
+            rt.paused = None;
             rt.needs_push = mode == Mode::Sync;
         }
         if mode != Mode::Off {
@@ -377,15 +613,11 @@ impl StateGit {
         }
     }
 
-    async fn cycle_inner(&self, force_push: bool) -> anyhow::Result<()> {
-        let s = self.settings().await?;
-        if s.mode == Mode::Off {
-            return Ok(());
-        }
+    /// Commit do que há de local: dentro do lock de escrita, para o `git` só ver o diretório entre
+    /// transações e para a auditoria valer para exatamente o que será commitado. `Ok(true)` =
+    /// **suspenso** por valor em claro (nada foi commitado).
+    async fn commit_local(&self, s: &Settings) -> anyhow::Result<bool> {
         let allow = self.allow_set().await?;
-
-        // Commit: dentro do lock de escrita, para o `git` só ver o diretório entre transações e para
-        // a auditoria valer para exatamente o que será commitado.
         enum Step {
             Blocked(usize),
             Done {
@@ -411,14 +643,14 @@ impl StateGit {
         })
         .await??;
 
-        let (committed, push_wanted) = match step {
+        match step {
             Step::Blocked(n) => {
                 let mut rt = self.rt.lock().unwrap();
                 rt.blocked = n;
                 rt.last_error = Some(format!(
                     "commit suspenso: {n} valor(es) em claro no estado (veja InfraAudit)"
                 ));
-                return Ok(());
+                Ok(true)
             }
             Step::Done { committed, head } => {
                 let mut rt = self.rt.lock().unwrap();
@@ -439,16 +671,356 @@ impl StateGit {
                 if committed {
                     rt.needs_push = true;
                 }
-                (
-                    committed,
-                    s.mode == Mode::Sync && (rt.needs_push || force_push),
-                )
+                Ok(false)
             }
-        };
-        let _ = committed;
+        }
+    }
 
+    async fn cycle_inner(&self, force_push: bool) -> anyhow::Result<()> {
+        let s = self.settings().await?;
+        if s.mode == Mode::Off {
+            return Ok(());
+        }
+        // Pausada (histórico divergiu): o daemon **não mexe no git** — nem commita. Quem está
+        // resolvendo à mão (um `merge` por SSH) não pode ter o `git add -A` do daemon capturando um
+        // merge pela metade. As edições feitas pela interface continuam valendo (estão nos arquivos)
+        // e são commitadas quando a sincronização é retomada.
+        if self.rt.lock().unwrap().paused.is_some() {
+            return Ok(());
+        }
+        if self.commit_local(&s).await? {
+            return Ok(()); // suspenso: valor em claro
+        }
+        if s.mode != Mode::Sync {
+            return Ok(());
+        }
+
+        // ── Fase 7: trazer o que mudou por fora ─────────────────────────────────────────────────
+        match self.reconcile(&s).await {
+            Ok(Reconciled::Push) => {}
+            Ok(Reconciled::Done) => return Ok(()),
+            Err(e) => {
+                let msg = format!("fetch falhou: {e:#}");
+                warn!(error = %msg, "state_git");
+                self.rt.lock().unwrap().last_error = Some(msg);
+                return Ok(());
+            }
+        }
+        let push_wanted = {
+            let rt = self.rt.lock().unwrap();
+            rt.needs_push || force_push
+        };
         if push_wanted {
             self.push(&s).await;
+        }
+        Ok(())
+    }
+
+    /// `fetch` + comparação dos históricos. Decide entre: nada a fazer / enviar o que é nosso /
+    /// aplicar o que veio de fora (só se o local não tem nada novo) / **pausar** (divergiu).
+    async fn reconcile(&self, s: &Settings) -> anyhow::Result<Reconciled> {
+        let auth = self.auth_for(s).await?;
+        let (db, branch) = (self.db.clone(), s.branch.clone());
+        let (has_remote_branch, remote, counts) = tokio::task::spawn_blocking(move || {
+            // o fetch só mexe em objetos e refs; não precisa do lock de escrita
+            let root = db.infra().tree().root().to_path_buf();
+            let present = git::fetch(&root, &branch, auth.as_ref())?;
+            let remote = git::remote_head(&root, &branch);
+            let counts = match (&remote, git::head(&root)?) {
+                (Some(_), Some(_)) => Some(git::ahead_behind(&root, &branch)?),
+                _ => None,
+            };
+            anyhow::Ok((present, remote, counts))
+        })
+        .await??;
+        {
+            let mut rt = self.rt.lock().unwrap();
+            rt.last_fetch_at = Some(chrono::Utc::now().to_rfc3339());
+            // o remoto que sumiu/ainda não existe não é erro: o push cria a branch
+            if !has_remote_branch {
+                rt.ahead = 0;
+                rt.behind = 0;
+                return Ok(Reconciled::Push);
+            }
+        }
+        let (Some(remote_sha), Some((ahead, behind))) = (remote, counts) else {
+            return Ok(Reconciled::Push);
+        };
+        {
+            let mut rt = self.rt.lock().unwrap();
+            rt.ahead = ahead;
+            rt.behind = behind;
+            rt.needs_push = ahead > 0;
+            // Nada vindo do remoto: não há commit recusado a mostrar. (O remoto pode ter sido
+            // corrigido, ou reescrito de volta ao que o servidor já tem.)
+            if behind == 0
+                && let Some((_, msg)) = rt.incoming_error.take()
+                && rt.last_error.as_deref() == Some(msg.as_str())
+            {
+                rt.last_error = None;
+            }
+        }
+        match (ahead > 0, behind > 0) {
+            (false, false) => Ok(Reconciled::Done),
+            (true, false) => Ok(Reconciled::Push),
+            (true, true) => {
+                let msg = format!(
+                    "o histórico divergiu: o servidor tem {ahead} commit(s) que o remoto não tem e o remoto tem {behind} que o servidor não tem. \
+                     A sincronização foi pausada (o estado local segue funcionando). Resolva no repositório e use \"retomar\"."
+                );
+                warn!("state_git: {msg}");
+                let mut rt = self.rt.lock().unwrap();
+                rt.paused = Some(msg.clone());
+                rt.last_error = Some(msg);
+                Ok(Reconciled::Done)
+            }
+            (false, true) => {
+                self.apply_incoming(&remote_sha, false).await;
+                Ok(Reconciled::Done)
+            }
+        }
+    }
+
+    /// Aplica o que chegou por fora: lê a árvore do commit **sem checkout**, valida tudo e grava
+    /// como uma transação. Qualquer recusa deixa o estado como está e fica visível no status.
+    async fn apply_incoming(&self, sha: &str, force: bool) -> Applied {
+        let short: String = sha.chars().take(7).collect();
+        let allow = self.allow_set().await.unwrap_or_default();
+        let (db, secrets, rev) = (self.db.clone(), self.secrets.clone(), sha.to_string());
+        let result = tokio::task::spawn_blocking(move || {
+            let root = db.infra().tree().root().to_path_buf();
+            let files = git::files_at(&root, &rev, crate::store::infra::model::is_state_file)?;
+            let rev2 = rev.clone();
+            db.infra().apply_files(
+                &files,
+                |root, _old, new| validate_incoming(root, new, &allow, &secrets, !force),
+                move |root| {
+                    git::reset_hard(root, &rev2)
+                        .map_err(|e| anyhow::Error::new(GitStuck(format!("{e:#}"))))
+                },
+            )
+        })
+        .await;
+        let result = match result {
+            Ok(r) => r,
+            Err(e) => Err(anyhow::Error::from(e)),
+        };
+        match result {
+            Ok((old, new)) => {
+                info!(sha = %short, "state_git: estado aplicado a partir do git");
+                {
+                    let mut rt = self.rt.lock().unwrap();
+                    rt.incoming_error = None;
+                    rt.last_error = None;
+                    rt.ahead = 0;
+                    rt.behind = 0;
+                    rt.needs_push = false;
+                }
+                if let Err(e) = self.record_marks(sha, &old, &new).await {
+                    warn!(error = %e, "state_git: não consegui registrar as marcas do pull");
+                }
+                let db = self.db.clone();
+                if let Ok(Ok(Some(h))) =
+                    tokio::task::spawn_blocking(move || git::head(db.infra().tree().root())).await
+                {
+                    self.rt.lock().unwrap().last_commit = Some(h);
+                }
+                Applied::Yes
+            }
+            Err(e) if e.downcast_ref::<RetryLater>().is_some() => {
+                info!(sha = %short, "state_git: pull adiado ({e})");
+                Applied::Later
+            }
+            Err(e) => {
+                let stuck = e.downcast_ref::<GitStuck>().is_some();
+                let msg = if stuck {
+                    format!("o estado de {short} foi aplicado, mas o git não avançou: {e:#}")
+                } else {
+                    format!("o commit {short} do remoto foi recusado e NÃO foi aplicado: {e:#}")
+                };
+                warn!("state_git: {msg}");
+                let mut rt = self.rt.lock().unwrap();
+                rt.incoming_error = Some((sha.to_string(), msg.clone()));
+                rt.last_error = Some(msg.clone());
+                Applied::No(msg)
+            }
+        }
+    }
+
+    /// Registra o que o `pull` deixou para decisão humana: o que **sumiu** (nunca apagamos container
+    /// nem dado por isso) e os serviços cujo declarado mudou (o que roda só muda no próximo deploy).
+    async fn record_marks(
+        &self,
+        sha: &str,
+        old: &InfraState,
+        new: &InfraState,
+    ) -> anyhow::Result<()> {
+        use crate::store::state_git_marks as marks;
+        let d = diff_states(old, new);
+        let at = chrono::Utc::now().to_rfc3339();
+        for r in d.removed {
+            marks::add_removed(
+                &self.db,
+                &marks::Removed {
+                    id: r.id,
+                    kind: r.kind,
+                    name: r.name,
+                    project: r.project,
+                    sha: sha.to_string(),
+                    at: at.clone(),
+                    compose_project: r.compose_project,
+                },
+            )
+            .await?;
+        }
+        for id in d.spec_changed {
+            marks::set_pending(&self.db, &id, sha).await?;
+        }
+        // Rollback no git: o que voltou ao estado deixa de estar "removido" (o container nunca foi
+        // tocado e é reconhecido pelo mesmo id / nome de stack).
+        let services: std::collections::BTreeSet<String> = new
+            .projects
+            .iter()
+            .flat_map(|p| p.services.iter().map(|s| s.id.clone()))
+            .collect();
+        let projects: std::collections::BTreeSet<String> =
+            new.projects.iter().map(|p| p.id.clone()).collect();
+        marks::clear_returned(&self.db, &services, &projects).await?;
+        Ok(())
+    }
+
+    /// Retomar depois de resolver o histórico no repositório: tira a pausa e reavalia.
+    pub async fn resume(&self) -> Result<StateGitStatus, StateGitError> {
+        if self.settings().await?.mode == Mode::Off {
+            return Err(StateGitError::Invalid(
+                "a sincronização com o git está desligada".into(),
+            ));
+        }
+        // Alguém pode ter resolvido à mão (merge por SSH): relê a pasta e valida ANTES de voltar a
+        // andar, senão a próxima escrita sobrescreveria o que a pessoa resolveu. Pasta inválida =
+        // erro claro e continua pausado.
+        let db = self.db.clone();
+        let (old, new) = tokio::task::spawn_blocking(move || db.infra().reload_checked())
+            .await
+            .map_err(anyhow::Error::from)?
+            .map_err(|e| {
+                StateGitError::Invalid(format!(
+                    "a pasta infra/ não está num estado válido (resolveu o merge? sobrou marcador de conflito?): {e:#}"
+                ))
+            })?;
+        let db = self.db.clone();
+        let head = tokio::task::spawn_blocking(move || git::head(db.infra().tree().root()))
+            .await
+            .map_err(anyhow::Error::from)??;
+        if let Some(h) = &head
+            && let Err(e) = self.record_marks(&h.sha, &old, &new).await
+        {
+            warn!(error = %e, "state_git: não consegui registrar as marcas ao retomar");
+        }
+        {
+            let mut rt = self.rt.lock().unwrap();
+            rt.paused = None;
+            rt.incoming_error = None;
+            rt.last_error = None;
+        }
+        self.cycle(true).await;
+        Ok(self.status().await?)
+    }
+
+    /// Resolve um histórico divergido **sem terminal**, descartando um dos lados — com cópia de
+    /// segurança do que for descartado:
+    /// - `UseRemote`: o servidor adota o repositório; os commits locais ficam na branch
+    ///   `rustploy-backup/local-<data>` do clone do servidor. O conteúdo do remoto passa antes por
+    ///   todas as validações de um pull;
+    /// - `UseLocal`: o repositório adota o servidor; o que o remoto tinha é copiado para
+    ///   `rustploy-backup/remote-<data>` **no próprio remoto** antes de ser sobrescrito
+    ///   (`--force-with-lease`: se alguém empurrar nesse meio-tempo, recusa).
+    pub async fn resolve(
+        self: &Arc<Self>,
+        choice: shared::StateGitResolveChoice,
+    ) -> Result<StateGitStatus, StateGitError> {
+        use shared::StateGitResolveChoice::*;
+        let s = self.settings().await?;
+        if s.mode != Mode::Sync {
+            return Err(StateGitError::Invalid(
+                "só há divergência a resolver no modo sync".into(),
+            ));
+        }
+        if self.rt.lock().unwrap().paused.is_none() {
+            return Err(StateGitError::Invalid(
+                "a sincronização não está pausada: não há divergência a resolver".into(),
+            ));
+        }
+        let one_at_a_time = self.cycle_lock.lock().await;
+
+        // 1. O que existe de local precisa estar commitado (é isso que a cópia de segurança guarda).
+        if self.commit_local(&s).await? {
+            return Err(StateGitError::Invalid(
+                "há valores em claro ainda não commitados no servidor (veja InfraAudit): resolva-os antes de resolver a divergência".into(),
+            ));
+        }
+        // 2. O remoto como está agora.
+        let auth = self.auth_for(&s).await?;
+        let (db, branch) = (self.db.clone(), s.branch.clone());
+        let a2 = auth.clone();
+        let remote_sha = tokio::task::spawn_blocking(move || {
+            let root = db.infra().tree().root().to_path_buf();
+            git::fetch(&root, &branch, a2.as_ref())?;
+            anyhow::Ok(git::remote_head(&root, &branch))
+        })
+        .await
+        .map_err(anyhow::Error::from)??
+        .ok_or_else(|| StateGitError::Invalid("o remoto não tem a branch configurada".into()))?;
+
+        let stamp = chrono::Utc::now().format("%Y%m%dT%H%M%S").to_string();
+        match choice {
+            UseRemote => {
+                let (db, name) = (self.db.clone(), format!("rustploy-backup/local-{stamp}"));
+                tokio::task::spawn_blocking(move || {
+                    git::backup_branch(db.infra().tree().root(), &name, "HEAD")
+                })
+                .await
+                .map_err(anyhow::Error::from)??;
+                match self.apply_incoming(&remote_sha, true).await {
+                    Applied::Yes => {}
+                    Applied::Later => {
+                        return Err(StateGitError::Invalid("tente de novo em instantes".into()));
+                    }
+                    Applied::No(m) => {
+                        return Err(StateGitError::Invalid(format!(
+                            "o conteúdo do remoto não pôde ser adotado: {m}"
+                        )));
+                    }
+                }
+            }
+            UseLocal => {
+                let (db, branch, sha) = (self.db.clone(), s.branch.clone(), remote_sha.clone());
+                let name = format!("rustploy-backup/remote-{stamp}");
+                tokio::task::spawn_blocking(move || {
+                    let root = db.infra().tree().root().to_path_buf();
+                    git::push_backup_ref(&root, &sha, &name, auth.as_ref())?;
+                    git::push_force_with_lease(&root, &branch, &sha, auth.as_ref())
+                })
+                .await
+                .map_err(anyhow::Error::from)??;
+            }
+        }
+        info!(?choice, "state_git: divergência resolvida");
+        {
+            let mut rt = self.rt.lock().unwrap();
+            rt.paused = None;
+            rt.incoming_error = None;
+            rt.last_error = None;
+        }
+        drop(one_at_a_time);
+        self.cycle(true).await;
+        Ok(self.status().await?)
+    }
+
+    /// Esquece uma marca de "removido no git" (a pessoa decidiu manter o que ainda roda, ou já limpou).
+    pub async fn dismiss_removal(&self, id: &str) -> Result<(), StateGitError> {
+        if !crate::store::state_git_marks::dismiss_removed(&self.db, id).await? {
+            return Err(StateGitError::Invalid("essa marca não existe".into()));
         }
         Ok(())
     }
@@ -540,7 +1112,7 @@ impl StateGit {
             // No boot: commita o que mudou enquanto o daemon estava parado e reenvia o pendente.
             me.rt.lock().unwrap().needs_push = true;
             me.cycle(false).await;
-            let mut tick = tokio::time::interval(RETRY_EVERY);
+            let mut tick = tokio::time::interval(me.fetch_every);
             tick.tick().await;
             loop {
                 tokio::select! {
@@ -837,9 +1409,9 @@ mod tests {
             })
             .unwrap();
         let st = c.sg.sync_now().await.unwrap();
-        assert_eq!(st.last_push_ok, Some(false));
-        assert!(st.needs_push);
-        assert!(st.last_error.unwrap().contains("push falhou"));
+        // com o remoto fora do ar o `fetch` já falha (antes de tentar o push); nada quebra
+        assert!(st.needs_push, "o commit local fica pendente de envio");
+        assert!(st.last_error.unwrap().contains("fetch falhou"));
         assert!(
             git_out(&c, &["log", "-1", "--format=%s"])
                 .trim()
@@ -891,5 +1463,791 @@ mod tests {
             .unwrap();
         assert_eq!(n, base + 1, "4 edições dentro do debounce = 1 commit");
         assert!(git_out(&c, &["show", "HEAD:projects/p1/project.yml"]).contains("edição 3"));
+    }
+
+    // ── Fase 7: o que chega por fora ────────────────────────────────────────────────────────────
+
+    use crate::store::infra::model::ProjectInfra;
+    use crate::store::infra::yaml::{from_yaml, to_yaml};
+
+    /// Um "colega": clone próprio do remoto, que edita à mão e dá push.
+    struct Externo {
+        dir: tempfile::TempDir,
+    }
+
+    impl Externo {
+        fn clone_de(url: &str) -> Self {
+            let dir = tempfile::tempdir().unwrap();
+            // O remoto `--bare` nasce com HEAD em `master`; a nossa branch é `main`.
+            if git::run(dir.path(), &["clone", "-q", "-b", "main", url, "."], None).is_err() {
+                // remoto ainda vazio: clona assim mesmo e começa a branch `main` aqui
+                git::run(dir.path(), &["clone", "-q", url, "."], None).unwrap();
+                git::run(dir.path(), &["checkout", "-q", "-B", "main"], None).unwrap();
+            }
+            Externo { dir }
+        }
+        fn path(&self, rel: &str) -> std::path::PathBuf {
+            self.dir.path().join(rel)
+        }
+        /// Lê `projects/<id>/project.yml`, deixa `f` mexer e grava **reserializado** (formatação
+        /// diferente da do daemon, como numa edição à mão).
+        fn edita_projeto(&self, id: &str, f: impl FnOnce(&mut ProjectInfra)) {
+            let p = self.path(&format!("projects/{id}/project.yml"));
+            let mut proj: ProjectInfra = from_yaml(&std::fs::read(&p).unwrap()).unwrap();
+            f(&mut proj);
+            std::fs::write(&p, to_yaml(&proj).unwrap()).unwrap();
+        }
+        fn commit_push(&self, msg: &str) -> String {
+            git::run(self.dir.path(), &["add", "-A"], None).unwrap();
+            git::run(self.dir.path(), &["commit", "-q", "-m", msg], None).unwrap();
+            git::run(
+                self.dir.path(),
+                &["push", "-q", "origin", "HEAD:refs/heads/main"],
+                None,
+            )
+            .unwrap();
+            git::run(self.dir.path(), &["rev-parse", "HEAD"], None)
+                .unwrap()
+                .trim()
+                .to_string()
+        }
+    }
+
+    /// Cenário em modo `sync` com um remoto local já sincronizado.
+    async fn com_remoto() -> (Cenario, tempfile::TempDir, String) {
+        let c = cenario().await;
+        c.db.seed_service_for_test("p1", "s1");
+        let (remote, url) = bare_remote();
+        let st =
+            c.sg.configure("sync", Some(url.clone()), None, None)
+                .await
+                .unwrap();
+        assert_eq!(st.last_push_ok, Some(true), "{:?}", st.last_error);
+        (c, remote, url)
+    }
+
+    fn head_local(c: &Cenario) -> String {
+        git_out(c, &["rev-parse", "HEAD"]).trim().to_string()
+    }
+
+    #[tokio::test]
+    async fn edicao_externa_valida_e_aplicada_byte_a_byte_e_sem_laco() {
+        let (c, remote, url) = com_remoto().await;
+        let ext = Externo::clone_de(&url);
+        ext.edita_projeto("p1", |p| p.description = Some("editado por fora".into()));
+        // um comentário que só sobrevive se o daemon gravar os bytes do commit, não reserializar
+        let f = ext.path("projects/p1/project.yml");
+        let txt = std::fs::read_to_string(&f).unwrap();
+        std::fs::write(&f, format!("# editado à mão no GitHub\n{txt}")).unwrap();
+        let sha = ext.commit_push("edita descrição");
+
+        let st = c.sg.sync_now().await.unwrap();
+        assert_eq!(st.last_error, None, "{st:?}");
+        assert_eq!(
+            crate::store::projects::get(&c.db, "p1")
+                .await
+                .unwrap()
+                .unwrap()
+                .description
+                .as_deref(),
+            Some("editado por fora")
+        );
+        assert_eq!(head_local(&c), sha, "o HEAD andou até o commit externo");
+        let em_disco =
+            std::fs::read_to_string(infra_dir(&c).join("projects/p1/project.yml")).unwrap();
+        assert!(
+            em_disco.starts_with("# editado à mão no GitHub"),
+            "bytes do commit preservados"
+        );
+        assert_eq!((st.ahead, st.behind), (0, 0));
+
+        // sem laço: aplicar não gera commit de volta nem push
+        let antes = head_local(&c);
+        c.sg.cycle(false).await;
+        c.sg.cycle(true).await;
+        assert_eq!(head_local(&c), antes);
+        let st = c.sg.status().await.unwrap();
+        assert!(!st.needs_push);
+        assert_eq!(
+            git::run(remote.path(), &["rev-parse", "main"], None)
+                .unwrap()
+                .trim(),
+            sha
+        );
+        // e uma edição local depois disso continua funcionando e vai ao remoto
+        c.db.infra()
+            .update(|st| {
+                st.projects[0].description = Some("local".into());
+                Ok(())
+            })
+            .unwrap();
+        c.sg.sync_now().await.unwrap();
+        assert_ne!(
+            git::run(remote.path(), &["rev-parse", "main"], None)
+                .unwrap()
+                .trim(),
+            sha
+        );
+    }
+
+    #[tokio::test]
+    async fn spec_alterado_por_fora_fica_pendente_de_deploy_ate_um_deploy() {
+        let (c, _remote, url) = com_remoto().await;
+        let porta_antes = crate::store::services::get(&c.db, "s1")
+            .await
+            .unwrap()
+            .unwrap()
+            .spec
+            .port;
+        let ext = Externo::clone_de(&url);
+        ext.edita_projeto("p1", |p| p.services[0].spec.port = porta_antes + 1000);
+        ext.commit_push("muda a porta");
+        let st = c.sg.sync_now().await.unwrap();
+        // o DECLARADO mudou...
+        assert_eq!(
+            crate::store::services::get(&c.db, "s1")
+                .await
+                .unwrap()
+                .unwrap()
+                .spec
+                .port,
+            porta_antes + 1000
+        );
+        // ...e fica a marca de que o que roda ainda não acompanha
+        assert_eq!(st.pending_deploy, vec!["s1".to_string()]);
+        // um deploy limpa a marca (é o que `deploy::start` faz)
+        crate::store::state_git_marks::clear_pending(&c.db, "s1")
+            .await
+            .unwrap();
+        assert!(c.sg.status().await.unwrap().pending_deploy.is_empty());
+    }
+
+    #[tokio::test]
+    async fn yaml_invalido_nao_e_aplicado_e_o_proximo_commit_valido_sim() {
+        let (c, _remote, url) = com_remoto().await;
+        let estado_antes = (*c.db.infra().snapshot()).clone();
+        let ext = Externo::clone_de(&url);
+        std::fs::write(
+            ext.path("projects/p1/project.yml"),
+            "isto: [não, fecha\n  : :",
+        )
+        .unwrap();
+        let ruim = ext.commit_push("quebra o yaml");
+
+        let st = c.sg.sync_now().await.unwrap();
+        assert_eq!(*c.db.infra().snapshot(), estado_antes, "nada foi aplicado");
+        let rej = st.incoming_rejected.expect("a recusa fica visível");
+        assert_eq!(rej.sha, ruim);
+        assert!(rej.reason.contains("NÃO foi aplicado"), "{}", rej.reason);
+        assert!(st.last_error.is_some());
+        assert_ne!(head_local(&c), ruim);
+
+        // o remoto conserta com um commit novo: o TOPO é válido e é aplicado
+        git::run(
+            ext.dir.path(),
+            &["checkout", "-q", "HEAD~1", "--", "projects/p1/project.yml"],
+            None,
+        )
+        .unwrap();
+        ext.edita_projeto("p1", |p| p.description = Some("consertado".into()));
+        let bom = ext.commit_push("conserta");
+        let st = c.sg.sync_now().await.unwrap();
+        assert_eq!(st.incoming_rejected, None);
+        assert_eq!(st.last_error, None, "{st:?}");
+        assert_eq!(head_local(&c), bom);
+    }
+
+    #[tokio::test]
+    async fn valor_em_claro_vindo_de_fora_e_recusado_sem_ecoar_o_valor() {
+        let (c, _remote, url) = com_remoto().await;
+        let ext = Externo::clone_de(&url);
+        ext.edita_projeto("p1", |p| {
+            p.env_vars.push(EnvVar {
+                key: "STRIPE_SECRET_KEY".into(),
+                value: EnvVarValue::Plain("sk_live_vazou".into()),
+            })
+        });
+        ext.commit_push("põe segredo em claro");
+        let st = c.sg.sync_now().await.unwrap();
+        let rej = st.incoming_rejected.expect("recusado");
+        assert!(rej.reason.contains("valor(es) em claro"), "{}", rej.reason);
+        assert!(rej.reason.contains("STRIPE_SECRET_KEY"));
+        assert!(
+            !rej.reason.contains("sk_live_vazou")
+                && !st.last_error.unwrap().contains("sk_live_vazou")
+        );
+        assert!(c.db.infra().snapshot().projects[0].env_vars.is_empty());
+    }
+
+    #[tokio::test]
+    async fn ciclo_de_dependencias_vindo_de_fora_e_recusado() {
+        let (c, _remote, url) = com_remoto().await;
+        c.db.seed_service_for_test("p1", "s2");
+        c.sg.sync_now().await.unwrap(); // commita e envia o s2
+        let ext = Externo::clone_de(&url);
+        ext.edita_projeto("p1", |p| {
+            for s in &mut p.services {
+                s.spec.depends_on = vec![if s.id == "s1" {
+                    "s2".into()
+                } else {
+                    "s1".into()
+                }];
+            }
+        });
+        ext.commit_push("cria um ciclo");
+        let st = c.sg.sync_now().await.unwrap();
+        let rej = st.incoming_rejected.expect("recusado");
+        assert!(rej.reason.contains("ciclo"), "{}", rej.reason);
+        assert!(
+            c.db.infra().snapshot().projects[0]
+                .services
+                .iter()
+                .all(|s| s.spec.depends_on.is_empty())
+        );
+    }
+
+    #[tokio::test]
+    async fn segredo_que_nao_decifra_neste_servidor_e_recusado() {
+        let (c, _remote, url) = com_remoto().await;
+        let outra = age::x25519::Identity::generate();
+        let alheio = crate::platform::age_format::encrypt("x", &[outra.to_public()]).unwrap();
+        let ext = Externo::clone_de(&url);
+        ext.edita_projeto("p1", |p| {
+            p.secrets.push(crate::store::infra::model::SecretInfra {
+                id: "sec_1".into(),
+                key: "DB_PASSWORD".into(),
+                value: alheio.clone(),
+            })
+        });
+        ext.commit_push("secret de outro servidor");
+        let st = c.sg.sync_now().await.unwrap();
+        let rej = st.incoming_rejected.expect("recusado");
+        assert!(rej.reason.contains("não decifra"), "{}", rej.reason);
+        assert!(rej.reason.contains("DB_PASSWORD"));
+    }
+
+    #[tokio::test]
+    async fn secret_cifrado_para_este_servidor_e_aceito() {
+        let (c, _remote, url) = com_remoto().await;
+        let ext = Externo::clone_de(&url);
+        // é o que `rustploy-cli secret encrypt` faz: cifra com a chave PÚBLICA do servidor
+        let enc = {
+            let pk = c.secrets.public_key();
+            crate::platform::age_format::encrypt(
+                "segredo-bom",
+                &[crate::platform::age_format::parse_recipient(&pk).unwrap()],
+            )
+            .unwrap()
+        };
+        ext.edita_projeto("p1", |p| {
+            p.secrets.push(crate::store::infra::model::SecretInfra {
+                id: "sec_1".into(),
+                key: "DB_PASSWORD".into(),
+                value: enc.clone(),
+            })
+        });
+        ext.commit_push("secret cifrado com a chave pública");
+        let st = c.sg.sync_now().await.unwrap();
+        assert_eq!(st.incoming_rejected, None, "{st:?}");
+        assert_eq!(
+            c.secrets.get_raw("p1", "DB_PASSWORD").await.unwrap(),
+            "segredo-bom"
+        );
+    }
+
+    #[tokio::test]
+    async fn remocao_por_fora_so_marca_e_nao_apaga_runtime_nem_derruba_nada() {
+        let (c, _remote, url) = com_remoto().await;
+        c.db.seed_service_for_test("p1", "s2");
+        crate::store::services::update_status(
+            &c.db,
+            "s2",
+            &shared::ServiceStatus::Running,
+            Some("cont_vivo"),
+        )
+        .await
+        .unwrap();
+        c.sg.sync_now().await.unwrap();
+        let ext = Externo::clone_de(&url);
+        ext.edita_projeto("p1", |p| p.services.retain(|s| s.id != "s2"));
+        ext.commit_push("remove o s2 do yaml");
+        let st = c.sg.sync_now().await.unwrap();
+        assert_eq!(st.incoming_rejected, None, "{st:?}");
+        // saiu do estado declarado...
+        assert!(
+            crate::store::services::get(&c.db, "s2")
+                .await
+                .unwrap()
+                .is_none()
+        );
+        // ...mas ficou a marca, e o runtime (container vivo) NÃO foi tocado
+        assert_eq!(st.removed_in_git.len(), 1);
+        assert_eq!(st.removed_in_git[0].id, "serviço:s2");
+        let (cont,): (Option<String>,) =
+            sqlx::query_as("SELECT live_container_id FROM service_runtime WHERE service_id = 's2'")
+                .fetch_one(c.db.pool())
+                .await
+                .unwrap();
+        assert_eq!(cont.as_deref(), Some("cont_vivo"));
+        // a pessoa esquece a marca
+        c.sg.dismiss_removal("serviço:s2").await.unwrap();
+        assert!(c.sg.status().await.unwrap().removed_in_git.is_empty());
+        assert!(c.sg.dismiss_removal("serviço:s2").await.is_err());
+    }
+
+    #[tokio::test]
+    async fn remover_um_projeto_inteiro_marca_o_projeto_e_os_servicos() {
+        let (c, _remote, url) = com_remoto().await;
+        c.db.seed_project_for_test("p2");
+        c.db.seed_service_for_test("p2", "x1");
+        c.sg.sync_now().await.unwrap();
+        let ext = Externo::clone_de(&url);
+        std::fs::remove_dir_all(ext.path("projects/p2")).unwrap();
+        ext.commit_push("apaga o projeto p2");
+        let st = c.sg.sync_now().await.unwrap();
+        assert_eq!(st.incoming_rejected, None, "{st:?}");
+        let ids: Vec<_> = st.removed_in_git.iter().map(|r| r.id.as_str()).collect();
+        assert!(
+            ids.contains(&"projeto:p2") && ids.contains(&"serviço:x1"),
+            "{ids:?}"
+        );
+        assert!(
+            crate::store::projects::get(&c.db, "p2")
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            crate::store::projects::get(&c.db, "p1")
+                .await
+                .unwrap()
+                .is_some()
+        );
+    }
+
+    #[tokio::test]
+    async fn historico_divergido_pausa_a_rede_e_retomar_depois_de_resolver() {
+        let (c, remote, url) = com_remoto().await;
+        let ext = Externo::clone_de(&url);
+        ext.edita_projeto("p1", |p| p.description = Some("do colega".into()));
+        let do_colega = ext.commit_push("colega edita");
+        // enquanto isso, uma edição LOCAL diferente: os dois lados andaram
+        c.db.infra()
+            .update(|st| {
+                st.projects[0].description = Some("do servidor".into());
+                Ok(())
+            })
+            .unwrap();
+        let st = c.sg.sync_now().await.unwrap();
+        let motivo = st.paused_reason.clone().expect("pausou");
+        assert!(
+            motivo.contains("divergiu") && motivo.contains("retomar"),
+            "{motivo}"
+        );
+        assert_eq!((st.ahead, st.behind), (1, 1));
+        // nada foi enviado nem aplicado
+        assert_eq!(
+            git::run(remote.path(), &["rev-parse", "main"], None)
+                .unwrap()
+                .trim(),
+            do_colega
+        );
+        assert_eq!(
+            crate::store::projects::get(&c.db, "p1")
+                .await
+                .unwrap()
+                .unwrap()
+                .description
+                .as_deref(),
+            Some("do servidor")
+        );
+        // pausado, o daemon NÃO mexe no git (nem commita): quem resolve à mão por SSH não pode ter um
+        // `git add -A` do daemon capturando um merge pela metade. As edições da interface continuam
+        // valendo no estado e nos arquivos.
+        let antes = head_local(&c);
+        c.db.infra()
+            .update(|st| {
+                st.projects[0].description = Some("do servidor 2".into());
+                Ok(())
+            })
+            .unwrap();
+        c.sg.cycle(false).await;
+        assert_eq!(head_local(&c), antes, "pausado não commita");
+        assert_eq!(
+            crate::store::projects::get(&c.db, "p1")
+                .await
+                .unwrap()
+                .unwrap()
+                .description
+                .as_deref(),
+            Some("do servidor 2")
+        );
+        assert_eq!(
+            git::run(remote.path(), &["rev-parse", "main"], None)
+                .unwrap()
+                .trim(),
+            do_colega
+        );
+
+        // a pessoa resolve no repositório (aqui: commita o que ficou e junta mantendo o lado do
+        // servidor) e retoma
+        git_out(&c, &["add", "-A"]);
+        git_out(&c, &["commit", "-q", "-m", "à mão: o que ficou pendente"]);
+        git_out(
+            &c,
+            &[
+                "merge",
+                "-q",
+                "--no-edit",
+                "-s",
+                "ours",
+                "refs/remotes/origin/main",
+            ],
+        );
+        let st = c.sg.resume().await.unwrap();
+        assert_eq!(st.paused_reason, None, "{st:?}");
+        assert_eq!(st.last_error, None);
+        assert_eq!(
+            git::run(remote.path(), &["rev-parse", "main"], None)
+                .unwrap()
+                .trim(),
+            head_local(&c),
+            "retomar enviou o merge"
+        );
+    }
+
+    #[tokio::test]
+    async fn retomar_relê_a_pasta_depois_de_resolver_a_mao_e_recusa_pasta_quebrada() {
+        let (c, remote, _url, do_colega) = divergido().await;
+        let estado_do_servidor = (*c.db.infra().snapshot()).clone();
+
+        // 1) a pessoa deixou um merge com marcador de conflito no YAML e mandou retomar
+        let arq = infra_dir(&c).join("projects/p1/project.yml");
+        let bom = std::fs::read_to_string(&arq).unwrap();
+        std::fs::write(
+            &arq,
+            format!("<<<<<<< HEAD\n{bom}=======\noutra coisa\n>>>>>>> origin/main\n"),
+        )
+        .unwrap();
+        let e = c.sg.resume().await.unwrap_err();
+        assert!(e.to_string().contains("não está num estado válido"), "{e}");
+        assert_eq!(
+            *c.db.infra().snapshot(),
+            estado_do_servidor,
+            "nada mudou em memória"
+        );
+        assert!(
+            c.sg.status().await.unwrap().paused_reason.is_some(),
+            "continua pausado"
+        );
+
+        // 2) agora ela adota o remoto à mão (guarda o local numa branch e faz reset): o daemon precisa
+        // reler a pasta, senão a próxima escrita desfaria o que foi resolvido
+        git_out(&c, &["checkout", "-q", "--", "."]);
+        git_out(&c, &["branch", "backup-manual", "main"]);
+        git_out(&c, &["reset", "-q", "--hard", "refs/remotes/origin/main"]);
+        let st = c.sg.resume().await.unwrap();
+        assert_eq!(st.paused_reason, None, "{st:?}");
+        assert_eq!(
+            crate::store::projects::get(&c.db, "p1")
+                .await
+                .unwrap()
+                .unwrap()
+                .description
+                .as_deref(),
+            Some("do colega"),
+            "o estado em memória acompanhou a pasta"
+        );
+        assert_eq!(head_local(&c), do_colega);
+        // uma escrita nova NÃO desfaz o que foi resolvido (o risco que o reload evita)
+        c.db.infra()
+            .update(|st| {
+                st.settings.acme_email = Some("a@b.c".into());
+                Ok(())
+            })
+            .unwrap();
+        c.sg.cycle(true).await;
+        let em_disco =
+            std::fs::read_to_string(infra_dir(&c).join("projects/p1/project.yml")).unwrap();
+        assert!(em_disco.contains("do colega"), "{em_disco}");
+        assert!(
+            git::run(
+                remote.path(),
+                &["show", "main:projects/p1/project.yml"],
+                None
+            )
+            .unwrap()
+            .contains("do colega")
+        );
+    }
+
+    #[tokio::test]
+    async fn conectar_um_repositorio_com_historia_propria_pausa_em_vez_de_sobrescrever() {
+        let c = cenario().await;
+        let (remote, url) = bare_remote();
+        // alguém já usa esse repositório para outra coisa
+        let outro = Externo::clone_de(&url);
+        std::fs::write(outro.path("README.md"), "outra coisa\n").unwrap();
+        outro.commit_push("história que não é nossa");
+        let st = c.sg.configure("sync", Some(url), None, None).await.unwrap();
+        assert!(st.paused_reason.is_some(), "{st:?}");
+        // o remoto não foi tocado
+        assert!(
+            git::run(remote.path(), &["log", "-1", "--format=%s", "main"], None)
+                .unwrap()
+                .contains("não é nossa")
+        );
+    }
+
+    #[tokio::test]
+    async fn rollback_no_git_devolve_o_servico_e_a_marca_de_removido_some() {
+        let (c, _remote, url) = com_remoto().await;
+        c.db.seed_service_for_test("p1", "s2");
+        crate::store::services::update_status(
+            &c.db,
+            "s2",
+            &shared::ServiceStatus::Running,
+            Some("cont_vivo"),
+        )
+        .await
+        .unwrap();
+        c.sg.sync_now().await.unwrap();
+        let ext = Externo::clone_de(&url);
+        let antes = head_remoto(&ext);
+        ext.edita_projeto("p1", |p| p.services.retain(|s| s.id != "s2"));
+        ext.commit_push("remove o s2");
+        let st = c.sg.sync_now().await.unwrap();
+        assert_eq!(st.removed_in_git.len(), 1);
+        assert!(
+            crate::store::services::get(&c.db, "s2")
+                .await
+                .unwrap()
+                .is_none()
+        );
+
+        // rollback: `git revert` do commit que removeu (o s2 volta com o MESMO id)
+        git::run(ext.dir.path(), &["revert", "--no-edit", "HEAD"], None).unwrap();
+        git::run(
+            ext.dir.path(),
+            &["push", "-q", "origin", "HEAD:refs/heads/main"],
+            None,
+        )
+        .unwrap();
+        let _ = antes;
+        let st = c.sg.sync_now().await.unwrap();
+        assert_eq!(st.incoming_rejected, None, "{st:?}");
+        assert!(
+            st.removed_in_git.is_empty(),
+            "a marca some quando o serviço volta: {st:?}"
+        );
+        let svc = crate::store::services::get(&c.db, "s2")
+            .await
+            .unwrap()
+            .unwrap();
+        // o runtime nunca foi tocado: o serviço volta já apontando para o mesmo container
+        assert_eq!(svc.live_container_id.as_deref(), Some("cont_vivo"));
+        assert_eq!(svc.status, shared::ServiceStatus::Running);
+    }
+
+    fn head_remoto(ext: &Externo) -> String {
+        git::run(ext.dir.path(), &["rev-parse", "HEAD"], None)
+            .unwrap()
+            .trim()
+            .to_string()
+    }
+
+    /// Deixa o cenário divergido: o colega edita no remoto e o servidor edita localmente.
+    async fn divergido() -> (Cenario, tempfile::TempDir, String, String) {
+        let (c, remote, url) = com_remoto().await;
+        let ext = Externo::clone_de(&url);
+        ext.edita_projeto("p1", |p| p.description = Some("do colega".into()));
+        let do_colega = ext.commit_push("colega edita");
+        c.db.infra()
+            .update(|st| {
+                st.projects[0].description = Some("do servidor".into());
+                Ok(())
+            })
+            .unwrap();
+        let st = c.sg.sync_now().await.unwrap();
+        assert!(st.paused_reason.is_some(), "{st:?}");
+        (c, remote, url, do_colega)
+    }
+
+    #[tokio::test]
+    async fn usar_o_do_remoto_adota_o_repositorio_e_guarda_o_local_numa_branch() {
+        let (c, remote, _url, do_colega) = divergido().await;
+        let local_antes = head_local(&c);
+        let st =
+            c.sg.resolve(shared::StateGitResolveChoice::UseRemote)
+                .await
+                .unwrap();
+        assert_eq!((st.paused_reason, st.last_error), (None, None));
+        // o servidor agora tem o conteúdo do colega...
+        assert_eq!(
+            crate::store::projects::get(&c.db, "p1")
+                .await
+                .unwrap()
+                .unwrap()
+                .description
+                .as_deref(),
+            Some("do colega")
+        );
+        assert_eq!(head_local(&c), do_colega);
+        // ...e o que era só do servidor está salvo numa branch de backup
+        let branches = git_out(&c, &["branch", "--list", "rustploy-backup/local-*"]);
+        assert!(branches.contains("rustploy-backup/local-"), "{branches}");
+        let backup = branches.trim().trim_start_matches("* ").to_string();
+        assert_eq!(git_out(&c, &["rev-parse", &backup]).trim(), local_antes);
+        assert!(
+            git_out(&c, &["show", &format!("{backup}:projects/p1/project.yml")])
+                .contains("do servidor")
+        );
+        // o remoto não foi tocado
+        assert_eq!(
+            git::run(remote.path(), &["rev-parse", "main"], None)
+                .unwrap()
+                .trim(),
+            do_colega
+        );
+    }
+
+    #[tokio::test]
+    async fn usar_o_meu_sobrescreve_o_remoto_depois_de_guardar_o_dele() {
+        let (c, remote, _url, do_colega) = divergido().await;
+        let st =
+            c.sg.resolve(shared::StateGitResolveChoice::UseLocal)
+                .await
+                .unwrap();
+        assert_eq!(
+            (&st.paused_reason, &st.last_error),
+            (&None, &None),
+            "{st:?}"
+        );
+        // o remoto agora é o do servidor
+        assert_eq!(
+            git::run(remote.path(), &["rev-parse", "main"], None)
+                .unwrap()
+                .trim(),
+            head_local(&c)
+        );
+        assert!(
+            git::run(
+                remote.path(),
+                &["show", "main:projects/p1/project.yml"],
+                None
+            )
+            .unwrap()
+            .contains("do servidor")
+        );
+        // e o que o remoto tinha ficou numa branch de backup NO REMOTO
+        let backups = git::run(
+            remote.path(),
+            &["branch", "--list", "rustploy-backup/remote-*"],
+            None,
+        )
+        .unwrap();
+        let nome = backups.trim().trim_start_matches("* ").to_string();
+        assert!(!nome.is_empty(), "{backups}");
+        assert_eq!(
+            git::run(remote.path(), &["rev-parse", &nome], None)
+                .unwrap()
+                .trim(),
+            do_colega
+        );
+        // o estado local não mudou
+        assert_eq!(
+            crate::store::projects::get(&c.db, "p1")
+                .await
+                .unwrap()
+                .unwrap()
+                .description
+                .as_deref(),
+            Some("do servidor")
+        );
+    }
+
+    #[tokio::test]
+    async fn resolver_so_vale_pausado_e_em_sync_e_um_remoto_invalido_nao_e_adotado() {
+        // sem pausa: nada a resolver
+        let (c, _remote, _url) = com_remoto().await;
+        assert!(
+            c.sg.resolve(shared::StateGitResolveChoice::UseLocal)
+                .await
+                .is_err()
+        );
+        // em modo commit também não
+        let c2 = cenario().await;
+        c2.sg.configure("commit", None, None, None).await.unwrap();
+        assert!(
+            c2.sg
+                .resolve(shared::StateGitResolveChoice::UseRemote)
+                .await
+                .is_err()
+        );
+
+        // repositório que tem história de OUTRA coisa: "usar o do remoto" não pode adotá-lo
+        let c3 = cenario().await;
+        let (remote, url) = bare_remote();
+        let outro = Externo::clone_de(&url);
+        std::fs::write(outro.path("README.md"), "outra coisa\n").unwrap();
+        outro.commit_push("história que não é nossa");
+        let st = c3
+            .sg
+            .configure("sync", Some(url), None, None)
+            .await
+            .unwrap();
+        assert!(st.paused_reason.is_some());
+        let antes = (*c3.db.infra().snapshot()).clone();
+        let e = c3
+            .sg
+            .resolve(shared::StateGitResolveChoice::UseRemote)
+            .await
+            .unwrap_err();
+        assert!(e.to_string().contains("não pôde ser adotado"), "{e}");
+        assert_eq!(
+            *c3.db.infra().snapshot(),
+            antes,
+            "o estado do servidor ficou intacto"
+        );
+        assert!(
+            c3.sg.status().await.unwrap().paused_reason.is_some(),
+            "continua pausado"
+        );
+        // já "usar o meu" funciona: o README do outro é preservado numa branch de backup no remoto
+        let st = c3
+            .sg
+            .resolve(shared::StateGitResolveChoice::UseLocal)
+            .await
+            .unwrap();
+        assert_eq!(st.paused_reason, None, "{st:?}");
+        let backups = git::run(
+            remote.path(),
+            &["branch", "--list", "rustploy-backup/remote-*"],
+            None,
+        )
+        .unwrap();
+        assert!(backups.contains("rustploy-backup/remote-"), "{backups}");
+    }
+
+    #[tokio::test]
+    async fn recusa_some_quando_o_remoto_volta_ao_que_o_servidor_ja_tem() {
+        let (c, _remote, url) = com_remoto().await;
+        let ext = Externo::clone_de(&url);
+        let bom = head_remoto(&ext);
+        std::fs::write(ext.path("projects/p1/project.yml"), "quebrado: [").unwrap();
+        ext.commit_push("quebra");
+        let st = c.sg.sync_now().await.unwrap();
+        assert!(st.incoming_rejected.is_some());
+        // o remoto é reescrito de volta ao commit bom (igual ao servidor): não há mais o que recusar
+        git::run(ext.dir.path(), &["reset", "-q", "--hard", &bom], None).unwrap();
+        git::run(
+            ext.dir.path(),
+            &["push", "-q", "-f", "origin", "HEAD:refs/heads/main"],
+            None,
+        )
+        .unwrap();
+        let st = c.sg.sync_now().await.unwrap();
+        assert_eq!(st.incoming_rejected, None, "{st:?}");
+        assert_eq!(st.last_error, None, "{st:?}");
     }
 }

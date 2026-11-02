@@ -28,14 +28,19 @@ pub struct CommitInfo {
     pub subject: String,
 }
 
-/// O `git` existe e responde?
+/// O `git` existe e responde? Resultado guardado: o snapshot pergunta isto a cada atualização, e
+/// executar `git --version` toda vez seria desperdício. (Instalar o `git` depois exige reiniciar o
+/// daemon para a tela notar.)
 pub fn available() -> bool {
-    Command::new("git")
-        .arg("--version")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .is_ok_and(|s| s.success())
+    static AVAILABLE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *AVAILABLE.get_or_init(|| {
+        Command::new("git")
+            .arg("--version")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|s| s.success())
+    })
 }
 
 /// Troca o token (e a sua forma em base64, que é o que vai no cabeçalho) por `***`.
@@ -234,6 +239,145 @@ pub fn push(dir: &Path, branch: &str, auth: Option<&Auth>) -> Result<()> {
     )
     .map(|_| ())
     .map_err(|e| anyhow!("{e}"))
+}
+
+/// Como [`run`], mas devolve os **bytes** do stdout (conteúdo de arquivo: não pode passar por UTF-8
+/// com perda).
+pub fn run_bytes(dir: &Path, args: &[&str]) -> Result<Vec<u8>> {
+    let out = command(dir, None)
+        .args(args)
+        .output()
+        .with_context(|| "não consegui executar o `git` (está instalado?)".to_string())?;
+    if !out.status.success() {
+        bail!(
+            "git {}: {}",
+            args.first().copied().unwrap_or(""),
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    Ok(out.stdout)
+}
+
+/// `git fetch` da branch para `refs/remotes/origin/<branch>`. `Ok(false)` = o remoto ainda **não
+/// tem** essa branch (repositório novo/vazio): não é erro, é "nada a trazer".
+pub fn fetch(dir: &Path, branch: &str, auth: Option<&Auth>) -> Result<bool> {
+    let refspec = format!("+refs/heads/{branch}:refs/remotes/origin/{branch}");
+    match run(dir, &["fetch", "-q", "origin", &refspec], auth) {
+        Ok(_) => Ok(true),
+        Err(e) => {
+            let m = e.to_string();
+            if m.contains("couldn't find remote ref") || m.contains("Couldn't find remote ref") {
+                Ok(false)
+            } else {
+                Err(e)
+            }
+        }
+    }
+}
+
+/// O commit em `refs/remotes/origin/<branch>`, se existir.
+pub fn remote_head(dir: &Path, branch: &str) -> Option<String> {
+    run(
+        dir,
+        &[
+            "rev-parse",
+            "--verify",
+            "-q",
+            &format!("refs/remotes/origin/{branch}"),
+        ],
+        None,
+    )
+    .ok()
+    .map(|s| s.trim().to_string())
+    .filter(|s| !s.is_empty())
+}
+
+/// `(à frente, atrás)`: commits locais que o remoto não tem, e commits do remoto que o local não
+/// tem. `(0, 0)` = iguais. Ambos > 0 = **histórico divergiu**. Sem ancestral comum (o repositório
+/// local foi iniciado do zero e o remoto já tinha história) também dá ambos > 0.
+pub fn ahead_behind(dir: &Path, branch: &str) -> Result<(usize, usize)> {
+    let out = run(
+        dir,
+        &[
+            "rev-list",
+            "--left-right",
+            "--count",
+            &format!("HEAD...refs/remotes/origin/{branch}"),
+        ],
+        None,
+    )?;
+    let mut it = out.split_whitespace();
+    let ahead = it.next().and_then(|n| n.parse().ok()).unwrap_or(0);
+    let behind = it.next().and_then(|n| n.parse().ok()).unwrap_or(0);
+    Ok((ahead, behind))
+}
+
+/// Não há nada por commitar nem arquivo novo/alterado/apagado (fora o que o `.gitignore` esconde)?
+pub fn is_clean(dir: &Path) -> Result<bool> {
+    Ok(run(dir, &["status", "--porcelain"], None)?
+        .trim()
+        .is_empty())
+}
+
+/// Os arquivos do commit `rev`, **sem fazer checkout**: `caminho → bytes`. Só os que importam ao
+/// estado (`is_state_file`), para um `README` do repositório não atrapalhar.
+pub fn files_at(
+    dir: &Path,
+    rev: &str,
+    keep: impl Fn(&str) -> bool,
+) -> Result<std::collections::BTreeMap<String, Vec<u8>>> {
+    let names = run(dir, &["ls-tree", "-r", "--name-only", rev], None)?;
+    let mut out = std::collections::BTreeMap::new();
+    for rel in names.lines().filter(|r| keep(r)) {
+        out.insert(
+            rel.to_string(),
+            run_bytes(dir, &["cat-file", "blob", &format!("{rev}:{rel}")])?,
+        );
+    }
+    Ok(out)
+}
+
+/// `git branch <nome> <rev>`: guarda um commit (ex.: o histórico local que vai ser descartado).
+pub fn backup_branch(dir: &Path, name: &str, rev: &str) -> Result<()> {
+    run(dir, &["branch", "-f", name, rev], None).map(|_| ())
+}
+
+/// Copia `sha` para a branch `refs/heads/<name>` **do remoto** (um backup ao lado do que vai ser
+/// sobrescrito), sem tocar na branch principal.
+pub fn push_backup_ref(dir: &Path, sha: &str, name: &str, auth: Option<&Auth>) -> Result<()> {
+    run(
+        dir,
+        &["push", "-q", "origin", &format!("{sha}:refs/heads/{name}")],
+        auth,
+    )
+    .map(|_| ())
+}
+
+/// `push --force-with-lease`: sobrescreve a branch do remoto **só se ela ainda estiver em
+/// `expected`** (o que o `fetch` viu). Se alguém empurrou nesse meio-tempo, recusa.
+pub fn push_force_with_lease(
+    dir: &Path,
+    branch: &str,
+    expected: &str,
+    auth: Option<&Auth>,
+) -> Result<()> {
+    run(
+        dir,
+        &[
+            "push",
+            "-q",
+            &format!("--force-with-lease=refs/heads/{branch}:{expected}"),
+            "origin",
+            &format!("{branch}:refs/heads/{branch}"),
+        ],
+        auth,
+    )
+    .map(|_| ())
+}
+
+/// Move a branch e a árvore de trabalho para `rev` (o estado já foi gravado, byte a byte igual).
+pub fn reset_hard(dir: &Path, rev: &str) -> Result<()> {
+    run(dir, &["reset", "-q", "--hard", rev], None).map(|_| ())
 }
 
 #[cfg(test)]

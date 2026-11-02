@@ -26,6 +26,53 @@ struct ServiceIndex {
     by_service_id: HashMap<String, (String, String)>,
 }
 
+/// Serviços que **sumiram do estado por um commit externo** (marca `state_git_removed`), para
+/// apontar os containers que ficaram órfãos. Um serviço normal é reconhecido pelo label
+/// `rustploy.service_id`; um Compose (os bancos do assistente, por exemplo) só pelo nome da stack
+/// (`com.docker.compose.project`), por isso a marca guarda os dois.
+#[derive(Default)]
+struct OrphanIndex {
+    /// id do serviço → nome.
+    by_service_id: HashMap<String, String>,
+    /// nome da stack Compose → nome do serviço.
+    by_compose_project: HashMap<String, String>,
+}
+
+impl OrphanIndex {
+    async fn build(state: &AppState) -> Self {
+        let mut o = Self::default();
+        for r in crate::store::state_git_marks::list_removed(&state.db)
+            .await
+            .unwrap_or_default()
+        {
+            if let Some(id) = r.id.strip_prefix("serviço:") {
+                o.by_service_id.insert(id.to_string(), r.name.clone());
+                if let Some(cp) = r.compose_project {
+                    o.by_compose_project.insert(cp, r.name);
+                }
+            }
+        }
+        o
+    }
+
+    fn lookup(&self, labels: &HashMap<String, String>) -> Option<String> {
+        if let Some(sid) = labels.get("rustploy.service_id")
+            && let Some((_, name)) = self
+                .by_service_id
+                .iter()
+                .find(|(id, _)| crate::engine::containers::label_owned_by(sid, id))
+        {
+            return Some(name.clone());
+        }
+        // O Rustploy usa o `docker-compose` nos dois engines (no Podman também, falando com o socket
+        // do Podman), então o rótulo da stack é sempre este.
+        labels
+            .get("com.docker.compose.project")
+            .and_then(|cp| self.by_compose_project.get(cp))
+            .cloned()
+    }
+}
+
 impl ServiceIndex {
     async fn build(state: &AppState) -> Self {
         let projects = crate::store::projects::list(&state.db)
@@ -279,6 +326,7 @@ pub async fn list_containers(state: AppState) -> RpResponse {
         Err(e) => return RpResponse::err("RuntimeError", e.to_string()),
     };
     let idx = ServiceIndex::build(&state).await;
+    let orphans = OrphanIndex::build(&state).await;
     let infos: Vec<DockerContainerInfo> = containers
         .into_iter()
         .map(|c| {
@@ -298,6 +346,7 @@ pub async fn list_containers(state: AppState) -> RpResponse {
                 .and_then(|sid| idx.by_service_id.get(sid))
                 .map(|(p, s)| (Some(p.clone()), Some(s.clone())))
                 .unwrap_or((None, None));
+            let removed_in_git = orphans.lookup(&labels);
             DockerContainerInfo {
                 id: c.id.unwrap_or_default(),
                 name,
@@ -307,6 +356,7 @@ pub async fn list_containers(state: AppState) -> RpResponse {
                 managed,
                 project,
                 service,
+                removed_in_git,
             }
         })
         .collect();
@@ -335,4 +385,40 @@ pub async fn stop_all_managed(state: AppState) -> RpResponse {
         }
     }
     RpResponse::StopAllResult { count }
+}
+
+#[cfg(test)]
+mod orphan_tests {
+    use super::*;
+
+    fn labels(pairs: &[(&str, &str)]) -> HashMap<String, String> {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn orfao_e_reconhecido_pelo_id_e_pela_stack_compose() {
+        let mut o = OrphanIndex::default();
+        o.by_service_id.insert("svc_api".into(), "api".into());
+        o.by_compose_project
+            .insert("rp_ab12cd34_db".into(), "banco".into());
+        assert_eq!(
+            o.lookup(&labels(&[("rustploy.service_id", "svc_api")]))
+                .as_deref(),
+            Some("api")
+        );
+        assert_eq!(
+            o.lookup(&labels(&[("com.docker.compose.project", "rp_ab12cd34_db")]))
+                .as_deref(),
+            Some("banco")
+        );
+        // o que não é órfão não ganha marca
+        assert_eq!(
+            o.lookup(&labels(&[("rustploy.service_id", "svc_vivo")])),
+            None
+        );
+        assert_eq!(o.lookup(&labels(&[])), None);
+    }
 }

@@ -203,6 +203,13 @@ document.addEventListener("alpine:init", () => {
 
     // ── Settings (Web Server / Git / Infra as Code) ─────────────────────
     settingsTab: "web",
+
+    // ── Sincronização do estado com o git (docs/plano-backup-estado-em-git.md, Fases 6 e 7) ──
+    // O status vem no snapshot (`snap.state_git`); estes campos são só o formulário.
+    stateGitMode: "off",
+    stateGitRemote: "",
+    stateGitBranch: "main",
+    stateGitProviderId: "",
     serverSettingsPublicBase: "",
     serverSettingsEmail: "",
     serverSettingsRegistryDomain: "",
@@ -978,6 +985,12 @@ document.addEventListener("alpine:init", () => {
       await this.refreshNow();
     },
 
+    /** Para um container órfão ("removido no git"). O daemon recusa o que ainda pertence a um serviço. */
+    async dockerStopContainer(containerId) {
+      const stopContainerResponse = await this.api.rpcChecked({ StopContainer: { id: containerId } });
+      this.toastResult(stopContainerResponse, t("parado"));
+      if (stopContainerResponse.ok) await this.refreshNow();
+    },
     async dockerRemoveContainer(containerId) {
       const removeContainerResponse = await this.api.rpcChecked({ RemoveContainer: { id: containerId } });
       this.toastResult(removeContainerResponse, t("removido"));
@@ -1703,6 +1716,126 @@ document.addEventListener("alpine:init", () => {
 
     async updateCheckNow() {
       await this.updateCheck(true);
+    },
+
+    // ── Sincronização do estado com o git ───────────────────────────────────────────────────
+
+    get stateGitStatus() {
+      return this.snap?.state_git || null;
+    },
+
+    /** O que está em claro (ou parece) no estado; vem no snapshot. Nunca traz valores. */
+    get stateGitAuditFindings() {
+      return this.snap?.infra_audit || [];
+    },
+
+    /** Texto do aviso do topo, ou "" quando está tudo bem. */
+    get stateGitAlertMessage() {
+      const status = this.stateGitStatus;
+      if (!status || status.mode === "off") return "";
+      if (status.paused_reason) return t("Sincronização com o git pausada: o histórico divergiu. Abra Settings → Sincronização.");
+      if (status.incoming_rejected) {
+        const shortSha = (status.incoming_rejected.sha || "").slice(0, 7);
+        return t`Um commit do repositório foi recusado (${shortSha}). Abra Settings → Sincronização.`;
+      }
+      if (status.blocked_by_plaintext > 0) {
+        return t`Commits suspensos: ${status.blocked_by_plaintext} valor(es) em claro. Abra Settings → Sincronização.`;
+      }
+      return "";
+    },
+
+    /** "dd/mm HH:MM:SS" local de um instante RFC 3339 do status, ou "—". */
+    stateGitTimeLabel(isoTimestamp) {
+      return isoTimestamp ? dateDayMonthHourMinuteSecond(isoTimestamp) : "—";
+    },
+
+    /** O serviço mudou por um commit externo e ainda não foi redeployado. */
+    stateGitPendingDeploy(serviceId) {
+      return (this.stateGitStatus?.pending_deploy || []).includes(serviceId);
+    },
+
+    /** Abre a aba da sincronização e carrega o formulário a partir do status atual. */
+    stateGitOpen() {
+      this.nav("settings");
+      this.settingsTab = "gitsync";
+      this.stateGitFormLoad();
+    },
+
+    stateGitFormLoad() {
+      const status = this.stateGitStatus;
+      if (status) {
+        this.stateGitMode = status.mode || "off";
+        this.stateGitRemote = status.remote || "";
+        this.stateGitBranch = status.branch || "main";
+        this.stateGitProviderId = status.provider_id || "";
+      }
+      this.gitProviderRefresh();
+      return this.stateGitAuditRefresh();
+    },
+
+    /** A auditoria vem no snapshot: atualizar é reler o snapshot. */
+    stateGitAuditRefresh() {
+      return this.refreshNow();
+    },
+
+    async stateGitConfigure() {
+      const configureResponse = await this.api.rpcChecked({
+        StateGitConfigure: {
+          mode: this.stateGitMode,
+          remote: this.stateGitRemote.trim() || null,
+          branch: this.stateGitBranch.trim() || null,
+          provider_id: this.stateGitProviderId || null,
+        },
+      });
+      this.toastResult(configureResponse, t("sincronização configurada"));
+      await this.refreshNow();
+      await this.stateGitAuditRefresh();
+    },
+
+    async stateGitSyncNow() {
+      const syncResponse = await this.api.rpcChecked("StateGitSyncNow");
+      this.toastResult(syncResponse, t("sincronizado"));
+      await this.refreshNow();
+    },
+
+    /** Depois de resolver à mão por SSH: o daemon relê a pasta e valida antes de voltar a andar. */
+    async stateGitResume() {
+      const resumeResponse = await this.api.rpcChecked("StateGitResume");
+      // Retomar relê a pasta e reavalia: se o histórico continua divergido, ele pausa de novo.
+      if (resumeResponse.ok && resumeResponse.value?.StateGit?.paused_reason) {
+        this.toastWarn(t("o histórico continua divergido"));
+      } else {
+        this.toastResult(resumeResponse, t("sincronização retomada"));
+      }
+      await this.refreshNow();
+    },
+
+    /** Resolve a divergência descartando um dos lados (com cópia de segurança do descartado). */
+    async stateGitResolve(choice) {
+      const question =
+        choice === "UseRemote"
+          ? t("Usar o do repositório? O que só o servidor tem será descartado (fica salvo numa branch rustploy-backup/local-… no servidor).")
+          : t("Usar o do servidor? O que só o repositório tem será sobrescrito (fica salvo numa branch rustploy-backup/remote-… no próprio repositório).");
+      if (!confirm(question)) return;
+      const resolveResponse = await this.api.rpcChecked({ StateGitResolve: { choice } });
+      this.toastResult(resolveResponse, t("divergência resolvida"));
+      await this.refreshNow();
+    },
+
+    /** Esquece a marca "removido no git" (a pessoa decidiu manter o que ainda roda, ou já limpou). */
+    async stateGitDismissRemoval(removalId) {
+      const dismissResponse = await this.api.rpcChecked({ StateGitDismissRemoval: { id: removalId } });
+      this.toastResult(dismissResponse);
+      await this.refreshNow();
+    },
+
+    /** Marca/desmarca uma suspeita da auditoria como "não é segredo" (certezas não podem). */
+    async stateGitAllowFinding(finding, allowed) {
+      const allowResponse = await this.api.rpcChecked({
+        InfraAuditAllow: { project: finding.project, scope: finding.scope, what: finding.what, allowed },
+      });
+      this.toastResult(allowResponse);
+      await this.stateGitAuditRefresh();
     },
 
     async settingsSave() {

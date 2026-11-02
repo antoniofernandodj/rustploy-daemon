@@ -10,6 +10,67 @@ use bollard::{
 };
 use shared::Response as RpResponse;
 
+/// O serviço do estado a que um container pertence: pelo label `rustploy.service_id` (serviços
+/// normais) ou pelo nome da stack Compose (`com.docker.compose.project`) — os containers de um
+/// Compose não levam label do rustploy.
+fn owning_service<'a>(
+    labels: &std::collections::HashMap<String, String>,
+    services: &'a [shared::Service],
+) -> Option<&'a shared::Service> {
+    services.iter().find(|s| {
+        labels
+            .get("rustploy.service_id")
+            .is_some_and(|sid| crate::engine::containers::label_owned_by(sid, &s.id))
+            || labels
+                .get("com.docker.compose.project")
+                .is_some_and(|cp| s.compose_project.as_deref() == Some(cp.as_str()))
+    })
+}
+
+/// Para um container. **Recusa** o que ainda pertence a um serviço do estado (um serviço se para
+/// pelo serviço; senão o watchdog o religaria): serve ao container **órfão** — o do serviço que
+/// sumiu do estado por um commit externo ("removido no git") — que depois se remove com
+/// [`remove_container`]. Funciona igual no Docker e no Podman.
+pub async fn stop_container(state: AppState, id: String) -> RpResponse {
+    let info = match state.docker.inner.inspect_container(&id, None).await {
+        Ok(i) => i,
+        Err(e) => return RpResponse::err("RuntimeError", e.to_string()),
+    };
+    let labels = info
+        .config
+        .as_ref()
+        .and_then(|c| c.labels.clone())
+        .unwrap_or_default();
+    let services = crate::store::services::list_all(&state.db)
+        .await
+        .unwrap_or_default();
+    let owner = owning_service(&labels, &services);
+    if let Some(s) = owner {
+        return RpResponse::err(
+            "InvalidInput",
+            format!(
+                "este container pertence ao serviço '{}': pare-o pelo serviço (senão o watchdog o religa)",
+                s.spec.name
+            ),
+        );
+    }
+    match state
+        .docker
+        .inner
+        .stop_container(
+            &id,
+            Some(bollard::container::StopContainerOptions { t: 10 }),
+        )
+        .await
+    {
+        Ok(()) => {
+            state.docker_cache.df.invalidate().await;
+            RpResponse::Ok
+        }
+        Err(e) => RpResponse::err("RuntimeError", e.to_string()),
+    }
+}
+
 /// `docker rm <id>` (sem `-f`): remove um container PARADO. `v: true` remove os
 /// volumes anônimos associados (como o prune). Um container rodando é recusado
 /// pelo Docker (409) — a UI só oferece "Remover" nos parados, mas o daemon não
@@ -110,5 +171,59 @@ pub async fn remove_network(state: AppState, id: String) -> RpResponse {
             RpResponse::Ok
         }
         Err(e) => RpResponse::err("RuntimeError", e.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn svc(id: &str, compose: Option<&str>) -> shared::Service {
+        let mut s = crate::features::wizard::app_spec(id.into(), "p".into());
+        s.name = id.into();
+        shared::Service {
+            id: id.into(),
+            spec: s,
+            compose_project: compose.map(String::from),
+            status: shared::ServiceStatus::Stopped,
+            live_container_id: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        }
+    }
+
+    fn labels(pairs: &[(&str, &str)]) -> HashMap<String, String> {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn container_de_servico_vivo_nao_pode_ser_parado_por_aqui() {
+        let services = vec![svc("svc_app", None), svc("svc_db", Some("rp_ab12cd34_db"))];
+        // serviço normal, pelo label de id
+        assert!(
+            owning_service(&labels(&[("rustploy.service_id", "svc_app")]), &services).is_some()
+        );
+        // stack Compose (o mesmo rótulo no Docker e no Podman: o Rustploy usa o docker-compose nos dois)
+        let o = owning_service(
+            &labels(&[("com.docker.compose.project", "rp_ab12cd34_db")]),
+            &services,
+        );
+        assert_eq!(o.map(|s| s.id.as_str()), Some("svc_db"));
+        // órfão: o serviço sumiu do estado → ninguém é dono → pode parar
+        assert!(
+            owning_service(&labels(&[("rustploy.service_id", "svc_velho")]), &services).is_none()
+        );
+        assert!(
+            owning_service(
+                &labels(&[("com.docker.compose.project", "rp_outro")]),
+                &services
+            )
+            .is_none()
+        );
+        assert!(owning_service(&labels(&[]), &services).is_none());
     }
 }

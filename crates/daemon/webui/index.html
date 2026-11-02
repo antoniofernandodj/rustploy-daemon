@@ -147,6 +147,13 @@
       </row>
       <hr class="rule" />
 
+      <!-- Aviso da sincronização do estado com o git: pausada (histórico divergiu), commit do
+           repositório recusado, ou commits suspensos por valor em claro. -->
+      <row class="banner banner--warn" x-show="$store.app.stateGitAlertMessage" style="align-items:center; gap:12px">
+        <text class="u-muted-grow" style="color:var(--warn)" x-text="$store.app.stateGitAlertMessage"></text>
+        <button class="btn btn--copy" type="button" @click="$store.app.stateGitOpen()" x-t>Abrir</button>
+      </row>
+
       <column class="content" x-show="$store.app.view === 'support'">
         <text class="page-head__title" x-t>Support</text>
         <text class="page-head__subtitle">github.com/antoniofernandodj/rustploy</text>
@@ -703,12 +710,14 @@
                   <row class="table__row">
                     <text class="table__cell table__cell--key table__col-svc" x-text="container.name"></text>
                     <text class="table__cell table__col-img" x-text="container.image"></text>
-                    <text class="u-muted table__col-state" x-text="container.owner"></text>
+                    <text class="u-muted table__col-state" :style="container.isOrphan ? 'color:var(--warn)' : ''" :title="container.isOrphan ? $t('O serviço sumiu do estado por um commit externo (git). Pare e remova este container.') : ''" x-text="container.owner"></text>
                     <row class="state-cell table__col-dur" :class="'state-cell--' + container.stateKind">
                       <text class="status-dot">●</text>
                       <text class="state-cell__label" x-text="container.stateLabel"></text>
                     </row>
                     <row class="table__col-act">
+                      <button class="btn btn--row-remove" type="button" x-show="container.canStop"
+                              @click="store.dockerStopContainer(container.idFull)" x-t>Parar</button>
                       <button class="btn btn--row-remove" type="button" x-show="container.canRemove"
                               @click="store.dockerRemoveContainer(container.idFull)" x-t>Remover</button>
                     </row>
@@ -1340,6 +1349,8 @@
                   @click="store.settingsTab = 'iac'">Infra as Code</button>
           <button type="button" :class="store.settingsTab === 'maintenance' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'"
                   @click="store.settingsTab = 'maintenance'" x-t>Manutenção</button>
+          <button type="button" :class="store.settingsTab === 'gitsync' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'"
+                  @click="store.settingsTab = 'gitsync'; store.stateGitFormLoad()"><span x-t>Sincronização</span><span class="nav-item__badge" x-show="store.stateGitAlertMessage" x-text="' ●'"></span></button>
           <button type="button" :class="store.settingsTab === 'updates' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'"
                   @click="store.settingsTab = 'updates'"><span x-t>Atualizações</span><span class="nav-item__badge" x-show="store.updateIsAvailable" x-text="' ●'"></span></button>
         </row>
@@ -1581,6 +1592,153 @@
                 </column>
               </column>
             </template>
+          </column>
+        </column>
+
+        <!-- Sincronização do estado com o git (Fases 6 e 7 de docs/plano-backup-estado-em-git.md).
+             O status vem no snapshot (store.stateGitStatus); aqui só o formulário e as ações. -->
+        <column class="u-fill-all" x-show="store.settingsTab === 'gitsync'">
+          <column class="form-panel">
+            <text class="u-label-cap" x-t>SINCRONIZAÇÃO COM O GIT</text>
+            <text class="u-muted" x-t>
+              Versiona o estado (projetos, serviços, jobs e secrets cifrados) num repositório privado do
+              seu provedor Git. Desligada por padrão. Só liga se não houver nenhum valor em claro.
+            </text>
+            <text class="banner banner--warn" x-show="store.stateGitStatus && !store.stateGitStatus.git_available" x-t>
+              O programa git não está instalado neste servidor.
+            </text>
+            <text class="banner banner--warn" x-show="store.stateGitStatus && !store.stateGitStatus.recovery_configured" x-t>
+              Sem recovery_recipient no config.toml: perder o config.toml deste servidor significa perder todos os secrets, inclusive os do repositório.
+            </text>
+
+            <text class="u-label-cap" style="margin-top:10px" x-t>MODO</text>
+            <row class="tabs">
+              <button type="button" :class="store.stateGitMode === 'off' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'" @click="store.stateGitMode = 'off'" x-t>Desligado</button>
+              <button type="button" :class="store.stateGitMode === 'commit' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'" @click="store.stateGitMode = 'commit'" x-t>Só commit (local)</button>
+              <button type="button" :class="store.stateGitMode === 'sync' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'" @click="store.stateGitMode = 'sync'" x-t>Sincronizar</button>
+            </row>
+            <text class="u-muted" x-show="store.stateGitMode === 'commit'" x-t>Faz um commit local a cada mudança. Não usa a rede.</text>
+            <text class="u-muted" x-show="store.stateGitMode === 'sync'" x-t>Commita, envia ao repositório e busca o que foi mudado por fora (a cada 60 s, ou em "Sincronizar agora").</text>
+
+            <column x-show="store.stateGitMode === 'sync'" style="gap:10px">
+              <text class="u-label-cap" x-t>REPOSITÓRIO (https://…)</text>
+              <input class="field__input" type="text" x-model="store.stateGitRemote" placeholder="https://github.com/org/rustploy-estado.git" />
+              <text class="u-label-cap" x-t>CONTA GIT (credencial)</text>
+              <select class="field__input" x-model="store.stateGitProviderId">
+                <option value="" x-t>selecione a conta</option>
+                <template x-for="gitProviderRow in gitProviderRows" :key="gitProviderRow.id">
+                  <option :value="gitProviderRow.id" x-text="gitProviderRow.name"></option>
+                </template>
+              </select>
+              <text class="u-muted" x-t>Conecte contas na aba Git. Endereços SSH (git@…) não são aceitos.</text>
+            </column>
+            <column x-show="store.stateGitMode !== 'off'" style="gap:10px">
+              <text class="u-label-cap" x-t>BRANCH</text>
+              <input class="field__input" type="text" x-model="store.stateGitBranch" placeholder="main" />
+            </column>
+
+            <row style="gap:8px; margin-top:6px">
+              <button class="btn btn--primary" type="button" @click="store.stateGitConfigure()" x-t>Salvar e aplicar</button>
+              <button class="btn btn--copy" type="button" x-show="store.stateGitStatus && store.stateGitStatus.mode === 'sync'"
+                      @click="store.stateGitSyncNow()" x-t>Sincronizar agora</button>
+            </row>
+          </column>
+
+          <!-- Situação -->
+          <column class="form-panel" x-show="store.stateGitStatus && store.stateGitStatus.mode !== 'off'" style="margin-top:12px">
+            <text class="u-label-cap" x-t>SITUAÇÃO</text>
+            <column class="kv-list">
+              <row class="kv-list__row">
+                <text class="kv-list__key" x-t>Último commit</text>
+                <text class="kv-list__val kv-list__val--compact"
+                      x-text="store.stateGitStatus?.last_commit ? (store.stateGitStatus.last_commit.sha.slice(0, 7) + ' · ' + store.stateGitStatus.last_commit.subject) : '—'"></text>
+              </row>
+              <row class="kv-list__row" x-show="store.stateGitStatus && store.stateGitStatus.mode === 'sync'">
+                <text class="kv-list__key" x-t>Último envio</text>
+                <text class="kv-list__val kv-list__val--compact"
+                      x-text="store.stateGitStatus?.last_push_at ? ((store.stateGitStatus.last_push_ok ? $t('ok') : $t('falhou')) + ' · ' + store.stateGitTimeLabel(store.stateGitStatus.last_push_at)) : '—'"></text>
+              </row>
+              <row class="kv-list__row" x-show="store.stateGitStatus && store.stateGitStatus.mode === 'sync'">
+                <text class="kv-list__key" x-t>Última consulta ao repositório</text>
+                <text class="kv-list__val kv-list__val--compact" x-text="store.stateGitTimeLabel(store.stateGitStatus?.last_fetch_at)"></text>
+              </row>
+              <row class="kv-list__row" x-show="store.stateGitStatus && store.stateGitStatus.mode === 'sync'">
+                <text class="kv-list__key" x-t>À frente / atrás do repositório</text>
+                <text class="kv-list__val kv-list__val--compact" x-text="(store.stateGitStatus?.ahead || 0) + ' / ' + (store.stateGitStatus?.behind || 0)"></text>
+              </row>
+            </column>
+            <text class="banner banner--warn" x-show="store.stateGitStatus && store.stateGitStatus.last_error" x-text="store.stateGitStatus?.last_error"></text>
+          </column>
+
+          <!-- Divergência -->
+          <column class="form-panel" x-show="store.stateGitStatus && store.stateGitStatus.paused_reason" style="margin-top:12px">
+            <text class="u-label-cap" x-t>HISTÓRICO DIVERGIDO — SINCRONIZAÇÃO PAUSADA</text>
+            <text class="u-muted" x-text="store.stateGitStatus?.paused_reason"></text>
+            <text class="u-muted" x-t>
+              O servidor não decide qual lado vence: escolher um descarta o outro (com cópia de segurança numa branch).
+              Enquanto isso, nada é enviado, buscado nem commitado; suas edições aqui continuam valendo.
+            </text>
+            <row style="gap:8px">
+              <button class="btn btn--danger" type="button" @click="store.stateGitResolve('UseRemote')" x-t>Usar o do repositório</button>
+              <button class="btn btn--danger" type="button" @click="store.stateGitResolve('UseLocal')" x-t>Usar o do servidor</button>
+            </row>
+            <text class="u-muted" x-t>
+              Para juntar os dois lados, resolva por SSH (veja a página "Sincronizar o estado com um repositório Git" na documentação) e clique em Retomar.
+            </text>
+            <row><button class="btn btn--copy" type="button" @click="store.stateGitResume()" x-t>Retomar</button></row>
+          </column>
+
+          <!-- Commit do repositório recusado -->
+          <column class="form-panel" x-show="store.stateGitStatus && store.stateGitStatus.incoming_rejected" style="margin-top:12px">
+            <text class="u-label-cap" x-t>COMMIT DO REPOSITÓRIO RECUSADO</text>
+            <text class="u-muted" x-text="$t('Commit') + ' ' + (store.stateGitStatus?.incoming_rejected?.sha || '').slice(0, 12)"></text>
+            <text class="banner banner--warn" x-text="store.stateGitStatus?.incoming_rejected?.reason"></text>
+            <text class="u-muted" x-t>Nada foi aplicado. Corrija no repositório com um commit novo; o daemon tenta de novo sozinho.</text>
+          </column>
+
+          <!-- Removidos no git -->
+          <column class="form-panel" x-show="store.stateGitStatus && store.stateGitStatus.removed_in_git && store.stateGitStatus.removed_in_git.length" style="margin-top:12px">
+            <text class="u-label-cap" x-t>REMOVIDOS NO GIT</text>
+            <text class="u-muted" x-t>
+              Estes itens sumiram do estado por um commit do repositório. O container, os volumes e os dados NÃO foram tocados.
+              O domínio sai do ar. Para limpar: Runtime → Containers → Parar → Remover (e Volumes, se houver dados).
+              Se foi engano, desfaça o commit no Git: o serviço volta e reencontra o container.
+            </text>
+            <column class="kv-list">
+              <template x-for="removal in (store.stateGitStatus?.removed_in_git || [])" :key="removal.id">
+                <row class="kv-list__row">
+                  <column class="page-head__titles">
+                    <text class="env__key" x-text="removal.name"></text>
+                    <text class="u-muted" x-text="removal.kind + (removal.project ? ' · ' + removal.project : '') + ' · ' + removal.sha.slice(0, 7) + ' · ' + store.stateGitTimeLabel(removal.at)"></text>
+                  </column>
+                  <button class="btn btn--copy" type="button" @click="store.stateGitDismissRemoval(removal.id)" x-t>Esquecer</button>
+                </row>
+              </template>
+            </column>
+          </column>
+
+          <!-- Auditoria de valores em claro -->
+          <column class="form-panel" style="margin-top:12px">
+            <text class="u-label-cap" x-text="$t('VALORES EM CLARO (') + store.stateGitAuditFindings.length + ')'"></text>
+            <text class="u-muted" x-t>
+              A sincronização só liga, e só commita, sem nenhum destes. Mova-os para secret (na tela de variáveis de ambiente).
+              Uma suspeita que na verdade não é segredo pode ser marcada como "não é segredo"; certezas não.
+            </text>
+            <text class="u-muted" x-fallback="store.stateGitAuditFindings" x-t>Nenhum valor em claro encontrado.</text>
+            <column class="kv-list" x-show="store.stateGitAuditFindings.length">
+              <template x-for="finding in store.stateGitAuditFindings" :key="finding.project + '|' + finding.scope + '|' + finding.what">
+                <row class="kv-list__row">
+                  <column class="page-head__titles">
+                    <text class="env__key" x-text="finding.what"></text>
+                    <text class="u-muted" x-text="(finding.project ? finding.project + ' · ' : '') + finding.scope + ' · ' + (finding.definite ? $t('certeza') : $t('suspeita'))"></text>
+                  </column>
+                  <button class="btn btn--copy" type="button" x-show="!finding.definite && !finding.allowed"
+                          @click="store.stateGitAllowFinding(finding, true)" x-t>Não é segredo</button>
+                  <button class="btn btn--copy" type="button" x-show="!finding.definite && finding.allowed"
+                          @click="store.stateGitAllowFinding(finding, false)" x-t>Voltar a travar</button>
+                </row>
+              </template>
+            </column>
           </column>
         </column>
 
@@ -1853,6 +2011,11 @@
                   <row class="badge">
                     <text class="status-dot" :class="'state-cell--' + service.statusKind">●</text>
                     <text class="badge__label" :class="'state-cell--' + service.statusKind" x-text="service.statusLabel"></text>
+                  </row>
+                  <row class="badge" x-show="$store.app.stateGitPendingDeploy(service.id)"
+                       :title="$t('Um commit do repositório mudou este serviço. O que está rodando só acompanha no próximo deploy.')">
+                    <text class="status-dot state-cell--warn">◆</text>
+                    <text class="badge__label state-cell--warn" x-t>mudança pendente de deploy</text>
                   </row>
                   <row class="badge" x-show="service.hasWarm" :title="service.warmReason">
                     <text class="status-dot" :class="'state-cell--' + service.warmKind">◐</text>
@@ -2504,6 +2667,11 @@
               <row class="badge">
                 <text class="status-dot" :class="'state-cell--' + statusKind">●</text>
                 <text class="badge__label" :class="'state-cell--' + statusKind" x-text="statusLabel"></text>
+              </row>
+              <row class="badge" x-show="svc && store.stateGitPendingDeploy(svc.id)"
+                   :title="$t('Um commit do repositório mudou este serviço. O que está rodando só acompanha no próximo deploy.')">
+                <text class="status-dot state-cell--warn">◆</text>
+                <text class="badge__label state-cell--warn" x-t>mudança pendente de deploy</text>
               </row>
               <row class="badge" x-show="warm" :title="warm?.reason || ''">
                 <text class="status-dot" :class="'state-cell--' + warmKind">◐</text>

@@ -17,6 +17,7 @@ pub mod registry;
 pub mod registry_tokens;
 pub mod services;
 pub mod shared_access;
+pub mod state_git_marks;
 pub mod webhook_tokens;
 
 use anyhow::Result;
@@ -440,6 +441,30 @@ async fn migrate(pool: &SqlitePool) -> Result<()> {
         "INSERT OR IGNORE INTO git_provider_token (provider_id, access_token_enc, refresh_token_enc)
          SELECT id, access_token_enc, refresh_token_enc FROM git_provider
          WHERE access_token_enc IS NOT NULL OR refresh_token_enc IS NOT NULL",
+    )
+    .execute(pool)
+    .await?;
+
+    // Fase 7: marcas do `pull` do git que esperam uma decisão humana (ver `store::state_git_marks`).
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS state_git_removed (
+            id      TEXT PRIMARY KEY,
+            kind    TEXT NOT NULL,
+            name    TEXT NOT NULL,
+            project TEXT NOT NULL DEFAULT '',
+            sha     TEXT NOT NULL,
+            at      TEXT NOT NULL,
+            compose_project TEXT
+        )",
+    )
+    .execute(pool)
+    .await?;
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS pending_deploy (
+            service_id TEXT PRIMARY KEY,
+            sha        TEXT NOT NULL,
+            at         TEXT NOT NULL
+        )",
     )
     .execute(pool)
     .await?;
