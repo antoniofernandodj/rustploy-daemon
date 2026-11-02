@@ -17,4 +17,7 @@ SyslogIdentifier=rustployd-fw
 ProtectHome=yes
 PrivateTmp=yes
 ProtectSystem=strict
-ReadWritePaths=/etc/ufw /lib/ufw /run
+# O prefixo "-" faz o systemd IGNORAR a pasta que não existe: numa VPS sem o ufw instalado (/lib/ufw
+# não existe) o serviço morria em 226/NAMESPACE antes de rodar, e o daemon via "Connection reset by
+# peer" ao pedir para liberar a porta. Sem ufw o helper responde backend "none" (nada a liberar).
+ReadWritePaths=-/etc/ufw -/lib/ufw /run
