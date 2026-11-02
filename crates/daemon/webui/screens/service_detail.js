@@ -37,6 +37,9 @@ document.addEventListener("alpine:init", () => {
     newEnvValue: "",
     // Secrets DESTE serviço (só os nomes; o valor nunca volta do daemon).
     serviceSecrets: [],
+    // Valores de secret que o usuário pediu para ver (SecretReveal), por nome. Só em memória; some ao trocar de serviço.
+    revealedSecrets: {},
+    revealedFor: null,
     newServiceSecretName: "",
     newServiceSecretValue: "",
     newDomain: "",
@@ -57,6 +60,10 @@ document.addEventListener("alpine:init", () => {
         () => {
           if (this.store.serviceTab === "general") this.initGeneralForm();
           this.loadConnectionUrl();
+          if (this.revealedFor !== this.svc?.id) {
+            this.revealedFor = this.svc?.id ?? null;
+            this.revealedSecrets = {};
+          }
           this.loadServiceSecrets();
           this.loadSharedState();
           this.loadMigration();
@@ -626,6 +633,27 @@ document.addEventListener("alpine:init", () => {
       } catch (_) {
         this.serviceSecrets = [];
       }
+    },
+
+    /** 👁: pede o valor ao daemon (SecretReveal grava auditoria: quem, qual, quando; nunca o valor). */
+    async revealServiceSecret(name) {
+      if (!confirm(t`Ver o valor do secret "${name}"? O valor vai aparecer na tela e o acesso fica registrado na auditoria do servidor (quem, qual secret e quando; nunca o valor).`)) return;
+      const secretRevealResponse = await this.store.api.rpc({
+        SecretReveal: { project_id: this.svc.spec.project_id, service_id: this.svc.id, name },
+      });
+      const value = secretRevealResponse.ok ? secretRevealResponse.value?.SecretValue : undefined;
+      if (value === undefined) {
+        this.store.toastError(secretRevealResponse.error || t("não foi possível ler o secret"));
+        return;
+      }
+      this.revealedSecrets = { ...this.revealedSecrets, [name]: value };
+    },
+    hideServiceSecret(name) {
+      const { [name]: _hidden, ...rest } = this.revealedSecrets;
+      this.revealedSecrets = rest;
+    },
+    copyServiceSecret(name) {
+      return this.store.copyText(this.revealedSecrets[name] ?? "", t("valor"));
     },
 
     /** Cria (ou sobrescreve) um secret do serviço; o novo valor vale no próximo deploy. */

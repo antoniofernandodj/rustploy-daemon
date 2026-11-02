@@ -238,7 +238,7 @@
                     <text class="u-muted" x-show="!svc.webhook" x-t>sem webhook</text>
                     <row class="webhook__row" x-show="svc.webhook">
                       <input class="field__input webhook__url" type="text" readonly :value="svc.webhookShown" />
-                      <button class="btn btn--copy btn-icon" type="button" title="Copiar URL" x-t:title @click="store.copyText(svc.webhook, 'webhook')">⧉</button>
+                      <button class="btn btn--copy btn-icon" type="button" title="Copiar URL" x-t:title @click="store.copyText(svc.webhook, 'webhook')">📋</button>
                       <button class="btn btn--ghost" type="button" @click="toggleReveal(svc.service_id)" x-text="svc.isRevealed ? $t('Ocultar') : $t('Mostrar')"></button>
                     </row>
 
@@ -2024,12 +2024,12 @@
                 </row>
                 <row class="card__container" style="gap:6px;align-items:center">
                   <button class="btn--copy-mini" type="button" title="Copiar nome" x-t:title x-show="service.containerNameFull"
-                    @click="$store.app.copyText(service.containerNameFull, 'nome')">⧉</button>
+                    @click="$store.app.copyText(service.containerNameFull, 'nome')">📋</button>
                   <text class="u-muted" x-text="'name: ' + service.containerName"></text>
                 </row>
                 <row style="gap:6px;align-items:center">
                   <button class="btn--copy-mini" type="button" title="Copiar id" x-t:title x-show="service.containerIdFull"
-                    @click="$store.app.copyText(service.containerIdFull, 'id')">⧉</button>
+                    @click="$store.app.copyText(service.containerIdFull, 'id')">📋</button>
                   <text class="u-muted" x-text="'id: ' + service.containerId"></text>
                   <text class="u-muted" x-show="service.containerExtra" x-text="'extra: ' + service.containerExtra"></text>
                 </row>
@@ -2129,9 +2129,9 @@
             </select>
           </row>
           <text class="u-muted-grow">
-            <span x-t>Valores sensíveis (tokens, senhas, chaves de API) cifrados com a chave mestre do
-            servidor. Depois de salvo, o valor nunca mais é exibido — para trocá-lo, salve um novo
-            com o mesmo nome. Para usar num serviço, escreva</span> &lt;secret:NOME&gt; <span x-t>como valor de uma
+            <span x-t>Valores sensíveis (tokens, senhas, chaves de API) cifrados com a chave do
+            servidor. Para ver um valor use o botão 👁 (o acesso fica registrado na auditoria); para
+            trocá-lo, salve um novo com o mesmo nome. Para usar num serviço, escreva</span> &lt;secret:NOME&gt; <span x-t>como valor de uma
             variável de ambiente.</span>
           </text>
           <row class="env__add">
@@ -2147,9 +2147,16 @@
                   :title="$t('Voltar para variável em claro (o valor deixa de ser cifrado)')">🔓</button>
                 <button class="btn btn--ghost btn--sm" type="button" @click="projectSecretToService(secret.name)"
                   :title="$t('Mover para o serviço escolhido (os outros serviços deixam de ver)')">↓</button>
+                <button class="btn btn--ghost btn--sm" type="button" x-show="secret.value === null" @click="revealSecret(secret.name)"
+                  :title="$t('Ver o valor (o acesso fica registrado na auditoria do servidor)')">👁</button>
+                <button class="btn btn--ghost btn--sm" type="button" x-show="secret.value !== null" @click="hideSecret(secret.name)"
+                  :title="$t('Esconder o valor')">🙈</button>
+                <button class="btn btn--ghost btn--sm" type="button" x-show="secret.value !== null" @click="copySecret(secret.name)"
+                  :title="$t('Copiar o valor')">📋</button>
                 <text class="env__sep"></text>
                 <text class="env__key" x-text="secret.name"></text>
-                <text class="kv-list__val kv-list__val--compact" x-t>cifrado</text>
+                <text class="kv-list__val kv-list__val--compact" x-show="secret.value === null" x-t>cifrado</text>
+                <text class="kv-list__val kv-list__val--compact" x-show="secret.value !== null" x-text="secret.value"></text>
               </row>
             </template>
             <text class="u-muted" x-fallback="secrets" style="padding:12px" x-t>
@@ -3071,9 +3078,16 @@
                           :title="$t('Voltar para variável em claro (o valor deixa de ser cifrado)')">🔓</button>
                         <button class="btn btn--ghost btn--sm" type="button" @click="serviceSecretToProject(secretName)"
                           :title="$t('Subir para o projeto (todos os serviços do projeto podem usar)')">↑</button>
+                        <button class="btn btn--ghost btn--sm" type="button" x-show="revealedSecrets[secretName] === undefined" @click="revealServiceSecret(secretName)"
+                          :title="$t('Ver o valor (o acesso fica registrado na auditoria do servidor)')">👁</button>
+                        <button class="btn btn--ghost btn--sm" type="button" x-show="revealedSecrets[secretName] !== undefined" @click="hideServiceSecret(secretName)"
+                          :title="$t('Esconder o valor')">🙈</button>
+                        <button class="btn btn--ghost btn--sm" type="button" x-show="revealedSecrets[secretName] !== undefined" @click="copyServiceSecret(secretName)"
+                          :title="$t('Copiar o valor')">📋</button>
                         <text class="env__sep"></text>
                         <text class="env__key" x-text="secretName"></text>
-                        <text class="kv-list__val kv-list__val--compact" x-t>cifrado</text>
+                        <text class="kv-list__val kv-list__val--compact" x-show="revealedSecrets[secretName] === undefined" x-t>cifrado</text>
+                        <text class="kv-list__val kv-list__val--compact" x-show="revealedSecrets[secretName] !== undefined" x-text="revealedSecrets[secretName]"></text>
                       </row>
                     </template>
                     <text class="u-muted" x-fallback="serviceSecrets" style="padding:12px" x-t>Nenhum secret neste serviço ainda.</text>
@@ -3294,7 +3308,7 @@
             <column class="log-panel" x-show="store.serviceTab === 'logs'">
               <row class="env__head">
                 <text class="u-muted-grow" x-text="(store.serviceLogLines || []).length + $t(' linhas · ao vivo')"></text>
-                <button class="btn btn--sm-ghost" type="button" @click="store.logWin = true" x-t>Abrir em janela ⧉</button>
+                <button class="btn btn--sm-ghost" type="button" @click="store.logWin = true" x-t>Abrir em janela 📋</button>
               </row>
               <column class="u-fill-all" x-follow>
                 <column class="log-panel__body">

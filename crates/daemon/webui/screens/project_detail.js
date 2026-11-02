@@ -51,6 +51,16 @@ document.addEventListener("alpine:init", () => {
     editName: "",
     editDescription: "",
     projectTab: "services", // "services" | "env" | "secrets" | "jobs"
+    // Valores de secret que o usuário pediu para ver (SecretReveal). Só em memória; some ao trocar de projeto.
+    revealedSecrets: {},
+    init() {
+      this.$watch(
+        () => this.store.selectedProjectId,
+        () => {
+          this.revealedSecrets = {};
+        }
+      );
+    },
 
     get project() {
       const store = this.store;
@@ -174,7 +184,26 @@ document.addEventListener("alpine:init", () => {
 
     get secrets() {
       const project = this.project;
-      return (project?.secrets || []).map((name) => ({ name }));
+      return (project?.secrets || []).map((name) => ({ name, value: this.revealedSecrets[name] ?? null }));
+    },
+
+    /** 👁: pede o valor ao daemon (SecretReveal grava auditoria: quem, qual, quando; nunca o valor). */
+    async revealSecret(name) {
+      if (!confirm(t`Ver o valor do secret "${name}"? O valor vai aparecer na tela e o acesso fica registrado na auditoria do servidor (quem, qual secret e quando; nunca o valor).`)) return;
+      const secretRevealResponse = await this.store.api.rpc({ SecretReveal: { project_id: this.store.selectedProjectId, name } });
+      const value = secretRevealResponse.ok ? secretRevealResponse.value?.SecretValue : undefined;
+      if (value === undefined) {
+        this.store.toastError(secretRevealResponse.error || t("não foi possível ler o secret"));
+        return;
+      }
+      this.revealedSecrets = { ...this.revealedSecrets, [name]: value };
+    },
+    hideSecret(name) {
+      const { [name]: _hidden, ...rest } = this.revealedSecrets;
+      this.revealedSecrets = rest;
+    },
+    copySecret(name) {
+      return this.store.copyText(this.revealedSecrets[name] ?? "", t("valor"));
     },
 
     // ── Movimentos entre escopos (SecretMove) ─────────────────────────

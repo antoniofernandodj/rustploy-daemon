@@ -423,7 +423,7 @@ export default {
   "VARIÁVEIS DO SERVIÇO (": "SERVICE VARIABLES (",
   "VARIÁVEIS DO SERVIÇO SEM VALOR (obrigatório)": "SERVICE VARIABLES WITH NO VALUE (required)",
   "VOLUMES — CUIDADO": "VOLUMES — CAREFUL",
-  "Valores sensíveis (tokens, senhas, chaves de API) cifrados com a chave mestre do servidor. Depois de salvo, o valor nunca mais é exibido — para trocá-lo, salve um novo com o mesmo nome. Para usar num serviço, escreva": "Sensitive values (tokens, passwords, API keys) encrypted with the server's master key. Once saved, the value is never shown again — to change it, save a new one with the same name. To use it in a service, write",
+  "Valores sensíveis (tokens, senhas, chaves de API) cifrados com a chave do servidor. Para ver um valor use o botão 👁 (o acesso fica registrado na auditoria); para trocá-lo, salve um novo com o mesmo nome. Para usar num serviço, escreva": "Sensitive values (tokens, passwords, API keys) encrypted with the server's key. To see a value use the 👁 button (the access is logged in the audit); to change it, save a new one with the same name. To use it in a service, write",
   "Variáveis (": "Variables (",
   "Variáveis sem valor no TOML:": "Variables with no value in the TOML:",
   "Ver build log": "View build log",
@@ -794,4 +794,9 @@ export default {
   "variável {0} movida para o projeto": "variable {0} moved to the project",
   "O secret \"{0}\" passa a valer para todos os serviços deste projeto. Continuar?": "The secret \"{0}\" now applies to every service in this project. Continue?",
   "A variável \"{0}\" passa a valer para todos os serviços deste projeto. Continuar?": "The variable \"{0}\" now applies to every service in this project. Continue?",
+  "Ver o valor do secret \"{0}\"? O valor vai aparecer na tela e o acesso fica registrado na auditoria do servidor (quem, qual secret e quando; nunca o valor).": "Show the value of secret \"{0}\"? The value will appear on screen and the access is recorded in the server audit (who, which secret and when; never the value).",
+  "Ver o valor (o acesso fica registrado na auditoria do servidor)": "Show the value (the access is logged in the server audit)",
+  "Esconder o valor": "Hide the value",
+  "Copiar o valor": "Copy the value",
+  "não foi possível ler o secret": "could not read the secret",
 };
