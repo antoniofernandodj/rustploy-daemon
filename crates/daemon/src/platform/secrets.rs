@@ -27,8 +27,10 @@ use crate::platform::age_format;
 pub use crate::platform::age_format::is_enc;
 
 pub struct SecretsManager {
-    /// Chave antiga: só para ler o que foi cifrado antes.
-    passphrase: String,
+    /// Chave antiga (`master.key`): só para ler o que foi cifrado no formato antigo. `None` quando o
+    /// arquivo não existe, que é o normal num servidor que nunca teve segredo antigo: o daemon **não**
+    /// cria mais esse arquivo.
+    passphrase: Option<String>,
     identity: x25519::Identity,
     recovery: Option<x25519::Recipient>,
     db: Arc<Db>,
@@ -47,7 +49,7 @@ impl SecretsManager {
         cfg: &SecretsConfig,
         config_path: Option<&Path>,
     ) -> Result<Self> {
-        let passphrase = load_or_create_master_key(master_key_path)?;
+        let passphrase = load_master_key(master_key_path)?;
         let key_file = master_key_path.with_file_name("age.key");
         let identity = match cfg.age_identity.as_deref().filter(|s| !s.trim().is_empty()) {
             Some(text) => parse_identity(text).context("[secrets] age_identity inválida")?,
@@ -89,7 +91,7 @@ impl SecretsManager {
     #[cfg(test)]
     pub fn new(master_key_path: &Path, db: Arc<Db>) -> Result<Self> {
         Ok(Self {
-            passphrase: load_or_create_master_key(master_key_path)?,
+            passphrase: Some(load_or_create_master_key(master_key_path)?),
             identity: x25519::Identity::generate(),
             recovery: None,
             db,
@@ -105,7 +107,7 @@ impl SecretsManager {
         recovery: Option<x25519::Recipient>,
     ) -> Result<Self> {
         Ok(Self {
-            passphrase: load_or_create_master_key(master_key_path)?,
+            passphrase: Some(load_or_create_master_key(master_key_path)?),
             identity,
             recovery,
             db,
@@ -139,12 +141,18 @@ impl SecretsManager {
     }
 
     fn decrypt_legacy(&self, ciphertext_hex: &str) -> Result<String> {
+        let passphrase = self.passphrase.as_ref().ok_or_else(|| {
+            anyhow!(
+                "valor no formato antigo e não há master.key neste servidor: regrave o secret \
+                 (o daemon não cria mais esse arquivo)"
+            )
+        })?;
         let ciphertext = hex::decode(ciphertext_hex)?;
         let decryptor = match Decryptor::new(&ciphertext[..])? {
             Decryptor::Passphrase(d) => d,
             _ => return Err(anyhow!("unexpected decryptor type")),
         };
-        let secret = SecretString::new(self.passphrase.clone());
+        let secret = SecretString::new(passphrase.clone());
         let mut decrypted = Vec::new();
         let mut reader = decryptor.decrypt(&secret, None)?;
         reader.read_to_end(&mut decrypted)?;
@@ -154,7 +162,7 @@ impl SecretsManager {
     /// Só para os testes fabricarem um valor no formato antigo.
     #[cfg(test)]
     pub fn encrypt_legacy(&self, plaintext: &str) -> Result<String> {
-        let secret = SecretString::new(self.passphrase.clone());
+        let secret = SecretString::new(self.passphrase.clone().expect("teste sem master.key"));
         let encryptor = age::Encryptor::with_user_passphrase(secret);
         let mut encrypted = Vec::new();
         {
@@ -169,6 +177,9 @@ impl SecretsManager {
     /// providers (YAML, numa transação) e os tokens de login dos providers (SQL). Devolve quantos
     /// valores foram recifrados. Um valor que não decifra é **mantido como está** e avisado.
     pub async fn reencrypt_legacy(&self) -> Result<usize> {
+        if self.passphrase.is_none() {
+            return Ok(0);
+        }
         let mut changed = 0usize;
         changed += self.db.infra().update(|st| {
             let mut n = 0usize;
@@ -655,6 +666,7 @@ fn restrict_permissions(path: &Path) {
     let _ = path;
 }
 
+#[cfg(test)]
 fn generate_key() -> Result<String> {
     let mut buf = [0u8; 32];
     std::fs::File::open("/dev/urandom")
@@ -663,6 +675,20 @@ fn generate_key() -> Result<String> {
     Ok(hex::encode(buf))
 }
 
+/// Lê a chave antiga se o arquivo existir (e corrige a permissão); **não cria**. Sem arquivo,
+/// `None`: não há nada no formato antigo para decifrar.
+fn load_master_key(master_key_path: &Path) -> Result<Option<String>> {
+    if !master_key_path.exists() {
+        return Ok(None);
+    }
+    let passphrase = std::fs::read_to_string(master_key_path)?.trim().to_string();
+    // Chaves criadas por versões antigas nasceram com a permissão padrão (em geral 0644).
+    restrict_permissions(master_key_path);
+    Ok(Some(passphrase))
+}
+
+/// Só para os testes (fabricar valores no formato antigo).
+#[cfg(test)]
 fn load_or_create_master_key(master_key_path: &Path) -> Result<String> {
     let passphrase = if master_key_path.exists() {
         std::fs::read_to_string(master_key_path)?.trim().to_string()
@@ -1519,6 +1545,41 @@ interval_secs = 60000
         // e a próxima subida a encontra lá
         let m2 = SecretsManager::open(&d.path().join("master.key"), db, &cfg, None).unwrap();
         assert_eq!(m1.public_key(), m2.public_key());
+    }
+
+    /// Servidor que nunca teve segredo antigo: o daemon sobe e opera sem `master.key`, **sem criá-la**;
+    /// um valor no formato antigo vira erro claro (não um arquivo novo que não decifraria nada).
+    #[tokio::test]
+    async fn sem_master_key_nao_cria_o_arquivo_e_opera_normalmente() {
+        let d = tempfile::tempdir().unwrap();
+        let master = d.path().join("master.key");
+        let cfg = crate::platform::config::RustployConfig::default().secrets;
+        let db = Arc::new(Db::memory_for_test().await);
+        db.seed_project_for_test("p1");
+        let m = SecretsManager::open(&master, db, &cfg, None).unwrap();
+        assert!(!master.exists(), "o master.key não pode ser criado");
+        // segredos novos funcionam normalmente
+        m.set("p1", "K", "valor").await.unwrap();
+        assert_eq!(m.resolve("p1", None, "K").await.unwrap(), "valor");
+        // nada no formato antigo para recifrar
+        assert_eq!(m.reencrypt_legacy().await.unwrap(), 0);
+        // um valor no formato antigo dá erro que diz o que fazer
+        let e = m.decrypt("deadbeef").unwrap_err();
+        assert!(e.to_string().contains("master.key"), "{e}");
+        assert!(!master.exists());
+    }
+
+    /// Quem JÁ tem `master.key` continua lendo o que está no formato antigo (e recifrando).
+    #[tokio::test]
+    async fn com_master_key_existente_ainda_le_o_formato_antigo() {
+        let d = tempfile::tempdir().unwrap();
+        let master = d.path().join("master.key");
+        let cfg = crate::platform::config::RustployConfig::default().secrets;
+        let db = Arc::new(Db::memory_for_test().await);
+        let antigo = SecretsManager::new(&master, db.clone()).unwrap(); // cria o master.key
+        let legado = antigo.encrypt_legacy("do-passado").unwrap();
+        let m = SecretsManager::open(&master, db, &cfg, None).unwrap();
+        assert_eq!(m.decrypt(&legado).unwrap(), "do-passado");
     }
 
     #[tokio::test]
