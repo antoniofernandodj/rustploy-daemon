@@ -60,3 +60,42 @@ pub fn serve(path: &str) -> Option<Response<ApiBody>> {
 
 #[cfg(test)]
 mod headless_tests;
+
+/// Uma tela que chama `t(...)`/``t`...` `` sem importar o `t` de `i18n.js` só quebra no navegador
+/// (`ReferenceError: t is not defined` ao clicar), e nenhum teste headless clica em tudo. Já houve:
+/// `project_detail.js` com os botões de mover entre escopos.
+#[cfg(test)]
+#[test]
+fn toda_tela_que_usa_t_importa_o_t() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("webui/screens");
+    for entry in std::fs::read_dir(&dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().and_then(|e| e.to_str()) != Some("js") {
+            continue;
+        }
+        let src = std::fs::read_to_string(&path).unwrap();
+        // chamada `t(` ou `t`...`` fora de um identificador maior (`format(`, `get(`…)
+        let usa_t = src.lines().any(|l| {
+            let l = l.trim_start();
+            if l.starts_with("//") || l.starts_with('*') || l.starts_with("/*") {
+                return false;
+            }
+            let bytes = l.as_bytes();
+            (0..bytes.len().saturating_sub(1)).any(|i| {
+                bytes[i] == b't'
+                    && (bytes[i + 1] == b'(' || bytes[i + 1] == b'`')
+                    && (i == 0
+                        || !(bytes[i - 1].is_ascii_alphanumeric()
+                            || bytes[i - 1] == b'_'
+                            || bytes[i - 1] == b'.'
+                            || bytes[i - 1] == b'$'))
+            })
+        });
+        let importa = src.contains("from \"../i18n.js\"");
+        assert!(
+            !usa_t || importa,
+            "{} usa t(...) mas não importa o t de ../i18n.js",
+            path.display()
+        );
+    }
+}

@@ -2064,6 +2064,13 @@
 
         <!-- Variáveis do projeto -->
         <column class="env" x-show="projectTab === 'env'">
+          <row class="env__add">
+            <text class="u-muted" x-t>Mover para o serviço:</text>
+            <select class="form-select" x-model="moveTargetServiceId">
+              <option value="" x-t>escolha o serviço de destino</option>
+              <template x-for="serviceOption in serviceOptions" :key="serviceOption.id"><option :value="serviceOption.id" x-text="serviceOption.name"></option></template>
+            </select>
+          </row>
           <row class="env__head">
             <text class="u-muted-grow" x-t>Herdadas por todos os serviços deste projeto no deploy.</text>
             <button class="btn btn--export" type="button" @click="openEnvText()" x-show="!envTextOpen">.env</button>
@@ -2084,6 +2091,12 @@
                     </row>
                     <row class="kv-list__row" x-show="!envVar.isComment">
                       <button class="env__del" type="button" @click="deleteEnvVar(envVar.key)">✕</button>
+                      <button class="btn btn--ghost btn--sm" type="button" x-show="!envVar.isSecret" @click="projectEnvToSecret(envVar.key)"
+                        :title="$t('Mover para secret (o valor passa a ser guardado cifrado)')">🔒</button>
+                      <button class="btn btn--ghost btn--sm" type="button" x-show="!envVar.isSecret" @click="projectEnvToService(envVar.key)"
+                        :title="$t('Mover para o serviço escolhido (os outros serviços deixam de herdar)')">↓</button>
+                      <button class="btn btn--ghost btn--sm" type="button" x-show="envVar.isSecret" @click="projectSecretToEnv(envVar.secretName)"
+                        :title="$t('Voltar para variável em claro (o valor deixa de ser cifrado)')">🔓</button>
                       <text class="env__sep"></text>
                       <text class="env__key" x-text="envVar.key"></text>
                       <text class="kv-list__val kv-list__val--compact" x-text="envVar.isSecret ? '(secret)' : envVar.value"></text>
@@ -2108,6 +2121,13 @@
 
         <!-- Secrets do projeto -->
         <column class="env" x-show="projectTab === 'secrets'">
+          <row class="env__add">
+            <text class="u-muted" x-t>Mover para o serviço:</text>
+            <select class="form-select" x-model="moveTargetServiceId">
+              <option value="" x-t>escolha o serviço de destino</option>
+              <template x-for="serviceOption in serviceOptions" :key="serviceOption.id"><option :value="serviceOption.id" x-text="serviceOption.name"></option></template>
+            </select>
+          </row>
           <text class="u-muted-grow">
             <span x-t>Valores sensíveis (tokens, senhas, chaves de API) cifrados com a chave mestre do
             servidor. Depois de salvo, o valor nunca mais é exibido — para trocá-lo, salve um novo
@@ -2123,6 +2143,10 @@
             <template x-for="secret in secrets" :key="secret.name">
               <row class="kv-list__row">
                 <button class="env__del" type="button" @click="store.deleteSecret(secret.name)">✕</button>
+                <button class="btn btn--ghost btn--sm" type="button" @click="projectSecretToEnv(secret.name)"
+                  :title="$t('Voltar para variável em claro (o valor deixa de ser cifrado)')">🔓</button>
+                <button class="btn btn--ghost btn--sm" type="button" @click="projectSecretToService(secret.name)"
+                  :title="$t('Mover para o serviço escolhido (os outros serviços deixam de ver)')">↓</button>
                 <text class="env__sep"></text>
                 <text class="env__key" x-text="secret.name"></text>
                 <text class="kv-list__val kv-list__val--compact" x-t>cifrado</text>
@@ -3020,6 +3044,10 @@
                           <button class="env__del" type="button" @click="deleteEnvVar(envVar.key)">✕</button>
                           <button class="btn btn--ghost btn--sm" type="button" x-show="!envVar.isSecret" @click="envToSecret(envVar.key)"
                             :title="$t('Mover para secret (o valor passa a ser guardado cifrado)')">🔒</button>
+                          <button class="btn btn--ghost btn--sm" type="button" x-show="!envVar.isSecret" @click="envToProject(envVar.key)"
+                            :title="$t('Subir para o projeto (todos os serviços do projeto herdam)')">↑</button>
+                          <button class="btn btn--ghost btn--sm" type="button" x-show="envVar.isSecret" @click="serviceSecretToEnv(envVar.secretName)"
+                            :title="$t('Voltar para variável em claro (o valor deixa de ser cifrado)')">🔓</button>
                           <text class="env__sep"></text>
                           <text class="env__key" x-text="envVar.key"></text>
                           <text class="kv-list__val kv-list__val--compact" x-text="envVar.isSecret ? '(secret)' : envVar.value"></text>
@@ -3039,6 +3067,10 @@
                     <template x-for="secretName in serviceSecrets" :key="secretName">
                       <row class="kv-list__row">
                         <button class="env__del" type="button" @click="deleteServiceSecret(secretName)">✕</button>
+                        <button class="btn btn--ghost btn--sm" type="button" @click="serviceSecretToEnv(secretName)"
+                          :title="$t('Voltar para variável em claro (o valor deixa de ser cifrado)')">🔓</button>
+                        <button class="btn btn--ghost btn--sm" type="button" @click="serviceSecretToProject(secretName)"
+                          :title="$t('Subir para o projeto (todos os serviços do projeto podem usar)')">↑</button>
                         <text class="env__sep"></text>
                         <text class="env__key" x-text="secretName"></text>
                         <text class="kv-list__val kv-list__val--compact" x-t>cifrado</text>

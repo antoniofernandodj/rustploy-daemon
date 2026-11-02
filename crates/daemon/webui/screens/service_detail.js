@@ -669,6 +669,32 @@ document.addEventListener("alpine:init", () => {
       }
     },
 
+    async serviceMove(op, name, doneMessage) {
+      const secretMoveResponse = await this.store.api.rpcChecked({
+        SecretMove: { project_id: this.svc.spec.project_id, service_id: this.svc.id, name, op },
+      });
+      this.store.toastResult(secretMoveResponse, doneMessage);
+      if (secretMoveResponse.ok) {
+        await this.store.fetchServiceDetail(this.svc.id);
+        await this.store.refreshNow();
+        await this.loadServiceSecrets();
+      }
+    },
+    /** 🔓: volta a ser variável em claro (o valor deixa de ser cifrado). */
+    serviceSecretToEnv(name) {
+      if (!confirm(t`O valor de "${name}" deixa de ser cifrado e passa a aparecer em claro na variável (e no estado versionado). Continuar?`)) return;
+      return this.serviceMove("SecretToEnv", name, t`secret ${name} movido para variável`);
+    },
+    /** ↑: do serviço para o projeto (todos os serviços do projeto passam a enxergar). */
+    serviceSecretToProject(name) {
+      if (!confirm(t`O secret "${name}" passa a valer para todos os serviços deste projeto. Continuar?`)) return;
+      return this.serviceMove("ServiceSecretToProject", name, t`secret ${name} movido para o projeto`);
+    },
+    envToProject(key) {
+      if (!confirm(t`A variável "${key}" passa a valer para todos os serviços deste projeto. Continuar?`)) return;
+      return this.serviceMove("EnvServiceToProject", key, t`variável ${key} movida para o projeto`);
+    },
+
     async deleteEnvVar(key) {
       // JSON round-trip (não structuredClone): this.svc.spec é um Proxy
       // reativo do Alpine — o clonador estrutural nativo do browser não

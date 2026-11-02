@@ -485,7 +485,49 @@ impl SecretsManager {
                     }
                     svc.secrets.push(secrets.remove(pos));
                 }
-                (ServiceSecretToProject | ProjectSecretToService, None) => {
+                (EnvServiceToProject, Some(sid)) => {
+                    let ProjectInfra {
+                        services, env_vars, ..
+                    } = p;
+                    let svc = services
+                        .iter_mut()
+                        .find(|s| s.id == sid)
+                        .ok_or_else(|| anyhow!("serviço {sid} não pertence ao projeto"))?;
+                    let value = take_plain_env(&mut svc.spec.env_vars, name, "o serviço")?;
+                    if env_vars.iter().any(|v| v.key == name) {
+                        bail!("o projeto já tem uma env chamada '{name}'");
+                    }
+                    svc.spec.env_vars.retain(|v| v.key != name);
+                    env_vars.push(EnvVar {
+                        key: name.to_string(),
+                        value: EnvVarValue::Plain(value),
+                    });
+                }
+                (EnvProjectToService, Some(sid)) => {
+                    let ProjectInfra {
+                        services, env_vars, ..
+                    } = p;
+                    let svc = services
+                        .iter_mut()
+                        .find(|s| s.id == sid)
+                        .ok_or_else(|| anyhow!("serviço {sid} não pertence ao projeto"))?;
+                    let value = take_plain_env(env_vars, name, "o projeto")?;
+                    if svc.spec.env_vars.iter().any(|v| v.key == name) {
+                        bail!("o serviço já tem uma env chamada '{name}'");
+                    }
+                    env_vars.retain(|v| v.key != name);
+                    svc.spec.env_vars.push(EnvVar {
+                        key: name.to_string(),
+                        value: EnvVarValue::Plain(value),
+                    });
+                }
+                (
+                    ServiceSecretToProject
+                    | ProjectSecretToService
+                    | EnvServiceToProject
+                    | EnvProjectToService,
+                    None,
+                ) => {
                     bail!("esta operação precisa do id do serviço")
                 }
             }
@@ -1224,6 +1266,63 @@ mod tests {
             )
             .await
             .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn mover_env_entre_servico_e_projeto() {
+        use shared::SecretMoveOp::*;
+        let (db, m, _d) = cenario().await;
+        set_env_plain(&db, Some("s1"), "LOG_LEVEL", "debug");
+        // serviço → projeto: sai do serviço, entra no projeto, valor intacto
+        m.move_secret("p1", Some("s1"), "LOG_LEVEL", EnvServiceToProject)
+            .await
+            .unwrap();
+        assert!(env(&db, Some("s1")).iter().all(|v| v.key != "LOG_LEVEL"));
+        assert_eq!(
+            env(&db, None)
+                .iter()
+                .find(|v| v.key == "LOG_LEVEL")
+                .unwrap()
+                .value,
+            EnvVarValue::Plain("debug".into())
+        );
+        // projeto → outro serviço
+        m.move_secret("p1", Some("s2"), "LOG_LEVEL", EnvProjectToService)
+            .await
+            .unwrap();
+        assert!(env(&db, None).iter().all(|v| v.key != "LOG_LEVEL"));
+        assert_eq!(
+            env(&db, Some("s2"))
+                .iter()
+                .find(|v| v.key == "LOG_LEVEL")
+                .unwrap()
+                .value,
+            EnvVarValue::Plain("debug".into())
+        );
+        // conflito no destino: nada muda
+        set_env_plain(&db, None, "LOG_LEVEL", "info");
+        let e = m
+            .move_secret("p1", Some("s2"), "LOG_LEVEL", EnvServiceToProject)
+            .await
+            .unwrap_err();
+        assert!(e.to_string().contains("já tem uma env"), "{e}");
+        assert_eq!(env(&db, Some("s2")).len(), 1);
+        // env que aponta para um secret não se move aqui
+        set_env_plain(&db, Some("s1"), "SENHA", "x");
+        m.move_secret("p1", Some("s1"), "SENHA", EnvToSecret)
+            .await
+            .unwrap();
+        let e = m
+            .move_secret("p1", Some("s1"), "SENHA", EnvServiceToProject)
+            .await
+            .unwrap_err();
+        assert!(e.to_string().contains("já aponta para um secret"), "{e}");
+        // sem service_id
+        assert!(
+            m.move_secret("p1", None, "LOG_LEVEL", EnvProjectToService)
+                .await
+                .is_err()
         );
     }
 

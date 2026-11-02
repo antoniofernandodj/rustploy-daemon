@@ -229,6 +229,8 @@ export function envRowsWithComments(vars, comments) {
       isComment: false,
       value: activeVar.value?.Plain ?? (activeVar.value?.Secret ? `<secret:${activeVar.value.Secret}>` : ""),
       isSecret: !!activeVar.value?.Secret,
+      // Nome do secret que a variável referencia ("" se for em claro): o botão 🔓 usa.
+      secretName: activeVar.value?.Secret || "",
     });
   }
   activeComments.forEach((activeComment, commentIndex) => {

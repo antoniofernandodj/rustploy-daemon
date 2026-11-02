@@ -16,6 +16,7 @@ import {
   jobSummaryRows,
   formatBytes,
 } from "../format.js";
+import { t } from "../i18n.js";
 
 /** Container "primário" de um serviço pra exibir no card: o live, senão o
  * primeiro em execução, senão o primeiro da lista. `extra` é "+N" quando há
@@ -174,6 +175,43 @@ document.addEventListener("alpine:init", () => {
     get secrets() {
       const project = this.project;
       return (project?.secrets || []).map((name) => ({ name }));
+    },
+
+    // ── Movimentos entre escopos (SecretMove) ─────────────────────────
+    // O destino dos "↓ para o serviço" é o serviço escolhido no seletor do topo da aba.
+    moveTargetServiceId: "",
+    get serviceOptions() {
+      const projectId = this.store.selectedProjectId;
+      return ((this.store.snap && this.store.snap.services) || [])
+        .filter((entry) => entry.service.spec.project_id === projectId)
+        .map((entry) => ({ id: entry.service.id, name: entry.service.spec.name }));
+    },
+    async projectMove(op, name, serviceId, doneMessage) {
+      const secretMoveResponse = await this.store.api.rpcChecked({
+        SecretMove: { project_id: this.store.selectedProjectId, service_id: serviceId || null, name, op },
+      });
+      this.store.toastResult(secretMoveResponse, doneMessage);
+      if (secretMoveResponse.ok) await this.store.refreshNow();
+    },
+    targetService() {
+      if (this.moveTargetServiceId) return this.moveTargetServiceId;
+      this.store.toastError(t("Escolha antes o serviço de destino, no seletor do topo."));
+      return null;
+    },
+    projectEnvToSecret(key) {
+      return this.projectMove("EnvToSecret", key, null, t`variável ${key} movida para secret`);
+    },
+    projectSecretToEnv(name) {
+      if (!confirm(t`O valor de "${name}" deixa de ser cifrado e passa a aparecer em claro na variável (e no estado versionado). Continuar?`)) return;
+      return this.projectMove("SecretToEnv", name, null, t`secret ${name} movido para variável`);
+    },
+    projectSecretToService(name) {
+      const serviceId = this.targetService();
+      if (serviceId) return this.projectMove("ProjectSecretToService", name, serviceId, t`secret ${name} movido para o serviço`);
+    },
+    projectEnvToService(key) {
+      const serviceId = this.targetService();
+      if (serviceId) return this.projectMove("EnvProjectToService", key, serviceId, t`variável ${key} movida para o serviço`);
     },
 
     async submitSecret() {
