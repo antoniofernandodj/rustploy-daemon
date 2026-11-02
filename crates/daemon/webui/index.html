@@ -3333,9 +3333,39 @@
               <input class="field__input" type="text" x-model="advancedRunCommand" placeholder="(padrão da imagem)" x-t:placeholder />
               <text class="u-muted" style="margin-top:8px" x-text="$t('Run args atuais: ') + runArgsText"></text>
 
+              <label class="check-row" style="margin-top:14px">
+                <input type="checkbox" x-model="advancedAutostart" />
+                <span x-t>Religar quando o daemon subir</span>
+              </label>
+              <text class="u-muted" x-t>Ligado, o daemon traz este serviço de volta depois de um reinício (só se ele estava rodando). Serviço parado à mão continua parado.</text>
+
               <row class="env__add" style="margin-top:14px">
                 <button class="btn btn--primary" type="button" @click="saveAdvanced()" x-t>Save</button>
                 <text class="u-muted" x-show="store.serviceMessage" x-text="store.serviceMessage"></text>
+              </row>
+
+              <text class="u-label-cap" style="margin-top:14px" x-text="$t('DEPENDE DE (') + dependencyRows.length + ')'"></text>
+              <text class="u-muted" x-t>Serviços deste projeto que precisam estar prontos antes deste subir, no boot do daemon e em "subir projeto". Sem ciclos: o daemon recusa.</text>
+              <column class="kv-list">
+                <template x-for="dependency in dependencyRows" :key="dependency.id">
+                  <row class="kv-list__row">
+                    <button class="env__del" type="button" @click="dependencyDelete(dependency.id)">✕</button>
+                    <text class="env__sep"></text>
+                    <text class="env__key" x-text="dependency.index + '.'"></text>
+                    <text class="kv-list__val kv-list__val--compact" x-text="dependency.name"></text>
+                  </row>
+                </template>
+                <text class="u-muted" x-fallback="dependencyRows" style="padding:12px" x-t>Nenhuma dependência.</text>
+              </column>
+              <text class="u-label-cap" style="margin-top:14px" x-t>ADICIONAR UMA DEPENDÊNCIA</text>
+              <row class="env__add">
+                <select class="field__input" x-model="advancedDependencyAddId">
+                  <option value="" x-t>escolha um serviço</option>
+                  <template x-for="dependencyOption in dependencyOptions" :key="dependencyOption.id">
+                    <option :value="dependencyOption.id" x-text="dependencyOption.name"></option>
+                  </template>
+                </select>
+                <button class="btn btn--primary" type="button" @click="dependencyAdd()" x-t>Adicionar dependência</button>
               </row>
 
               <text class="u-label-cap" style="margin-top:14px" x-text="$t('FILA DE PRÉ-DEPLOY (') + preDeployChecks.length + ')'"></text>

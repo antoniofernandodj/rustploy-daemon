@@ -859,12 +859,16 @@ document.addEventListener("alpine:init", () => {
     // ── Advanced ──────────────────────────────────────────────────────
     advancedReplicas: "1",
     advancedRunCommand: "",
+    advancedAutostart: true,
+    advancedDependencyAddId: "",
 
     initAdvancedForm() {
       const spec = this.svc?.spec;
       if (!spec) return;
       this.advancedReplicas = String(spec.replicas || 1);
       this.advancedRunCommand = spec.run_command || "";
+      this.advancedAutostart = spec.autostart !== false;
+      this.advancedDependencyAddId = "";
       this.advancedPreDeployCheckAddJobId = "";
     },
 
@@ -880,7 +884,45 @@ document.addEventListener("alpine:init", () => {
       spec.replicas = Math.floor(replicas);
       const runCommand = this.advancedRunCommand.trim();
       spec.run_command = runCommand || null;
+      spec.autostart = this.advancedAutostart;
       await this.store.saveServiceSpec(spec, t("advanced salvo"));
+    },
+
+    // ── Dependências (spec.depends_on: ids de serviços do MESMO projeto) ───────
+    // Efeito imediato (como a fila de pré-deploy): cada add/remove já salva. O daemon valida (sem ciclo,
+    // só serviços do mesmo projeto) e a recusa aparece no toast.
+    get projectServicesForDeps() {
+      const projectId = this.svc?.spec?.project_id;
+      return ((this.store.snap && this.store.snap.services) || [])
+        .map((entry) => entry.service)
+        .filter((service) => service.spec.project_id === projectId);
+    },
+    get dependencyRows() {
+      const nameById = new Map(this.projectServicesForDeps.map((service) => [service.id, service.spec.name]));
+      return (this.svc?.spec?.depends_on || []).map((dependencyId, index) => ({
+        id: dependencyId,
+        index: index + 1,
+        name: nameById.get(dependencyId) || t`(serviço removido: ${dependencyId})`,
+      }));
+    },
+    get dependencyOptions() {
+      const already = new Set(this.svc?.spec?.depends_on || []);
+      return this.projectServicesForDeps
+        .filter((service) => service.id !== this.svc?.id && !already.has(service.id))
+        .map((service) => ({ id: service.id, name: service.spec.name }));
+    },
+    async dependencyAdd() {
+      const dependencyId = this.advancedDependencyAddId;
+      if (!dependencyId) return;
+      const spec = JSON.parse(JSON.stringify(this.svc.spec));
+      spec.depends_on = [...(spec.depends_on || []).filter((existingId) => existingId !== dependencyId), dependencyId];
+      const saveServiceSpecResult = await this.store.saveServiceSpec(spec, t("dependência adicionada"));
+      if (saveServiceSpecResult.ok) this.advancedDependencyAddId = "";
+    },
+    async dependencyDelete(dependencyId) {
+      const spec = JSON.parse(JSON.stringify(this.svc.spec));
+      spec.depends_on = (spec.depends_on || []).filter((existingId) => existingId !== dependencyId);
+      await this.store.saveServiceSpec(spec, t("dependência removida"));
     },
 
     // ── Fila de pré-deploy check ────────────────────────────────────────
