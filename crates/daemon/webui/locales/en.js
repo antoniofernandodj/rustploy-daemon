@@ -771,4 +771,11 @@ export default {
   "Commits suspensos: {0} valor(es) em claro. Abra Settings → Sincronização.": "Commits suspended: {0} plaintext value(s). Open Settings → Sync.",
   "removido no git ({0})": "removed in git ({0})",
   "o histórico continua divergido": "the history is still diverged",
+  "Mover para secret (o valor passa a ser guardado cifrado)": "Move to a secret (the value is stored encrypted)",
+  "SECRETS DO SERVIÇO (": "SERVICE SECRETS (",
+  "Valores cifrados usados só por este serviço (valem antes de um secret do projeto com o mesmo nome). O valor real nunca volta para cá: salvar com um nome existente substitui, e vale no próximo deploy.": "Encrypted values used only by this service (they win over a project secret with the same name). The real value never comes back here: saving with an existing name replaces it, and it takes effect on the next deploy.",
+  "Nenhum secret neste serviço ainda.": "No secret in this service yet.",
+  "Preencha nome e valor do secret": "Fill in the secret name and value",
+  "secret {0} salvo — vale no próximo deploy": "secret {0} saved — takes effect on the next deploy",
+  "variável {0} movida para secret": "variable {0} moved to a secret",
 };

@@ -35,6 +35,10 @@ document.addEventListener("alpine:init", () => {
     },
     newEnvKey: "",
     newEnvValue: "",
+    // Secrets DESTE serviço (só os nomes; o valor nunca volta do daemon).
+    serviceSecrets: [],
+    newServiceSecretName: "",
+    newServiceSecretValue: "",
     newDomain: "",
     newDomainPort: "",
     newDomainTls: false,
@@ -53,6 +57,7 @@ document.addEventListener("alpine:init", () => {
         () => {
           if (this.store.serviceTab === "general") this.initGeneralForm();
           this.loadConnectionUrl();
+          this.loadServiceSecrets();
           this.loadSharedState();
           this.loadMigration();
           this.loadWebhook();
@@ -604,6 +609,63 @@ document.addEventListener("alpine:init", () => {
       if (saveServiceSpecResult.ok) {
         this.newEnvKey = "";
         this.newEnvValue = "";
+      }
+    },
+
+    /** Nomes dos secrets do serviço aberto (`SecretList` com `service_id`). */
+    async loadServiceSecrets() {
+      const serviceId = this.svc?.id;
+      const projectId = this.svc?.spec?.project_id;
+      if (!serviceId || !projectId) {
+        this.serviceSecrets = [];
+        return;
+      }
+      try {
+        const secretListResponse = await this.store.api.rpc({ SecretList: { project_id: projectId, service_id: serviceId } });
+        if (this.svc?.id === serviceId) this.serviceSecrets = secretListResponse.ok ? secretListResponse.value?.SecretNames || [] : [];
+      } catch (_) {
+        this.serviceSecrets = [];
+      }
+    },
+
+    /** Cria (ou sobrescreve) um secret do serviço; o novo valor vale no próximo deploy. */
+    async addServiceSecret() {
+      const name = this.newServiceSecretName.trim();
+      if (!name || !this.newServiceSecretValue) {
+        this.store.toastError(t("Preencha nome e valor do secret"));
+        return;
+      }
+      const secretSetResponse = await this.store.api.rpcChecked({
+        SecretSet: { project_id: this.svc.spec.project_id, service_id: this.svc.id, name, value: this.newServiceSecretValue },
+      });
+      this.store.toastResult(secretSetResponse, t`secret ${name} salvo — vale no próximo deploy`);
+      if (secretSetResponse.ok) {
+        this.newServiceSecretName = "";
+        this.newServiceSecretValue = "";
+        await this.loadServiceSecrets();
+      }
+    },
+
+    async deleteServiceSecret(name) {
+      if (!confirm(t`Remover o secret "${name}"? Serviços que o referenciam vão falhar no próximo deploy.`)) return;
+      const secretDeleteResponse = await this.store.api.rpcChecked({
+        SecretDelete: { project_id: this.svc.spec.project_id, service_id: this.svc.id, name },
+      });
+      this.store.toastResult(secretDeleteResponse, t`secret ${name} removido`);
+      if (secretDeleteResponse.ok) await this.loadServiceSecrets();
+    },
+
+    /** "🔒" numa variável em claro: o valor passa a ser guardado cifrado e a variável vira uma
+     * referência ao secret de mesmo nome (o valor não muda). */
+    async envToSecret(key) {
+      const secretMoveResponse = await this.store.api.rpcChecked({
+        SecretMove: { project_id: this.svc.spec.project_id, service_id: this.svc.id, name: key, op: "EnvToSecret" },
+      });
+      this.store.toastResult(secretMoveResponse, t`variável ${key} movida para secret`);
+      if (secretMoveResponse.ok) {
+        await this.store.fetchServiceDetail(this.svc.id);
+        await this.store.refreshNow();
+        await this.loadServiceSecrets();
       }
     },
 

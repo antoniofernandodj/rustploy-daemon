@@ -3018,6 +3018,8 @@
                         </row>
                         <row class="kv-list__row" x-show="!envVar.isComment">
                           <button class="env__del" type="button" @click="deleteEnvVar(envVar.key)">✕</button>
+                          <button class="btn btn--ghost btn--sm" type="button" x-show="!envVar.isSecret" @click="envToSecret(envVar.key)"
+                            :title="$t('Mover para secret (o valor passa a ser guardado cifrado)')">🔒</button>
                           <text class="env__sep"></text>
                           <text class="env__key" x-text="envVar.key"></text>
                           <text class="kv-list__val kv-list__val--compact" x-text="envVar.isSecret ? '(secret)' : envVar.value"></text>
@@ -3025,6 +3027,24 @@
                       </column>
                     </template>
                     <text class="u-muted" x-fallback="envVars" style="padding:12px" x-t>Nenhuma variável.</text>
+                  </column>
+                  <text class="u-label-cap" x-text="$t('SECRETS DO SERVIÇO (') + serviceSecrets.length + ')'"></text>
+                  <text class="u-muted-grow" x-t>Valores cifrados usados só por este serviço (valem antes de um secret do projeto com o mesmo nome). O valor real nunca volta para cá: salvar com um nome existente substitui, e vale no próximo deploy.</text>
+                  <row class="env__add">
+                    <input class="env__input" type="text" placeholder="NOME" x-t:placeholder x-model="newServiceSecretName" />
+                    <input class="env__input" type="password" placeholder="valor (cifrado ao salvar)" x-t:placeholder x-model="newServiceSecretValue" />
+                    <button class="btn btn--primary" type="button" @click="addServiceSecret()" x-t>Salvar secret</button>
+                  </row>
+                  <column class="kv-list">
+                    <template x-for="secretName in serviceSecrets" :key="secretName">
+                      <row class="kv-list__row">
+                        <button class="env__del" type="button" @click="deleteServiceSecret(secretName)">✕</button>
+                        <text class="env__sep"></text>
+                        <text class="env__key" x-text="secretName"></text>
+                        <text class="kv-list__val kv-list__val--compact" x-t>cifrado</text>
+                      </row>
+                    </template>
+                    <text class="u-muted" x-fallback="serviceSecrets" style="padding:12px" x-t>Nenhum secret neste serviço ainda.</text>
                   </column>
                 </column>
               </template>
