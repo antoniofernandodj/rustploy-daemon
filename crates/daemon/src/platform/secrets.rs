@@ -672,7 +672,7 @@ fn persist_identity(
                 return Ok(());
             }
             Err(e) => {
-                warn!(config = %path.display(), error = %e, "não consegui gravar a identidade no config.toml; usando {}", key_file.display())
+                warn!(config = %path.display(), error = %format!("{e:#}"), "não consegui gravar a identidade no config.toml; usando {}", key_file.display())
             }
         }
     }
@@ -1316,6 +1316,97 @@ mod tests {
         .unwrap();
         assert_eq!(m2.decrypt(&c).unwrap(), "x");
         assert_eq!(m1.public_key(), m2.public_key());
+    }
+
+    /// O `config.toml` real de um servidor em produção (chiquitos, 2026-11-02), com os segredos
+    /// trocados: tem `connection_token` (gravado pelo daemon), `[env_backup]` e `[ingress.acme]`.
+    /// A gravação da identidade falhou ali com "a config resultante não seria válida".
+    #[test]
+    fn identidade_entra_numa_config_de_producao() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(
+            &path,
+            r####"[daemon]
+# NOTA: em produção, db_path é GERIDO PELO systemd unit (rustployd.service),
+# que o fixa via Environment=RUSTPLOY_DB_PATH apontando para /var/lib/rustploy
+# (diretório criado por StateDirectory=). Como env vars têm prioridade sobre
+# este arquivo, editar o campo abaixo NÃO terá efeito sob systemd — ajuste no
+# unit ou em /etc/rustploy/environment (lido via EnvironmentFile=).
+db_path      = "/var/lib/rustploy/db"
+log_level    = "info"
+# As demais seções abaixo VÊM deste arquivo normalmente — não são sobrescritas
+# pelo unit.
+
+# API HTTP/JSON + SSE — o canal do GUI. Serve TAMBÉM as rotas públicas sem token:
+# os webhooks de CI/CD (POST /webhook/<service_id>/<token>) e o callback OAuth do
+# Gitea (/oauth/gitea/callback), que antes tinham porta própria (8788). Ou seja:
+# para o GitHub/Gitea alcançarem o webhook, esta porta precisa estar acessível.
+# Defaults: bind 127.0.0.1, port 9797, sem token. Bind não-loopback EXIGE token.
+[api]
+bind_address = "0.0.0.0"
+port         = 9797
+token        = "tok"
+connection_token = "abc="
+domain       = "rustploy.chiquitos.tech"   # TLS automático (ACME) na própria porta
+
+[ingress]
+http_port    = 80
+https_port   = 443
+bind_address = "0.0.0.0"
+
+[ingress.acme]
+enabled   = true
+email     = "a@b.c"               # set your email to enable ACME/TLS
+directory = "https://acme-v02.api.letsencrypt.org/directory"
+
+[docker]
+socket_path = "/run/podman/podman.sock"
+
+[deploy]
+drain_secs  = 10
+image_cache = 2
+
+[metrics]
+interval_secs  = 2
+history_points = 60
+
+[secrets]
+master_key_path = "/etc/rustploy/master.key"
+
+# Faixa de portas de host que o rustploy aloca automaticamente para exposição
+# externa de serviços TCP (bancos, brokers…) — o "host_port" automático.
+# Também é a ÚNICA faixa que o helper privilegiado de firewall (rustployd-fw)
+# aceita liberar/bloquear no ufw; portas fora dela são recusadas.
+[external_ports]
+range_start = 20000
+range_end   = 20999
+
+# Registry Docker OCI (Distribution API v2) embutido no daemon — Fase 1:
+# escuta apenas em loopback (127.0.0.1), sem autenticação. Habilite e use
+# docker push 127.0.0.1:5100/<repo>:<tag>.
+[registry]
+enabled = true
+port    = 5100
+# storage_dir = "/var/lib/rustploy/db/registry"   # default: <db_path>/registry/
+
+# Env var backup — snapshots automáticos de todas as env vars de projetos e serviços.
+# Restaurar: rustploy env-backup list | rustploy env-backup restore <snapshot>
+# Docs: /usr/share/doc/rustploy/env-backup.md
+[env_backup]
+# dir = "/var/lib/rustploy/db/env_backups"  # default: <db_path>/env_backups/
+interval_secs = 60000
+"####,
+        )
+        .unwrap();
+        let id = x25519::Identity::generate();
+        let line = format!("age_identity = \"{}\"", id.to_string().expose_secret());
+        write_identity_into_config(&path, &line).unwrap_or_else(|e| panic!("{e:#}"));
+        assert!(
+            std::fs::read_to_string(&path)
+                .unwrap()
+                .contains("age_identity")
+        );
     }
 
     #[tokio::test]
