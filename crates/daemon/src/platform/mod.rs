@@ -1,5 +1,6 @@
 //! Infraestrutura transversal (barramento de eventos, segredos, health checks), sem regra de negócio.
 
+pub mod age_format;
 pub mod config;
 pub mod connection;
 pub mod env_validation;

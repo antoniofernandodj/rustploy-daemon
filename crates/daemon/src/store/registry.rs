@@ -52,7 +52,7 @@ pub async fn get_or_create_repo(db: &Db, name: &str) -> Result<Repo> {
         .bind(&id)
         .bind(name)
         .bind(Utc::now())
-        .execute(db)
+        .execute(db.pool())
         .await?;
     // INSERT OR IGNORE pode ter perdido a corrida para outra requisição
     // concorrente criando o mesmo nome — busca de novo em vez de assumir `id`.
@@ -67,7 +67,7 @@ pub async fn get_or_create_repo(db: &Db, name: &str) -> Result<Repo> {
 pub async fn get_repo_by_name(db: &Db, name: &str) -> Result<Option<Repo>> {
     let row = sqlx::query_as::<_, (String,)>("SELECT id FROM registry_repos WHERE name = ?")
         .bind(name)
-        .fetch_optional(db)
+        .fetch_optional(db.pool())
         .await?;
     Ok(row.map(|(id,)| Repo { id }))
 }
@@ -75,7 +75,7 @@ pub async fn get_repo_by_name(db: &Db, name: &str) -> Result<Option<Repo>> {
 /// `GET /v2/_catalog` — nomes ordenados. Sem paginação nesta fase.
 pub async fn list_repo_names(db: &Db) -> Result<Vec<String>> {
     let rows: Vec<(String,)> = sqlx::query_as("SELECT name FROM registry_repos ORDER BY name ASC")
-        .fetch_all(db)
+        .fetch_all(db.pool())
         .await?;
     Ok(rows.into_iter().map(|(n,)| n).collect())
 }
@@ -91,7 +91,7 @@ pub async fn list_repos(db: &Db) -> Result<Vec<RepoSummary>> {
          FROM registry_repos r
          ORDER BY r.name ASC",
     )
-    .fetch_all(db)
+    .fetch_all(db.pool())
     .await?;
     Ok(rows
         .into_iter()
@@ -115,7 +115,7 @@ pub async fn list_tags_detailed(db: &Db, repo_id: &str) -> Result<Vec<TagDetail>
          ORDER BY t.tag ASC",
     )
     .bind(repo_id)
-    .fetch_all(db)
+    .fetch_all(db.pool())
     .await?;
     Ok(rows
         .into_iter()
@@ -135,18 +135,18 @@ pub async fn list_tags_detailed(db: &Db, repo_id: &str) -> Result<Vec<TagDetail>
 /// Registry.
 pub async fn summary(db: &Db) -> Result<RegistrySummary> {
     let (repo_count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM registry_repos")
-        .fetch_one(db)
+        .fetch_one(db.pool())
         .await?;
     let (blob_count, blob_bytes): (i64, i64) =
         sqlx::query_as("SELECT COUNT(*), COALESCE(SUM(size), 0) FROM registry_blobs")
-            .fetch_one(db)
+            .fetch_one(db.pool())
             .await?;
     // Um digest pode ter uma linha por repo agora (PK composta); soma cada
     // digest DISTINTO uma vez só — é o que de fato ocupa espaço no CAS.
     let (manifest_bytes,): (i64,) = sqlx::query_as(
         "SELECT COALESCE(SUM(size), 0) FROM (SELECT DISTINCT digest, size FROM registry_manifests)",
     )
-    .fetch_one(db)
+    .fetch_one(db.pool())
     .await?;
     Ok(RegistrySummary {
         repo_count,
@@ -195,7 +195,7 @@ pub async fn insert_blob(db: &Db, digest: &str, size: i64) -> Result<()> {
         .bind(digest)
         .bind(size)
         .bind(Utc::now())
-        .execute(db)
+        .execute(db.pool())
         .await?;
     Ok(())
 }
@@ -203,7 +203,7 @@ pub async fn insert_blob(db: &Db, digest: &str, size: i64) -> Result<()> {
 pub async fn blob_exists(db: &Db, digest: &str) -> Result<bool> {
     let row: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM registry_blobs WHERE digest = ?")
         .bind(digest)
-        .fetch_optional(db)
+        .fetch_optional(db.pool())
         .await?;
     Ok(row.is_some())
 }
@@ -262,7 +262,7 @@ pub async fn get_manifest(db: &Db, repo_id: &str, digest: &str) -> Result<Option
     )
     .bind(repo_id)
     .bind(digest)
-    .fetch_optional(db)
+    .fetch_optional(db.pool())
     .await?;
     Ok(row.map(|(media_type, size)| ManifestRow { media_type, size }))
 }
@@ -276,7 +276,7 @@ pub async fn ref_blob_or_manifest_exists(db: &Db, digest: &str) -> Result<bool> 
     }
     let row: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM registry_manifests WHERE digest = ?")
         .bind(digest)
-        .fetch_optional(db)
+        .fetch_optional(db.pool())
         .await?;
     Ok(row.is_some())
 }
@@ -292,7 +292,7 @@ pub async fn upsert_tag(db: &Db, repo_id: &str, tag: &str, manifest_digest: &str
     .bind(tag)
     .bind(manifest_digest)
     .bind(Utc::now())
-    .execute(db)
+    .execute(db.pool())
     .await?;
     Ok(())
 }
@@ -302,7 +302,7 @@ pub async fn get_tag_digest(db: &Db, repo_id: &str, tag: &str) -> Result<Option<
         sqlx::query_as("SELECT manifest_digest FROM registry_tags WHERE repo_id = ? AND tag = ?")
             .bind(repo_id)
             .bind(tag)
-            .fetch_optional(db)
+            .fetch_optional(db.pool())
             .await?;
     Ok(row.map(|(d,)| d))
 }
@@ -311,7 +311,7 @@ pub async fn list_tags(db: &Db, repo_id: &str) -> Result<Vec<String>> {
     let rows: Vec<(String,)> =
         sqlx::query_as("SELECT tag FROM registry_tags WHERE repo_id = ? ORDER BY tag ASC")
             .bind(repo_id)
-            .fetch_all(db)
+            .fetch_all(db.pool())
             .await?;
     Ok(rows.into_iter().map(|(t,)| t).collect())
 }
@@ -405,7 +405,7 @@ pub async fn all_cas_digests(db: &Db) -> Result<Vec<String>> {
     let rows: Vec<(String,)> = sqlx::query_as(
         "SELECT digest FROM registry_blobs UNION SELECT digest FROM registry_manifests",
     )
-    .fetch_all(db)
+    .fetch_all(db.pool())
     .await?;
     Ok(rows.into_iter().map(|(d,)| d).collect())
 }
@@ -788,7 +788,7 @@ mod tests {
 
         // Remove a tag do index vivo: agora a cadeia inteira é órfã.
         sqlx::query("DELETE FROM registry_tags")
-            .execute(&db)
+            .execute(db.pool())
             .await
             .unwrap();
         gc_metadata(&db).await.unwrap();
@@ -851,7 +851,7 @@ mod tests {
         let (ref_count,): (i64,) =
             sqlx::query_as("SELECT COUNT(*) FROM registry_manifest_refs WHERE manifest_digest = ?")
                 .bind(digest)
-                .fetch_one(&db)
+                .fetch_one(db.pool())
                 .await
                 .unwrap();
         assert_eq!(

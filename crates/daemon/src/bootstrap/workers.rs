@@ -4,7 +4,7 @@ use crate::bootstrap::state::AppState;
 use crate::engine::DockerClient;
 use crate::features::ingress::TlsManager;
 use crate::features::registry::storage::RegistryStorage;
-use crate::features::{backup, deploy, jobs, maintenance, observability, registry};
+use crate::features::{deploy, jobs, maintenance, observability, registry};
 use crate::platform::config::RustployConfig;
 use crate::platform::event_bus::EventBus;
 use crate::store::Db;
@@ -19,15 +19,19 @@ pub fn spawn_standalone(
     bus: &Arc<EventBus>,
     backup_dir: &std::path::Path,
 ) {
-    // Env var backup loop
-    {
-        let db2 = db.clone();
-        let bdir = backup_dir.to_path_buf();
-        let interval_secs = config.env_backup.interval_secs;
-        tokio::spawn(async move {
-            backup::backup_loop(db2, bdir, interval_secs).await;
-        });
-    }
+    // Env var backup loop — DESLIGADO (docs/plano-backup-estado-em-git.md, R9.0 item 4): o estado
+    // de infra vai para YAML versionado em git. Código mantido no lugar (regra "comentar, não
+    // remover"); a seção `[env_backup]` do config.toml continua sendo aceita no parse.
+    // TODO: apagar `features/backup::backup_loop` quando o espelho em git (Fase 6) estiver no ar.
+    // {
+    //     let db2 = db.clone();
+    //     let bdir = backup_dir.to_path_buf();
+    //     let interval_secs = config.env_backup.interval_secs;
+    //     tokio::spawn(async move {
+    //         backup::backup_loop(db2, bdir, interval_secs).await;
+    //     });
+    // }
+    let _ = backup_dir;
 
     // Metrics background task
     {
@@ -57,6 +61,9 @@ pub fn spawn_stateful(
     registry_storage: Option<Arc<RegistryStorage>>,
     tls: &Arc<TlsManager>,
 ) {
+    // Sincronização do estado de infra com o git (não faz nada enquanto o modo for `off`).
+    state.state_git.spawn();
+
     // Worker da fila global de deploys (um por vez).
     {
         let state2 = state.clone();

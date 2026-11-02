@@ -5,6 +5,7 @@ pub mod build_logs;
 pub mod daemon_settings;
 pub mod deployments;
 pub mod git_providers;
+pub mod infra;
 pub mod job;
 pub mod job_log;
 pub mod job_run;
@@ -26,7 +27,112 @@ use sqlx::{
 use std::str::FromStr;
 use tracing::{info, warn};
 
-pub type Db = SqlitePool;
+/// O armazenamento do daemon: o **SQLite** (runtime: deploys, logs, status…) e o **repositório de
+/// infra** em YAML (projetos, serviços, jobs…; `store::infra`). Plano de migração:
+/// `docs/plano-backup-estado-em-git.md` (Fase 4d). `Db` faz `Deref` para o pool, então
+/// `db.begin()` & cia. seguem valendo; para passar como executor do `sqlx` use [`Db::pool`].
+#[derive(Clone)]
+pub struct Db {
+    pool: SqlitePool,
+    infra: std::sync::Arc<infra::repo::Repo>,
+}
+
+impl Db {
+    pub fn pool(&self) -> &SqlitePool {
+        &self.pool
+    }
+
+    /// O repositório de infra (leituras: `snapshot()`; escritas: `update()`).
+    pub fn infra(&self) -> &infra::repo::Repo {
+        &self.infra
+    }
+
+    /// Cria (se ainda não existe) um projeto com este id — para testes que precisam de um dono
+    /// para os serviços sem passar por `projects::create` (que gera o id sozinho).
+    #[cfg(test)]
+    pub(crate) fn seed_project_for_test(&self, id: &str) {
+        self.infra()
+            .update(|st| {
+                if !st.projects.iter().any(|p| p.id == id) {
+                    st.projects.push(infra::model::ProjectInfra {
+                        id: id.into(),
+                        name: id.into(),
+                        description: None,
+                        env_vars: vec![],
+                        env_comments: vec![],
+                        network_name: None,
+                        created_at: chrono::Utc::now(),
+                        services: vec![],
+                        jobs: vec![],
+                        secrets: vec![],
+                        managed_databases: vec![],
+                        shared_access: vec![],
+                    });
+                }
+                Ok(())
+            })
+            .unwrap();
+    }
+
+    /// Cria (se ainda não existe) um serviço com este id dentro do projeto (que já deve existir).
+    #[cfg(test)]
+    pub(crate) fn seed_service_for_test(&self, project_id: &str, service_id: &str) {
+        self.infra()
+            .update(|st| {
+                let p = st
+                    .projects
+                    .iter_mut()
+                    .find(|p| p.id == project_id)
+                    .expect("projeto de teste não existe");
+                if !p.services.iter().any(|s| s.id == service_id) {
+                    p.services.push(infra::model::ServiceInfra {
+                        id: service_id.into(),
+                        spec: crate::features::wizard::app_spec(
+                            service_id.into(),
+                            project_id.into(),
+                        ),
+                        compose_project: None,
+                        created_at: chrono::Utc::now(),
+                        webhook_token: None,
+                        secrets: vec![],
+                    });
+                }
+                Ok(())
+            })
+            .unwrap();
+    }
+
+    /// Banco que nunca chega a conectar (só para quem precisa de um `Db` de enfeite).
+    #[cfg(test)]
+    pub(crate) fn lazy_for_test() -> Db {
+        Db {
+            pool: SqlitePool::connect_lazy("sqlite::memory:").unwrap(),
+            infra: std::sync::Arc::new(infra::repo::Repo::temp()),
+        }
+    }
+
+    /// Banco em memória + repositório em pasta temporária, para os testes.
+    #[cfg(test)]
+    pub(crate) async fn memory_for_test() -> Db {
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        migrate(&pool).await.unwrap();
+        Db {
+            pool,
+            infra: std::sync::Arc::new(infra::repo::Repo::temp()),
+        }
+    }
+}
+
+impl std::ops::Deref for Db {
+    type Target = SqlitePool;
+    fn deref(&self) -> &SqlitePool {
+        &self.pool
+    }
+}
 
 pub async fn connect(db_path: &std::path::Path) -> Result<Db> {
     std::fs::create_dir_all(db_path)?;
@@ -37,7 +143,38 @@ pub async fn connect(db_path: &std::path::Path) -> Result<Db> {
         .foreign_keys(true);
     let pool = SqlitePool::connect_with(opts).await?;
     migrate(&pool).await?;
-    Ok(pool)
+    // O YAML de infra mora ao lado do banco (`<db_path>/infra`). Na primeira subida depois da
+    // atualização, os dados de infra que estavam no SQL são migrados para lá (uma vez só).
+    let infra = std::sync::Arc::new(infra::repo::Repo::open(db_path.join("infra"))?);
+    let db = Db { pool, infra };
+    match infra::migrate::run(&db, db.infra().tree(), Some(&db_file)).await? {
+        infra::migrate::Outcome::AlreadyDone => {
+            // Marcado como migrado, mas sem estado em disco: alguém apagou/moveu `infra/`. Subir
+            // assim mostraria um servidor vazio e a próxima escrita o tornaria o novo normal.
+            if !db.infra().is_initialized()? {
+                anyhow::bail!(
+                    "a infra já foi migrada para YAML, mas {} não tem estado. Restaure essa pasta \
+                     (ou, para refazer a migração a partir do SQL antigo, apague a chave \
+                     '{}' de daemon_settings).",
+                    db_path.join("infra").display(),
+                    infra::migrate::MARK_KEY
+                );
+            }
+        }
+        infra::migrate::Outcome::Migrated {
+            backup,
+            warnings,
+            projects,
+            services,
+        } => {
+            db.infra().reload()?;
+            info!(projects, services, backup = ?backup, "infra migrada do SQL para YAML");
+            for w in &warnings {
+                warn!("migração SQL→YAML: {w}");
+            }
+        }
+    }
+    Ok(db)
 }
 
 /// Cria as tabelas e aplica as migrações incrementais (`ALTER TABLE`
@@ -288,6 +425,95 @@ async fn migrate(pool: &SqlitePool) -> Result<()> {
     add_column_if_missing(pool, "ALTER TABLE project ADD COLUMN network_name TEXT").await?;
     add_column_if_missing(pool, "ALTER TABLE service ADD COLUMN compose_project TEXT").await?;
 
+    // Fase 4d do plano `docs/plano-backup-estado-em-git.md`: a config do git provider vai para o
+    // YAML; os tokens de login ficam aqui (nunca vão ao git). Preenche a partir da tabela antiga.
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS git_provider_token (
+            provider_id       TEXT PRIMARY KEY,
+            access_token_enc  TEXT,
+            refresh_token_enc TEXT
+        )",
+    )
+    .execute(pool)
+    .await?;
+    sqlx::query(
+        "INSERT OR IGNORE INTO git_provider_token (provider_id, access_token_enc, refresh_token_enc)
+         SELECT id, access_token_enc, refresh_token_enc FROM git_provider
+         WHERE access_token_enc IS NOT NULL OR refresh_token_enc IS NOT NULL",
+    )
+    .execute(pool)
+    .await?;
+
+    // Fase 5: quem revelou qual secret e quando (nunca o valor).
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS secret_audit (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            at         TEXT NOT NULL,
+            action     TEXT NOT NULL,
+            project_id TEXT NOT NULL,
+            service_id TEXT,
+            name       TEXT NOT NULL
+        )",
+    )
+    .execute(pool)
+    .await?;
+
+    // Fase 4d: o que muda a cada execução do job sai da definição (que vai para o YAML).
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS job_runtime (
+            job_id      TEXT PRIMARY KEY,
+            last_run_at TEXT,
+            next_run_at TEXT
+        )",
+    )
+    .execute(pool)
+    .await?;
+    sqlx::query(
+        "INSERT OR IGNORE INTO job_runtime (job_id, last_run_at, next_run_at)
+         SELECT id, last_run_at, next_run_at FROM job
+         WHERE NOT EXISTS (SELECT 1 FROM daemon_settings WHERE key = 'infra_yaml_migrated_at')",
+    )
+    .execute(pool)
+    .await?;
+
+    // Fase 2 do plano `docs/plano-backup-estado-em-git.md`: o runtime do serviço (status,
+    // container live, intenção) sai da linha declarada para `service_runtime`. As colunas legadas
+    // de `service` continuam existindo e sendo escritas (rollback do binário), mas a fonte da
+    // verdade passa a ser esta tabela.
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS service_runtime (
+            service_id        TEXT PRIMARY KEY,
+            status            TEXT NOT NULL DEFAULT 'Stopped',
+            live_container_id TEXT,
+            desired_state     TEXT NOT NULL DEFAULT 'Stopped',
+            updated_at        TEXT NOT NULL
+        )",
+    )
+    .execute(pool)
+    .await?;
+    // Backfill (idempotente: só serviços ainda sem linha). Quem estava no ar ou a caminho
+    // continua desejado no ar, para um reboot logo após a atualização religar tudo.
+    let seeded = sqlx::query(
+        "INSERT OR IGNORE INTO service_runtime (service_id, status, live_container_id, desired_state, updated_at)
+         SELECT id, status, live_container_id,
+                CASE WHEN status IN ('Running', 'Degraded', 'Deploying', 'Queued', 'Stopping')
+                     THEN 'Running' ELSE 'Stopped' END,
+                updated_at
+         FROM service
+         -- Depois da migração para YAML a tabela `service` está congelada: não ressuscitar
+         -- runtime de serviço que já foi apagado.
+         WHERE NOT EXISTS (SELECT 1 FROM daemon_settings WHERE key = 'infra_yaml_migrated_at')",
+    )
+    .execute(pool)
+    .await?
+    .rows_affected();
+    if seeded > 0 {
+        info!(
+            services = seeded,
+            "db::migrate: service_runtime preenchida a partir de service"
+        );
+    }
+
     // Preenche a rede dos projetos que ainda não têm com o nome que **já usam**
     // (fórmula legada: `rp_net_` + 8 primeiros chars do ID) — nenhuma rede
     // existente muda de nome. `instr` é 0 sem `_`, e `substr(id, 1, 8)` cobre.
@@ -318,8 +544,8 @@ async fn migrate(pool: &SqlitePool) -> Result<()> {
 
 /// Reexecuta a migração num banco já aberto (um boot seguinte), para os testes.
 #[cfg(test)]
-pub(crate) async fn connect_existing_for_test(pool: &SqlitePool) {
-    migrate(pool).await.unwrap();
+pub(crate) async fn connect_existing_for_test(db: &Db) {
+    migrate(db.pool()).await.unwrap();
 }
 
 /// Cria um índice `UNIQUE` sem derrubar o boot: se já há valores repetidos (uma

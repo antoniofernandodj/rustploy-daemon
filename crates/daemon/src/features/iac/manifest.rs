@@ -442,6 +442,8 @@ impl ServiceManifest {
             // check; fica vazio no import/export.
             pre_deploy_job_id: None,
             pre_deploy_job_ids: vec![],
+            depends_on: vec![],
+            autostart: true,
             shared: self.shared.then(shared::SharedServerConfig::default),
         }
     }
@@ -1182,6 +1184,8 @@ services:
             domains: vec![],
             pre_deploy_job_id: None,
             pre_deploy_job_ids: vec![],
+            depends_on: vec![],
+            autostart: true,
             shared: None,
         };
         let svc = Service {

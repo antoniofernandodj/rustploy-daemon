@@ -39,7 +39,7 @@ pub async fn create(db: &Db, job_id: &str) -> Result<JobRun> {
     .bind(&id)
     .bind(job_id)
     .bind(now)
-    .execute(db)
+    .execute(db.pool())
     .await?;
     Ok(JobRun {
         id,
@@ -62,7 +62,7 @@ pub async fn finish(db: &Db, id: &str, exit_code: i32) -> Result<Option<JobRun>>
             .bind(exit_code)
             .bind(success)
             .bind(id)
-            .execute(db)
+            .execute(db.pool())
             .await?
             .rows_affected();
     if rows_affected == 0 {
@@ -79,7 +79,7 @@ pub async fn has_unfinished(db: &Db, job_id: &str) -> Result<bool> {
     let n: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM job_run WHERE job_id = ? AND finished_at IS NULL")
             .bind(job_id)
-            .fetch_one(db)
+            .fetch_one(db.pool())
             .await?;
     Ok(n > 0)
 }
@@ -89,7 +89,7 @@ pub async fn list_unfinished(db: &Db) -> Result<Vec<JobRun>> {
     let rows = sqlx::query_as::<_, JobRunRow>(&format!(
         "SELECT {SELECT_COLS} FROM job_run WHERE finished_at IS NULL ORDER BY started_at ASC"
     ))
-    .fetch_all(db)
+    .fetch_all(db.pool())
     .await?;
     Ok(rows.into_iter().map(row_to_job_run).collect())
 }
@@ -98,7 +98,7 @@ pub async fn get(db: &Db, id: &str) -> Result<Option<JobRun>> {
     let row =
         sqlx::query_as::<_, JobRunRow>(&format!("SELECT {SELECT_COLS} FROM job_run WHERE id = ?"))
             .bind(id)
-            .fetch_optional(db)
+            .fetch_optional(db.pool())
             .await?;
     Ok(row.map(row_to_job_run))
 }
@@ -109,7 +109,7 @@ pub async fn list_for_job(db: &Db, job_id: &str, limit: usize) -> Result<Vec<Job
     ))
     .bind(job_id)
     .bind(limit as i64)
-    .fetch_all(db)
+    .fetch_all(db.pool())
     .await?;
     Ok(rows.into_iter().map(row_to_job_run).collect())
 }
@@ -119,7 +119,7 @@ pub async fn latest_for_job(db: &Db, job_id: &str) -> Result<Option<JobRun>> {
         "SELECT {SELECT_COLS} FROM job_run WHERE job_id = ? ORDER BY started_at DESC LIMIT 1"
     ))
     .bind(job_id)
-    .fetch_optional(db)
+    .fetch_optional(db.pool())
     .await?;
     Ok(row.map(row_to_job_run))
 }

@@ -174,7 +174,9 @@ pub async fn load(state: &AppState) -> Vec<DashboardProject> {
         if matches!(svc.spec.source, ServiceSource::Compose(_)) {
             continue;
         }
-        if let Ok(Some(token)) = store::webhook_tokens::get(&state.db, &svc.id).await {
+        if let Ok(Some(token)) =
+            store::webhook_tokens::get(&state.db, &state.secrets, &svc.id).await
+        {
             webhook_urls.insert(
                 svc.id.clone(),
                 crate::api::handlers::services::get_webhook_url::build_url(state, &svc.id, &token),
@@ -237,6 +239,8 @@ mod tests {
                 domains: vec![],
                 pre_deploy_job_id: None,
                 pre_deploy_job_ids: vec!["job_a".into(), "job_gone".into()],
+                depends_on: vec![],
+                autostart: true,
                 shared: None,
             },
             compose_project: None,

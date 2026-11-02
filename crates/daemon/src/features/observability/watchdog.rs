@@ -291,7 +291,7 @@ async fn trigger_redeploy(state: &WatchdogContext, svc: &shared::Service) {
     state.bus.publish(Event::DeployQueueChanged);
 }
 
-async fn run_healthcheck(
+pub(crate) async fn run_healthcheck(
     hc: &Healthcheck,
     container_id: &str,
     docker: &Docker,
@@ -353,7 +353,7 @@ async fn get_container_ip(docker: &Docker, container_id: &str) -> Option<String>
         .find_map(|net| net.ip_address.clone().filter(|ip| !ip.is_empty()))
 }
 
-async fn container_is_running(docker: &Docker, container_id: &str) -> bool {
+pub(crate) async fn container_is_running(docker: &Docker, container_id: &str) -> bool {
     use bollard::container::InspectContainerOptions;
     match docker
         .inspect_container(container_id, None::<InspectContainerOptions>)

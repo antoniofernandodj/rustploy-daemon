@@ -1,0 +1,460 @@
+//! O **estado de infra tipado** (Fase 4 do plano `docs/plano-backup-estado-em-git.md`, R2/R3) e
+//! como ele vira arquivos YAML e volta.
+//!
+//! Layout no disco (um arquivo pequeno por assunto → diffs pequenos no git):
+//! ```text
+//! MANIFEST.json                    {"schema": 1}
+//! settings.yml                     as 3 chaves de configuração do daemon_settings
+//! providers.yml                    git providers, SEM tokens de login (esses ficam no SQL)
+//! projects/<id>/project.yml        projeto + serviços + jobs + secrets + bancos + acessos
+//! ```
+//! O diretório do projeto usa o **id** (e não o nome): o nome pode ter espaço/acento, e renomear
+//! o projeto não pode virar "arquivo apagado + arquivo novo" no histórico do git.
+//!
+//! O que **não** entra aqui, de propósito, por ser runtime (muda toda hora e só geraria diff):
+//! `service.status`/`live_container_id` (`service_runtime`), `service.updated_at`,
+//! `job.last_run_at`/`next_run_at`, os tokens de login dos providers e as chaves `*_last_run`/`warm`
+//! do `daemon_settings`.
+
+use super::txn::FileTree;
+use super::yaml::{from_yaml, to_yaml};
+use anyhow::{Context, Result, bail};
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use shared::{EnvComment, EnvVar, JobGitSource, Recurrence, ServiceSpec};
+use std::collections::BTreeMap;
+
+/// Versão do formato dos arquivos. Sobe quando o YAML mudar de forma incompatível.
+pub const SCHEMA: u32 = 1;
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct InfraState {
+    pub settings: SettingsInfra,
+    pub providers: Vec<ProviderInfra>,
+    pub projects: Vec<ProjectInfra>,
+}
+
+/// As chaves de configuração do `daemon_settings` (R2.1). `webhook_base_url` está descartada.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct SettingsInfra {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub acme_email: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub registry_domain: Option<String>,
+    /// O JSON de `docker_cleanup_config`, como valor estruturado (fica legível no YAML).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub docker_cleanup_config: Option<serde_json::Value>,
+}
+
+/// Config de um git provider. `oauth_client_secret_enc` já é cifrado hoje; os tokens de login
+/// (`access_token_enc`/`refresh_token_enc`) ficam só no SQL (decisão da Pergunta 9).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProviderInfra {
+    pub id: String,
+    pub kind: String,
+    pub name: String,
+    pub base_url: String,
+    pub auth_mode: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oauth_client_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oauth_client_secret_enc: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_login: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_avatar: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProjectInfra {
+    pub id: String,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub env_vars: Vec<EnvVar>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub env_comments: Vec<EnvComment>,
+    /// Nome da rede Docker, gravado na criação (`docs/plano-nome-gravado-rede-e-stack.md`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub network_name: Option<String>,
+    pub created_at: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub services: Vec<ServiceInfra>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub jobs: Vec<JobInfra>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub secrets: Vec<SecretInfra>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub managed_databases: Vec<ManagedDatabaseInfra>,
+    /// Servidores de banco compartilhado que **este projeto** está autorizado a alcançar.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shared_access: Vec<SharedAccessInfra>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ServiceInfra {
+    pub id: String,
+    pub spec: ServiceSpec,
+    /// Nome da stack Compose, gravado na criação — os volumes se chamam `<stack>_<volume>`, então
+    /// restaurar sem isso renomearia a stack e os dados "sumiriam" (R2.1, ponto 2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compose_project: Option<String>,
+    pub created_at: DateTime<Utc>,
+    /// Segredo do webhook de push, cifrado (`ENC[age:…]`; um valor em claro vindo da migração é
+    /// cifrado no primeiro boot por `SecretsManager::reencrypt_legacy`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub webhook_token: Option<String>,
+    /// Secrets **deste serviço** (escopo de serviço, R5). Valor sempre `ENC[age:…]`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub secrets: Vec<SecretInfra>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct JobInfra {
+    pub id: String,
+    /// `None` = job autônomo (no SQL é a string vazia).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trigger_service_id: Option<String>,
+    pub name: String,
+    pub compose: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub git_source: Option<JobGitSource>,
+    pub main_service: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub env_vars: Vec<EnvVar>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub env_comments: Vec<EnvComment>,
+    pub enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recurrence: Option<Recurrence>,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Hoje o `value` já vem cifrado pelo `SecretsManager` (passphrase). A Fase 5 troca para
+/// `ENC[age:…]`; até lá o YAML carrega o mesmo texto cifrado que o SQL.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SecretInfra {
+    pub id: String,
+    pub key: String,
+    pub value: String,
+}
+
+/// **Atenção:** `password` está em claro (é assim no SQL hoje). Por isso a sincronização com git
+/// não pode ser ligada antes da Fase 5, que a move para um secret cifrado.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ManagedDatabaseInfra {
+    pub id: String,
+    pub server_service_id: String,
+    pub name: String,
+    pub password: String,
+    pub env_var: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connection_limit: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub statement_timeout_ms: Option<u32>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SharedAccessInfra {
+    pub server_service_id: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ProvidersFile {
+    providers: Vec<ProviderInfra>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ManifestFile {
+    schema: u32,
+}
+
+const MANIFEST: &str = "MANIFEST.json";
+const SETTINGS: &str = "settings.yml";
+const PROVIDERS: &str = "providers.yml";
+
+fn project_path(id: &str) -> String {
+    format!("projects/{id}/project.yml")
+}
+
+impl InfraState {
+    /// Põe tudo em ordem estável. Dois estados iguais passam a gerar bytes idênticos.
+    pub fn normalize(&mut self) {
+        self.providers
+            .sort_by(|a, b| (&a.created_at, &a.id).cmp(&(&b.created_at, &b.id)));
+        self.projects
+            .sort_by(|a, b| (&a.created_at, &a.id).cmp(&(&b.created_at, &b.id)));
+        for p in &mut self.projects {
+            p.services
+                .sort_by(|a, b| (&a.spec.name, &a.id).cmp(&(&b.spec.name, &b.id)));
+            p.jobs
+                .sort_by(|a, b| (&a.created_at, &a.id).cmp(&(&b.created_at, &b.id)));
+            p.secrets.sort_by(|a, b| a.key.cmp(&b.key));
+            for s in &mut p.services {
+                s.secrets.sort_by(|a, b| a.key.cmp(&b.key));
+            }
+            p.managed_databases.sort_by(|a, b| {
+                (&a.server_service_id, &a.name).cmp(&(&b.server_service_id, &b.name))
+            });
+            p.shared_access
+                .sort_by(|a, b| a.server_service_id.cmp(&b.server_service_id));
+        }
+    }
+
+    /// Valida as referências entre entidades — o "valida tudo" do passo 2 da transação (R3).
+    pub fn validate(&self) -> Result<()> {
+        let mut ids = std::collections::BTreeSet::new();
+        let mut names = std::collections::BTreeSet::new();
+        for p in &self.projects {
+            if !ids.insert(p.id.as_str()) {
+                bail!("id de projeto repetido: {}", p.id);
+            }
+            if !names.insert(p.name.as_str()) {
+                bail!("nome de projeto repetido: {}", p.name);
+            }
+        }
+        let mut service_ids = std::collections::BTreeSet::new();
+        for p in &self.projects {
+            for s in &p.services {
+                if !service_ids.insert(s.id.as_str()) {
+                    bail!("id de serviço repetido: {}", s.id);
+                }
+            }
+        }
+        for p in &self.projects {
+            for j in &p.jobs {
+                if let Some(t) = &j.trigger_service_id
+                    && !service_ids.contains(t.as_str())
+                {
+                    bail!(
+                        "o job '{}' aponta para o serviço gatilho {t}, que não existe",
+                        j.name
+                    );
+                }
+            }
+            let mut dbs = std::collections::BTreeSet::new();
+            for m in &p.managed_databases {
+                if !service_ids.contains(m.server_service_id.as_str()) {
+                    bail!(
+                        "o banco '{}' do projeto '{}' aponta para o servidor {}, que não existe",
+                        m.name,
+                        p.name,
+                        m.server_service_id
+                    );
+                }
+                if !dbs.insert((m.server_service_id.as_str(), m.name.as_str())) {
+                    bail!(
+                        "o servidor {} já tem um banco chamado '{}'",
+                        m.server_service_id,
+                        m.name
+                    );
+                }
+            }
+            for a in &p.shared_access {
+                if !service_ids.contains(a.server_service_id.as_str()) {
+                    bail!(
+                        "o projeto '{}' tem acesso ao servidor {}, que não existe",
+                        p.name,
+                        a.server_service_id
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// O estado como mapa `caminho → bytes`, na ordem estável.
+    pub fn to_files(&self) -> Result<BTreeMap<String, Vec<u8>>> {
+        let mut s = self.clone();
+        s.normalize();
+        let mut out = BTreeMap::new();
+        out.insert(
+            MANIFEST.to_string(),
+            serde_json::to_vec_pretty(&ManifestFile { schema: SCHEMA })
+                .map(|mut v| {
+                    v.push(b'\n');
+                    v
+                })
+                .context("serializando MANIFEST.json")?,
+        );
+        out.insert(SETTINGS.into(), to_yaml(&s.settings)?);
+        out.insert(
+            PROVIDERS.into(),
+            to_yaml(&ProvidersFile {
+                providers: s.providers,
+            })?,
+        );
+        for p in &s.projects {
+            out.insert(project_path(&p.id), to_yaml(p)?);
+        }
+        Ok(out)
+    }
+
+    /// Lê o estado de uma árvore de arquivos. `Ok(None)` = não há infra gravada (sem `MANIFEST.json`).
+    pub fn read(tree: &FileTree) -> Result<Option<InfraState>> {
+        let Some(m) = tree.read(MANIFEST)? else {
+            return Ok(None);
+        };
+        let m: ManifestFile = serde_json::from_slice(&m).context("lendo MANIFEST.json")?;
+        if m.schema > SCHEMA {
+            bail!(
+                "o estado de infra está no formato v{}, mas este daemon só entende até v{SCHEMA}; atualize o rustployd",
+                m.schema
+            );
+        }
+        let settings = match tree.read(SETTINGS)? {
+            Some(b) => from_yaml(&b).context(SETTINGS)?,
+            None => SettingsInfra::default(),
+        };
+        let providers = match tree.read(PROVIDERS)? {
+            Some(b) => from_yaml::<ProvidersFile>(&b).context(PROVIDERS)?.providers,
+            None => vec![],
+        };
+        let mut projects = vec![];
+        for rel in tree.list()? {
+            if rel.starts_with("projects/") && rel.ends_with("/project.yml") {
+                let b = tree.read(&rel)?.with_context(|| format!("{rel} sumiu"))?;
+                projects.push(from_yaml::<ProjectInfra>(&b).with_context(|| rel.clone())?);
+            }
+        }
+        let mut st = InfraState {
+            settings,
+            providers,
+            projects,
+        };
+        st.normalize();
+        Ok(Some(st))
+    }
+
+    /// Grava o estado inteiro numa transação: escreve o que mudou e **apaga** os projetos que
+    /// deixaram de existir.
+    pub fn write(&self, tree: &FileTree) -> Result<()> {
+        self.validate()?;
+        let files = self.to_files()?;
+        let mut tx = super::txn::Tx::new();
+        for (rel, bytes) in &files {
+            if tree.read(rel)?.as_deref() != Some(bytes.as_slice()) {
+                tx.write(rel.clone(), bytes.clone());
+            }
+        }
+        for rel in tree.list()? {
+            if rel.starts_with("projects/") && !files.contains_key(&rel) {
+                tx.delete(rel);
+            }
+        }
+        if tx.is_empty() {
+            return Ok(());
+        }
+        tree.commit(tx)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn t(s: &str) -> DateTime<Utc> {
+        DateTime::parse_from_rfc3339(s).unwrap().with_timezone(&Utc)
+    }
+
+    fn project(id: &str, name: &str) -> ProjectInfra {
+        ProjectInfra {
+            id: id.into(),
+            name: name.into(),
+            description: None,
+            env_vars: vec![],
+            env_comments: vec![],
+            network_name: Some(format!("rp_{id}")),
+            created_at: t("2026-01-01T10:00:00.123456789Z"),
+            services: vec![],
+            jobs: vec![],
+            secrets: vec![SecretInfra {
+                id: "s1".into(),
+                key: "TOKEN".into(),
+                value: "cifrado".into(),
+            }],
+            managed_databases: vec![],
+            shared_access: vec![],
+        }
+    }
+
+    #[test]
+    fn ida_e_volta_pelo_disco_e_bytes_estaveis() {
+        let dir = tempfile::tempdir().unwrap();
+        let tree = FileTree::open(dir.path().join("infra")).unwrap();
+        let st = InfraState {
+            settings: SettingsInfra {
+                acme_email: Some("a@b.c".into()),
+                registry_domain: None,
+                docker_cleanup_config: Some(serde_json::json!({"enabled": true, "days": 7})),
+            },
+            providers: vec![],
+            projects: vec![project("p2", "Segundo App"), project("p1", "Primeiro")],
+        };
+        assert!(InfraState::read(&tree).unwrap().is_none());
+        st.write(&tree).unwrap();
+        let back = InfraState::read(&tree).unwrap().unwrap();
+        let mut esperado = st.clone();
+        esperado.normalize();
+        assert_eq!(back, esperado);
+        // escrever de novo o mesmo estado não muda nada (nenhuma transação)
+        let antes = tree.list().unwrap();
+        st.write(&tree).unwrap();
+        assert_eq!(antes, tree.list().unwrap());
+        // dois estados iguais em ordens diferentes geram os mesmos bytes
+        let mut inv = st.clone();
+        inv.projects.reverse();
+        assert_eq!(st.to_files().unwrap(), inv.to_files().unwrap());
+    }
+
+    #[test]
+    fn projeto_removido_apaga_o_arquivo() {
+        let dir = tempfile::tempdir().unwrap();
+        let tree = FileTree::open(dir.path().join("infra")).unwrap();
+        let mut st = InfraState {
+            projects: vec![project("p1", "A"), project("p2", "B")],
+            ..Default::default()
+        };
+        st.write(&tree).unwrap();
+        st.projects.pop();
+        st.write(&tree).unwrap();
+        let back = InfraState::read(&tree).unwrap().unwrap();
+        assert_eq!(back.projects.len(), 1);
+        assert!(tree.read("projects/p2/project.yml").unwrap().is_none());
+    }
+
+    #[test]
+    fn validacao_recusa_referencia_quebrada() {
+        let mut st = InfraState {
+            projects: vec![project("p1", "A")],
+            ..Default::default()
+        };
+        st.projects[0].shared_access.push(SharedAccessInfra {
+            server_service_id: "fantasma".into(),
+            created_at: t("2026-01-01T00:00:00Z"),
+        });
+        assert!(st.validate().is_err());
+        let dir = tempfile::tempdir().unwrap();
+        let tree = FileTree::open(dir.path().join("infra")).unwrap();
+        assert!(st.write(&tree).is_err());
+        assert!(
+            InfraState::read(&tree).unwrap().is_none(),
+            "nada pode ter sido gravado"
+        );
+    }
+
+    #[test]
+    fn schema_futuro_e_recusado() {
+        let dir = tempfile::tempdir().unwrap();
+        let tree = FileTree::open(dir.path().join("infra")).unwrap();
+        let mut tx = super::super::txn::Tx::new();
+        tx.write("MANIFEST.json", br#"{"schema": 99}"#.to_vec());
+        tree.commit(tx).unwrap();
+        let e = InfraState::read(&tree).unwrap_err().to_string();
+        assert!(e.contains("v99"), "{e}");
+    }
+}

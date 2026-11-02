@@ -11,6 +11,35 @@ use shared::{EnvVarValue, Job, Service};
 use std::collections::HashMap;
 use tracing::{debug, error, warn};
 
+/// Resolve o valor de uma env `Secret(nome)`. **Secret ausente é erro** (antes virava string
+/// vazia em silêncio e o container subia com a variável vazia). A mensagem diz qual secret
+/// falta, para qual env e onde foi procurado, e some junto com o deploy/job que a usou.
+///
+/// Escopo: com `service_id`, o secret **do serviço** vale antes do **do projeto**; sem ele (env de
+/// projeto, job autônomo), só o do projeto.
+async fn secret_value(
+    secrets: &SecretsManager,
+    project_id: &str,
+    service_id: Option<&str>,
+    secret_name: &str,
+    env_key: &str,
+    owner: &str,
+) -> Result<String> {
+    secrets
+        .resolve(project_id, service_id, secret_name)
+        .await
+        .map_err(|e| {
+            let onde = match service_id {
+                Some(sid) => format!("nos secrets do serviço '{sid}' e do projeto '{project_id}'"),
+                None => format!("nos secrets do projeto '{project_id}'"),
+            };
+            anyhow::anyhow!(
+                "a env '{env_key}' ({owner}) aponta para o secret '{secret_name}', que não pôde ser resolvido \
+                 (procurado {onde}): {e}"
+            )
+        })
+}
+
 /// Só as env vars do projeto (base), secrets decifradas — sem nenhuma
 /// específica de serviço. Reaproveitado por `resolve` (que soma as do
 /// serviço por cima) e por `resolve_project_only` (jobs autônomos, sem
@@ -45,7 +74,7 @@ async fn resolve_project_env(
             EnvVarValue::Plain(v) => v.clone(),
             EnvVarValue::Secret(name) => {
                 debug!(project_id, secret = %name, "resolve_env: desencriptando secret do projeto");
-                secrets.get_raw(project_id, name).await.unwrap_or_default()
+                secret_value(secrets, project_id, None, name, &ev.key, "projeto").await?
             }
         };
         env_map.insert(ev.key.clone(), value);
@@ -69,10 +98,15 @@ pub async fn resolve(
             EnvVarValue::Plain(v) => v.clone(),
             EnvVarValue::Secret(name) => {
                 debug!(service_id = %svc.id, secret = %name, "resolve_env: desencriptando secret do serviço");
-                secrets
-                    .get_raw(&svc.spec.project_id, name)
-                    .await
-                    .unwrap_or_default()
+                secret_value(
+                    secrets,
+                    &svc.spec.project_id,
+                    Some(&svc.id),
+                    name,
+                    &ev.key,
+                    "serviço",
+                )
+                .await?
             }
         };
         env_map.insert(ev.key.clone(), value);
@@ -135,10 +169,15 @@ pub async fn resolve_job(
             EnvVarValue::Plain(v) => v.clone(),
             EnvVarValue::Secret(name) => {
                 debug!(job_id = %job.id, secret = %name, "resolve_env: desencriptando secret do job");
-                secrets
-                    .get_raw(&job.project_id, name)
-                    .await
-                    .unwrap_or_default()
+                secret_value(
+                    secrets,
+                    &job.project_id,
+                    job.trigger_service_id.as_deref(),
+                    name,
+                    &ev.key,
+                    "job",
+                )
+                .await?
             }
         };
         env_map.insert(ev.key.clone(), value);
@@ -152,4 +191,126 @@ pub async fn resolve_job(
     );
 
     Ok(env_map.into_iter().collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn secret_ausente_vira_erro_que_diz_qual_e_onde() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Arc::new(crate::store::connect(dir.path()).await.unwrap());
+        let secrets = SecretsManager::new(&dir.path().join("master.key"), db).unwrap();
+
+        let err = secret_value(
+            &secrets,
+            "proj_1",
+            None,
+            "DB_PASSWORD",
+            "DATABASE_PASSWORD",
+            "serviço",
+        )
+        .await
+        .unwrap_err()
+        .to_string();
+
+        assert!(err.contains("DB_PASSWORD"), "{err}");
+        assert!(err.contains("DATABASE_PASSWORD"), "{err}");
+        assert!(err.contains("proj_1"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn secret_existente_continua_resolvendo() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Arc::new(crate::store::connect(dir.path()).await.unwrap());
+        db.seed_project_for_test("proj_1");
+        let secrets = SecretsManager::new(&dir.path().join("master.key"), db).unwrap();
+        secrets.set("proj_1", "TOKEN", "abc123").await.unwrap();
+
+        let v = secret_value(&secrets, "proj_1", None, "TOKEN", "API_TOKEN", "projeto")
+            .await
+            .unwrap();
+        assert_eq!(v, "abc123");
+    }
+
+    /// A env do serviço enxerga o secret do serviço antes do de projeto; o job com serviço gatilho
+    /// enxerga os dois; o job autônomo só o do projeto.
+    #[tokio::test]
+    async fn escopos_de_secret_na_resolucao_de_servico_e_job() {
+        use shared::{EnvVar, EnvVarValue};
+        let dir = tempfile::tempdir().unwrap();
+        let db = Arc::new(crate::store::connect(dir.path()).await.unwrap());
+        db.seed_project_for_test("p1");
+        db.seed_service_for_test("p1", "s1");
+        let secrets = SecretsManager::new(&dir.path().join("master.key"), db.clone()).unwrap();
+        secrets.set("p1", "SENHA", "do-projeto").await.unwrap();
+        secrets.set("p1", "SO_PROJETO", "pp").await.unwrap();
+        secrets
+            .set_scoped("p1", Some("s1"), "SENHA", "do-servico")
+            .await
+            .unwrap();
+        secrets
+            .set_scoped("p1", Some("s1"), "SO_SERVICO", "ss")
+            .await
+            .unwrap();
+        let sec = |k: &str, n: &str| EnvVar {
+            key: k.into(),
+            value: EnvVarValue::Secret(n.into()),
+        };
+        // env do serviço: SENHA (serviço vence), SO_PROJETO (cai no projeto), SO_SERVICO
+        db.infra()
+            .update(|st| {
+                st.projects[0].services[0].spec.env_vars = vec![
+                    sec("A", "SENHA"),
+                    sec("B", "SO_PROJETO"),
+                    sec("C", "SO_SERVICO"),
+                ];
+                Ok(())
+            })
+            .unwrap();
+        let svc = crate::store::services::get(&db, "s1")
+            .await
+            .unwrap()
+            .unwrap();
+        let map: std::collections::HashMap<_, _> = resolve(&db, &secrets, &svc)
+            .await
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(map["A"], "do-servico");
+        assert_eq!(map["B"], "pp");
+        assert_eq!(map["C"], "ss");
+
+        // job COM gatilho: o override do job pode apontar para um secret do serviço gatilho
+        let mk_job = |trigger: Option<&str>| shared::Job {
+            id: "j".into(),
+            project_id: "p1".into(),
+            trigger_service_id: trigger.map(String::from),
+            name: "j".into(),
+            compose: String::new(),
+            git_source: None,
+            main_service: "m".into(),
+            env_vars: vec![sec("X", "SO_SERVICO")],
+            env_comments: vec![],
+            enabled: true,
+            recurrence: None,
+            last_run_at: None,
+            next_run_at: None,
+            created_at: chrono::Utc::now(),
+        };
+        let com: std::collections::HashMap<_, _> = resolve_job(&db, &secrets, &mk_job(Some("s1")))
+            .await
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(com["X"], "ss");
+        // job autônomo: o secret do serviço NÃO é visível → erro de deploy claro
+        let e = resolve_job(&db, &secrets, &mk_job(None))
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("SO_SERVICO") && e.contains("job"), "{e}");
+    }
 }

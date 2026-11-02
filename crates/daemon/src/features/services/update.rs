@@ -9,6 +9,11 @@ pub async fn handle(state: ServicesContext, id: String, mut spec: ServiceSpec) -
     if let Some(reason) = crate::platform::env_validation::validate(&spec.env_vars) {
         return RpResponse::err("InvalidInput", reason);
     }
+    if let Err(resp) =
+        crate::features::services::check_depends_on(&state.db, &spec, Some(&id)).await
+    {
+        return resp;
+    }
     // Porta externa: sentinela 0 → aloca; manual duplicada → erro.
     if let Err(e) =
         crate::features::ingress::external_ports::resolve_host_port(&state.db, &mut spec, Some(&id))

@@ -4,12 +4,13 @@
 #![allow(dead_code)] // API de quando o módulo vivia no `shared`; parte dela só os testes usam.
 
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 /// Process-wide configuration singleton. Loaded once (files + env vars) on first
 /// access and shared everywhere via [`RustployConfig::global`].
 static CONFIG: OnceLock<RustployConfig> = OnceLock::new();
+static CONFIG_PATH: OnceLock<Option<PathBuf>> = OnceLock::new();
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EnvBackupConfig {
@@ -298,7 +299,18 @@ pub struct MetricsConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SecretsConfig {
+    /// Chave antiga (passphrase). Só serve para ler segredos cifrados por versões anteriores;
+    /// tudo o que é gravado hoje usa `age_identity`.
     pub master_key_path: String,
+    /// Identidade `age` (X25519, `AGE-SECRET-KEY-1…`) que cifra e decifra os segredos
+    /// (`ENC[age:…]`). Ausente → o daemon gera uma na primeira subida e a grava aqui.
+    /// **Perder esta chave sem ter `recovery_recipient` = perder todos os segredos.**
+    #[serde(default)]
+    pub age_identity: Option<String>,
+    /// Chave **pública** (`age1…`) de recuperação: todo segredo novo também fica legível por quem
+    /// tem a chave privada correspondente (guardada fora do servidor).
+    #[serde(default)]
+    pub recovery_recipient: Option<String>,
 }
 
 impl Default for RustployConfig {
@@ -331,6 +343,8 @@ impl Default for RustployConfig {
             },
             secrets: SecretsConfig {
                 master_key_path: "/etc/rustploy/master.key".into(),
+                age_identity: None,
+                recovery_recipient: None,
             },
             api: ApiConfig::default(),
             env_backup: EnvBackupConfig::default(),
@@ -347,10 +361,26 @@ impl RustployConfig {
     /// This is the single entry point every binary should use so that all
     /// `RUSTPLOY_*` environment variables are read in exactly one place.
     pub fn global() -> &'static RustployConfig {
-        CONFIG.get_or_init(Self::load)
+        CONFIG.get_or_init(|| {
+            let (cfg, path) = Self::load_with_path();
+            let _ = CONFIG_PATH.set(path);
+            cfg
+        })
+    }
+
+    /// Arquivo de onde `global()` leu a config (`None` = defaults).
+    pub fn global_path() -> Option<&'static Path> {
+        Self::global();
+        CONFIG_PATH.get().and_then(|p| p.as_deref())
     }
 
     pub fn load() -> Self {
+        Self::load_with_path().0
+    }
+
+    /// Como [`load`](Self::load), devolvendo também o arquivo de onde a config saiu (`None` = veio
+    /// dos defaults). O daemon precisa dele para gravar a identidade `age` gerada na primeira subida.
+    pub fn load_with_path() -> (Self, Option<std::path::PathBuf>) {
         let paths = [
             std::env::var("RUSTPLOY_CONFIG")
                 .ok()
@@ -363,11 +393,11 @@ impl RustployConfig {
             if let Ok(contents) = std::fs::read_to_string(&path)
                 && let Ok(cfg) = toml::from_str(&contents)
             {
-                return Self::apply_env_overrides(cfg);
+                return (Self::apply_env_overrides(cfg), Some(path));
             }
         }
 
-        Self::apply_env_overrides(Self::default())
+        (Self::apply_env_overrides(Self::default()), None)
     }
 
     fn apply_env_overrides(mut cfg: Self) -> Self {

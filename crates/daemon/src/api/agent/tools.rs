@@ -188,6 +188,19 @@ pub async fn call(state: &AppState, name: &str, args: &Value) -> Result<Value, T
     }
 }
 
+/// Comandos que o agente (MCP/`rpc`) **nunca** pode executar, qualquer que seja a configuração.
+/// Devolve o motivo, que vai na mensagem de erro. Hoje está vazia de propósito: a Fase 5 do plano
+/// (`docs/plano-backup-estado-em-git.md`, R5) coloca aqui o `SecretReveal`, para o agente não ler
+/// segredo por engano. Já fica ligada ao `rpc` para que o comando novo nasça protegido.
+fn proibido_ao_agente(cmd: &Command) -> Option<&'static str> {
+    match cmd {
+        Command::SecretReveal { .. } => {
+            Some("revelar segredos é ação de uma pessoa na GUI/webui, não do agente")
+        }
+        _ => None,
+    }
+}
+
 /// Executa um `Command` (em JSON) e converte `Response::Err` em falha.
 pub async fn rpc(state: &AppState, command: Value) -> Result<Value, ToolError> {
     let cmd: Command = serde_json::from_value(command)
@@ -202,6 +215,9 @@ pub async fn rpc(state: &AppState, command: Value) -> Result<Value, ToolError> {
             "atualizar o daemon não é permitido ao agente: ligue `allow_agent_apply = true` em [update] \
              no config.toml, ou peça a uma pessoa que use Settings → Atualizações",
         ));
+    }
+    if let Some(motivo) = proibido_ao_agente(&cmd) {
+        return Err(ToolError::new("forbidden", motivo));
     }
     let resposta = serde_json::to_value(
         // No heap: o future do `dispatch` é enorme (um `match` com todo
@@ -619,6 +635,30 @@ fn source_label(source: Option<&Value>) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn revelar_secret_e_proibido_ao_agente_e_o_resto_dos_secrets_nao() {
+        let reveal = Command::SecretReveal {
+            project_id: "p".into(),
+            service_id: None,
+            name: "K".into(),
+        };
+        assert!(proibido_ao_agente(&reveal).is_some());
+        for ok in [
+            Command::SecretList {
+                project_id: "p".into(),
+                service_id: None,
+            },
+            Command::SecretSet {
+                project_id: "p".into(),
+                service_id: None,
+                name: "K".into(),
+                value: "v".into(),
+            },
+        ] {
+            assert!(proibido_ao_agente(&ok).is_none());
+        }
+    }
 
     #[test]
     fn desfecho_so_e_decidido_por_live_ou_failed() {

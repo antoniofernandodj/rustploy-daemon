@@ -59,6 +59,13 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         Command::SecretSet { .. } => "SecretSet",
         Command::SecretDelete { .. } => "SecretDelete",
         Command::SecretList { .. } => "SecretList",
+        Command::SecretReveal { .. } => "SecretReveal",
+        Command::InfraAudit => "InfraAudit",
+        Command::StateGitStatus => "StateGitStatus",
+        Command::StateGitConfigure { .. } => "StateGitConfigure",
+        Command::StateGitSyncNow => "StateGitSyncNow",
+        Command::InfraAuditAllow { .. } => "InfraAuditAllow",
+        Command::SecretMove { .. } => "SecretMove",
         Command::ManifestApply { .. } => "ManifestApply",
         Command::ManifestExport { .. } => "ManifestExport",
         Command::ManifestExportAll => "ManifestExportAll",
@@ -209,9 +216,16 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         | Command::RegistryTokenCreate { .. }
         | Command::RegistryTokenList
         | Command::RegistryTokenRevoke { .. } => handlers::registry::dispatch(state, cmd).await,
-        Command::SecretSet { .. } | Command::SecretDelete { .. } | Command::SecretList { .. } => {
-            handlers::secrets::dispatch(state, cmd).await
-        }
+        Command::SecretSet { .. }
+        | Command::SecretDelete { .. }
+        | Command::SecretList { .. }
+        | Command::SecretReveal { .. }
+        | Command::SecretMove { .. }
+        | Command::InfraAudit => handlers::secrets::dispatch(state, cmd).await,
+        Command::StateGitStatus
+        | Command::StateGitConfigure { .. }
+        | Command::StateGitSyncNow
+        | Command::InfraAuditAllow { .. } => handlers::state_git::dispatch(state, cmd).await,
         Command::ServiceCreate(_)
         | Command::ServiceList { .. }
         | Command::ServiceConnectionInfo { .. }

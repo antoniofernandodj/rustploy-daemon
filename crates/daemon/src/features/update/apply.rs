@@ -402,7 +402,10 @@ fn prepare_updates_dir(directory: &Path) -> std::io::Result<()> {
 }
 
 /// Cópia consistente do banco **em uso** (`VACUUM INTO`), antes de a versão nova poder migrar o
-/// esquema: voltar o binário antigo só serve se houver um banco do tempo dele. Mantém os mais recentes.
+/// esquema: voltar o binário antigo só serve se houver um banco do tempo dele. Ao lado do `.db`
+/// vai uma pasta `.infra/` com o estado de infra em YAML (projetos, serviços, jobs…), que desde a
+/// Fase 4d do plano `docs/plano-backup-estado-em-git.md` **não está mais no SQLite**: restaurar só
+/// o `.db` perderia as edições de infra feitas depois. Mantém os mais recentes (o par conta como um).
 pub async fn snapshot_database(db: &Db, directory: &Path, tag: &str) -> Result<PathBuf, String> {
     std::fs::create_dir_all(directory).map_err(|error| error.to_string())?;
     let safe_tag: String = tag
@@ -418,42 +421,93 @@ pub async fn snapshot_database(db: &Db, directory: &Path, tag: &str) -> Result<P
     let target = directory.join(format!("pre-update-{safe_tag}-{}.db", now_unix()));
     // O VACUUM INTO se recusa a sobrescrever: um snapshot do mesmo segundo precisa de outro nome.
     let target = unique_path(target);
+    // A pasta de infra primeiro: se ela falhar, não fica um `.db` solto sem o par.
+    snapshot_infra(db, &target.with_extension("infra"))?;
     sqlx::query("VACUUM INTO ?1")
         .bind(target.to_string_lossy().into_owned())
-        .execute(db)
+        .execute(db.pool())
         .await
         .map_err(|error| error.to_string())?;
     prune_snapshots(directory);
     Ok(target)
 }
 
+/// Grava o estado de infra atual em `dir`, no mesmo layout de `<db_path>/infra/`. Sai do estado em
+/// memória (nunca de um arquivo lido no meio de uma escrita), então é sempre um estado inteiro.
+/// A pasta é só do dono: tem senhas de banco e texto cifrado.
+fn snapshot_infra(db: &Db, dir: &Path) -> Result<(), String> {
+    let files = db
+        .infra()
+        .snapshot()
+        .to_files()
+        .map_err(|error| format!("estado de infra: {error}"))?;
+    create_private_dir(dir).map_err(|error| format!("{}: {error}", dir.display()))?;
+    for (relative, bytes) in files {
+        let path = dir.join(&relative);
+        if let Some(parent) = path.parent() {
+            create_private_dir(parent).map_err(|error| format!("{}: {error}", parent.display()))?;
+        }
+        std::fs::write(&path, bytes).map_err(|error| format!("{}: {error}", path.display()))?;
+    }
+    Ok(())
+}
+
+fn create_private_dir(dir: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dir)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+    }
+    Ok(())
+}
+
 fn unique_path(path: PathBuf) -> PathBuf {
-    if !path.exists() {
+    let taken = |candidate: &Path| candidate.exists() || candidate.with_extension("infra").exists();
+    if !taken(&path) {
         return path;
     }
     (1..)
         .map(|attempt| path.with_extension(format!("{attempt}.db")))
-        .find(|candidate| !candidate.exists())
+        .find(|candidate| !taken(candidate))
         .unwrap_or(path)
 }
 
+/// Remove os snapshots mais antigos. O `.db` e a pasta `.infra` com o mesmo nome-base são **um**
+/// snapshot: ficam ou saem juntos.
 fn prune_snapshots(directory: &Path) {
     let Ok(entries) = std::fs::read_dir(directory) else {
         return;
     };
-    let mut snapshots: Vec<(SystemTime, PathBuf)> = entries
-        .flatten()
-        .filter(|entry| {
-            entry
-                .file_name()
-                .to_string_lossy()
-                .starts_with("pre-update-")
-        })
-        .filter_map(|entry| Some((entry.metadata().ok()?.modified().ok()?, entry.path())))
-        .collect();
-    snapshots.sort_by_key(|snapshot| std::cmp::Reverse(snapshot.0));
-    for (_, path) in snapshots.into_iter().skip(SNAPSHOTS_KEPT) {
-        let _ = std::fs::remove_file(path);
+    let mut groups: std::collections::BTreeMap<String, (SystemTime, Vec<PathBuf>)> =
+        std::collections::BTreeMap::new();
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if !name.starts_with("pre-update-") {
+            continue;
+        }
+        let Some(modified) = entry.metadata().ok().and_then(|m| m.modified().ok()) else {
+            continue;
+        };
+        let stem = name
+            .strip_suffix(".db")
+            .or_else(|| name.strip_suffix(".infra"))
+            .unwrap_or(&name)
+            .to_string();
+        let group = groups.entry(stem).or_insert_with(|| (modified, Vec::new()));
+        group.0 = group.0.max(modified);
+        group.1.push(entry.path());
+    }
+    let mut ordered: Vec<(SystemTime, Vec<PathBuf>)> = groups.into_values().collect();
+    ordered.sort_by_key(|group| std::cmp::Reverse(group.0));
+    for (_, paths) in ordered.into_iter().skip(SNAPSHOTS_KEPT) {
+        for path in paths {
+            if path.is_dir() {
+                let _ = std::fs::remove_dir_all(path);
+            } else {
+                let _ = std::fs::remove_file(path);
+            }
+        }
     }
 }
 
@@ -763,6 +817,8 @@ mod tests {
             .await
             .unwrap();
         let snapshots = directory.path().join("snapshots");
+        // Um projeto no YAML: é isso que o `.infra/` do snapshot precisa carregar.
+        db.seed_project_for_test("prj_do_snapshot");
 
         let mut last = None;
         for _ in 0..5 {
@@ -774,8 +830,19 @@ mod tests {
             // O mtime tem resolução fina, mas garante a ordem entre arquivos criados em sequência.
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
-        let kept = std::fs::read_dir(&snapshots).unwrap().count();
-        assert_eq!(kept, SNAPSHOTS_KEPT);
+        // O `.db` e a pasta `.infra` de cada snapshot contam como um só.
+        let entries: Vec<String> = std::fs::read_dir(&snapshots)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        let dbs = entries.iter().filter(|n| n.ends_with(".db")).count();
+        let infras = entries.iter().filter(|n| n.ends_with(".infra")).count();
+        assert_eq!(
+            (dbs, infras),
+            (SNAPSHOTS_KEPT, SNAPSHOTS_KEPT),
+            "{entries:?}"
+        );
 
         // O snapshot abre como SQLite e tem as tabelas do banco original.
         let last = last.unwrap();
@@ -791,6 +858,20 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(tables, 1);
+
+        // A pasta de infra do snapshot é um estado completo e legível, e é só do dono.
+        let infra_dir = last.with_extension("infra");
+        let tree = crate::store::infra::txn::FileTree::open(&infra_dir).unwrap();
+        let state = crate::store::infra::model::InfraState::read(&tree)
+            .unwrap()
+            .expect("o snapshot de infra tem MANIFEST.json");
+        assert!(state.projects.iter().any(|p| p.id == "prj_do_snapshot"));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&infra_dir).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o700);
+        }
     }
 
     /// Conversa com um "helper" de mentira por um socket Unix de verdade.

@@ -71,7 +71,27 @@ pub async fn run() -> Result<()> {
     let ingress = Arc::new(IngressController::new());
 
     let master_key = config::resolve_master_key_path(&config.secrets.master_key_path);
-    let secrets = Arc::new(secrets::SecretsManager::new(&master_key, db.clone())?);
+    let secrets = Arc::new(secrets::SecretsManager::open(
+        &master_key,
+        db.clone(),
+        &config.secrets,
+        RustployConfig::global_path(),
+    )?);
+    // Segredos gravados por versões antigas (passphrase) passam para o formato age.
+    secrets.reencrypt_legacy().await?;
+    info!(public_key = %secrets.public_key(), "identidade age dos segredos");
+    if config
+        .secrets
+        .recovery_recipient
+        .as_deref()
+        .is_none_or(|s| s.trim().is_empty())
+    {
+        warn!(
+            "[secrets] recovery_recipient não está configurada: perder a age_identity deste servidor \
+             torna todos os segredos ilegíveis. Gere um par com `age-keygen`, guarde a privada fora \
+             do servidor e ponha a chave pública (age1…) em recovery_recipient."
+        );
+    }
 
     // TLS / ACME — email do banco tem precedência sobre o config
     let acme_config = {
@@ -191,6 +211,9 @@ pub async fn run() -> Result<()> {
     }
 
     workers::spawn_stateful(&state, registry_storage.clone(), &tls);
+    // Religa, na ordem das dependências, o que estava no ar antes do reboot (e não foi parado à
+    // mão). Depois do worker da fila de deploys: serviço sem container passa por ela.
+    deploy::autostart::spawn_boot(state.deploy_ctx());
     listeners::spawn(config, &state, &ingress, &tls, registry_storage);
 
     // Todo listener do daemon roda em `tokio::spawn`, então sem isto a

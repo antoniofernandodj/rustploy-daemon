@@ -42,6 +42,7 @@ pub struct ServiceEnvEntry {
 
 // ── Background loop ───────────────────────────────────────────────────────────
 
+#[allow(dead_code)] // desligado na Fase 0 do plano YAML; ver bootstrap/workers.rs
 pub async fn backup_loop(db: Arc<Db>, backup_dir: PathBuf, interval_secs: u64) {
     let mut ticker = interval(Duration::from_secs(interval_secs));
     let mut last_cleanup_month = Utc::now().month();

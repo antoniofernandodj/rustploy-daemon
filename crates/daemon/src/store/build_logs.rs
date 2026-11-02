@@ -15,7 +15,7 @@ pub async fn append(
         .bind(deployment_id)
         .bind(line)
         .bind(timestamp)
-        .execute(db)
+        .execute(db.pool())
         .await?;
     Ok(())
 }
@@ -23,7 +23,7 @@ pub async fn append(
 pub async fn delete_for_deployment(db: &Db, deployment_id: &str) -> Result<()> {
     sqlx::query("DELETE FROM build_log WHERE deployment_id = ?")
         .bind(deployment_id)
-        .execute(db)
+        .execute(db.pool())
         .await?;
     Ok(())
 }
@@ -33,7 +33,7 @@ pub async fn get_for_deployment(db: &Db, deployment_id: &str) -> Result<Vec<Buil
         "SELECT line, ts FROM build_log WHERE deployment_id = ? ORDER BY ts ASC",
     )
     .bind(deployment_id)
-    .fetch_all(db)
+    .fetch_all(db.pool())
     .await?;
     Ok(rows
         .into_iter()

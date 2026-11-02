@@ -288,7 +288,7 @@ async fn check_git_provider_refs(
 /// Extrai a lista de `ProjectManifest` de um YAML colado (raiz ou projeto
 /// único). Sem suporte a `include:` — não faz sentido para um texto sem
 /// arquivo de origem (fluxo de textarea da GUI).
-fn parse_projects(yaml: &str) -> Result<Vec<ProjectManifest>, String> {
+pub(crate) fn parse_projects(yaml: &str) -> Result<Vec<ProjectManifest>, String> {
     let value: serde_yaml::Value = serde_yaml::from_str(yaml).map_err(|e| e.to_string())?;
 
     if value.get("projects").is_some() {
@@ -411,6 +411,8 @@ mod git_provider_iac_tests {
             domains: vec![],
             pre_deploy_job_id: None,
             pre_deploy_job_ids: vec![],
+            depends_on: vec![],
+            autostart: true,
             shared: None,
         };
         crate::store::services::create(&db, spec).await.unwrap();
@@ -537,6 +539,8 @@ mod git_provider_iac_tests {
             domains: vec![],
             pre_deploy_job_id: None,
             pre_deploy_job_ids: vec![],
+            depends_on: vec![],
+            autostart: true,
             shared: None,
         };
         crate::store::services::create(&src_db, spec).await.unwrap();
@@ -686,6 +690,8 @@ services:
             domains: vec![],
             pre_deploy_job_id: None,
             pre_deploy_job_ids: vec![],
+            depends_on: vec![],
+            autostart: true,
             shared: None,
         };
         crate::store::services::create(&db, spec).await.unwrap();
@@ -781,6 +787,8 @@ services:
             domains: vec![],
             pre_deploy_job_id: None,
             pre_deploy_job_ids: vec![],
+            depends_on: vec![],
+            autostart: true,
             shared: None,
         };
         crate::store::services::create(&src_db, spec).await.unwrap();

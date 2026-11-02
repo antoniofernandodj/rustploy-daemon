@@ -1,48 +1,33 @@
-//! Tabela `service`: CRUD do ServiceSpec, status e container live.
+//! Serviços: o `ServiceSpec` e o nome da stack Compose moram no **YAML de infra**
+//! (`store::infra`); o **runtime** (status, container live, intenção `desired_state`) mora no
+//! SQLite, na tabela `service_runtime`. Plano: `docs/plano-backup-estado-em-git.md`, Fases 2 e 4d.
+//!
+//! A tabela antiga `service` não é mais lida nem escrita (fica como rollback).
 
 use super::Db;
+use super::infra::model::{InfraState, ServiceInfra};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use shared::{Service, ServiceSource, ServiceSpec, ServiceStatus};
+use std::collections::HashMap;
 use tracing::{debug, info, warn};
 use ulid::Ulid;
 
-type ServiceRow = (
-    String,         // id
-    String,         // name
-    String,         // project_id
-    String,         // spec (JSON)
-    String,         // status
-    Option<String>, // live_container_id
-    DateTime<Utc>,  // created_at
-    DateTime<Utc>,  // updated_at
-    Option<String>, // compose_project (nome gravado da stack; só serviços Compose)
-);
+/// Linha de `service_runtime`: `(status, live_container_id, desired_state, updated_at)`.
+type Runtime = (String, Option<String>, String, DateTime<Utc>);
+type RuntimeRow = (String, String, Option<String>, String, DateTime<Utc>);
 
-fn row_to_service(row: ServiceRow) -> Result<Service> {
-    let (
-        id,
-        _name,
-        _project_id,
-        spec_json,
-        status_str,
-        live_container_id,
-        created_at,
-        updated_at,
-        compose_project,
-    ) = row;
-    let spec: ServiceSpec = serde_json::from_str(&spec_json)
-        .map_err(|e| anyhow::anyhow!("falha ao deserializar spec do banco: {}", e))?;
-    let status = parse_status(&status_str);
-    Ok(Service {
-        id,
-        spec,
-        compose_project,
-        status,
-        live_container_id,
-        created_at,
-        updated_at,
-    })
+async fn runtimes(db: &Db) -> Result<HashMap<String, Runtime>> {
+    let rows: Vec<RuntimeRow> = sqlx::query_as(
+        "SELECT service_id, status, live_container_id, desired_state, updated_at \
+         FROM service_runtime",
+    )
+    .fetch_all(db.pool())
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|(id, st, c, d, u)| (id, (st, c, d, u)))
+        .collect())
 }
 
 fn parse_status(s: &str) -> ServiceStatus {
@@ -60,21 +45,63 @@ fn parse_status(s: &str) -> ServiceStatus {
     }
 }
 
-const SELECT_COLS: &str = "id, name, project_id, spec, status, live_container_id, created_at, updated_at, compose_project";
+/// Junta a parte declarada (YAML) com o runtime (SQL). Serviço sem linha de runtime lê como
+/// `Stopped`.
+fn assemble(s: &ServiceInfra, rt: Option<&Runtime>) -> Service {
+    Service {
+        id: s.id.clone(),
+        spec: s.spec.clone(),
+        compose_project: s.compose_project.clone(),
+        status: rt
+            .map(|r| parse_status(&r.0))
+            .unwrap_or(ServiceStatus::Stopped),
+        live_container_id: rt.and_then(|r| r.1.clone()),
+        created_at: s.created_at,
+        updated_at: rt.map(|r| r.3).unwrap_or(s.created_at),
+    }
+}
+
+/// Todos os serviços do YAML, em ordem de criação, com o runtime junto.
+async fn all_services(db: &Db) -> Result<Vec<(Service, Option<Runtime>)>> {
+    let rts = runtimes(db).await?;
+    let st = db.infra().snapshot();
+    let mut out: Vec<(Service, Option<Runtime>)> = st
+        .projects
+        .iter()
+        .flat_map(|p| p.services.iter())
+        .map(|s| {
+            let rt = rts.get(&s.id).cloned();
+            (assemble(s, rt.as_ref()), rt)
+        })
+        .collect();
+    out.sort_by(|a, b| (a.0.created_at, &a.0.id).cmp(&(b.0.created_at, &b.0.id)));
+    Ok(out)
+}
+
+async fn filtered(db: &Db, keep: impl Fn(&Runtime) -> bool) -> Result<Vec<Service>> {
+    Ok(all_services(db)
+        .await?
+        .into_iter()
+        .filter(|(_, rt)| rt.as_ref().is_some_and(&keep))
+        .map(|(s, _)| s)
+        .collect())
+}
 
 /// Nome de stack para um serviço Compose novo: o curto
 /// (`rp_<últimos 8 do ID>_<nome>`); se já está em uso — chance de ~1 em 10¹² —,
 /// o ID inteiro.
-async fn new_compose_project(db: &Db, id: &str, name: &str) -> Result<String> {
+fn new_compose_project(st: &InfraState, id: &str, name: &str) -> String {
     let short = shared::new_compose_project_name(id, name);
-    let taken: Option<i64> = sqlx::query_scalar("SELECT 1 FROM service WHERE compose_project = ?")
-        .bind(&short)
-        .fetch_optional(db)
-        .await?;
-    Ok(match taken {
-        None => short,
-        Some(_) => shared::new_compose_project_name_long(id, name),
-    })
+    let taken = st
+        .projects
+        .iter()
+        .flat_map(|p| p.services.iter())
+        .any(|s| s.compose_project.as_deref() == Some(short.as_str()));
+    if taken {
+        shared::new_compose_project_name_long(id, name)
+    } else {
+        short
+    }
 }
 
 /// Regras de nome/`shared` (prefixo `rp-shared-` reservado etc.) — ver
@@ -91,135 +118,119 @@ fn check_shared_rules(spec: &ServiceSpec) -> Result<()> {
 
 pub async fn create(db: &Db, spec: ServiceSpec) -> Result<Service> {
     check_shared_rules(&spec)?;
-    // Unicidade: dois serviços não podem ter o mesmo nome (normalizado) no
-    // mesmo projeto — o nome vira o container/DNS `rp_<safe_name>` e o compose
-    // project name, então colidiriam. Comparamos por `normalize_name` para
-    // pegar também nomes diferentes que colapsam no mesmo safe_name
-    // (ex.: "my-api" e "my_api").
-    let new_safe = spec.safe_name();
-    let existing: Vec<(String,)> = sqlx::query_as("SELECT name FROM service WHERE project_id = ?")
-        .bind(&spec.project_id)
-        .fetch_all(db)
-        .await?;
-    if existing
-        .iter()
-        .any(|(n,)| shared::normalize_name(n) == new_safe)
-    {
-        anyhow::bail!(
-            "já existe um serviço com o nome \"{}\" neste projeto",
-            spec.name
-        );
-    }
-
     let id = format!("svc_{}", Ulid::new());
-    info!(id = %id, name = %spec.name, project_id = %spec.project_id, "db::services:
-:create");
+    info!(id = %id, name = %spec.name, project_id = %spec.project_id, "db::services::create");
     let now = Utc::now();
-    let spec_json = serde_json::to_string(&spec)?;
-    let compose_project = match &spec.source {
-        ServiceSource::Compose(_) => Some(new_compose_project(db, &id, &spec.name).await?),
-        _ => None,
-    };
+    let new_safe = spec.safe_name();
+    let rec = db.infra().update(|st| {
+        // Unicidade: dois serviços não podem ter o mesmo nome (normalizado) no mesmo projeto —
+        // o nome vira o container/DNS `rp_<safe_name>` e o compose project name, então
+        // colidiriam. Compara por `normalize_name` para pegar também nomes diferentes que
+        // colapsam no mesmo safe_name (ex.: "my-api" e "my_api").
+        let compose_project = match &spec.source {
+            ServiceSource::Compose(_) => Some(new_compose_project(st, &id, &spec.name)),
+            _ => None,
+        };
+        let Some(project) = st.projects.iter_mut().find(|p| p.id == spec.project_id) else {
+            anyhow::bail!("projeto {} não encontrado", spec.project_id);
+        };
+        if project
+            .services
+            .iter()
+            .any(|s| shared::normalize_name(&s.spec.name) == new_safe)
+        {
+            anyhow::bail!(
+                "já existe um serviço com o nome \"{}\" neste projeto",
+                spec.name
+            );
+        }
+        let rec = ServiceInfra {
+            id: id.clone(),
+            spec: spec.clone(),
+            compose_project,
+            created_at: now,
+            webhook_token: None,
+            secrets: vec![],
+        };
+        project.services.push(rec.clone());
+        Ok(rec)
+    })?;
+    // O runtime é opcional (sem linha lê como Stopped): se esta gravação falhar, o serviço já
+    // existe no YAML e nada fica inconsistente.
     sqlx::query(
-        "INSERT INTO service (id, name, project_id, spec, status, live_container_id, created_at, updated_at, compose_project)
-         VALUES (?, ?, ?, ?, 'Stopped', NULL, ?, ?, ?)",
+        "INSERT OR IGNORE INTO service_runtime (service_id, status, live_container_id, desired_state, updated_at)
+         VALUES (?, 'Stopped', NULL, 'Stopped', ?)",
     )
     .bind(&id)
-    .bind(&spec.name)
-    .bind(&spec.project_id)
-    .bind(&spec_json)
     .bind(now)
-    .bind(now)
-    .bind(&compose_project)
-    .execute(db)
+    .execute(db.pool())
     .await?;
-    let svc = Service {
-        id: id.clone(),
-        spec,
-        compose_project,
-        status: ServiceStatus::Stopped,
-        live_container_id: None,
-        created_at: now,
-        updated_at: now,
-    };
-    info!(service_id = %svc.id, name = %svc.spec.name, "db::services:
-:create: salvo");
+    let svc = assemble(&rec, None);
+    info!(service_id = %svc.id, name = %svc.spec.name, "db::services::create: salvo");
     Ok(svc)
 }
 
 pub async fn list(db: &Db, project_id: &str) -> Result<Vec<Service>> {
-    let rows = sqlx::query_as::<_, ServiceRow>(&format!(
-        "SELECT {SELECT_COLS} FROM service WHERE project_id = ? ORDER BY created_at ASC"
-    ))
-    .bind(project_id)
-    .fetch_all(db)
-    .await?;
-    rows.into_iter().map(row_to_service).collect()
+    Ok(all_services(db)
+        .await?
+        .into_iter()
+        .map(|(s, _)| s)
+        .filter(|s| s.spec.project_id == project_id)
+        .collect())
 }
 
 pub async fn get(db: &Db, id: &str) -> Result<Option<Service>> {
-    let row =
-        sqlx::query_as::<_, ServiceRow>(&format!("SELECT {SELECT_COLS} FROM service WHERE id = ?"))
-            .bind(id)
-            .fetch_optional(db)
-            .await?;
-    row.map(row_to_service).transpose()
+    let st = db.infra().snapshot();
+    let Some(rec) = st
+        .projects
+        .iter()
+        .flat_map(|p| p.services.iter())
+        .find(|s| s.id == id)
+    else {
+        return Ok(None);
+    };
+    let rt = runtimes(db).await?.remove(id);
+    Ok(Some(assemble(rec, rt.as_ref())))
 }
 
 pub async fn update_spec(db: &Db, id: &str, spec: ServiceSpec) -> Result<Option<Service>> {
     check_shared_rules(&spec)?;
-    // Mesma regra de unicidade de `create`, mas ignorando o próprio serviço:
-    // um rename não pode colidir (por nome normalizado) com outro serviço do
-    // mesmo projeto.
+    // Mesma regra de unicidade de `create`, mas ignorando o próprio serviço: um rename não pode
+    // colidir (por nome normalizado) com outro serviço do mesmo projeto.
     let new_safe = spec.safe_name();
-    let others: Vec<(String,)> =
-        sqlx::query_as("SELECT name FROM service WHERE project_id = ? AND id != ?")
-            .bind(&spec.project_id)
-            .bind(id)
-            .fetch_all(db)
-            .await?;
-    if others
-        .iter()
-        .any(|(n,)| shared::normalize_name(n) == new_safe)
-    {
-        anyhow::bail!(
-            "já existe um serviço com o nome \"{}\" neste projeto",
-            spec.name
-        );
-    }
-
-    let spec_json = serde_json::to_string(&spec)?;
-    let now = Utc::now();
-    // Serviço que virou Compose numa edição de fonte ainda não tem stack
-    // gravada: grava agora, com o nome de agora. Se já tem, não mexe — é o que
-    // faz o rename não trocar a stack.
-    let new_stack = match &spec.source {
-        ServiceSource::Compose(_) => {
-            let has: Option<Option<String>> =
-                sqlx::query_scalar("SELECT compose_project FROM service WHERE id = ?")
-                    .bind(id)
-                    .fetch_optional(db)
-                    .await?;
-            match has {
-                Some(None) => Some(new_compose_project(db, id, &spec.name).await?),
-                _ => None,
-            }
+    let found = db.infra().update(|st| {
+        let compose_name = new_compose_project(st, id, &spec.name);
+        let Some(project) = st
+            .projects
+            .iter_mut()
+            .find(|p| p.services.iter().any(|s| s.id == id))
+        else {
+            return Ok(false);
+        };
+        if project
+            .services
+            .iter()
+            .any(|s| s.id != id && shared::normalize_name(&s.spec.name) == new_safe)
+        {
+            anyhow::bail!(
+                "já existe um serviço com o nome \"{}\" neste projeto",
+                spec.name
+            );
         }
-        _ => None,
-    };
-    let rows_affected = sqlx::query(
-        "UPDATE service SET spec = ?, name = ?, updated_at = ?,
-                compose_project = COALESCE(compose_project, ?) WHERE id = ?",
-    )
-    .bind(&spec_json)
-    .bind(&spec.name)
-    .bind(now)
-    .bind(&new_stack)
-    .bind(id)
-    .execute(db)
-    .await?
-    .rows_affected();
-    if rows_affected == 0 {
+        let owner = project.id.clone();
+        let svc = project.services.iter_mut().find(|s| s.id == id).unwrap();
+        // Serviço que virou Compose numa edição de fonte ainda não tem stack gravada: grava agora,
+        // com o nome de agora. Se já tem, não mexe — é o que faz o rename não trocar a stack.
+        if matches!(spec.source, ServiceSource::Compose(_)) && svc.compose_project.is_none() {
+            svc.compose_project = Some(compose_name);
+        }
+        svc.spec = spec.clone();
+        // O serviço mora no projeto em que está; o spec acompanha (antes a coluna e o JSON podiam
+        // divergir).
+        svc.spec.project_id = owner;
+        Ok(true)
+    })?;
+    if !found {
         return Ok(None);
     }
     get(db, id).await
@@ -235,32 +246,22 @@ pub async fn update_spec(db: &Db, id: &str, spec: ServiceSpec) -> Result<Option<
 /// spec). Preserva a ordem dos itens restantes. Retorna quantos serviços
 /// foram atualizados.
 pub async fn clear_pre_deploy_job(db: &Db, job_id: &str) -> Result<u64> {
-    let rows = sqlx::query_as::<_, ServiceRow>(&format!("SELECT {SELECT_COLS} FROM service"))
-        .fetch_all(db)
-        .await?;
-    let mut cleared = 0u64;
-    for row in rows {
-        let svc = row_to_service(row)?;
-        let referenced_legacy = svc.spec.pre_deploy_job_id.as_deref() == Some(job_id);
-        let referenced_in_queue = svc.spec.pre_deploy_job_ids.iter().any(|j| j == job_id);
-        if !referenced_legacy && !referenced_in_queue {
-            continue;
+    db.infra().update(|st| {
+        let mut cleared = 0u64;
+        for svc in st.projects.iter_mut().flat_map(|p| p.services.iter_mut()) {
+            let legacy = svc.spec.pre_deploy_job_id.as_deref() == Some(job_id);
+            let queued = svc.spec.pre_deploy_job_ids.iter().any(|j| j == job_id);
+            if !legacy && !queued {
+                continue;
+            }
+            if legacy {
+                svc.spec.pre_deploy_job_id = None;
+            }
+            svc.spec.pre_deploy_job_ids.retain(|j| j != job_id);
+            cleared += 1;
         }
-        let mut spec = svc.spec;
-        if referenced_legacy {
-            spec.pre_deploy_job_id = None;
-        }
-        spec.pre_deploy_job_ids.retain(|j| j != job_id);
-        let spec_json = serde_json::to_string(&spec)?;
-        sqlx::query("UPDATE service SET spec = ?, updated_at = ? WHERE id = ?")
-            .bind(&spec_json)
-            .bind(Utc::now())
-            .bind(&svc.id)
-            .execute(db)
-            .await?;
-        cleared += 1;
-    }
-    Ok(cleared)
+        Ok(cleared)
+    })
 }
 
 pub async fn update_status(
@@ -277,18 +278,31 @@ pub async fn update_status(
         ),
         "db::services::update_status"
     );
-    let now = Utc::now();
-    sqlx::query(
-        "UPDATE service SET status = ?, live_container_id = ?, updated_at = ? WHERE id = ?",
-    )
-    .bind(status.to_string())
-    .bind(container_id)
-    .bind(now)
-    .bind(id)
-    .execute(db)
-    .await?;
-    debug!(service_id = %id, status = %status, "db::services:
-:update_status: atualizado");
+    // Só grava para serviço que existe (igual ao comportamento de antes).
+    let exists = db
+        .infra()
+        .snapshot()
+        .projects
+        .iter()
+        .flat_map(|p| p.services.iter())
+        .any(|s| s.id == id);
+    if exists {
+        sqlx::query(
+            "INSERT INTO service_runtime (service_id, status, live_container_id, desired_state, updated_at)
+             VALUES (?, ?, ?, 'Stopped', ?)
+             ON CONFLICT(service_id) DO UPDATE SET
+                status = excluded.status,
+                live_container_id = excluded.live_container_id,
+                updated_at = excluded.updated_at",
+        )
+        .bind(id)
+        .bind(status.to_string())
+        .bind(container_id)
+        .bind(Utc::now())
+        .execute(db.pool())
+        .await?;
+    }
+    debug!(service_id = %id, status = %status, "db::services::update_status: atualizado");
     Ok(())
 }
 
@@ -296,45 +310,102 @@ pub async fn delete(db: &Db, id: &str) -> Result<bool> {
     // Servidor compartilhado removido: os acessos dele não valem mais.
     super::shared_access::delete_for_server(db, id).await?;
     super::managed_database::delete_for_server(db, id).await?;
-    let rows_affected = sqlx::query("DELETE FROM service WHERE id = ?")
+    let removed = db.infra().update(|st| {
+        let mut removed = false;
+        for p in &mut st.projects {
+            let before = p.services.len();
+            p.services.retain(|s| s.id != id);
+            removed |= p.services.len() != before;
+        }
+        Ok(removed)
+    })?;
+    sqlx::query("DELETE FROM service_runtime WHERE service_id = ?")
         .bind(id)
-        .execute(db)
-        .await?
-        .rows_affected();
-    Ok(rows_affected > 0)
+        .execute(db.pool())
+        .await?;
+    Ok(removed)
+}
+
+/// Intenção do usuário para um serviço, **distinta do `status` observado**: `Running` = "deve
+/// estar no ar" (gravado por Iniciar/deploy), `Stopped` = "parado de propósito, ou nunca
+/// iniciado". É isso que o autostart do boot consulta (Fase 3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DesiredState {
+    Running,
+    Stopped,
+}
+
+impl DesiredState {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Running => "Running",
+            Self::Stopped => "Stopped",
+        }
+    }
+}
+
+/// Grava a intenção. Serviço sem linha de runtime ganha uma; serviço que não existe é ignorado.
+pub async fn set_desired_state(db: &Db, id: &str, state: DesiredState) -> Result<()> {
+    if get(db, id).await?.is_none() {
+        return Ok(());
+    }
+    sqlx::query(
+        "INSERT INTO service_runtime (service_id, status, live_container_id, desired_state, updated_at)
+         VALUES (?, 'Stopped', NULL, ?, ?)
+         ON CONFLICT(service_id) DO UPDATE SET desired_state = excluded.desired_state",
+    )
+    .bind(id)
+    .bind(state.as_str())
+    .bind(Utc::now())
+    .execute(db.pool())
+    .await?;
+    Ok(())
+}
+
+#[allow(dead_code)] // usado pelos testes e pela UI (badge "Parado (manual)"), que ainda não existe
+pub async fn desired_state(db: &Db, id: &str) -> Result<DesiredState> {
+    let v: Option<String> =
+        sqlx::query_scalar("SELECT desired_state FROM service_runtime WHERE service_id = ?")
+            .bind(id)
+            .fetch_optional(db.pool())
+            .await?;
+    Ok(match v.as_deref() {
+        Some("Running") => DesiredState::Running,
+        _ => DesiredState::Stopped,
+    })
+}
+
+/// Serviços que o usuário quer no ar (`desired_state = Running`), qualquer que seja o `status`
+/// observado agora. Entrada do autostart no boot.
+pub async fn get_desired_running(db: &Db) -> Result<Vec<Service>> {
+    filtered(db, |r| r.2 == "Running").await
 }
 
 pub async fn get_running(db: &Db) -> Result<Vec<Service>> {
-    let rows = sqlx::query_as::<_, ServiceRow>(&format!(
-        "SELECT {SELECT_COLS} FROM service WHERE status = 'Running'"
-    ))
-    .fetch_all(db)
-    .await?;
-    rows.into_iter().map(row_to_service).collect()
+    filtered(db, |r| r.0 == "Running").await
 }
 
 pub async fn count_by_project(db: &Db, project_id: &str) -> Result<i64> {
-    let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM service WHERE project_id = ?")
-        .bind(project_id)
-        .fetch_one(db)
-        .await?;
-    Ok(count)
+    Ok(db
+        .infra()
+        .snapshot()
+        .projects
+        .iter()
+        .find(|p| p.id == project_id)
+        .map(|p| p.services.len() as i64)
+        .unwrap_or(0))
 }
 
 pub async fn get_watchable(db: &Db) -> Result<Vec<Service>> {
-    let rows = sqlx::query_as::<_, ServiceRow>(&format!(
-        "SELECT {SELECT_COLS} FROM service WHERE status IN ('Running', 'Degraded')"
-    ))
-    .fetch_all(db)
-    .await?;
-    rows.into_iter().map(row_to_service).collect()
+    filtered(db, |r| r.0 == "Running" || r.0 == "Degraded").await
 }
 
 pub async fn list_all(db: &Db) -> Result<Vec<Service>> {
-    let rows = sqlx::query_as::<_, ServiceRow>(&format!("SELECT {SELECT_COLS} FROM service"))
-        .fetch_all(db)
-        .await?;
-    rows.into_iter().map(row_to_service).collect()
+    Ok(all_services(db)
+        .await?
+        .into_iter()
+        .map(|(s, _)| s)
+        .collect())
 }
 
 #[cfg(test)]
@@ -362,6 +433,8 @@ fn test_compose_spec(name: String, project_id: String) -> ServiceSpec {
         domains: vec![],
         pre_deploy_job_id: None,
         pre_deploy_job_ids: vec![],
+        depends_on: vec![],
+        autostart: true,
         shared: None,
     }
 }
@@ -395,13 +468,17 @@ mod tests {
             domains: vec![],
             pre_deploy_job_id: None,
             pre_deploy_job_ids: vec![],
+            depends_on: vec![],
+            autostart: true,
             shared: None,
         }
     }
 
     async fn mem_db() -> Db {
-        let dir = std::env::temp_dir().join(format!("rustploy_test_{}", Ulid::new()));
-        super::super::connect(&dir).await.unwrap()
+        let db = Db::memory_for_test().await;
+        db.seed_project_for_test("proj_a");
+        db.seed_project_for_test("proj_b");
+        db
     }
 
     #[tokio::test]
@@ -413,6 +490,231 @@ mod tests {
         // Nome que normaliza para o mesmo safe_name ("my-api" == "my_api") → erro.
         create(&db, spec("my-api", "proj_a")).await.unwrap();
         assert!(create(&db, spec("my_api", "proj_a")).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn spec_vai_ao_yaml_e_runtime_fica_no_sql() {
+        let db = mem_db().await;
+        let svc = create(&db, spec("api", "proj_a")).await.unwrap();
+        update_status(
+            &db,
+            &svc.id,
+            &ServiceStatus::Running,
+            Some("cont_secreto_1"),
+        )
+        .await
+        .unwrap();
+        let yaml = String::from_utf8(
+            db.infra()
+                .tree()
+                .read("projects/proj_a/project.yml")
+                .unwrap()
+                .unwrap(),
+        )
+        .unwrap();
+        assert!(yaml.contains("nginx:latest"), "o spec deve estar no YAML");
+        assert!(
+            !yaml.contains("Running") && !yaml.contains("cont_secreto_1"),
+            "status e container são runtime e não podem ir ao YAML:\n{yaml}"
+        );
+        // a tabela antiga `service` não recebe mais nada
+        let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM service")
+            .fetch_one(db.pool())
+            .await
+            .unwrap();
+        assert_eq!(n, 0);
+    }
+
+    #[tokio::test]
+    async fn criar_em_projeto_inexistente_falha_sem_deixar_rastro() {
+        let db = mem_db().await;
+        let e = create(&db, spec("api", "nao_existe")).await.unwrap_err();
+        assert!(e.to_string().contains("não encontrado"), "{e}");
+        assert!(list_all(&db).await.unwrap().is_empty());
+        let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM service_runtime")
+            .fetch_one(db.pool())
+            .await
+            .unwrap();
+        assert_eq!(n, 0);
+    }
+
+    #[tokio::test]
+    async fn webhook_token_acompanha_o_servico_no_yaml_cifrado() {
+        use crate::store::webhook_tokens as wh;
+        let db = std::sync::Arc::new(mem_db().await);
+        let dir = tempfile::tempdir().unwrap();
+        let sm = crate::platform::secrets::SecretsManager::new(
+            &dir.path().join("master.key"),
+            db.clone(),
+        )
+        .unwrap();
+        let svc = create(&db, spec("api", "proj_a")).await.unwrap();
+        assert!(wh::get(&db, &sm, &svc.id).await.unwrap().is_none());
+        wh::upsert(&db, &sm, &svc.id, "tok1").await.unwrap();
+        wh::upsert(&db, &sm, &svc.id, "tok2-visivel").await.unwrap();
+        assert_eq!(
+            wh::get(&db, &sm, &svc.id).await.unwrap().as_deref(),
+            Some("tok2-visivel")
+        );
+        // no disco só existe o texto cifrado
+        let yaml = String::from_utf8(
+            db.infra()
+                .tree()
+                .read("projects/proj_a/project.yml")
+                .unwrap()
+                .unwrap(),
+        )
+        .unwrap();
+        assert!(yaml.contains("ENC[age:") && !yaml.contains("tok2-visivel"));
+        assert!(wh::upsert(&db, &sm, "fantasma", "x").await.is_err());
+        delete(&db, &svc.id).await.unwrap();
+        assert!(wh::get(&db, &sm, &svc.id).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn status_e_container_vivem_em_service_runtime() {
+        let db = mem_db().await;
+        let svc = create(&db, spec("api", "proj_a")).await.unwrap();
+        assert_eq!(svc.status, ServiceStatus::Stopped);
+
+        update_status(&db, &svc.id, &ServiceStatus::Running, Some("cont_1"))
+            .await
+            .unwrap();
+        let got = get(&db, &svc.id).await.unwrap().unwrap();
+        assert_eq!(got.status, ServiceStatus::Running);
+        assert_eq!(got.live_container_id.as_deref(), Some("cont_1"));
+
+        // A verdade é a tabela nova (as colunas legadas são só dupla escrita).
+        let (st,): (String,) =
+            sqlx::query_as("SELECT status FROM service_runtime WHERE service_id = ?")
+                .bind(&svc.id)
+                .fetch_one(db.pool())
+                .await
+                .unwrap();
+        assert_eq!(st, "Running");
+
+        // Filtros por runtime enxergam a tabela nova.
+        assert_eq!(get_running(&db).await.unwrap().len(), 1);
+        assert_eq!(get_watchable(&db).await.unwrap().len(), 1);
+        update_status(&db, &svc.id, &ServiceStatus::Stopped, None)
+            .await
+            .unwrap();
+        assert!(get_running(&db).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn update_status_de_servico_inexistente_nao_cria_linha_de_runtime() {
+        let db = mem_db().await;
+        update_status(&db, "svc_fantasma", &ServiceStatus::Running, None)
+            .await
+            .unwrap();
+        let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM service_runtime")
+            .fetch_one(db.pool())
+            .await
+            .unwrap();
+        assert_eq!(n, 0);
+    }
+
+    #[tokio::test]
+    async fn desired_state_comeca_parado_e_so_o_boot_ve_os_desejados_no_ar() {
+        let db = mem_db().await;
+        let a = create(&db, spec("a", "proj_a")).await.unwrap();
+        let b = create(&db, spec("b", "proj_a")).await.unwrap();
+        assert_eq!(
+            desired_state(&db, &a.id).await.unwrap(),
+            DesiredState::Stopped
+        );
+        assert!(get_desired_running(&db).await.unwrap().is_empty());
+
+        set_desired_state(&db, &a.id, DesiredState::Running)
+            .await
+            .unwrap();
+        let ids: Vec<String> = get_desired_running(&db)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|s| s.id)
+            .collect();
+        assert_eq!(ids, vec![a.id.clone()]);
+
+        // Mudar o status observado não mexe na intenção.
+        update_status(&db, &a.id, &ServiceStatus::Stopped, None)
+            .await
+            .unwrap();
+        assert_eq!(
+            desired_state(&db, &a.id).await.unwrap(),
+            DesiredState::Running
+        );
+
+        set_desired_state(&db, &a.id, DesiredState::Stopped)
+            .await
+            .unwrap();
+        assert!(get_desired_running(&db).await.unwrap().is_empty());
+        let _ = b;
+    }
+
+    #[tokio::test]
+    async fn delete_apaga_tambem_o_runtime() {
+        let db = mem_db().await;
+        let svc = create(&db, spec("api", "proj_a")).await.unwrap();
+        assert!(delete(&db, &svc.id).await.unwrap());
+        let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM service_runtime")
+            .fetch_one(db.pool())
+            .await
+            .unwrap();
+        assert_eq!(n, 0);
+    }
+
+    #[tokio::test]
+    async fn migracao_preenche_runtime_de_banco_antigo_e_preserva_a_intencao() {
+        let db = mem_db().await;
+        // Simula um banco pré-Fase 2: serviços só com as colunas legadas.
+        let up = create(&db, spec("up", "proj_a")).await.unwrap();
+        let down = create(&db, spec("down", "proj_a")).await.unwrap();
+        // A tabela antiga `service` não é mais escrita; o banco "antigo" é simulado à mão.
+        for (svc, status) in [(&up, "Running"), (&down, "Stopped")] {
+            sqlx::query(
+                "INSERT INTO service (id, name, project_id, spec, status, created_at, updated_at)
+                 VALUES (?, ?, 'proj_a', '{}', ?, ?, ?)",
+            )
+            .bind(&svc.id)
+            .bind(&svc.spec.name)
+            .bind(status)
+            .bind(Utc::now())
+            .bind(Utc::now())
+            .execute(db.pool())
+            .await
+            .unwrap();
+        }
+        sqlx::query("DELETE FROM service_runtime")
+            .execute(db.pool())
+            .await
+            .unwrap();
+
+        super::super::connect_existing_for_test(&db).await;
+
+        assert_eq!(
+            get(&db, &up.id).await.unwrap().unwrap().status,
+            ServiceStatus::Running
+        );
+        assert_eq!(
+            desired_state(&db, &up.id).await.unwrap(),
+            DesiredState::Running
+        );
+        assert_eq!(
+            desired_state(&db, &down.id).await.unwrap(),
+            DesiredState::Stopped
+        );
+
+        // Reexecutar a migração não sobrescreve a intenção já gravada.
+        set_desired_state(&db, &up.id, DesiredState::Stopped)
+            .await
+            .unwrap();
+        super::super::connect_existing_for_test(&db).await;
+        assert_eq!(
+            desired_state(&db, &up.id).await.unwrap(),
+            DesiredState::Stopped
+        );
     }
 
     #[tokio::test]
@@ -555,13 +857,9 @@ pub async fn backfill_compose_projects(
     db: &Db,
     live: &std::collections::BTreeMap<String, std::collections::BTreeSet<String>>,
 ) -> Result<()> {
-    let rows = sqlx::query_as::<_, ServiceRow>(&format!("SELECT {SELECT_COLS} FROM service"))
-        .fetch_all(db)
-        .await?;
-    let services: Vec<Service> = rows
-        .into_iter()
-        .map(row_to_service)
-        .collect::<Result<_>>()?;
+    let services: Vec<Service> = list_all(db).await?;
+    // O que decidimos gravar: `(id do serviço, nome da stack)`. Aplicado de uma vez no fim.
+    let mut decided: Vec<(String, String)> = vec![];
     let compose: Vec<&Service> = services
         .iter()
         .filter(|s| matches!(s.spec.source, ServiceSource::Compose(_)))
@@ -585,13 +883,7 @@ pub async fn backfill_compose_projects(
         .partition(|s| live.contains_key(&legacy_of(s)));
     for svc in exact {
         let legacy = legacy_of(svc);
-        sqlx::query(
-            "UPDATE service SET compose_project = ? WHERE id = ? AND compose_project IS NULL",
-        )
-        .bind(&legacy)
-        .bind(&svc.id)
-        .execute(db)
-        .await?;
+        decided.push((svc.id.clone(), legacy.clone()));
         taken.insert(legacy);
     }
 
@@ -631,23 +923,40 @@ pub async fn backfill_compose_projects(
             }
             legacy
         };
-        sqlx::query(
-            "UPDATE service SET compose_project = ? WHERE id = ? AND compose_project IS NULL",
-        )
-        .bind(&chosen)
-        .bind(&svc.id)
-        .execute(db)
-        .await?;
+        decided.push((svc.id.clone(), chosen.clone()));
         taken.insert(chosen);
     }
 
-    super::ensure_unique_index(
-        db,
-        "idx_service_compose_project",
-        "service(compose_project)",
-        "duas stacks Compose com o mesmo nome; separar exige decidir de quem são os volumes",
-    )
-    .await;
+    if !decided.is_empty() {
+        db.infra().update(|st| {
+            for svc in st.projects.iter_mut().flat_map(|p| p.services.iter_mut()) {
+                if svc.compose_project.is_none()
+                    && let Some((_, name)) = decided.iter().find(|(id, _)| *id == svc.id)
+                {
+                    svc.compose_project = Some(name.clone());
+                }
+            }
+            Ok(())
+        })?;
+    }
+
+    // Antes havia um índice UNIQUE no SQL; no YAML a unicidade é garantida na criação
+    // (`new_compose_project`). Dado antigo repetido só gera aviso, como o índice fazia.
+    let mut seen = std::collections::HashSet::new();
+    for s in db
+        .infra()
+        .snapshot()
+        .projects
+        .iter()
+        .flat_map(|p| p.services.iter())
+    {
+        if let Some(c) = &s.compose_project
+            && !seen.insert(c.clone())
+        {
+            warn!(stack = %c, "db::services::backfill: duas stacks Compose com o mesmo nome; separar exige decidir de quem são os volumes");
+        }
+    }
+
     Ok(())
 }
 
@@ -659,6 +968,34 @@ mod nome_gravado_tests {
     async fn temp_db() -> Db {
         let dir = std::env::temp_dir().join(format!("rustploy-test-{}", Ulid::new()));
         crate::store::connect(&dir).await.unwrap()
+    }
+
+    /// Simula um banco antigo: apaga o nome da stack gravado (de um serviço, ou de todos).
+    fn esquece_stack(db: &Db, id: Option<&str>) {
+        db.infra()
+            .update(|st| {
+                for s in st.projects.iter_mut().flat_map(|p| p.services.iter_mut()) {
+                    if id.is_none_or(|i| i == s.id) {
+                        s.compose_project = None;
+                    }
+                }
+                Ok(())
+            })
+            .unwrap();
+    }
+
+    /// Dá um id escolhido a um serviço (para simular um import no mesmo segundo).
+    fn troca_id(db: &Db, de: &str, para: &str) {
+        db.infra()
+            .update(|st| {
+                for s in st.projects.iter_mut().flat_map(|p| p.services.iter_mut()) {
+                    if s.id == de {
+                        s.id = para.to_string();
+                    }
+                }
+                Ok(())
+            })
+            .unwrap();
     }
 
     /// Stacks vivas do Docker: `(nome da stack, chaves de serviço dos containers)`.
@@ -689,7 +1026,7 @@ mod nome_gravado_tests {
             "INSERT INTO project (id, name, env_vars, created_at) VALUES ('prj_01ABCDEFGHJK', 'velho', '[]', ?)",
         )
         .bind(Utc::now())
-        .execute(&db)
+        .execute(db.pool())
         .await
         .unwrap();
         // Roda a migração de novo, como num boot seguinte.
@@ -743,19 +1080,11 @@ mod nome_gravado_tests {
         let svc = create(&db, spec).await.unwrap();
         // Simula banco antigo: stack não gravada; serviço renomeado; a stack
         // viva no Docker é a do nome antigo.
-        sqlx::query("UPDATE service SET compose_project = NULL WHERE id = ?")
-            .bind(&svc.id)
-            .execute(&db)
-            .await
-            .unwrap();
+        esquece_stack(&db, Some(&svc.id));
         let mut spec = svc.spec.clone();
         spec.name = "banco".into();
         update_spec(&db, &svc.id, spec).await.unwrap();
-        sqlx::query("UPDATE service SET compose_project = NULL WHERE id = ?")
-            .bind(&svc.id)
-            .execute(&db)
-            .await
-            .unwrap();
+        esquece_stack(&db, Some(&svc.id));
 
         let antiga = shared::compose_project_name(&svc.id, "postgres");
         backfill_compose_projects(&db, &live(&[("outra_coisa", &["x"]), (&antiga, &["app"])]))
@@ -772,11 +1101,7 @@ mod nome_gravado_tests {
         let svc = create(&db, test_compose_spec("db".into(), p.id.clone()))
             .await
             .unwrap();
-        sqlx::query("UPDATE service SET compose_project = NULL WHERE id = ?")
-            .bind(&svc.id)
-            .execute(&db)
-            .await
-            .unwrap();
+        esquece_stack(&db, Some(&svc.id));
         backfill_compose_projects(&db, &live(&[])).await.unwrap();
         let depois = get(&db, &svc.id).await.unwrap().unwrap();
         assert_eq!(
@@ -795,10 +1120,7 @@ mod nome_gravado_tests {
         let b = create(&db, test_compose_spec("b".into(), p.id.clone()))
             .await
             .unwrap();
-        sqlx::query("UPDATE service SET compose_project = NULL")
-            .execute(&db)
-            .await
-            .unwrap();
+        esquece_stack(&db, None);
         // Só a stack de `a` existe no Docker; `b` não pode adotá-la, mesmo se
         // os dois tivessem os mesmos 8 primeiros chars do ID.
         let stack_a = shared::compose_project_name(&a.id, "a");
@@ -837,12 +1159,7 @@ mod nome_gravado_tests {
             (&db_svc, "AAAAAAAAAAAAAAAAAAAAAAAA"),
             (&broker, "BBBBBBBBBBBBBBBBBBBBBBBB"),
         ] {
-            sqlx::query("UPDATE service SET id = ? WHERE id = ?")
-                .bind(format!("svc_01M3Q7T1{sufixo}"))
-                .bind(&svc.id)
-                .execute(&db)
-                .await
-                .unwrap();
+            troca_id(&db, &svc.id, &format!("svc_01M3Q7T1{sufixo}"));
         }
         let broker_id = "svc_01M3Q7T1BBBBBBBBBBBBBBBBBBBBBBBB";
         let db_id = "svc_01M3Q7T1AAAAAAAAAAAAAAAAAAAAAAAA";
@@ -850,10 +1167,7 @@ mod nome_gravado_tests {
         let mut spec = get(&db, broker_id).await.unwrap().unwrap().spec;
         spec.name = "mq".into();
         update_spec(&db, broker_id, spec).await.unwrap();
-        sqlx::query("UPDATE service SET compose_project = NULL")
-            .execute(&db)
-            .await
-            .unwrap();
+        esquece_stack(&db, None);
 
         backfill_compose_projects(&db, &live(&[("rp_01m3q7t1_broker", &["rp_broker"])]))
             .await

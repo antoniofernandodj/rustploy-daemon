@@ -1,7 +1,9 @@
 //! Motor de deploy: fila global, executor, recuperação no boot, clone git e
 //! resolução de env vars.
 
+pub mod autostart;
 mod context;
+pub mod deps;
 pub mod env_resolve;
 pub mod executor;
 pub mod git;

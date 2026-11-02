@@ -39,7 +39,7 @@ pub async fn webhook(req: Request<Incoming>, state: AppState) -> Response<Full<B
     let service_id = parts[1].to_string();
     let provided_token = parts[2].to_string();
 
-    let stored = match webhook_tokens::get(&state.db, &service_id).await {
+    let stored = match webhook_tokens::get(&state.db, &state.secrets, &service_id).await {
         Ok(Some(t)) => t,
         Ok(None) => return resp(StatusCode::UNAUTHORIZED, "invalid token"),
         Err(e) => {

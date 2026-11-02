@@ -5,7 +5,7 @@ use crate::{bootstrap::state::AppState, store::webhook_tokens};
 use shared::Response as RpResponse;
 
 pub async fn handle(state: AppState, service_id: String) -> RpResponse {
-    let token = match webhook_tokens::get(&state.db, &service_id).await {
+    let token = match webhook_tokens::get(&state.db, &state.secrets, &service_id).await {
         Ok(Some(t)) => t,
         Ok(None) => return RpResponse::WebhookUrl(None),
         Err(e) => return RpResponse::err("DatabaseError", e.to_string()),

@@ -67,6 +67,8 @@ pub struct AppState {
     pub update_checker: Arc<crate::features::update::UpdateChecker>,
     /// Baixa o pacote e o entrega ao helper root de instalação (ver `features::update::apply`).
     pub update_applier: Arc<crate::features::update::UpdateApplier>,
+    /// Sincronização do estado de infra com o git (Fase 6 do plano de estado em git).
+    pub state_git: Arc<crate::features::state_git::StateGit>,
 }
 
 impl AppState {
@@ -86,7 +88,9 @@ impl AppState {
         registry_storage: Option<Arc<crate::features::registry::storage::RegistryStorage>>,
         registry_internal_token: Option<Arc<str>>,
     ) -> Self {
+        let state_git = crate::features::state_git::StateGit::new(db.clone(), secrets.clone());
         Self {
+            state_git,
             db,
             docker,
             ingress,

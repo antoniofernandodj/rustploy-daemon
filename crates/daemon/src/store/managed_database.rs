@@ -3,6 +3,7 @@
 //! `Plain`) para a migração poder usá-la como destino.
 
 use super::Db;
+use super::infra::model::ManagedDatabaseInfra;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use ulid::Ulid;
@@ -20,84 +21,134 @@ pub struct Row {
     pub created_at: DateTime<Utc>,
 }
 
-type Tuple = (
-    String,
-    String,
-    String,
-    String,
-    String,
-    String,
-    Option<i64>,
-    Option<i64>,
-    DateTime<Utc>,
-);
+// Os bancos gerenciados moram no YAML de infra, dentro do projeto **consumidor**
+// (`ProjectInfra.managed_databases`). A tabela antiga `managed_database` não é mais lida nem
+// escrita. Atenção: `password` está em claro até a Fase 5 (ver `infra::model`).
 
-const COLS: &str = "id, server_service_id, project_id, name, password, env_var, connection_limit, statement_timeout_ms, created_at";
-
-fn row(t: Tuple) -> Row {
+fn to_row(project_id: &str, m: &ManagedDatabaseInfra) -> Row {
     Row {
-        id: t.0,
-        server_service_id: t.1,
-        project_id: t.2,
-        name: t.3,
-        password: t.4,
-        env_var: t.5,
-        connection_limit: t.6.map(|v| v as u32),
-        statement_timeout_ms: t.7.map(|v| v as u32),
-        created_at: t.8,
+        id: m.id.clone(),
+        server_service_id: m.server_service_id.clone(),
+        project_id: project_id.to_string(),
+        name: m.name.clone(),
+        password: m.password.clone(),
+        env_var: m.env_var.clone(),
+        connection_limit: m.connection_limit,
+        statement_timeout_ms: m.statement_timeout_ms,
+        created_at: m.created_at,
     }
+}
+
+fn all_rows(db: &Db) -> Vec<Row> {
+    let st = db.infra().snapshot();
+    let mut v: Vec<Row> = st
+        .projects
+        .iter()
+        .flat_map(|p| p.managed_databases.iter().map(move |m| to_row(&p.id, m)))
+        .collect();
+    v.sort_by(|a, b| (a.created_at, &a.id).cmp(&(b.created_at, &b.id)));
+    v
 }
 
 pub async fn insert(db: &Db, r: &Row) -> Result<Row> {
     let id = format!("mdb_{}", Ulid::new());
-    sqlx::query(&format!(
-        "INSERT INTO managed_database ({COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
-    ))
-    .bind(&id)
-    .bind(&r.server_service_id)
-    .bind(&r.project_id)
-    .bind(&r.name)
-    .bind(&r.password)
-    .bind(&r.env_var)
-    .bind(r.connection_limit.map(i64::from))
-    .bind(r.statement_timeout_ms.map(i64::from))
-    .bind(r.created_at)
-    .execute(db)
-    .await?;
+    let rec = ManagedDatabaseInfra {
+        id: id.clone(),
+        server_service_id: r.server_service_id.clone(),
+        name: r.name.clone(),
+        password: r.password.clone(),
+        env_var: r.env_var.clone(),
+        connection_limit: r.connection_limit,
+        statement_timeout_ms: r.statement_timeout_ms,
+        created_at: r.created_at,
+    };
+    // A validação do repositório recusa (servidor, nome) repetido — era o `UNIQUE` do SQL — e
+    // servidor que não existe.
+    db.infra().update(|st| {
+        let Some(p) = st.projects.iter_mut().find(|p| p.id == r.project_id) else {
+            anyhow::bail!("projeto {} não encontrado", r.project_id);
+        };
+        p.managed_databases.push(rec);
+        Ok(())
+    })?;
     Ok(Row { id, ..r.clone() })
 }
 
 pub async fn list(db: &Db, server_id: &str) -> Result<Vec<Row>> {
-    let rows: Vec<Tuple> = sqlx::query_as(&format!(
-        "SELECT {COLS} FROM managed_database WHERE server_service_id = ? ORDER BY created_at"
-    ))
-    .bind(server_id)
-    .fetch_all(db)
-    .await?;
-    Ok(rows.into_iter().map(row).collect())
+    Ok(all_rows(db)
+        .into_iter()
+        .filter(|r| r.server_service_id == server_id)
+        .collect())
 }
 
 pub async fn get(db: &Db, id: &str) -> Result<Option<Row>> {
-    let r: Option<Tuple> =
-        sqlx::query_as(&format!("SELECT {COLS} FROM managed_database WHERE id = ?"))
-            .bind(id)
-            .fetch_optional(db)
-            .await?;
-    Ok(r.map(row))
+    Ok(all_rows(db).into_iter().find(|r| r.id == id))
 }
 
 pub async fn delete(db: &Db, id: &str) -> Result<()> {
-    sqlx::query("DELETE FROM managed_database WHERE id = ?")
-        .bind(id)
-        .execute(db)
-        .await?;
-    Ok(())
+    db.infra().update(|st| {
+        for p in &mut st.projects {
+            p.managed_databases.retain(|m| m.id != id);
+        }
+        Ok(())
+    })
 }
 
 pub async fn delete_for_server(db: &Db, server_id: &str) -> Result<()> {
-    sqlx::query("DELETE FROM managed_database WHERE server_service_id = ?")
-        .bind(server_id)
-        .execute(db)
-        .await?;
-    Ok(())
+    db.infra().update(|st| {
+        for p in &mut st.projects {
+            p.managed_databases
+                .retain(|m| m.server_service_id != server_id);
+        }
+        Ok(())
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn row(server: &str, project: &str, name: &str) -> Row {
+        Row {
+            id: String::new(),
+            server_service_id: server.into(),
+            project_id: project.into(),
+            name: name.into(),
+            password: "pw".into(),
+            env_var: "DATABASE_URL".into(),
+            connection_limit: Some(5),
+            statement_timeout_ms: None,
+            created_at: Utc::now(),
+        }
+    }
+
+    #[tokio::test]
+    async fn crud_unicidade_e_limpeza_por_servidor() {
+        let db = Db::memory_for_test().await;
+        db.seed_project_for_test("srv");
+        db.seed_project_for_test("cli");
+        db.seed_service_for_test("srv", "svc_pg");
+
+        let a = insert(&db, &row("svc_pg", "cli", "loja")).await.unwrap();
+        assert!(a.id.starts_with("mdb_"));
+        assert!(
+            insert(&db, &row("svc_pg", "cli", "loja")).await.is_err(),
+            "(servidor, nome) é único"
+        );
+        assert!(
+            insert(&db, &row("svc_fantasma", "cli", "x")).await.is_err(),
+            "servidor inexistente"
+        );
+        insert(&db, &row("svc_pg", "cli", "blog")).await.unwrap();
+        assert_eq!(list(&db, "svc_pg").await.unwrap().len(), 2);
+        let got = get(&db, &a.id).await.unwrap().unwrap();
+        assert_eq!(
+            (got.project_id.as_str(), got.connection_limit),
+            ("cli", Some(5))
+        );
+        delete(&db, &a.id).await.unwrap();
+        assert!(get(&db, &a.id).await.unwrap().is_none());
+        delete_for_server(&db, "svc_pg").await.unwrap();
+        assert!(list(&db, "svc_pg").await.unwrap().is_empty());
+    }
 }

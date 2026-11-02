@@ -609,6 +609,8 @@ mod e2e {
             ],
             pre_deploy_job_id: None,
             pre_deploy_job_ids: vec![],
+            depends_on: vec![],
+            autostart: true,
             shared: None,
         }
     }

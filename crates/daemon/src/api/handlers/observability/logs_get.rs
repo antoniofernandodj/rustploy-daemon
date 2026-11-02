@@ -39,9 +39,11 @@ pub async fn handle(state: AppState, service_id: String, tail: usize) -> RpRespo
         for ev in &svc.spec.env_vars {
             let value = match &ev.value {
                 EnvVarValue::Plain(v) => v.clone(),
-                EnvVarValue::Secret(name) => {
-                    state.secrets.get_raw(pid, name).await.unwrap_or_default()
-                }
+                EnvVarValue::Secret(name) => state
+                    .secrets
+                    .resolve(pid, Some(&svc.id), name)
+                    .await
+                    .unwrap_or_default(),
             };
             env_map.insert(ev.key.clone(), value);
         }

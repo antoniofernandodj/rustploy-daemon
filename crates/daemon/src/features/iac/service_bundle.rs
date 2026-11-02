@@ -266,6 +266,8 @@ mod tests {
             ],
             pre_deploy_job_id: None,
             pre_deploy_job_ids: vec!["job_1".into()],
+            depends_on: vec![],
+            autostart: true,
             shared: None,
         }
     }

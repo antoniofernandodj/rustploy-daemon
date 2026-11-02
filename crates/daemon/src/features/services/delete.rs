@@ -34,6 +34,23 @@ async fn remove_containers(state: &ServicesContext, id: &str) -> Result<(), RpRe
 }
 
 pub async fn handle(state: ServicesContext, id: String) -> RpResponse {
+    // Guarda: não apaga um serviço do qual outros dependem (o autostart os deixaria bloqueados).
+    if let Ok(Some(svc)) = crate::store::services::get(&state.db, &id).await
+        && let Ok(all) =
+            crate::features::services::project_deps(&state.db, &svc.spec.project_id).await
+    {
+        let dependents = crate::features::deploy::deps::direct_dependents(&all, &id);
+        if !dependents.is_empty() {
+            let names: Vec<String> = dependents.into_iter().map(|(_, n)| n).collect();
+            return RpResponse::err(
+                "DependencyInUse",
+                format!(
+                    "outros serviços dependem deste: {} — remova a dependência neles antes de apagar",
+                    names.join(", ")
+                ),
+            );
+        }
+    }
     // Primeiro os containers: se o motor falhar, nada mudou (rotas, registro) e dá para tentar de novo.
     if let Err(e) = remove_containers(&state, &id).await {
         return e;

@@ -9,15 +9,19 @@ pub async fn handle(state: AppState) -> RpResponse {
         .await
         .unwrap_or_default();
 
-    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM service")
-        .fetch_one(&*state.db)
-        .await
-        .unwrap_or(0);
+    let total: usize = state
+        .db
+        .infra()
+        .snapshot()
+        .projects
+        .iter()
+        .map(|p| p.services.len())
+        .sum();
 
     RpResponse::DaemonStatus(shared::DaemonStatus {
         version: env!("CARGO_PKG_VERSION").into(),
         uptime_secs: state.started_at.elapsed().as_secs(),
         services_running: services.len(),
-        services_total: total as usize,
+        services_total: total,
     })
 }

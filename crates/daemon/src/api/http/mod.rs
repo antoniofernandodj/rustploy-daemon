@@ -853,6 +853,7 @@ pub(crate) async fn snapshot(state: &AppState) -> String {
                 state.clone(),
                 Command::SecretList {
                     project_id: p.id.clone(),
+                    service_id: None,
                 },
             )
             .await

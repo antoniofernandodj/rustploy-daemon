@@ -31,7 +31,7 @@ pub async fn append(
         .bind(stream_to_str(stream))
         .bind(line)
         .bind(timestamp)
-        .execute(db)
+        .execute(db.pool())
         .await?;
     Ok(())
 }
@@ -41,7 +41,7 @@ pub async fn get_for_run(db: &Db, job_run_id: &str) -> Result<Vec<BuildLogLine>>
         "SELECT stream, line, ts FROM job_log WHERE job_run_id = ? ORDER BY ts ASC, id ASC",
     )
     .bind(job_run_id)
-    .fetch_all(db)
+    .fetch_all(db.pool())
     .await?;
     Ok(rows
         .into_iter()

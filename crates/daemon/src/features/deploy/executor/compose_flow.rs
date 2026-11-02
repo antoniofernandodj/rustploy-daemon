@@ -19,7 +19,8 @@ impl DeployExecutor {
             "step[ComposingUp]: executando docker compose up"
         );
         let network_name = self.network_name(&svc.spec.project_id).await?;
-        let env_vars = self.resolve_env(svc).await.unwrap_or_default();
+        // Secret ausente falha o deploy (antes: unwrap_or_default subia a stack com a env vazia).
+        let env_vars = self.resolve_env(svc).await?;
         engine::compose::up(
             &self.docker.inner,
             &compose.content,

@@ -31,7 +31,7 @@ pub async fn create(db: &Db, name: &str, token_sha256: &str, scope: &str) -> Res
     .bind(token_sha256)
     .bind(scope)
     .bind(Utc::now())
-    .execute(db)
+    .execute(db.pool())
     .await?;
     Ok(())
 }
@@ -52,7 +52,7 @@ pub async fn upsert_internal(db: &Db, token_sha256: &str) -> Result<()> {
     .bind(RP_INTERNAL)
     .bind(token_sha256)
     .bind(Utc::now())
-    .execute(db)
+    .execute(db.pool())
     .await?;
     Ok(())
 }
@@ -62,7 +62,7 @@ pub async fn list(db: &Db) -> Result<Vec<TokenInfo>> {
     let rows: Vec<Row> = sqlx::query_as(
         "SELECT name, scope, created_at, last_used_at FROM registry_tokens WHERE name != 'rp-internal' ORDER BY name ASC",
     )
-    .fetch_all(db)
+    .fetch_all(db.pool())
     .await?;
     Ok(rows
         .into_iter()
@@ -78,7 +78,7 @@ pub async fn list(db: &Db) -> Result<Vec<TokenInfo>> {
 pub async fn revoke(db: &Db, name: &str) -> Result<bool> {
     let rows_affected = sqlx::query("DELETE FROM registry_tokens WHERE name = ?")
         .bind(name)
-        .execute(db)
+        .execute(db.pool())
         .await?
         .rows_affected();
     Ok(rows_affected > 0)
@@ -92,7 +92,7 @@ pub async fn verify_scope(db: &Db, token_sha256: &str) -> Result<Option<String>>
     let row: Option<(String,)> =
         sqlx::query_as("SELECT scope FROM registry_tokens WHERE token_sha256 = ?")
             .bind(token_sha256)
-            .fetch_optional(db)
+            .fetch_optional(db.pool())
             .await?;
     Ok(row.map(|(s,)| s))
 }
@@ -103,7 +103,7 @@ pub async fn touch_last_used(db: &Db, token_sha256: &str) -> Result<()> {
     sqlx::query("UPDATE registry_tokens SET last_used_at = ? WHERE token_sha256 = ?")
         .bind(Utc::now())
         .bind(token_sha256)
-        .execute(db)
+        .execute(db.pool())
         .await?;
     Ok(())
 }

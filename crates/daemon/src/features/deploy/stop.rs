@@ -14,6 +14,18 @@ pub async fn handle(state: DeployContext, service_id: String) -> RpResponse {
         _ => None,
     };
     let response = stop(&state, &service_id).await;
+    // Parar é uma decisão do usuário: grava a intenção para o autostart do boot não religar este
+    // serviço (só quando o stop deu certo — falhou, o serviço continua como estava).
+    if !matches!(response, RpResponse::Err { .. })
+        && let Err(e) = crate::store::services::set_desired_state(
+            &state.db,
+            &service_id,
+            crate::store::services::DesiredState::Stopped,
+        )
+        .await
+    {
+        tracing::warn!(service_id = %service_id, error = %e, "stop: não gravei desired_state=Stopped");
+    }
     // Falha no meio do stop não pode deixar o serviço preso em `Stopping`:
     // devolve o status anterior (a GUI volta a mostrar os botões, dá para repetir).
     if let (RpResponse::Err { .. }, Some((status, container_id))) = (&response, previous)
@@ -86,9 +98,11 @@ async fn stop(state: &DeployContext, service_id: &str) -> RpResponse {
         for ev in &svc.spec.env_vars {
             let value = match &ev.value {
                 EnvVarValue::Plain(v) => v.clone(),
-                EnvVarValue::Secret(name) => {
-                    state.secrets.get_raw(pid, name).await.unwrap_or_default()
-                }
+                EnvVarValue::Secret(name) => state
+                    .secrets
+                    .resolve(pid, Some(&svc.id), name)
+                    .await
+                    .unwrap_or_default(),
             };
             env_map.insert(ev.key.clone(), value);
         }

@@ -71,7 +71,7 @@ pub async fn create(db: &Db, service_id: &str, image: &str) -> Result<Deployment
     .bind(service_id)
     .bind(image)
     .bind(now)
-    .execute(db)
+    .execute(db.pool())
     .await?;
     let dep = Deployment {
         id: id.clone(),
@@ -91,7 +91,7 @@ pub async fn get(db: &Db, id: &str) -> Result<Option<Deployment>> {
         "SELECT {SELECT_COLS} FROM deployment WHERE id = ?"
     ))
     .bind(id)
-    .fetch_optional(db)
+    .fetch_optional(db.pool())
     .await?;
     Ok(row.map(row_to_deployment))
 }
@@ -102,7 +102,7 @@ pub async fn list_for_service(db: &Db, service_id: &str, limit: usize) -> Result
     ))
     .bind(service_id)
     .bind(limit as i64)
-    .fetch_all(db)
+    .fetch_all(db.pool())
     .await?;
     Ok(rows.into_iter().map(row_to_deployment).collect())
 }
@@ -112,7 +112,7 @@ pub async fn _latest_for_service(db: &Db, service_id: &str) -> Result<Option<Dep
         "SELECT {SELECT_COLS} FROM deployment WHERE service_id = ? ORDER BY started_at DESC LIMIT 1"
     ))
     .bind(service_id)
-    .fetch_optional(db)
+    .fetch_optional(db.pool())
     .await?;
     Ok(row.map(row_to_deployment))
 }
@@ -141,7 +141,7 @@ pub async fn transition(
     // Fetch current states_log, append the new transition, write back atomically.
     let row = sqlx::query_as::<_, (String,)>("SELECT states_log FROM deployment WHERE id = ?")
         .bind(id)
-        .fetch_optional(db)
+        .fetch_optional(db.pool())
         .await?
         .ok_or_else(|| anyhow::anyhow!("deployment not found: {id}"))?;
 
@@ -160,7 +160,7 @@ pub async fn transition(
         .bind(&log_json)
         .bind(finished_at)
         .bind(id)
-        .execute(db)
+        .execute(db.pool())
         .await?;
 
     get(db, id)
@@ -173,7 +173,7 @@ pub async fn list_recent(db: &Db, limit: usize) -> Result<Vec<Deployment>> {
         "SELECT {SELECT_COLS} FROM deployment ORDER BY started_at DESC LIMIT ?"
     ))
     .bind(limit as i64)
-    .fetch_all(db)
+    .fetch_all(db.pool())
     .await?;
     Ok(rows.into_iter().map(row_to_deployment).collect())
 }
@@ -183,7 +183,7 @@ pub async fn get_non_terminal(db: &Db) -> Result<Vec<Deployment>> {
         "SELECT {SELECT_COLS} FROM deployment
              WHERE state NOT IN ('Live', 'Stopped', 'Failed', 'Pruning')"
     ))
-    .fetch_all(db)
+    .fetch_all(db.pool())
     .await?;
     Ok(rows.into_iter().map(row_to_deployment).collect())
 }
@@ -198,7 +198,7 @@ pub async fn list_terminal_last_24h(db: &Db, limit: usize) -> Result<Vec<Deploym
     ))
     .bind(since)
     .bind(limit as i64)
-    .fetch_all(db)
+    .fetch_all(db.pool())
     .await?;
     Ok(rows.into_iter().map(row_to_deployment).collect())
 }
@@ -207,21 +207,21 @@ pub async fn stats_last_24h(db: &Db) -> Result<(u64, u64, u64)> {
     let since = chrono::Utc::now() - chrono::Duration::hours(24);
     let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM deployment WHERE started_at > ?")
         .bind(since)
-        .fetch_one(db)
+        .fetch_one(db.pool())
         .await
         .unwrap_or(0);
     let successful: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM deployment WHERE started_at > ? AND state = 'Live'",
     )
     .bind(since)
-    .fetch_one(db)
+    .fetch_one(db.pool())
     .await
     .unwrap_or(0);
     let failed: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM deployment WHERE started_at > ? AND state = 'Failed'",
     )
     .bind(since)
-    .fetch_one(db)
+    .fetch_one(db.pool())
     .await
     .unwrap_or(0);
     Ok((total as u64, successful as u64, failed as u64))
@@ -230,7 +230,7 @@ pub async fn stats_last_24h(db: &Db) -> Result<(u64, u64, u64)> {
 pub async fn delete(db: &Db, id: &str) -> Result<()> {
     sqlx::query("DELETE FROM deployment WHERE id = ?")
         .bind(id)
-        .execute(db)
+        .execute(db.pool())
         .await?;
     Ok(())
 }

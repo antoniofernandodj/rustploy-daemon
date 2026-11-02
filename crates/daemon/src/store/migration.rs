@@ -70,7 +70,7 @@ pub async fn save(db: &Db, r: &Record) -> Result<()> {
     .bind(serde_json::to_string(&r.env_changes)?)
     .bind(serde_json::to_string(&r.stopped_services)?)
     .bind(r.m.created_at)
-    .execute(db)
+    .execute(db.pool())
     .await?;
     Ok(())
 }
@@ -78,7 +78,7 @@ pub async fn save(db: &Db, r: &Record) -> Result<()> {
 pub async fn get(db: &Db, id: &str) -> Result<Option<Record>> {
     let t: Option<Tuple> = sqlx::query_as(&format!("SELECT {COLS} FROM migration WHERE id = ?"))
         .bind(id)
-        .fetch_optional(db)
+        .fetch_optional(db.pool())
         .await?;
     t.map(record).transpose()
 }
@@ -88,7 +88,7 @@ pub async fn list(db: &Db, project_id: &str) -> Result<Vec<Record>> {
         "SELECT {COLS} FROM migration WHERE project_id = ? ORDER BY created_at DESC"
     ))
     .bind(project_id)
-    .fetch_all(db)
+    .fetch_all(db.pool())
     .await?;
     rows.into_iter().map(record).collect()
 }
@@ -99,7 +99,7 @@ pub async fn active_for_source(db: &Db, source_service_id: &str) -> Result<bool>
         "SELECT COUNT(*) FROM migration WHERE source_service_id = ? AND status IN ('Running', 'Completed')",
     )
     .bind(source_service_id)
-    .fetch_one(db)
+    .fetch_one(db.pool())
     .await?;
     Ok(n > 0)
 }
@@ -109,7 +109,7 @@ pub async fn active_for_source(db: &Db, source_service_id: &str) -> Result<bool>
 pub async fn fail_orphans(db: &Db) -> Result<u64> {
     Ok(
         sqlx::query("UPDATE migration SET status = 'Failed' WHERE status = 'Running'")
-            .execute(db)
+            .execute(db.pool())
             .await?
             .rows_affected(),
     )

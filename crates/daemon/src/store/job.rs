@@ -2,82 +2,78 @@
 //! o agendador.
 
 use super::Db;
+use super::infra::model::JobInfra;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use shared::{EnvComment, EnvVar, Job, JobGitSource, Recurrence};
+use std::collections::HashMap;
 use ulid::Ulid;
 
-type JobRow = (
-    String,                // id
-    String,                // project_id
-    String,                // trigger_service_id
-    String,                // name
-    String,                // compose
-    String,                // main_service
-    bool,                  // enabled
-    Option<String>,        // recurrence (JSON)
-    Option<DateTime<Utc>>, // last_run_at
-    Option<DateTime<Utc>>, // next_run_at
-    DateTime<Utc>,         // created_at
-    Option<String>,        // git_source (JSON)
-    String,                // env_vars (JSON)
-    String,                // env_comments (JSON)
-);
+// Desde a Fase 4d do plano `docs/plano-backup-estado-em-git.md` a **definição** do job mora no
+// YAML de infra (`store::infra`, dentro do projeto); o que muda a cada execução (`last_run_at`,
+// `next_run_at`) é runtime e mora no SQLite, em `job_runtime`. O histórico (`job_run`, `job_log`)
+// segue no SQL. A tabela antiga `job` não é mais lida nem escrita.
 
-const SELECT_COLS: &str = "id, project_id, trigger_service_id, name, compose, main_service, \
-    enabled, recurrence, last_run_at, next_run_at, created_at, git_source, \
-    env_vars, env_comments";
+type Runtime = (Option<DateTime<Utc>>, Option<DateTime<Utc>>);
+type RuntimeRow = (String, Option<DateTime<Utc>>, Option<DateTime<Utc>>);
 
-fn row_to_job(row: JobRow) -> Result<Job> {
-    let (
-        id,
-        project_id,
-        trigger_service_id,
-        name,
-        compose,
-        main_service,
-        enabled,
-        recurrence_json,
-        last_run_at,
-        next_run_at,
-        created_at,
-        git_source_json,
-        env_vars_json,
-        env_comments_json,
-    ) = row;
-    let recurrence: Option<Recurrence> = recurrence_json
-        .as_deref()
-        .map(serde_json::from_str)
-        .transpose()?;
-    let git_source: Option<JobGitSource> = git_source_json
-        .as_deref()
-        .map(serde_json::from_str)
-        .transpose()?;
-    let env_vars: Vec<EnvVar> = serde_json::from_str(&env_vars_json)?;
-    let env_comments: Vec<EnvComment> = serde_json::from_str(&env_comments_json)?;
-    // Coluna é NOT NULL (sem migração de schema): string vazia é o sentinel
-    // de "sem serviço gatilho" (job autônomo), não NULL.
-    let trigger_service_id = if trigger_service_id.is_empty() {
-        None
-    } else {
-        Some(trigger_service_id)
-    };
-    Ok(Job {
-        id,
-        project_id,
-        trigger_service_id,
-        name,
-        compose,
-        git_source,
-        main_service,
-        env_vars,
-        env_comments,
-        enabled,
-        recurrence,
-        last_run_at,
-        next_run_at,
-        created_at,
-    })
+async fn runtimes(db: &Db) -> Result<HashMap<String, Runtime>> {
+    let rows: Vec<RuntimeRow> =
+        sqlx::query_as("SELECT job_id, last_run_at, next_run_at FROM job_runtime")
+            .fetch_all(db.pool())
+            .await?;
+    Ok(rows.into_iter().map(|(i, l, n)| (i, (l, n))).collect())
+}
+
+async fn put_runtime(
+    db: &Db,
+    id: &str,
+    last: Option<DateTime<Utc>>,
+    next: Option<DateTime<Utc>>,
+) -> Result<()> {
+    sqlx::query(
+        "INSERT INTO job_runtime (job_id, last_run_at, next_run_at) VALUES (?, ?, ?)
+         ON CONFLICT(job_id) DO UPDATE SET last_run_at = excluded.last_run_at,
+            next_run_at = excluded.next_run_at",
+    )
+    .bind(id)
+    .bind(last)
+    .bind(next)
+    .execute(db.pool())
+    .await?;
+    Ok(())
+}
+
+fn assemble(project_id: &str, j: &JobInfra, rt: Option<&Runtime>) -> Job {
+    Job {
+        id: j.id.clone(),
+        project_id: project_id.to_string(),
+        trigger_service_id: j.trigger_service_id.clone(),
+        name: j.name.clone(),
+        compose: j.compose.clone(),
+        git_source: j.git_source.clone(),
+        main_service: j.main_service.clone(),
+        env_vars: j.env_vars.clone(),
+        env_comments: j.env_comments.clone(),
+        enabled: j.enabled,
+        recurrence: j.recurrence,
+        last_run_at: rt.and_then(|r| r.0),
+        next_run_at: rt.and_then(|r| r.1),
+        created_at: j.created_at,
+    }
+}
+
+async fn all_jobs(db: &Db) -> Result<Vec<Job>> {
+    let rts = runtimes(db).await?;
+    let st = db.infra().snapshot();
+    let mut out: Vec<Job> = st
+        .projects
+        .iter()
+        .flat_map(|p| p.jobs.iter().map(move |j| (p.id.as_str(), j)))
+        .map(|(pid, j)| assemble(pid, j, rts.get(&j.id)))
+        .collect();
+    out.sort_by(|a, b| (a.created_at, &a.id).cmp(&(b.created_at, &b.id)));
+    Ok(out)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -95,34 +91,9 @@ pub async fn create(
 ) -> Result<Job> {
     let id = format!("job_{}", Ulid::new());
     let now = Utc::now();
-    let recurrence_json = recurrence.map(|r| serde_json::to_string(&r)).transpose()?;
     let next_run_at = recurrence.map(|r| r.next_after(now));
-    let git_source_json = git_source.map(serde_json::to_string).transpose()?;
-    let env_vars_json = serde_json::to_string(env_vars)?;
-    let env_comments_json = serde_json::to_string(env_comments)?;
-    sqlx::query(
-        "INSERT INTO job (id, project_id, trigger_service_id, name, compose, main_service,
-            enabled, recurrence, last_run_at, next_run_at, created_at, git_source,
-            env_vars, env_comments)
-         VALUES (?, ?, ?, ?, ?, ?, 1, ?, NULL, ?, ?, ?, ?, ?)",
-    )
-    .bind(&id)
-    .bind(project_id)
-    .bind(trigger_service_id.unwrap_or(""))
-    .bind(name)
-    .bind(compose)
-    .bind(main_service)
-    .bind(&recurrence_json)
-    .bind(next_run_at)
-    .bind(now)
-    .bind(&git_source_json)
-    .bind(&env_vars_json)
-    .bind(&env_comments_json)
-    .execute(db)
-    .await?;
-    Ok(Job {
-        id,
-        project_id: project_id.to_string(),
+    let rec = JobInfra {
+        id: id.clone(),
         trigger_service_id: trigger_service_id.map(String::from),
         name: name.to_string(),
         compose: compose.to_string(),
@@ -132,50 +103,54 @@ pub async fn create(
         env_comments: env_comments.to_vec(),
         enabled: true,
         recurrence,
-        last_run_at: None,
-        next_run_at,
         created_at: now,
-    })
+    };
+    // A validação do repositório recusa gatilho que não existe.
+    db.infra().update(|st| {
+        let Some(p) = st.projects.iter_mut().find(|p| p.id == project_id) else {
+            anyhow::bail!("projeto {project_id} não encontrado");
+        };
+        p.jobs.push(rec.clone());
+        Ok(())
+    })?;
+    put_runtime(db, &id, None, next_run_at).await?;
+    Ok(assemble(project_id, &rec, Some(&(None, next_run_at))))
 }
 
 pub async fn get(db: &Db, id: &str) -> Result<Option<Job>> {
-    let row = sqlx::query_as::<_, JobRow>(&format!("SELECT {SELECT_COLS} FROM job WHERE id = ?"))
-        .bind(id)
-        .fetch_optional(db)
-        .await?;
-    row.map(row_to_job).transpose()
+    let st = db.infra().snapshot();
+    let Some((pid, j)) = st
+        .projects
+        .iter()
+        .flat_map(|p| p.jobs.iter().map(move |j| (p.id.as_str(), j)))
+        .find(|(_, j)| j.id == id)
+    else {
+        return Ok(None);
+    };
+    let rt = runtimes(db).await?.remove(id);
+    Ok(Some(assemble(pid, j, rt.as_ref())))
 }
 
 pub async fn list(db: &Db, project_id: &str) -> Result<Vec<Job>> {
-    let rows = sqlx::query_as::<_, JobRow>(&format!(
-        "SELECT {SELECT_COLS} FROM job WHERE project_id = ? ORDER BY created_at ASC"
-    ))
-    .bind(project_id)
-    .fetch_all(db)
-    .await?;
-    rows.into_iter().map(row_to_job).collect()
+    Ok(all_jobs(db)
+        .await?
+        .into_iter()
+        .filter(|j| j.project_id == project_id)
+        .collect())
 }
 
 pub async fn list_all(db: &Db) -> Result<Vec<Job>> {
-    let rows = sqlx::query_as::<_, JobRow>(&format!(
-        "SELECT {SELECT_COLS} FROM job ORDER BY created_at ASC"
-    ))
-    .fetch_all(db)
-    .await?;
-    rows.into_iter().map(row_to_job).collect()
+    all_jobs(db).await
 }
 
 /// Jobs vencidos: habilitados, com agendamento configurado, e cujo
 /// `next_run_at` já passou — usado só pelo `scheduler_loop`.
 pub async fn list_due(db: &Db, now: DateTime<Utc>) -> Result<Vec<Job>> {
-    let rows = sqlx::query_as::<_, JobRow>(&format!(
-        "SELECT {SELECT_COLS} FROM job
-         WHERE enabled = 1 AND recurrence IS NOT NULL AND next_run_at <= ?"
-    ))
-    .bind(now)
-    .fetch_all(db)
-    .await?;
-    rows.into_iter().map(row_to_job).collect()
+    Ok(all_jobs(db)
+        .await?
+        .into_iter()
+        .filter(|j| j.enabled && j.recurrence.is_some() && j.next_run_at.is_some_and(|n| n <= now))
+        .collect())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -191,31 +166,32 @@ pub async fn update(
     enabled: bool,
     recurrence: Option<Recurrence>,
 ) -> Result<Option<Job>> {
-    let recurrence_json = recurrence.map(|r| serde_json::to_string(&r)).transpose()?;
     let next_run_at = recurrence.map(|r| r.next_after(Utc::now()));
-    let git_source_json = git_source.map(serde_json::to_string).transpose()?;
-    let env_vars_json = serde_json::to_string(env_vars)?;
-    let env_comments_json = serde_json::to_string(env_comments)?;
-    let rows_affected = sqlx::query(
-        "UPDATE job SET name = ?, compose = ?, main_service = ?, enabled = ?, recurrence = ?,
-            next_run_at = ?, git_source = ?, env_vars = ?, env_comments = ? WHERE id = ?",
-    )
-    .bind(name)
-    .bind(compose)
-    .bind(main_service)
-    .bind(enabled)
-    .bind(&recurrence_json)
-    .bind(next_run_at)
-    .bind(&git_source_json)
-    .bind(&env_vars_json)
-    .bind(&env_comments_json)
-    .bind(id)
-    .execute(db)
-    .await?
-    .rows_affected();
-    if rows_affected == 0 {
+    let found = db.infra().update(|st| {
+        let Some(j) = st
+            .projects
+            .iter_mut()
+            .flat_map(|p| p.jobs.iter_mut())
+            .find(|j| j.id == id)
+        else {
+            return Ok(false);
+        };
+        j.name = name.to_string();
+        j.compose = compose.to_string();
+        j.main_service = main_service.to_string();
+        j.enabled = enabled;
+        j.recurrence = recurrence;
+        j.git_source = git_source.cloned();
+        j.env_vars = env_vars.to_vec();
+        j.env_comments = env_comments.to_vec();
+        Ok(true)
+    })?;
+    if !found {
         return Ok(None);
     }
+    // Editar recalcula o próximo disparo a partir de agora; o último disparo não muda.
+    let last = runtimes(db).await?.remove(id).and_then(|r| r.0);
+    put_runtime(db, id, last, next_run_at).await?;
     get(db, id).await
 }
 
@@ -227,18 +203,21 @@ pub async fn mark_fired(
     last_run_at: DateTime<Utc>,
     next_run_at: Option<DateTime<Utc>>,
 ) -> Result<()> {
-    sqlx::query("UPDATE job SET last_run_at = ?, next_run_at = ? WHERE id = ?")
-        .bind(last_run_at)
-        .bind(next_run_at)
-        .bind(id)
-        .execute(db)
-        .await?;
-    Ok(())
+    put_runtime(db, id, Some(last_run_at), next_run_at).await
 }
 
-/// Apaga o job e o histórico junto (`job_run` + `job_log`) — não há FK com
+/// Apaga o job e o histórico junto (`job_run` + `job_log` + runtime) — não há FK com
 /// cascade no schema, então a limpeza é feita aqui, numa transação.
 pub async fn delete(db: &Db, id: &str) -> Result<bool> {
+    let removed = db.infra().update(|st| {
+        let mut removed = false;
+        for p in &mut st.projects {
+            let before = p.jobs.len();
+            p.jobs.retain(|j| j.id != id);
+            removed |= p.jobs.len() != before;
+        }
+        Ok(removed)
+    })?;
     let mut tx = db.begin().await?;
     sqlx::query(
         "DELETE FROM job_log WHERE job_run_id IN (SELECT id FROM job_run WHERE job_id = ?)",
@@ -250,33 +229,40 @@ pub async fn delete(db: &Db, id: &str) -> Result<bool> {
         .bind(id)
         .execute(&mut *tx)
         .await?;
-    let rows_affected = sqlx::query("DELETE FROM job WHERE id = ?")
+    sqlx::query("DELETE FROM job_runtime WHERE job_id = ?")
         .bind(id)
         .execute(&mut *tx)
-        .await?
-        .rows_affected();
+        .await?;
     tx.commit().await?;
-    Ok(rows_affected > 0)
+    Ok(removed)
 }
 
 pub async fn count_by_project(db: &Db, project_id: &str) -> Result<i64> {
-    let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM job WHERE project_id = ?")
-        .bind(project_id)
-        .fetch_one(db)
-        .await?;
-    Ok(count)
+    Ok(db
+        .infra()
+        .snapshot()
+        .projects
+        .iter()
+        .find(|p| p.id == project_id)
+        .map(|p| p.jobs.len() as i64)
+        .unwrap_or(0))
 }
 
 /// Remove todos os jobs que usam o serviço como gatilho (cascade do
 /// `service_delete` — a GUI avisa no confirm antes). Cada job leva o próprio
 /// histórico junto via `delete`. Retorna quantos jobs foram removidos.
 pub async fn delete_by_trigger_service(db: &Db, service_id: &str) -> Result<u64> {
-    let ids: Vec<(String,)> = sqlx::query_as("SELECT id FROM job WHERE trigger_service_id = ?")
-        .bind(service_id)
-        .fetch_all(db)
-        .await?;
+    let ids: Vec<String> = db
+        .infra()
+        .snapshot()
+        .projects
+        .iter()
+        .flat_map(|p| p.jobs.iter())
+        .filter(|j| j.trigger_service_id.as_deref() == Some(service_id))
+        .map(|j| j.id.clone())
+        .collect();
     let mut removed = 0u64;
-    for (id,) in ids {
+    for id in ids {
         if delete(db, &id).await? {
             removed += 1;
         }
@@ -289,8 +275,13 @@ mod tests {
     use super::*;
 
     async fn mem_db() -> Db {
-        let dir = std::env::temp_dir().join(format!("rustploy_test_{}", Ulid::new()));
-        super::super::connect(&dir).await.unwrap()
+        let db = Db::memory_for_test().await;
+        for p in ["prj_1", "prj_2", "p"] {
+            db.seed_project_for_test(p);
+        }
+        db.seed_service_for_test("prj_1", "svc_1");
+        db.seed_service_for_test("p", "s");
+        db
     }
 
     #[tokio::test]
@@ -443,13 +434,15 @@ mod tests {
         )
         .await
         .unwrap();
-        // força next_run_at pro passado, direto no banco (create já teria calculado no futuro).
-        sqlx::query("UPDATE job SET next_run_at = ? WHERE id = ?")
-            .bind(Utc::now() - chrono::Duration::hours(1))
-            .bind(&past.id)
-            .execute(&db)
-            .await
-            .unwrap();
+        // força next_run_at pro passado, direto no runtime (create já teria calculado no futuro).
+        put_runtime(
+            &db,
+            &past.id,
+            None,
+            Some(Utc::now() - chrono::Duration::hours(1)),
+        )
+        .await
+        .unwrap();
 
         let _future = create(
             &db,

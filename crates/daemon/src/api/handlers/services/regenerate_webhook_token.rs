@@ -8,7 +8,7 @@ use tracing::error;
 pub async fn handle(state: AppState, service_id: String) -> RpResponse {
     let token = webhook_tokens::generate_token();
 
-    if let Err(e) = webhook_tokens::upsert(&state.db, &service_id, &token).await {
+    if let Err(e) = webhook_tokens::upsert(&state.db, &state.secrets, &service_id, &token).await {
         error!(service_id = %service_id, error = %e, "failed to upsert webhook token");
         return RpResponse::err("DatabaseError", e.to_string());
     }

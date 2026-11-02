@@ -13,3 +13,4 @@ pub mod registry;
 pub mod secrets;
 pub mod services;
 pub mod settings;
+pub mod state_git;

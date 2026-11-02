@@ -119,6 +119,18 @@ pub async fn handle(state: DeployContext, service_id: String) -> RpResponse {
         crate::store::services::update_status(&state.db, &service_id, &ServiceStatus::Queued, None)
             .await;
 
+    // Iniciar também é uma decisão do usuário: o serviço passa a ser desejado no ar, e o autostart
+    // do boot o religa se o servidor reiniciar.
+    if let Err(e) = crate::store::services::set_desired_state(
+        &state.db,
+        &service_id,
+        crate::store::services::DesiredState::Running,
+    )
+    .await
+    {
+        warn!(service_id = %service_id, error = %e, "deploy_start: não gravei desired_state=Running");
+    }
+
     state.bus.publish(Event::ServiceStatusChanged {
         service_id: service_id.clone(),
         status: ServiceStatus::Queued,
@@ -127,10 +139,13 @@ pub async fn handle(state: DeployContext, service_id: String) -> RpResponse {
 
     // Auto-cria webhook token na primeira vez para serviços Application (não Compose)
     if !matches!(svc.spec.source, ServiceSource::Compose(_))
-        && let Ok(None) = crate::store::webhook_tokens::get(&state.db, &service_id).await
+        && let Ok(None) =
+            crate::store::webhook_tokens::get(&state.db, &state.secrets, &service_id).await
     {
         let token = crate::store::webhook_tokens::generate_token();
-        let _ = crate::store::webhook_tokens::upsert(&state.db, &service_id, &token).await;
+        let _ =
+            crate::store::webhook_tokens::upsert(&state.db, &state.secrets, &service_id, &token)
+                .await;
     }
 
     // Enfileira na fila global (um por vez). O worker

@@ -29,42 +29,6 @@ pub struct StoredProvider {
     pub created_at: DateTime<Utc>,
 }
 
-type Row = (
-    String,
-    String,
-    String,
-    String,
-    String,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    String,
-);
-
-const COLS: &str = "id, kind, name, base_url, auth_mode, oauth_client_id, \
-    oauth_client_secret_enc, access_token_enc, refresh_token_enc, \
-    account_login, account_avatar, created_at";
-
-fn row_to_stored(r: Row) -> Result<StoredProvider> {
-    Ok(StoredProvider {
-        id: r.0,
-        kind: r.1,
-        name: r.2,
-        base_url: r.3,
-        auth_mode: r.4,
-        oauth_client_id: r.5,
-        oauth_client_secret_enc: r.6,
-        access_token_enc: r.7,
-        refresh_token_enc: r.8,
-        account_login: r.9,
-        account_avatar: r.10,
-        created_at: DateTime::parse_from_rfc3339(&r.11)?.with_timezone(&Utc),
-    })
-}
-
 impl StoredProvider {
     /// Client-facing projection. Drops every secret column.
     pub fn to_public(&self) -> GitProvider {
@@ -85,46 +49,109 @@ impl StoredProvider {
     }
 }
 
-pub async fn insert(db: &Db, p: &StoredProvider) -> Result<()> {
-    sqlx::query(
-        "INSERT INTO git_provider (id, kind, name, base_url, auth_mode, oauth_client_id, \
-         oauth_client_secret_enc, access_token_enc, refresh_token_enc, account_login, \
-         account_avatar, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+// A **configuração** do provider mora no YAML de infra (`providers.yml`); os **tokens de login**
+// (`access_token_enc`/`refresh_token_enc`) ficam só no SQL, na tabela `git_provider_token`, e nunca
+// vão ao git (plano `docs/plano-backup-estado-em-git.md`, R9.0 item 1). A tabela antiga
+// `git_provider` não é mais lida nem escrita (fica como rollback).
+
+use crate::store::infra::model::ProviderInfra;
+use std::collections::BTreeMap;
+
+type Tokens = (Option<String>, Option<String>);
+
+async fn all_tokens(db: &Db) -> Result<BTreeMap<String, Tokens>> {
+    let rows: Vec<(String, Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT provider_id, access_token_enc, refresh_token_enc FROM git_provider_token",
     )
-    .bind(&p.id)
-    .bind(&p.kind)
-    .bind(&p.name)
-    .bind(&p.base_url)
-    .bind(&p.auth_mode)
-    .bind(&p.oauth_client_id)
-    .bind(&p.oauth_client_secret_enc)
-    .bind(&p.access_token_enc)
-    .bind(&p.refresh_token_enc)
-    .bind(&p.account_login)
-    .bind(&p.account_avatar)
-    .bind(p.created_at.to_rfc3339())
-    .execute(db)
+    .fetch_all(db.pool())
+    .await?;
+    Ok(rows.into_iter().map(|(i, a, r)| (i, (a, r))).collect())
+}
+
+fn stored(p: &ProviderInfra, tokens: Tokens) -> StoredProvider {
+    StoredProvider {
+        id: p.id.clone(),
+        kind: p.kind.clone(),
+        name: p.name.clone(),
+        base_url: p.base_url.clone(),
+        auth_mode: p.auth_mode.clone(),
+        oauth_client_id: p.oauth_client_id.clone(),
+        oauth_client_secret_enc: p.oauth_client_secret_enc.clone(),
+        access_token_enc: tokens.0,
+        refresh_token_enc: tokens.1,
+        account_login: p.account_login.clone(),
+        account_avatar: p.account_avatar.clone(),
+        created_at: p.created_at,
+    }
+}
+
+async fn put_tokens(db: &Db, id: &str, access: Option<&str>, refresh: Option<&str>) -> Result<()> {
+    sqlx::query(
+        "INSERT INTO git_provider_token (provider_id, access_token_enc, refresh_token_enc) \
+         VALUES (?, ?, ?) ON CONFLICT(provider_id) DO UPDATE SET \
+         access_token_enc = excluded.access_token_enc, refresh_token_enc = excluded.refresh_token_enc",
+    )
+    .bind(id)
+    .bind(access)
+    .bind(refresh)
+    .execute(db.pool())
     .await?;
     Ok(())
 }
 
+pub async fn insert(db: &Db, p: &StoredProvider) -> Result<()> {
+    let rec = ProviderInfra {
+        id: p.id.clone(),
+        kind: p.kind.clone(),
+        name: p.name.clone(),
+        base_url: p.base_url.clone(),
+        auth_mode: p.auth_mode.clone(),
+        oauth_client_id: p.oauth_client_id.clone(),
+        oauth_client_secret_enc: p.oauth_client_secret_enc.clone(),
+        account_login: p.account_login.clone(),
+        account_avatar: p.account_avatar.clone(),
+        created_at: p.created_at,
+    };
+    db.infra().update(|st| {
+        if st.providers.iter().any(|x| x.id == rec.id) {
+            anyhow::bail!("já existe um provider com o id {}", rec.id);
+        }
+        st.providers.push(rec);
+        Ok(())
+    })?;
+    if p.access_token_enc.is_some() || p.refresh_token_enc.is_some() {
+        put_tokens(
+            db,
+            &p.id,
+            p.access_token_enc.as_deref(),
+            p.refresh_token_enc.as_deref(),
+        )
+        .await?;
+    }
+    Ok(())
+}
+
 pub async fn list(db: &Db) -> Result<Vec<StoredProvider>> {
-    let q = format!("SELECT {COLS} FROM git_provider ORDER BY created_at ASC");
-    let rows = sqlx::query_as::<_, Row>(&q).fetch_all(db).await?;
-    rows.into_iter().map(row_to_stored).collect()
+    let tokens = all_tokens(db).await?;
+    let st = db.infra().snapshot();
+    Ok(st
+        .providers
+        .iter()
+        .map(|p| stored(p, tokens.get(&p.id).cloned().unwrap_or_default()))
+        .collect())
 }
 
 pub async fn get(db: &Db, id: &str) -> Result<Option<StoredProvider>> {
-    let q = format!("SELECT {COLS} FROM git_provider WHERE id = ?");
-    let row = sqlx::query_as::<_, Row>(&q)
-        .bind(id)
-        .fetch_optional(db)
-        .await?;
-    row.map(row_to_stored).transpose()
+    let st = db.infra().snapshot();
+    let Some(p) = st.providers.iter().find(|p| p.id == id) else {
+        return Ok(None);
+    };
+    let tokens = all_tokens(db).await?.remove(id).unwrap_or_default();
+    Ok(Some(stored(p, tokens)))
 }
 
 /// Records the connected account and its tokens once OAuth completes (or a PAT
-/// validates). Tokens come in already encrypted.
+/// validates). Tokens come in already encrypted. A conta (login/avatar) vai ao YAML; os tokens, ao SQL.
 pub async fn set_tokens(
     db: &Db,
     id: &str,
@@ -133,25 +160,99 @@ pub async fn set_tokens(
     account_login: &str,
     account_avatar: Option<&str>,
 ) -> Result<()> {
-    sqlx::query(
-        "UPDATE git_provider SET access_token_enc = ?, refresh_token_enc = ?, \
-         account_login = ?, account_avatar = ? WHERE id = ?",
-    )
-    .bind(access_token_enc)
-    .bind(refresh_token_enc)
-    .bind(account_login)
-    .bind(account_avatar)
-    .bind(id)
-    .execute(db)
-    .await?;
+    let found = db
+        .infra()
+        .update(|st| match st.providers.iter_mut().find(|p| p.id == id) {
+            Some(p) => {
+                p.account_login = Some(account_login.to_string());
+                p.account_avatar = account_avatar.map(str::to_string);
+                Ok(true)
+            }
+            None => Ok(false),
+        })?;
+    if found {
+        put_tokens(db, id, access_token_enc, refresh_token_enc).await?;
+    }
     Ok(())
 }
 
 pub async fn delete(db: &Db, id: &str) -> Result<bool> {
-    let n = sqlx::query("DELETE FROM git_provider WHERE id = ?")
+    let removed = db.infra().update(|st| {
+        let before = st.providers.len();
+        st.providers.retain(|p| p.id != id);
+        Ok(st.providers.len() != before)
+    })?;
+    sqlx::query("DELETE FROM git_provider_token WHERE provider_id = ?")
         .bind(id)
-        .execute(db)
-        .await?
-        .rows_affected();
-    Ok(n > 0)
+        .execute(db.pool())
+        .await?;
+    Ok(removed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn prov(id: &str) -> StoredProvider {
+        StoredProvider {
+            id: id.into(),
+            kind: "GitHub".into(),
+            name: "gh".into(),
+            base_url: "https://github.com".into(),
+            auth_mode: "OAuth".into(),
+            oauth_client_id: Some("cid".into()),
+            oauth_client_secret_enc: Some("seg".into()),
+            access_token_enc: Some("TOK".into()),
+            refresh_token_enc: None,
+            account_login: None,
+            account_avatar: None,
+            created_at: Utc::now(),
+        }
+    }
+
+    #[tokio::test]
+    async fn config_no_yaml_tokens_so_no_sql() {
+        let db = Db::memory_for_test().await;
+        insert(&db, &prov("g1")).await.unwrap();
+        assert!(insert(&db, &prov("g1")).await.is_err(), "id repetido");
+
+        let got = get(&db, "g1").await.unwrap().unwrap();
+        assert_eq!(got.access_token_enc.as_deref(), Some("TOK"));
+        assert_eq!(list(&db).await.unwrap().len(), 1);
+
+        let yaml =
+            String::from_utf8(db.infra().tree().read("providers.yml").unwrap().unwrap()).unwrap();
+        assert!(yaml.contains("seg") && !yaml.contains("TOK"));
+
+        set_tokens(&db, "g1", Some("NOVO"), Some("REF"), "eu", Some("av"))
+            .await
+            .unwrap();
+        let got = get(&db, "g1").await.unwrap().unwrap();
+        assert_eq!(
+            (
+                got.access_token_enc.as_deref(),
+                got.refresh_token_enc.as_deref()
+            ),
+            (Some("NOVO"), Some("REF"))
+        );
+        assert_eq!(got.account_login.as_deref(), Some("eu"));
+        let yaml =
+            String::from_utf8(db.infra().tree().read("providers.yml").unwrap().unwrap()).unwrap();
+        assert!(yaml.contains("account_login: eu") && !yaml.contains("NOVO"));
+
+        // set_tokens num provider que não existe é inofensivo
+        set_tokens(&db, "fantasma", Some("x"), None, "y", None)
+            .await
+            .unwrap();
+        assert!(get(&db, "fantasma").await.unwrap().is_none());
+
+        assert!(delete(&db, "g1").await.unwrap());
+        assert!(!delete(&db, "g1").await.unwrap());
+        assert!(get(&db, "g1").await.unwrap().is_none());
+        let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM git_provider_token")
+            .fetch_one(db.pool())
+            .await
+            .unwrap();
+        assert_eq!(n, 0);
+    }
 }
