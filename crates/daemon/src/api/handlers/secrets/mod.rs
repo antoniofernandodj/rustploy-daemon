@@ -1,9 +1,11 @@
 //! Handlers de secrets: o `dispatch` recebe os `Command` da seção e chama o handler certo.
 
+pub mod env_key_rename;
 pub mod infra_audit;
 pub mod secret_delete;
 pub mod secret_list;
 pub mod secret_move;
+pub mod secret_rename;
 pub mod secret_reveal;
 pub mod secret_set;
 
@@ -38,6 +40,18 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
             name,
             op,
         } => secret_move::handle(state, project_id, service_id, name, op).await,
+        Command::SecretRename {
+            project_id,
+            service_id,
+            from,
+            to,
+        } => secret_rename::handle(state, project_id, service_id, from, to).await,
+        Command::EnvKeyRename {
+            project_id,
+            service_id,
+            from,
+            to,
+        } => env_key_rename::handle(state, project_id, service_id, from, to).await,
         Command::InfraAudit => infra_audit::handle(state).await,
         _ => RpResponse::err("NotImplemented", "command not yet implemented"),
     }

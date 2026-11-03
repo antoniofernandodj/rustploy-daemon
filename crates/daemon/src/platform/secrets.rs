@@ -399,6 +399,155 @@ impl SecretsManager {
             Ok(())
         })
     }
+
+    /// Renomeia a **chave** de uma env do projeto (`service_id: None`) ou de um serviço, sem tocar
+    /// no valor (`Plain` ou `Secret`) — ele nunca passa pelo chamador. Os comentários do editor
+    /// `.env` ancorados na chave antiga acompanham. Atômico; falha se `from` não existe ou `to` já
+    /// existe no escopo.
+    pub async fn rename_env_key(
+        &self,
+        project_id: &str,
+        service_id: Option<&str>,
+        from: &str,
+        to: &str,
+    ) -> Result<()> {
+        valid_env_key(to)?;
+        self.db.infra().update(|st| {
+            let p = project_mut(st, project_id)?;
+            let (vars, comments, onde) = match service_id {
+                None => (&mut p.env_vars, &mut p.env_comments, "o projeto"),
+                Some(sid) => {
+                    let svc = service_mut(p, sid)?;
+                    (
+                        &mut svc.spec.env_vars,
+                        &mut svc.spec.env_comments,
+                        "o serviço",
+                    )
+                }
+            };
+            if from == to {
+                bail!("o nome novo é igual ao atual ('{from}')");
+            }
+            if vars.iter().any(|v| v.key == to) {
+                bail!("{onde} já tem uma env chamada '{to}'");
+            }
+            let var = vars
+                .iter_mut()
+                .find(|v| v.key == from)
+                .ok_or_else(|| anyhow!("{onde} não tem uma env chamada '{from}'"))?;
+            var.key = to.to_string();
+            for c in comments.iter_mut() {
+                if c.before_key.as_deref() == Some(from) {
+                    c.before_key = Some(to.to_string());
+                }
+            }
+            Ok(())
+        })
+    }
+
+    /// Renomeia um **secret** (do projeto, ou de um serviço) e, na mesma transação, reaponta as
+    /// envs `Secret(from)` que resolviam para ele. O valor cifrado não é lido nem reescrito.
+    ///
+    /// A resolução é "serviço primeiro, depois projeto" ([`Self::resolve`]), então renomear um
+    /// secret do **projeto** não mexe nos serviços (nem nos jobs deles) que têm um secret próprio
+    /// com o mesmo nome: nesses, `Secret(from)` aponta para o do serviço e continua valendo.
+    pub async fn rename_secret(
+        &self,
+        project_id: &str,
+        service_id: Option<&str>,
+        from: &str,
+        to: &str,
+    ) -> Result<()> {
+        valid_secret_name(to)?;
+        self.db.infra().update(|st| {
+            let p = project_mut(st, project_id)?;
+            if from == to {
+                bail!("o nome novo é igual ao atual ('{from}')");
+            }
+            match service_id {
+                Some(sid) => {
+                    let svc = service_mut(p, sid)?;
+                    rename_in_list(&mut svc.secrets, from, to, "o serviço")?;
+                    repoint_secret_refs(&mut svc.spec.env_vars, from, to);
+                }
+                None => {
+                    let ProjectInfra {
+                        env_vars,
+                        services,
+                        jobs,
+                        secrets,
+                        ..
+                    } = p;
+                    rename_in_list(secrets, from, to, "o projeto")?;
+                    repoint_secret_refs(env_vars, from, to);
+                    for svc in services.iter_mut() {
+                        if !svc.secrets.iter().any(|s| s.key == from) {
+                            repoint_secret_refs(&mut svc.spec.env_vars, from, to);
+                        }
+                    }
+                    for job in jobs.iter_mut() {
+                        let sombreado = job.trigger_service_id.as_deref().is_some_and(|tid| {
+                            services
+                                .iter()
+                                .any(|s| s.id == tid && s.secrets.iter().any(|x| x.key == from))
+                        });
+                        if !sombreado {
+                            repoint_secret_refs(&mut job.env_vars, from, to);
+                        }
+                    }
+                }
+            }
+            Ok(())
+        })
+    }
+}
+
+/// Nome válido para a chave de uma env: `[A-Za-z_][A-Za-z0-9_]*` (o que o Docker e o `.env` aceitam).
+fn valid_env_key(name: &str) -> Result<()> {
+    let mut chars = name.chars();
+    let ok = chars
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_');
+    if !ok {
+        bail!("'{name}' não é um nome de variável válido (use letras, números e _, sem começar por número)");
+    }
+    Ok(())
+}
+
+/// Nome válido para um secret: não vazio, só `[A-Za-z0-9_.-]` — fica de fora o que quebraria a
+/// referência `<secret:NOME>` (espaço, `:`, `<`, `>`).
+fn valid_secret_name(name: &str) -> Result<()> {
+    if name.is_empty()
+        || !name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-'))
+    {
+        bail!("'{name}' não é um nome de secret válido (use letras, números, _, . e -)");
+    }
+    Ok(())
+}
+
+/// Renomeia o secret `from` para `to` na lista, recusando se `from` não existe ou `to` já existe.
+fn rename_in_list(list: &mut [SecretInfra], from: &str, to: &str, onde: &str) -> Result<()> {
+    if list.iter().any(|s| s.key == to) {
+        bail!("{onde} já tem um secret chamado '{to}'");
+    }
+    let s = list
+        .iter_mut()
+        .find(|s| s.key == from)
+        .ok_or_else(|| anyhow!("{onde} não tem um secret chamado '{from}'"))?;
+    s.key = to.to_string();
+    Ok(())
+}
+
+/// Reaponta toda env `Secret(from)` para `Secret(to)`.
+fn repoint_secret_refs(vars: &mut [EnvVar], from: &str, to: &str) {
+    for v in vars.iter_mut() {
+        if v.value == EnvVarValue::Secret(from.to_string()) {
+            v.value = EnvVarValue::Secret(to.to_string());
+        }
+    }
 }
 
 fn new_secret(name: &str, encrypted: String) -> SecretInfra {
@@ -982,6 +1131,164 @@ mod tests {
                 .await
                 .is_err()
         );
+    }
+
+
+    // ---- renomear chave de env e secret (Fase C do plano de credenciais) --------------------------
+
+    #[tokio::test]
+    async fn renomear_chave_de_env_mantem_valor_e_acompanha_comentario() {
+        let (db, m, _d) = cenario().await;
+        set_env_plain(&db, Some("s1"), "RABBITMQ_DEFAULT_PASS", "valor");
+        db.infra()
+            .update(|st| {
+                st.projects[0].services[0].spec.env_comments.push(shared::EnvComment {
+                    text: "# senha do broker".into(),
+                    before_key: Some("RABBITMQ_DEFAULT_PASS".into()),
+                });
+                Ok(())
+            })
+            .unwrap();
+        m.rename_env_key("p1", Some("s1"), "RABBITMQ_DEFAULT_PASS", "RABBITMQ_PASS")
+            .await
+            .unwrap();
+        let envs = env(&db, Some("s1"));
+        assert_eq!(envs.len(), 1);
+        assert_eq!(envs[0].key, "RABBITMQ_PASS");
+        assert_eq!(envs[0].value, EnvVarValue::Plain("valor".into()));
+        let st = db.infra().snapshot();
+        assert_eq!(
+            st.projects[0].services[0].spec.env_comments[0].before_key.as_deref(),
+            Some("RABBITMQ_PASS")
+        );
+    }
+
+    #[tokio::test]
+    async fn renomear_chave_de_env_secret_nao_mexe_no_secret() {
+        use shared::SecretMoveOp::EnvToSecret;
+        let (db, m, _d) = cenario().await;
+        set_env_plain(&db, Some("s1"), "DB_PASSWORD", "hunter2");
+        m.move_secret("p1", Some("s1"), "DB_PASSWORD", EnvToSecret)
+            .await
+            .unwrap();
+        m.rename_env_key("p1", Some("s1"), "DB_PASSWORD", "POSTGRES_PASSWORD")
+            .await
+            .unwrap();
+        // a chave mudou; a referência continua apontando para o secret de sempre
+        assert_eq!(env(&db, Some("s1"))[0].key, "POSTGRES_PASSWORD");
+        assert_eq!(
+            env(&db, Some("s1"))[0].value,
+            EnvVarValue::Secret("DB_PASSWORD".into())
+        );
+        assert_eq!(
+            m.resolve("p1", Some("s1"), "DB_PASSWORD").await.unwrap(),
+            "hunter2"
+        );
+    }
+
+    #[tokio::test]
+    async fn renomear_chave_de_env_recusa_conflito_inexistente_e_nome_ruim() {
+        let (db, m, _d) = cenario().await;
+        set_env_plain(&db, None, "A", "1");
+        set_env_plain(&db, None, "B", "2");
+        assert!(m.rename_env_key("p1", None, "A", "B").await.is_err(), "destino existe");
+        assert!(m.rename_env_key("p1", None, "NADA", "C").await.is_err(), "origem não existe");
+        assert!(m.rename_env_key("p1", None, "A", "1A").await.is_err(), "começa por número");
+        assert!(m.rename_env_key("p1", None, "A", "A B").await.is_err(), "espaço");
+        assert!(m.rename_env_key("p1", None, "A", "A").await.is_err(), "mesmo nome");
+        // nada mudou
+        let keys: Vec<_> = env(&db, None).into_iter().map(|v| v.key).collect();
+        assert_eq!(keys, ["A", "B"]);
+    }
+
+    #[tokio::test]
+    async fn renomear_secret_de_servico_reaponta_so_as_envs_dele() {
+        let (db, m, _d) = cenario().await;
+        m.set_scoped("p1", Some("s1"), "RABBITMQ_DEFAULT_PASS", "segredo-1")
+            .await
+            .unwrap();
+        for sid in ["s1", "s2"] {
+            db.infra()
+                .update(|st| {
+                    let svc = st.projects[0].services.iter_mut().find(|s| s.id == sid).unwrap();
+                    svc.spec.env_vars.push(EnvVar {
+                        key: "RABBITMQ_PASS".into(),
+                        value: EnvVarValue::Secret("RABBITMQ_DEFAULT_PASS".into()),
+                    });
+                    Ok(())
+                })
+                .unwrap();
+        }
+        m.rename_secret("p1", Some("s1"), "RABBITMQ_DEFAULT_PASS", "RABBITMQ_PASS")
+            .await
+            .unwrap();
+        assert_eq!(
+            env(&db, Some("s1"))[0].value,
+            EnvVarValue::Secret("RABBITMQ_PASS".into())
+        );
+        // o s2 não tinha esse secret: a env dele não é tocada
+        assert_eq!(
+            env(&db, Some("s2"))[0].value,
+            EnvVarValue::Secret("RABBITMQ_DEFAULT_PASS".into())
+        );
+        // o valor nunca foi lido: continua o mesmo sob o nome novo
+        assert_eq!(
+            m.get_scoped("p1", Some("s1"), "RABBITMQ_PASS").await.unwrap(),
+            "segredo-1"
+        );
+        assert!(m.get_scoped("p1", Some("s1"), "RABBITMQ_DEFAULT_PASS").await.is_err());
+    }
+
+    #[tokio::test]
+    async fn renomear_secret_de_projeto_respeita_o_sombreamento_do_servico() {
+        let (db, m, _d) = cenario().await;
+        m.set_scoped("p1", None, "DB_PASS", "do-projeto").await.unwrap();
+        // o s1 tem um secret próprio com o mesmo nome (sombreia o do projeto); o s2 usa o do projeto
+        m.set_scoped("p1", Some("s1"), "DB_PASS", "do-s1").await.unwrap();
+        for sid in ["s1", "s2"] {
+            db.infra()
+                .update(|st| {
+                    let svc = st.projects[0].services.iter_mut().find(|s| s.id == sid).unwrap();
+                    svc.spec.env_vars.push(EnvVar {
+                        key: "PASS".into(),
+                        value: EnvVarValue::Secret("DB_PASS".into()),
+                    });
+                    Ok(())
+                })
+                .unwrap();
+        }
+        db.infra()
+            .update(|st| {
+                st.projects[0].env_vars.push(EnvVar {
+                    key: "PASS".into(),
+                    value: EnvVarValue::Secret("DB_PASS".into()),
+                });
+                Ok(())
+            })
+            .unwrap();
+        m.rename_secret("p1", None, "DB_PASS", "DATABASE_PASSWORD")
+            .await
+            .unwrap();
+        // env do projeto e do s2 (que resolvia para o do projeto) foram reapontadas
+        assert_eq!(env(&db, None)[0].value, EnvVarValue::Secret("DATABASE_PASSWORD".into()));
+        assert_eq!(env(&db, Some("s2"))[0].value, EnvVarValue::Secret("DATABASE_PASSWORD".into()));
+        // o s1 resolvia para o PRÓPRIO secret: a env dele não muda e continua valendo
+        assert_eq!(env(&db, Some("s1"))[0].value, EnvVarValue::Secret("DB_PASS".into()));
+        assert_eq!(m.resolve("p1", Some("s1"), "DB_PASS").await.unwrap(), "do-s1");
+        assert_eq!(m.resolve("p1", Some("s2"), "DATABASE_PASSWORD").await.unwrap(), "do-projeto");
+    }
+
+    #[tokio::test]
+    async fn renomear_secret_recusa_conflito_inexistente_e_nome_ruim() {
+        let (_db, m, _d) = cenario().await;
+        m.set_scoped("p1", None, "A", "1").await.unwrap();
+        m.set_scoped("p1", None, "B", "2").await.unwrap();
+        assert!(m.rename_secret("p1", None, "A", "B").await.is_err(), "destino existe");
+        assert!(m.rename_secret("p1", None, "NADA", "C").await.is_err(), "origem não existe");
+        assert!(m.rename_secret("p1", None, "A", "").await.is_err(), "vazio");
+        assert!(m.rename_secret("p1", None, "A", "a:b").await.is_err(), "dois-pontos");
+        assert!(m.rename_secret("p1", None, "A", "a b").await.is_err(), "espaço");
+        assert_eq!(m.get_scoped("p1", None, "A").await.unwrap(), "1");
     }
 
     #[tokio::test]

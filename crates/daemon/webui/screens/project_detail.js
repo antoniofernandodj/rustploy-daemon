@@ -206,6 +206,21 @@ document.addEventListener("alpine:init", () => {
       return this.store.copyText(this.revealedSecrets[name] ?? "", t("valor"));
     },
 
+    // ── Renomear (EnvKeyRename / SecretRename) ─────────────────────────
+    // O valor nunca passa pela tela (nem pelo agente): só a chave da variável, ou o nome do secret
+    // — e as variáveis que o referenciam são reapontadas pelo daemon.
+    async projectRename(kind, from) {
+      const answer = prompt(t`Renomear "${from}" para:`, from);
+      const to = answer === null ? "" : answer.trim();
+      if (!to || to === from) return;
+      const body = { project_id: this.store.selectedProjectId, from, to };
+      const renameResponse = await this.store.api.rpcChecked(
+        kind === "secret" ? { SecretRename: body } : { EnvKeyRename: body },
+      );
+      this.store.toastResult(renameResponse, t`renomeado: ${from} → ${to}`);
+      if (renameResponse.ok) await this.store.refreshNow();
+    },
+
     // ── Movimentos entre escopos (SecretMove) ─────────────────────────
     // O destino dos "↓ para o serviço" é o serviço escolhido no seletor do topo da aba.
     moveTargetServiceId: "",

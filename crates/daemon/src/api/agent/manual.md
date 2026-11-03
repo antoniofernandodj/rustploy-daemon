@@ -167,7 +167,14 @@ Comandos, por área (campos entre chaves):
 - **Logs de container**: `LogsGet{service_id, tail}` (para acompanhar ao vivo,
   use o SSE `/api/services/<id>/logs`)
 - **Segredos**: `SecretList{project_id}` · `SecretSet{project_id, name, value}` ·
-  `SecretDelete{project_id, name}`
+  `SecretDelete{project_id, name}` ·
+  `SecretMove{project_id, service_id?, name, op}` (`EnvToSecret`, escopos…) ·
+  `EnvKeyRename{project_id, service_id?, from, to}` — troca só a **chave** de uma
+  variável, mantendo o valor (que você não vê) ·
+  `SecretRename{project_id, service_id?, from, to}` — renomeia o secret e reaponta
+  as variáveis que o usam. Use estes dois para alinhar nomes entre serviços (ex.:
+  `RABBITMQ_DEFAULT_PASS` do broker × `RABBITMQ_PASS` do código) sem tocar em senha.
+  `service_id` omitido = escopo do projeto.
 - **Infra as code**: `ManifestExport{project_id}` · `ManifestExportAll` ·
   `ManifestImport{yaml, dotenv, prune, deploy}` · `ManifestApply{manifests, prune, deploy}` ·
   `ServiceExportPlan{service_id}` · `ServiceExport{service_id, include_values, project_env_keys}` ·

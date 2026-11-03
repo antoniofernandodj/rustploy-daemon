@@ -69,6 +69,8 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         Command::StateGitDismissRemoval { .. } => "StateGitDismissRemoval",
         Command::InfraAuditAllow { .. } => "InfraAuditAllow",
         Command::SecretMove { .. } => "SecretMove",
+        Command::SecretRename { .. } => "SecretRename",
+        Command::EnvKeyRename { .. } => "EnvKeyRename",
         Command::ManifestApply { .. } => "ManifestApply",
         Command::ManifestExport { .. } => "ManifestExport",
         Command::ManifestExportAll => "ManifestExportAll",
@@ -226,6 +228,8 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         | Command::SecretList { .. }
         | Command::SecretReveal { .. }
         | Command::SecretMove { .. }
+        | Command::SecretRename { .. }
+        | Command::EnvKeyRename { .. }
         | Command::InfraAudit => handlers::secrets::dispatch(state, cmd).await,
         Command::StateGitStatus
         | Command::StateGitConfigure { .. }

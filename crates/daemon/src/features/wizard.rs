@@ -174,25 +174,46 @@ impl BrokerKind {
     }
 }
 
-/// Senha aleatória URL-safe (splitmix64 semeado no relógio) — suficiente para
-/// credenciais iniciais de um banco local, que o usuário pode trocar.
-pub fn token_urlsafe(n: usize) -> String {
+/// Senha aleatória alfanumérica (URL-safe) de `n` caracteres, vinda de `/dev/urandom`.
+///
+/// Amostragem por rejeição: `256 = 4 × 62 + 8`, então bytes `>= 248` são descartados e cada
+/// caractere do alfabeto sai com a mesma probabilidade (um `% 62` direto favoreceria os 8
+/// primeiros). Antes era um splitmix64 semeado no relógio, que não é aleatório de verdade — e a
+/// GUI ainda gerava a senha por conta própria com `math.random(os.time())`; agora quem gera é só
+/// o daemon (ver [`completar_senhas`]).
+pub fn generate_password(n: usize) -> Result<String, String> {
+    use std::io::Read;
     const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-    let seed = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos() as u64)
-        .unwrap_or(12345);
-    let mut state = seed ^ (seed << 13) ^ (seed >> 7) ^ 0x9e3779b97f4a7c15;
-    (0..n)
-        .map(|_| {
-            state = state.wrapping_add(0x9e3779b97f4a7c15);
-            let mut z = state;
-            z = (z ^ (z >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
-            z = (z ^ (z >> 27)).wrapping_mul(0x94d049bb133111eb);
-            z ^= z >> 31;
-            ALPHABET[(z % ALPHABET.len() as u64) as usize] as char
-        })
-        .collect()
+    let mut urandom = std::fs::File::open("/dev/urandom")
+        .map_err(|e| format!("sem fonte de aleatoriedade (/dev/urandom): {e}"))?;
+    let mut out = String::with_capacity(n);
+    let mut buf = [0u8; 64];
+    while out.len() < n {
+        urandom
+            .read_exact(&mut buf)
+            .map_err(|e| format!("falha ao ler /dev/urandom: {e}"))?;
+        for &b in &buf {
+            if b < 248 && out.len() < n {
+                out.push(ALPHABET[(b % 62) as usize] as char);
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Tamanho das senhas geradas pelo wizard.
+const PASSWORD_LEN: usize = 24;
+
+/// Banco/broker novo nasce com senha forte mesmo que a pessoa não digite nada: campo vazio =
+/// "gere para mim". Senha digitada é respeitada. `precisa_root` só vale para MariaDB/MySQL.
+fn completar_senhas(f: &mut DbFormInput, precisa: bool, precisa_root: bool) -> Result<(), String> {
+    if precisa && f.password.trim().is_empty() {
+        f.password = generate_password(PASSWORD_LEN)?;
+    }
+    if precisa_root && f.root_password.trim().is_empty() {
+        f.root_password = generate_password(PASSWORD_LEN)?;
+    }
+    Ok(())
 }
 
 // ── Catálogos (JSON iterado pelos ForEach do wizard) ────────────────────────
@@ -591,12 +612,17 @@ fn build_spec_inner(req: &WizardCreateReq) -> Result<ServiceSpec, String> {
         "database" => {
             let db = DbKind::from_str(&req.id)
                 .ok_or_else(|| format!("banco desconhecido: {}", req.id))?;
-            Ok(db_spec(db, name, req.project_id.clone(), &db_form(req)))
+            let mut form = db_form(req);
+            completar_senhas(&mut form, true, db.has_root_password())?;
+            Ok(db_spec(db, name, req.project_id.clone(), &form))
         }
         "broker" => {
             let b = BrokerKind::from_str(&req.id)
                 .ok_or_else(|| format!("broker desconhecido: {}", req.id))?;
-            Ok(broker_spec(b, name, req.project_id.clone(), &db_form(req)))
+            let mut form = db_form(req);
+            // Kafka e NATS não têm usuário/senha no wizard.
+            completar_senhas(&mut form, b == BrokerKind::RabbitMq, false)?;
+            Ok(broker_spec(b, name, req.project_id.clone(), &form))
         }
         "template" => {
             let t = templates::find(&req.id)
@@ -610,5 +636,71 @@ fn build_spec_inner(req: &WizardCreateReq) -> Result<ServiceSpec, String> {
             ))
         }
         other => Err(format!("tipo de serviço desconhecido: {other}")),
+    }
+}
+
+#[cfg(test)]
+mod senhas_tests {
+    use super::*;
+
+    #[test]
+    fn senha_gerada_tem_o_tamanho_e_o_alfabeto_e_nao_se_repete() {
+        let a = generate_password(24).unwrap();
+        let b = generate_password(24).unwrap();
+        assert_eq!(a.len(), 24);
+        assert!(a.chars().all(|c| c.is_ascii_alphanumeric()), "{a}");
+        assert_ne!(a, b, "duas senhas seguidas não podem coincidir");
+        // Tamanhos que não são múltiplo do buffer também fecham.
+        assert_eq!(generate_password(0).unwrap(), "");
+        assert_eq!(generate_password(200).unwrap().len(), 200);
+    }
+
+    #[test]
+    fn campo_vazio_gera_e_digitado_fica() {
+        let mut f = DbFormInput::default();
+        completar_senhas(&mut f, true, true).unwrap();
+        assert_eq!(f.password.len(), PASSWORD_LEN);
+        assert_eq!(f.root_password.len(), PASSWORD_LEN);
+        assert_ne!(f.password, f.root_password);
+
+        let mut g = DbFormInput {
+            password: "minha-senha".into(),
+            ..Default::default()
+        };
+        completar_senhas(&mut g, true, false).unwrap();
+        assert_eq!(g.password, "minha-senha");
+        assert!(g.root_password.is_empty(), "sem root quando não precisa");
+    }
+
+    #[test]
+    fn wizard_gera_senha_para_banco_e_broker_mas_nao_para_kafka() {
+        let req = |kind: &str, id: &str| WizardCreateReq {
+            kind: kind.into(),
+            id: id.into(),
+            project_id: "p".into(),
+            name: "x".into(),
+            app_name: String::new(),
+            db_name: String::new(),
+            user: "u".into(),
+            password: String::new(),
+            root_password: String::new(),
+            image: String::new(),
+            use_replica: false,
+            template_values: vec![],
+            expose_external: false,
+        };
+        let pg = build_spec(&req("database", "postgres")).unwrap();
+        let senha = pg.env_vars.iter().find(|e| e.key == "POSTGRES_PASSWORD").unwrap();
+        assert!(matches!(&senha.value, EnvVarValue::Plain(v) if v.len() == PASSWORD_LEN));
+
+        let my = build_spec(&req("database", "mysql")).unwrap();
+        assert!(my.env_vars.iter().any(|e| e.key == "MYSQL_ROOT_PASSWORD"
+            && matches!(&e.value, EnvVarValue::Plain(v) if v.len() == PASSWORD_LEN)));
+
+        let rb = build_spec(&req("broker", "rabbitmq")).unwrap();
+        assert!(rb.env_vars.iter().any(|e| e.key == "RABBITMQ_DEFAULT_PASS"
+            && matches!(&e.value, EnvVarValue::Plain(v) if v.len() == PASSWORD_LEN)));
+
+        assert!(build_spec(&req("broker", "kafka")).unwrap().env_vars.is_empty());
     }
 }

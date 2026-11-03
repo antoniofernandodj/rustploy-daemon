@@ -2105,6 +2105,8 @@
                     </row>
                     <row class="kv-list__row" x-show="!envVar.isComment">
                       <button class="env__del" type="button" @click="deleteEnvVar(envVar.key)">✕</button>
+                      <button class="btn btn--ghost btn--sm" type="button" @click="projectRename('env', envVar.key)"
+                        :title="$t('Renomear (o valor não muda)')">✏️</button>
                       <button class="btn btn--ghost btn--sm" type="button" x-show="!envVar.isSecret" @click="projectEnvToSecret(envVar.key)"
                         :title="$t('Mover para secret (o valor passa a ser guardado cifrado)')">🔒</button>
                       <button class="btn btn--ghost btn--sm" type="button" x-show="!envVar.isSecret" @click="projectEnvToService(envVar.key)"
@@ -2157,6 +2159,8 @@
             <template x-for="secret in secrets" :key="secret.name">
               <row class="kv-list__row">
                 <button class="env__del" type="button" @click="store.deleteSecret(secret.name)">✕</button>
+                <button class="btn btn--ghost btn--sm" type="button" @click="projectRename('secret', secret.name)"
+                  :title="$t('Renomear (o valor não muda)')">✏️</button>
                 <button class="btn btn--ghost btn--sm" type="button" @click="projectSecretToEnv(secret.name)"
                   :title="$t('Voltar para variável em claro (o valor deixa de ser cifrado)')">🔓</button>
                 <button class="btn btn--ghost btn--sm" type="button" @click="projectSecretToService(secret.name)"
@@ -2483,7 +2487,7 @@
             <input class="field__input" type="text" x-model="databaseUser" placeholder="user" /></column>
           </template>
           <text class="u-label-cap" style="margin-top:8px">PASSWORD</text>
-          <input class="field__input" type="password" x-model="databasePassword" placeholder="(vazio = sem senha, só no Redis)" x-t:placeholder />
+          <input class="field__input" type="password" x-model="databasePassword" placeholder="(vazio = uma senha forte é gerada e guardada cifrada)" x-t:placeholder />
           <template x-if="selectedDatabase && selectedDatabase.has_rootpw">
             <column style="gap:6px; margin-top:8px"><text class="u-label-cap">ROOT PASSWORD</text>
             <input class="field__input" type="password" x-model="databaseRootPassword" /></column>
@@ -3063,6 +3067,8 @@
                         </row>
                         <row class="kv-list__row" x-show="!envVar.isComment">
                           <button class="env__del" type="button" @click="deleteEnvVar(envVar.key)">✕</button>
+                          <button class="btn btn--ghost btn--sm" type="button" @click="serviceRename('env', envVar.key)"
+                            :title="$t('Renomear (o valor não muda)')">✏️</button>
                           <button class="btn btn--ghost btn--sm" type="button" x-show="!envVar.isSecret" @click="envToSecret(envVar.key)"
                             :title="$t('Mover para secret (o valor passa a ser guardado cifrado)')">🔒</button>
                           <button class="btn btn--ghost btn--sm" type="button" x-show="!envVar.isSecret" @click="envToProject(envVar.key)"
@@ -3088,6 +3094,8 @@
                     <template x-for="secretName in serviceSecrets" :key="secretName">
                       <row class="kv-list__row">
                         <button class="env__del" type="button" @click="deleteServiceSecret(secretName)">✕</button>
+                        <button class="btn btn--ghost btn--sm" type="button" @click="serviceRename('secret', secretName)"
+                          :title="$t('Renomear (o valor não muda)')">✏️</button>
                         <button class="btn btn--ghost btn--sm" type="button" @click="serviceSecretToEnv(secretName)"
                           :title="$t('Voltar para variável em claro (o valor deixa de ser cifrado)')">🔓</button>
                         <button class="btn btn--ghost btn--sm" type="button" @click="serviceSecretToProject(secretName)"

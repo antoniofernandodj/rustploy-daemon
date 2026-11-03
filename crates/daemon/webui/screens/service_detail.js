@@ -697,6 +697,24 @@ document.addEventListener("alpine:init", () => {
       }
     },
 
+    /** ✏️: renomeia a chave de uma variável (`kind` "env") ou o nome de um secret ("secret") DESTE
+     * serviço, sem o valor passar pela tela. Ver `projectRename` em project_detail.js. */
+    async serviceRename(kind, from) {
+      const answer = prompt(t`Renomear "${from}" para:`, from);
+      const to = answer === null ? "" : answer.trim();
+      if (!to || to === from) return;
+      const body = { project_id: this.svc.spec.project_id, service_id: this.svc.id, from, to };
+      const renameResponse = await this.store.api.rpcChecked(
+        kind === "secret" ? { SecretRename: body } : { EnvKeyRename: body },
+      );
+      this.store.toastResult(renameResponse, t`renomeado: ${from} → ${to}`);
+      if (renameResponse.ok) {
+        await this.store.fetchServiceDetail(this.svc.id);
+        await this.store.refreshNow();
+        await this.loadServiceSecrets();
+      }
+    },
+
     async serviceMove(op, name, doneMessage) {
       const secretMoveResponse = await this.store.api.rpcChecked({
         SecretMove: { project_id: this.svc.spec.project_id, service_id: this.svc.id, name, op },

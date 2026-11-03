@@ -236,10 +236,7 @@ document.addEventListener("alpine:init", () => {
         this.error = t("usuário obrigatório");
         return;
       }
-      if (!this.databasePassword.trim()) {
-        this.error = t("senha obrigatória");
-        return;
-      }
+      // Senha vazia = o daemon gera uma forte e a guarda cifrada (secret do serviço).
       const createRequest = this.baseReq("database", database.id);
       createRequest.name = this.databaseServiceName;
       createRequest.db_name = this.databaseName;
