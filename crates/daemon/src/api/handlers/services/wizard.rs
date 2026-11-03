@@ -8,12 +8,13 @@ use crate::features::wizard;
 use shared::Response as RpResponse;
 use shared::WizardCreateReq;
 
-/// Catálogos de bancos/brokers/templates prontos como JSON para o contexto do
+/// Catálogos de bancos/brokers/storages/templates prontos como JSON para o contexto do
 /// cliente (`new_service_databases`/`new_service_brokers`/`new_service_templates`). `search` filtra os templates.
 pub async fn catalog(search: String) -> RpResponse {
     RpResponse::WizardCatalog {
         dbs: wizard::db_rows_json(),
         brokers: wizard::broker_rows_json(),
+        storages: wizard::storage_rows_json(),
         templates: wizard::templates_catalog_json(&search),
     }
 }
@@ -21,7 +22,7 @@ pub async fn catalog(search: String) -> RpResponse {
 /// Monta o `ServiceSpec` a partir dos campos coletados pelo wizard e cria o
 /// serviço — reaproveitando o handler `service_create`.
 ///
-/// **Banco e broker novos já nascem com as credenciais em secret de serviço** (decisão da R5 do
+/// **Banco, broker e storage novos já nascem com as credenciais em secret de serviço** (decisão da R5 do
 /// plano `docs/plano-backup-estado-em-git.md`): depois de criado, cada env de senha vira
 /// `Secret(<chave>)` e o valor passa a viver cifrado em `ServiceInfra.secrets`. Serviços que já
 /// existem não são tocados: só mudam por ação manual.
@@ -31,7 +32,7 @@ pub async fn create(state: AppState, req: WizardCreateReq) -> RpResponse {
         Err(e) => return RpResponse::err("WizardError", e),
     };
     let resp = crate::features::services::create::handle(state.services_ctx(), spec).await;
-    if matches!(req.kind.as_str(), "database" | "broker")
+    if matches!(req.kind.as_str(), "database" | "broker" | "storage")
         && let RpResponse::Service(svc) = &resp
     {
         return match secure_credentials(&state, svc).await {
@@ -195,6 +196,66 @@ mod tests {
             achados.iter().all(|a| !a.what.contains("PASSWORD")),
             "{achados:?}"
         );
+    }
+
+    /// O caso de verdade (Fase B/D do plano de credenciais): a pessoa NÃO digita senha, o daemon
+    /// gera, e o valor gerado nunca aparece na resposta nem no YAML — só no secret cifrado.
+    #[tokio::test]
+    async fn senha_gerada_pelo_daemon_nao_aparece_na_resposta_nem_no_yaml() {
+        for (id, kind, secret_key, access_key) in [
+            ("rustfs", "storage", "RUSTFS_SECRET_KEY", Some("RUSTFS_ACCESS_KEY")),
+            ("minio", "storage", "MINIO_ROOT_PASSWORD", None),
+            ("postgres", "database", "POSTGRES_PASSWORD", None),
+            ("rabbitmq", "broker", "RABBITMQ_DEFAULT_PASS", None),
+        ] {
+            let state = estado().await;
+            let project = crate::store::projects::create(&state.db, "p".into(), None)
+                .await
+                .unwrap();
+            let mut r = req(kind, id, &project.id);
+            r.password = String::new();
+            r.root_password = String::new();
+            let resp = create(state.clone(), r).await;
+            let RpResponse::Service(svc) = resp else {
+                panic!("{id}: devia criar o serviço")
+            };
+            // a resposta (o que o agente recebe) só carrega a referência
+            assert_eq!(
+                svc.spec
+                    .env_vars
+                    .iter()
+                    .find(|v| v.key == secret_key)
+                    .map(|v| v.value.clone()),
+                Some(EnvVarValue::Secret(secret_key.into())),
+                "{id}"
+            );
+            if let Some(ak) = access_key {
+                assert!(
+                    matches!(
+                        svc.spec.env_vars.iter().find(|v| v.key == ak).map(|v| &v.value),
+                        Some(EnvVarValue::Secret(_))
+                    ),
+                    "{id}: a access key também vira secret"
+                );
+            }
+            // o valor gerado existe, é forte e só vive no cofre
+            let gerada = state
+                .secrets
+                .get_scoped(&project.id, Some(&svc.id), secret_key)
+                .await
+                .unwrap();
+            assert_eq!(gerada.len(), 24, "{id}");
+            let resposta_json = serde_json::to_string(&svc).unwrap();
+            assert!(!resposta_json.contains(&gerada), "{id}: senha na resposta");
+            let tree = state.db.infra().tree();
+            let tudo: String = tree
+                .list()
+                .unwrap()
+                .iter()
+                .map(|r| String::from_utf8_lossy(&tree.read(r).unwrap().unwrap()).into_owned())
+                .collect();
+            assert!(!tudo.contains(&gerada), "{id}: senha em claro no YAML");
+        }
     }
 
     #[tokio::test]

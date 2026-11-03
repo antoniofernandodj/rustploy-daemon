@@ -14,6 +14,7 @@ use std::collections::HashMap;
 
 const DATABASE_KINDS: &[&str] = &["postgres", "mongodb", "mariadb", "mysql", "redis"];
 const BROKER_KINDS: &[&str] = &["kafka", "rabbitmq", "nats"];
+const STORAGE_KINDS: &[&str] = &["rustfs", "minio"];
 
 #[derive(Debug, Serialize, PartialEq)]
 pub struct DashboardProject {
@@ -28,7 +29,7 @@ pub struct DashboardService {
     pub name: String,
     /// `Running` ou `Degraded` — os dois contam como "em execução".
     pub status: String,
-    /// `git` | `archive` | `registry` | `compose` | `database` | `broker`.
+    /// `git` | `archive` | `registry` | `compose` | `database` | `broker` | `storage`.
     pub kind: String,
     pub kind_label: String,
     /// Só `git`: a branch implantada e o repositório.
@@ -36,7 +37,7 @@ pub struct DashboardService {
     pub repo_url: Option<String>,
     /// Só `registry`: imagem:tag.
     pub image: Option<String>,
-    /// Só `database`/`broker`: o motor (postgres, kafka…).
+    /// Só `database`/`broker`/`storage`: o motor (postgres, kafka, rustfs…).
     pub engine: Option<String>,
     pub port: u16,
     pub domains: Vec<String>,
@@ -61,6 +62,9 @@ fn classify(svc: &Service) -> (&'static str, String) {
         let engine = engine.to_lowercase();
         if BROKER_KINDS.contains(&engine.as_str()) {
             return ("broker", format!("Broker · {engine}"));
+        }
+        if STORAGE_KINDS.contains(&engine.as_str()) {
+            return ("storage", format!("Storage · {engine}"));
         }
         let _ = DATABASE_KINDS; // qualquer outro `db_kind` também é banco
         return ("database", format!("Banco · {engine}"));
@@ -109,7 +113,7 @@ pub fn build(
                         ServiceSource::Registry { image } => Some(image.clone()),
                         _ => None,
                     };
-                    let engine = matches!(kind, "database" | "broker")
+                    let engine = matches!(kind, "database" | "broker" | "storage")
                         .then(|| svc.spec.db_kind.clone())
                         .flatten();
                     DashboardService {

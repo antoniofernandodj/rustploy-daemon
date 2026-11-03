@@ -706,16 +706,18 @@ document.addEventListener("alpine:init", () => {
      * abrir a tela "Novo serviço" (ver screens/new_service.js). */
     async fetchWizardCatalog(search) {
       const wizardCatalogResponse = await this.api.rpc({ WizardCatalog: { search: search || "" } });
-      if (!wizardCatalogResponse.ok || !wizardCatalogResponse.value?.WizardCatalog) return { dbs: [], brokers: [], templates: [] };
+      if (!wizardCatalogResponse.ok || !wizardCatalogResponse.value?.WizardCatalog) return { dbs: [], brokers: [], storages: [], templates: [] };
       const catalog = wizardCatalogResponse.value.WizardCatalog;
       try {
         return {
           dbs: JSON.parse(catalog.dbs),
           brokers: JSON.parse(catalog.brokers),
+          // Daemon antigo não manda `storages`: lista vazia em vez de quebrar o catálogo inteiro.
+          storages: JSON.parse(catalog.storages || "[]"),
           templates: JSON.parse(catalog.templates),
         };
       } catch {
-        return { dbs: [], brokers: [], templates: [] };
+        return { dbs: [], brokers: [], storages: [], templates: [] };
       }
     },
 

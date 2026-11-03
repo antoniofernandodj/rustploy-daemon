@@ -14,7 +14,7 @@ document.addEventListener("alpine:init", () => {
     error: "",
     submitting: false,
 
-    catalog: { dbs: [], brokers: [], templates: [] },
+    catalog: { dbs: [], brokers: [], storages: [], templates: [] },
     catalogLoaded: false,
     async ensureCatalog() {
       if (this.catalogLoaded) return;
@@ -53,6 +53,14 @@ document.addEventListener("alpine:init", () => {
     brokerUser: "",
     brokerPassword: "",
     brokerImage: "",
+
+    // ── Storage (RustFS / MinIO) ──────────────────────────────────
+    // USER = access key, PASSWORD = secret key; os dois vazios = o daemon gera e guarda como secret.
+    selectedStorage: null,
+    storageServiceName: "",
+    storageUser: "",
+    storagePassword: "",
+    storageImage: "",
 
     // ── Template ──────────────────────────────────────────────────
     templateSearch: "",
@@ -112,6 +120,19 @@ document.addEventListener("alpine:init", () => {
       this.brokerPassword = "";
       this.brokerServiceName = "";
       this.step = "broker_form";
+    },
+    async gotoStorage() {
+      this.error = "";
+      await this.ensureCatalog();
+      this.step = "pick_storage";
+    },
+    pickStorage(storage) {
+      this.selectedStorage = storage;
+      this.storageUser = storage.user;
+      this.storageImage = storage.image;
+      this.storagePassword = "";
+      this.storageServiceName = "";
+      this.step = "storage_form";
     },
     async gotoTemplate() {
       this.error = "";
@@ -263,6 +284,20 @@ document.addEventListener("alpine:init", () => {
       createRequest.user = this.brokerUser;
       createRequest.password = this.brokerPassword;
       createRequest.image = this.brokerImage;
+      this.submitting = true;
+      const wizardCreateResult = await this.store.wizardCreate(createRequest);
+      this.submitting = false;
+      if (!wizardCreateResult.ok) this.error = wizardCreateResult.error;
+    },
+
+    async submitStorage() {
+      this.error = "";
+      const storage = this.selectedStorage;
+      const createRequest = this.baseReq("storage", storage.id);
+      createRequest.name = this.storageServiceName;
+      createRequest.user = this.storageUser;
+      createRequest.password = this.storagePassword;
+      createRequest.image = this.storageImage;
       this.submitting = true;
       const wizardCreateResult = await this.store.wizardCreate(createRequest);
       this.submitting = false;

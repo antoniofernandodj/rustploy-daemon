@@ -1,4 +1,4 @@
-//! Lógica do wizard "Novo serviço" (Application / Database / Broker / Compose /
+//! Lógica do wizard "Novo serviço" (Application / Database / Broker / Storage / Compose /
 //! Template): catálogos, geração de senha, compose por banco/broker, e a
 //! montagem do `ServiceSpec` final. O daemon a expõe por RPC
 //! (`Command::WizardCatalog`/`WizardCreate`) — o cliente Luau (glacier-ui) só
@@ -530,6 +530,136 @@ fn broker_compose(broker: BrokerKind, svc: &str, img: &str, _f: &DbFormInput) ->
     }
 }
 
+// ── Storage (S3 compatível) ──────────────────────────────────────────────────
+
+/// Servidores de objetos S3: RustFS e MinIO. Nascem como bancos/brokers: stack Compose
+/// (`rp_<nome>`), credenciais geradas e guardadas como secret de serviço — o agente nunca as vê.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StorageKind {
+    RustFs,
+    MinIo,
+}
+
+impl StorageKind {
+    pub const ALL: &'static [StorageKind] = &[Self::RustFs, Self::MinIo];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::RustFs => "RustFS",
+            Self::MinIo => "MinIO",
+        }
+    }
+
+    pub fn default_image(self) -> &'static str {
+        match self {
+            Self::RustFs => "rustfs/rustfs:latest",
+            // O mesmo do blueprint de MinIO do catálogo de templates.
+            Self::MinIo => "minio/minio",
+        }
+    }
+
+    /// Porta da API S3 (a que as apps usam).
+    pub fn default_port(self) -> u16 {
+        9000
+    }
+
+    /// Porta do console web.
+    pub fn console_port(self) -> u16 {
+        9001
+    }
+
+    pub fn kind_id(self) -> &'static str {
+        match self {
+            Self::RustFs => "rustfs",
+            Self::MinIo => "minio",
+        }
+    }
+
+    #[allow(clippy::should_implement_trait)]
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "rustfs" => Some(Self::RustFs),
+            "minio" => Some(Self::MinIo),
+            _ => None,
+        }
+    }
+
+    /// O usuário (access key) padrão, quando a pessoa não digita um.
+    pub fn default_user(self) -> &'static str {
+        match self {
+            Self::RustFs => "rustfsadmin",
+            Self::MinIo => "minioadmin",
+        }
+    }
+
+    /// Nomes das duas envs de credencial: `(access key, secret key)`.
+    pub fn credential_keys(self) -> (&'static str, &'static str) {
+        match self {
+            Self::RustFs => ("RUSTFS_ACCESS_KEY", "RUSTFS_SECRET_KEY"),
+            Self::MinIo => ("MINIO_ROOT_USER", "MINIO_ROOT_PASSWORD"),
+        }
+    }
+}
+
+/// Passo "escolha o storage".
+pub fn storage_rows_json() -> String {
+    let rows: Vec<serde_json::Value> = StorageKind::ALL
+        .iter()
+        .map(|k| {
+            json!({
+                "id": k.kind_id(),
+                "label": k.label(),
+                "image": k.default_image(),
+                "user": k.default_user(),
+                "console_port": k.console_port(),
+            })
+        })
+        .collect();
+    serde_json::Value::Array(rows).to_string()
+}
+
+pub fn storage_spec(
+    kind: StorageKind,
+    name: String,
+    project_id: String,
+    f: &DbFormInput,
+) -> ServiceSpec {
+    let image = if f.image.trim().is_empty() {
+        kind.default_image().to_string()
+    } else {
+        f.image.trim().to_string()
+    };
+    let svc = format!("rp_{}", shared::normalize_name(&name));
+    let (access_key, secret_key) = kind.credential_keys();
+    let plain = |k: &str, v: &str| EnvVar {
+        key: k.to_string(),
+        value: EnvVarValue::Plain(v.to_string()),
+    };
+    base_spec(
+        name,
+        project_id,
+        ServiceSource::Compose(ComposeSource {
+            content: storage_compose(kind, &svc, &image),
+            ingress_service: None,
+        }),
+        kind.default_port(),
+        vec![plain(access_key, &f.user), plain(secret_key, &f.password)],
+        Some(kind.kind_id().to_string()),
+    )
+}
+
+fn storage_compose(kind: StorageKind, svc: &str, img: &str) -> String {
+    match kind {
+        // Do blueprint de RustFS, sem o CORS `*` (quem precisar de CORS adiciona no Compose).
+        StorageKind::RustFs => format!(
+            "services:\n  {svc}:\n    image: {img}\n    restart: unless-stopped\n    environment:\n      RUSTFS_ACCESS_KEY: ${{RUSTFS_ACCESS_KEY}}\n      RUSTFS_SECRET_KEY: ${{RUSTFS_SECRET_KEY}}\n      RUSTFS_ADDRESS: 0.0.0.0:9000\n      RUSTFS_CONSOLE_ADDRESS: 0.0.0.0:9001\n      RUSTFS_CONSOLE_ENABLE: \"true\"\n    volumes:\n      - rustfsdata:/data\n    command: /data\n\nvolumes:\n  rustfsdata:\n"
+        ),
+        StorageKind::MinIo => format!(
+            "services:\n  {svc}:\n    image: {img}\n    restart: unless-stopped\n    environment:\n      MINIO_ROOT_USER: ${{MINIO_ROOT_USER}}\n      MINIO_ROOT_PASSWORD: ${{MINIO_ROOT_PASSWORD}}\n    volumes:\n      - miniodata:/data\n    command: server /data --console-address \":9001\"\n\nvolumes:\n  miniodata:\n"
+        ),
+    }
+}
+
 pub fn template_spec(
     t: &'static Template,
     name: String,
@@ -624,6 +754,16 @@ fn build_spec_inner(req: &WizardCreateReq) -> Result<ServiceSpec, String> {
             completar_senhas(&mut form, b == BrokerKind::RabbitMq, false)?;
             Ok(broker_spec(b, name, req.project_id.clone(), &form))
         }
+        "storage" => {
+            let k = StorageKind::from_str(&req.id)
+                .ok_or_else(|| format!("storage desconhecido: {}", req.id))?;
+            let mut form = db_form(req);
+            if form.user.trim().is_empty() {
+                form.user = k.default_user().to_string();
+            }
+            completar_senhas(&mut form, true, false)?;
+            Ok(storage_spec(k, name, req.project_id.clone(), &form))
+        }
         "template" => {
             let t = templates::find(&req.id)
                 .ok_or_else(|| format!("template desconhecido: {}", req.id))?;
@@ -702,5 +842,51 @@ mod senhas_tests {
             && matches!(&e.value, EnvVarValue::Plain(v) if v.len() == PASSWORD_LEN)));
 
         assert!(build_spec(&req("broker", "kafka")).unwrap().env_vars.is_empty());
+    }
+
+    #[test]
+    fn storage_nasce_com_credenciais_geradas_e_sem_cors_aberto() {
+        let req = |id: &str, user: &str| WizardCreateReq {
+            kind: "storage".into(),
+            id: id.into(),
+            project_id: "p".into(),
+            name: "arquivos".into(),
+            app_name: String::new(),
+            db_name: String::new(),
+            user: user.into(),
+            password: String::new(),
+            root_password: String::new(),
+            image: String::new(),
+            use_replica: false,
+            template_values: vec![],
+            expose_external: false,
+        };
+        let get = |spec: &ServiceSpec, k: &str| {
+            spec.env_vars
+                .iter()
+                .find(|e| e.key == k)
+                .map(|e| match &e.value {
+                    EnvVarValue::Plain(v) => v.clone(),
+                    EnvVarValue::Secret(v) => v.clone(),
+                })
+        };
+        let rustfs = build_spec(&req("rustfs", "")).unwrap();
+        assert_eq!(rustfs.db_kind.as_deref(), Some("rustfs"));
+        assert_eq!(rustfs.port, 9000);
+        assert_eq!(get(&rustfs, "RUSTFS_ACCESS_KEY").as_deref(), Some("rustfsadmin"));
+        assert_eq!(get(&rustfs, "RUSTFS_SECRET_KEY").unwrap().len(), PASSWORD_LEN);
+        let ServiceSource::Compose(c) = &rustfs.source else {
+            panic!("storage é Compose")
+        };
+        assert!(c.content.contains("rp_arquivos:") && c.content.contains("command: /data"));
+        assert!(!c.content.contains("CORS"), "sem CORS aberto por padrão");
+
+        let minio = build_spec(&req("minio", "meu-usuario")).unwrap();
+        assert_eq!(get(&minio, "MINIO_ROOT_USER").as_deref(), Some("meu-usuario"));
+        assert_eq!(get(&minio, "MINIO_ROOT_PASSWORD").unwrap().len(), PASSWORD_LEN);
+
+        assert!(build_spec(&req("s3-inexistente", "")).is_err());
+        let rows: serde_json::Value = serde_json::from_str(&storage_rows_json()).unwrap();
+        assert_eq!(rows.as_array().unwrap().len(), 2);
     }
 }

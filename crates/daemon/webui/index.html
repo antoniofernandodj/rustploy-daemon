@@ -212,7 +212,7 @@
                     </row>
                     <text class="u-muted" x-show="svc.kind === 'git'" x-text="svc.repo_url"></text>
                     <text class="u-muted" x-show="svc.kind === 'registry'" x-text="$t('imagem: ') + svc.image"></text>
-                    <text class="u-muted" x-show="svc.kind === 'database' || svc.kind === 'broker'"
+                    <text class="u-muted" x-show="svc.kind === 'database' || svc.kind === 'broker' || svc.kind === 'storage'"
                           x-text="$t('motor: ') + svc.engine + $t(' · porta ') + svc.port"></text>
                     <text class="u-muted" x-show="svc.domains.length > 0" x-text="$t('domínio: ') + svc.domainsText"></text>
 
@@ -2257,6 +2257,13 @@
             </row>
             <row class="kv-list__row">
               <column class="page-head__titles">
+                <text class="env__key">Storage</text>
+                <text class="u-muted" x-t>Armazenamento de objetos S3: RustFS, MinIO</text>
+              </column>
+              <button class="btn btn--primary" type="button" @click="gotoStorage()" x-t>Selecionar ›</button>
+            </row>
+            <row class="kv-list__row">
+              <column class="page-head__titles">
                 <text class="env__key">Compose</text>
                 <text class="u-muted" x-t>Stack Docker Compose</text>
               </column>
@@ -2535,6 +2542,38 @@
           <input class="field__input" type="text" x-model="brokerImage" placeholder="imagem" x-t:placeholder />
           <row class="env__add" style="margin-top:14px">
             <button class="btn btn--primary" type="button" @click="submitBroker()" :disabled="submitting"
+                    x-text="submitting ? $t('Criando…') : $t('Criar')"></button>
+          </row>
+        </column>
+
+        <!-- Storage: escolher -->
+        <column class="form-panel" x-show="step === 'pick_storage'">
+          <text class="u-label-cap" x-t>ESCOLHA O STORAGE</text>
+          <column class="kv-list">
+            <template x-for="storage in catalog.storages" :key="storage.id">
+              <row class="kv-list__row">
+                <column class="page-head__titles">
+                  <text class="env__key" x-text="storage.label"></text>
+                  <text class="u-muted" x-text="storage.image"></text>
+                </column>
+                <button class="btn btn--primary" type="button" @click="pickStorage(storage)" x-t>Selecionar ›</button>
+              </row>
+            </template>
+          </column>
+        </column>
+        <!-- Storage: form -->
+        <column class="form-panel" x-show="step === 'storage_form'">
+          <text class="u-label-cap" x-text="$t('NOVO ') + (selectedStorage ? selectedStorage.label : '')"></text>
+          <text class="u-label-cap" style="margin-top:8px" x-t>NOME</text>
+          <input class="field__input" type="text" x-model="storageServiceName" placeholder="meu-storage" x-t:placeholder />
+          <text class="u-label-cap" style="margin-top:8px" x-t>USUÁRIO (ACCESS KEY)</text>
+          <input class="field__input" type="text" x-model="storageUser" />
+          <text class="u-label-cap" style="margin-top:8px" x-t>SENHA (SECRET KEY)</text>
+          <input class="field__input" type="password" x-model="storagePassword" placeholder="(vazio = uma senha forte é gerada e guardada cifrada)" x-t:placeholder />
+          <text class="u-label-cap" style="margin-top:8px">DOCKER IMAGE</text>
+          <input class="field__input" type="text" x-model="storageImage" placeholder="imagem" x-t:placeholder />
+          <row class="env__add" style="margin-top:14px">
+            <button class="btn btn--primary" type="button" @click="submitStorage()" :disabled="submitting"
                     x-text="submitting ? $t('Criando…') : $t('Criar')"></button>
           </row>
         </column>

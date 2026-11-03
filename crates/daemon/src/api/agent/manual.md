@@ -190,7 +190,10 @@ Comandos, por área (campos entre chaves):
   `ManagedDatabaseListAll` · `ManagedDatabaseCreate(…)` · `ManagedDatabaseDelete{id}`
 - **Migrações**: `MigrationStart(…)` · `MigrationGet{id}` · `MigrationList{project_id}` ·
   `MigrationRollback{id}` · `MigrationDiscard{id}`
-- **Templates**: `WizardCatalog{search}` · `WizardCreate(…)`
+- **Templates e wizard**: `WizardCatalog{search}` · `WizardCreate(…)`. O `WizardCreate` com
+  `kind` = `database`, `broker` ou `storage` (RustFS, MinIO) **gera a senha** quando você
+  manda `password` vazio e a guarda como secret do serviço: a resposta traz só a referência,
+  nunca o valor. É o jeito de criar infra sem ver credencial.
 - **Docker**: `DockerContainers` · `DockerImages` · `DockerVolumes` ·
   `DockerNetworks` · `RemoveContainer{id}` · `RemoveImage{id}` ·
   `RemoveVolume{name}` · `RemoveNetwork{id}` · `StopAllManaged` ·

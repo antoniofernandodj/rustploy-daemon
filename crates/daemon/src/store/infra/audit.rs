@@ -54,7 +54,16 @@ const SENSITIVE_NAME_PARTS: &[&str] = &[
 /// O nome da variável denuncia um segredo? (heurística — ver o aviso no topo do módulo)
 pub(crate) fn name_looks_sensitive(key: &str) -> bool {
     let up = key.to_uppercase();
-    SENSITIVE_NAME_PARTS.iter().any(|p| up.contains(p)) || up == "KEY" || up.ends_with("_KEY")
+    // `PASS`/`PWD` como palavra inteira (`RABBITMQ_DEFAULT_PASS`, `DB_PWD`): só como fragmento
+    // pegaria `PASSENGER` ou `COMPASS`.
+    let word = |w: &str| {
+        up == w || up.ends_with(&format!("_{w}")) || up.starts_with(&format!("{w}_")) || up.contains(&format!("_{w}_"))
+    };
+    SENSITIVE_NAME_PARTS.iter().any(|p| up.contains(p))
+        || up == "KEY"
+        || up.ends_with("_KEY")
+        || word("PASS")
+        || word("PWD")
 }
 
 /// `scheme://usuario:senha@host` — credencial embutida numa URL.
@@ -222,6 +231,24 @@ mod tests {
     use super::*;
     use crate::store::infra::model::{ManagedDatabaseInfra, SecretInfra};
     use chrono::Utc;
+
+    #[test]
+    fn pass_e_pwd_como_palavra_inteira_sao_segredo_mas_passenger_nao() {
+        for k in [
+            "RABBITMQ_DEFAULT_PASS",
+            "RABBITMQ_PASS",
+            "PASS",
+            "DB_PWD",
+            "PASS_FILE",
+            "MY_PASS_X",
+            "rabbitmq_pass",
+        ] {
+            assert!(name_looks_sensitive(k), "{k} deveria ser sensível");
+        }
+        for k in ["COMPASS", "PASSENGER_COUNT", "BYPASS", "MODE", "RABBITMQ_USER", "DEFAULT_PASSIVE"] {
+            assert!(!name_looks_sensitive(k), "{k} não deveria ser sensível");
+        }
+    }
 
     fn project() -> ProjectInfra {
         ProjectInfra {
