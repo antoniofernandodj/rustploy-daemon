@@ -42,7 +42,12 @@ interval_secs  = 2
 history_points = 60
 
 [secrets]
-master_key_path = "/etc/rustploy/master.key"
+# Identidade age (chave PRIVADA) que cifra/decifra os segredos. O postinst gera o arquivo se ele
+# não existir (e se não houver `age_identity` aqui). Guarde uma cópia FORA do servidor.
+age_key_path = "/etc/rustploy/age.key"
+# Chave PÚBLICA (age1…) de recuperação: guarde a privada correspondente fora do servidor, e é ela
+# que restaura os segredos num servidor novo. Gere o par com `rustploy-cli keygen`.
+# recovery_recipient = "age1..."
 
 # Faixa de portas de host que o rustploy aloca automaticamente para exposição
 # externa de serviços TCP (bancos, brokers…) — o "host_port" automático.

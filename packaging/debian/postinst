@@ -39,6 +39,33 @@ fi
 chown rustploy:rustploy "$CONFIG" 2>/dev/null || true
 chmod 640 "$CONFIG" 2>/dev/null || true
 
+# Identidade age (segredos): a estrutura é [secrets] age_key_path -> arquivo 0600 do usuário
+# rustploy. Nunca gera uma identidade se já existe uma (no arquivo ou inline no config): trocar
+# a chave tornaria ilegíveis os segredos já cifrados.
+AGE_KEY=/etc/rustploy/age.key
+if [ -f "$CONFIG" ]; then
+    # master_key_path não existe mais: sai do config sempre (o parse ignora a chave, mas não deixa lixo).
+    sed -i '/^master_key_path *=/d' "$CONFIG"
+    if grep -q '^age_key_path' "$CONFIG"; then
+        AGE_KEY=$(sed -n 's/^age_key_path *= *["'"'"']\(.*\)["'"'"'].*/\1/p' "$CONFIG" | head -n1)
+    elif grep -q '^\[secrets\]' "$CONFIG"; then
+        sed -i "/^\[secrets\]/a age_key_path = \"$AGE_KEY\"" "$CONFIG"
+    else
+        printf '\n[secrets]\nage_key_path = "%s"\n' "$AGE_KEY" >> "$CONFIG"
+    fi
+    if [ ! -e "$AGE_KEY" ] && ! grep -q '^age_identity' "$CONFIG" && [ -x /usr/bin/rustploy-cli ]; then
+        # `keygen` imprime "# chave pública: age1…" e depois a privada; o arquivo guarda só a privada.
+        if /usr/bin/rustploy-cli keygen | grep -v '^#' > "$AGE_KEY.new" 2>/dev/null && [ -s "$AGE_KEY.new" ]; then
+            chown rustploy:rustploy "$AGE_KEY.new" 2>/dev/null || true
+            chmod 600 "$AGE_KEY.new"
+            mv "$AGE_KEY.new" "$AGE_KEY"
+        else
+            rm -f "$AGE_KEY.new"
+        fi
+    fi
+    [ -e "$AGE_KEY" ] && chown rustploy:rustploy "$AGE_KEY" 2>/dev/null && chmod 600 "$AGE_KEY" || true
+fi
+
 if [ "$1" = "configure" ]; then
     systemctl daemon-reload              >/dev/null 2>&1 || true
     systemctl enable  rustployd          >/dev/null 2>&1 || true

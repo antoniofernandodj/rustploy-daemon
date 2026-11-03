@@ -1,4 +1,4 @@
-//! Resolução de diretórios (banco, chave mestra) com fallback para o home e inicialização do log.
+//! Resolução de diretórios (banco, chave age) com fallback para o home e inicialização do log.
 
 use std::path::PathBuf;
 use tracing::warn;
@@ -34,25 +34,27 @@ pub fn resolve_data_path(configured: &str) -> PathBuf {
     fallback
 }
 
-/// Tries to use `configured` as the master key path.
-/// Falls back to `~/.local/share/rustploy/master.key` if the directory is
-/// not writable (e.g. `/etc/rustploy/` requires root).
-pub fn resolve_master_key_path(configured: &str) -> PathBuf {
-    let path = PathBuf::from(configured);
-    // If the key already exists and is readable, use it as-is.
+/// Onde fica o arquivo da identidade `age` do servidor: `age_key_path`; senão `/etc/rustploy/age.key`. Se o arquivo não
+/// existe e a pasta não é gravável (ex.: `/etc/rustploy/` sem root), cai para
+/// `~/.local/share/rustploy/age.key`.
+pub fn resolve_age_key_path(cfg: &crate::platform::config::SecretsConfig) -> PathBuf {
+    let path = PathBuf::from(
+        cfg.age_key_path
+            .as_deref()
+            .unwrap_or("/etc/rustploy/age.key"),
+    );
     if path.exists() {
         return path;
     }
-    // Otherwise we need to be able to create it — check parent writability.
     let parent = path.parent().unwrap_or(&path);
     if can_write_dir(parent) {
         return path;
     }
-    let fallback = fallback_dir().join("master.key");
+    let fallback = fallback_dir().join("age.key");
     warn!(
         primary = %path.display(),
         fallback = %fallback.display(),
-        "master key directory not writable, using fallback"
+        "age key directory not writable, using fallback"
     );
     let _ = std::fs::create_dir_all(fallback.parent().unwrap());
     fallback
@@ -71,4 +73,35 @@ fn can_write_dir(dir: &std::path::Path) -> bool {
     }
     let _ = std::fs::remove_file(probe);
     true
+}
+
+#[cfg(test)]
+mod age_key_tests {
+    use super::*;
+    use crate::platform::config::SecretsConfig;
+
+    fn parse(toml_text: &str) -> SecretsConfig {
+        #[derive(serde::Deserialize)]
+        struct W {
+            secrets: SecretsConfig,
+        }
+        toml::from_str::<W>(toml_text).unwrap().secrets
+    }
+
+    #[test]
+    fn config_sem_age_key_path_parseia_e_usa_o_padrao() {
+        let c = parse("[secrets]\nrecovery_recipient = \"age1x\"\n");
+        assert!(c.age_key_path.is_none());
+        assert_eq!(resolve_age_key_path(&c).file_name().unwrap(), "age.key");
+    }
+
+    #[test]
+    fn age_key_path_explicito_tem_prioridade() {
+        let d = tempfile::tempdir().unwrap();
+        let c = parse(&format!(
+            "[secrets]\nage_key_path = \"{}/k.key\"\n",
+            d.path().display()
+        ));
+        assert_eq!(resolve_age_key_path(&c), d.path().join("k.key"));
+    }
 }

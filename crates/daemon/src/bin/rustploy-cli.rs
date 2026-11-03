@@ -293,7 +293,7 @@ mod tests {
         std::fs::write(
             &cfg,
             format!(
-                "[secrets]\nmaster_key_path = \"/x\"\nage_identity = \"{}\"\nrecovery_recipient = \"{}\"\n",
+                "[secrets]\nage_identity = \"{}\"\nrecovery_recipient = \"{}\"\n",
                 srv.to_string().expose_secret(),
                 rec.to_public()
             ),

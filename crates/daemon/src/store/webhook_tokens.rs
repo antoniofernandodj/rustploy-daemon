@@ -5,8 +5,7 @@ use anyhow::Result;
 use super::Db;
 
 // O segredo do webhook mora no YAML, junto do serviço (`ServiceInfra.webhook_token`), **cifrado**
-// (`ENC[age:…]`, Fase 5). Um valor ainda em claro (vindo da migração SQL → YAML) é lido como está
-// e regravado cifrado por `SecretsManager::reencrypt_legacy`. A tabela antiga `webhook_token` não
+// (`ENC[age:…]`, Fase 5). A tabela antiga `webhook_token` não
 // é mais lida nem escrita.
 
 use crate::platform::secrets::{SecretsManager, is_enc};

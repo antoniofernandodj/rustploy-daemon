@@ -85,7 +85,7 @@ mod pre_deploy_check_tests {
         let db = Arc::new(store::connect(&dir).await.unwrap());
         db.seed_project_for_test("proj-1");
         let docker = Arc::new(DockerClient::for_tests());
-        let secrets = Arc::new(SecretsManager::new(&dir.join("master.key"), db.clone()).unwrap());
+        let secrets = Arc::new(SecretsManager::new(db.clone()).unwrap());
         let tls = Arc::new(
             TlsManager::new(
                 dir.join("certs"),

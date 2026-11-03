@@ -542,12 +542,7 @@ mod tests {
     async fn webhook_token_acompanha_o_servico_no_yaml_cifrado() {
         use crate::store::webhook_tokens as wh;
         let db = std::sync::Arc::new(mem_db().await);
-        let dir = tempfile::tempdir().unwrap();
-        let sm = crate::platform::secrets::SecretsManager::new(
-            &dir.path().join("master.key"),
-            db.clone(),
-        )
-        .unwrap();
+        let sm = crate::platform::secrets::SecretsManager::new(db.clone()).unwrap();
         let svc = create(&db, spec("api", "proj_a")).await.unwrap();
         assert!(wh::get(&db, &sm, &svc.id).await.unwrap().is_none());
         wh::upsert(&db, &sm, &svc.id, "tok1").await.unwrap();

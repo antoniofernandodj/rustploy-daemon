@@ -1140,10 +1140,8 @@ mod tests {
         let tmp = std::env::temp_dir().join(format!("rustploy-sse-test-{}", ulid::Ulid::new()));
         let config = crate::platform::config::RustployConfig::default();
         let db = std::sync::Arc::new(crate::store::connect(&tmp).await.unwrap());
-        let secrets = std::sync::Arc::new(
-            crate::platform::secrets::SecretsManager::new(&tmp.join("master.key"), db.clone())
-                .unwrap(),
-        );
+        let secrets =
+            std::sync::Arc::new(crate::platform::secrets::SecretsManager::new(db.clone()).unwrap());
         let tls = std::sync::Arc::new(
             crate::features::ingress::TlsManager::new(
                 tmp.join("certs"),

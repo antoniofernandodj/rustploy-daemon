@@ -572,6 +572,10 @@ impl StateGit {
             if n > 0 {
                 return Err(StateGitError::Plaintext(n));
             }
+            if mode == Mode::Sync {
+                self.refuse_unrelated_history(&remote, &branch, &provider_id)
+                    .await?;
+            }
         }
 
         let put = |k: &'static str, v: Option<String>| {
@@ -607,6 +611,51 @@ impl StateGit {
             self.cycle(true).await;
         }
         Ok(self.status().await?)
+    }
+
+    /// Recusa ligar o `sync` num servidor que **já tem estado** apontando para um repositório que
+    /// **já tem história** sem relação com a dele. Sem isto o `configure` voltava "ok" e o desacordo só
+    /// aparecia depois, como pausa por divergência: parecia que tinha dado certo e não tinha. Só um
+    /// servidor virgem (sem projetos) restaura de um repositório com história (`restore_if_virgin`).
+    /// Repositório vazio, ou com a história que este servidor já conhece (trocar o token ou a
+    /// branch de um sync que já funcionava), passa.
+    async fn refuse_unrelated_history(
+        &self,
+        remote: &Option<String>,
+        branch: &str,
+        provider_id: &Option<String>,
+    ) -> Result<(), StateGitError> {
+        if self.db.infra().snapshot().projects.is_empty() {
+            return Ok(());
+        }
+        let s = Settings {
+            mode: Mode::Sync,
+            remote: remote.clone(),
+            branch: branch.to_string(),
+            provider_id: provider_id.clone(),
+        };
+        let auth = self.auth_for(&s).await?;
+        let (db, b, r) = (self.db.clone(), branch.to_string(), remote.clone());
+        let unrelated = tokio::task::spawn_blocking(move || {
+            db.infra().exclusive(|root, _state| {
+                git::ensure_repo(root, &b, r.as_deref())?;
+                if !git::fetch(root, &b, auth.as_ref())? || git::remote_head(root, &b).is_none() {
+                    return anyhow::Ok(false); // repositório vazio
+                }
+                anyhow::Ok(!git::shares_history(root, &b))
+            })
+        })
+        .await
+        .map_err(anyhow::Error::from)??;
+        if unrelated {
+            return Err(StateGitError::Invalid(format!(
+                "o repositório já tem histórico na branch `{branch}` e este servidor já tem projetos: \
+                 os dois não têm origem em comum e nada seria restaurado. Para restaurar, use um \
+                 servidor limpo (sem projetos); para começar do zero, aponte para um repositório \
+                 vazio ou outra branch."
+            )));
+        }
+        Ok(())
     }
 
     /// **Restauração num servidor limpo (Fase 8).** Só age quando o servidor é virgem: nenhum projeto
@@ -1233,8 +1282,7 @@ mod tests {
                 .await
                 .unwrap(),
         );
-        let secrets =
-            Arc::new(SecretsManager::new(&dir.path().join("master.key"), db.clone()).unwrap());
+        let secrets = Arc::new(SecretsManager::new(db.clone()).unwrap());
         if com_projeto {
             db.seed_project_for_test("p1");
         }
@@ -2063,21 +2111,37 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn conectar_um_repositorio_com_historia_propria_pausa_em_vez_de_sobrescrever() {
+    async fn conectar_um_repositorio_com_historia_propria_da_erro_em_vez_de_sobrescrever() {
         let c = cenario().await;
         let (remote, url) = bare_remote();
         // alguém já usa esse repositório para outra coisa
         let outro = Externo::clone_de(&url);
         std::fs::write(outro.path("README.md"), "outra coisa\n").unwrap();
         outro.commit_push("história que não é nossa");
-        let st = c.sg.configure("sync", Some(url), None, None).await.unwrap();
-        assert!(st.paused_reason.is_some(), "{st:?}");
+        // erro claro na hora: nada de "ok" que depois vira pausa por divergência
+        let e =
+            c.sg.configure("sync", Some(url), None, None)
+                .await
+                .unwrap_err();
+        assert!(matches!(e, StateGitError::Invalid(_)), "{e:?}");
+        assert!(e.to_string().contains("servidor limpo"), "{e}");
+        // a configuração não foi gravada: segue desligado
+        assert_eq!(c.sg.settings().await.unwrap().mode, Mode::Off);
         // o remoto não foi tocado
         assert!(
             git::run(remote.path(), &["log", "-1", "--format=%s", "main"], None)
                 .unwrap()
                 .contains("não é nossa")
         );
+    }
+
+    #[tokio::test]
+    async fn reconfigurar_o_mesmo_remoto_de_um_sync_que_ja_funcionava_nao_da_erro() {
+        let (c, _remote, url) = com_remoto().await;
+        c.sg.sync_now().await.unwrap();
+        // ex.: trocar o token do provider: o repositório tem a história que este servidor conhece
+        let st = c.sg.configure("sync", Some(url), None, None).await.unwrap();
+        assert_eq!(st.paused_reason, None, "{st:?}");
     }
 
     #[tokio::test]
@@ -2266,48 +2330,25 @@ mod tests {
                 .is_err()
         );
 
-        // repositório que tem história de OUTRA coisa: "usar o do remoto" não pode adotá-lo
+        // repositório com história de OUTRA coisa nem chega a ser configurado (erro no configure),
+        // então não há pausa para "resolver"
         let c3 = cenario().await;
-        let (remote, url) = bare_remote();
+        let (_remote, url) = bare_remote();
         let outro = Externo::clone_de(&url);
         std::fs::write(outro.path("README.md"), "outra coisa\n").unwrap();
         outro.commit_push("história que não é nossa");
-        let st = c3
-            .sg
-            .configure("sync", Some(url), None, None)
-            .await
-            .unwrap();
-        assert!(st.paused_reason.is_some());
-        let antes = (*c3.db.infra().snapshot()).clone();
-        let e = c3
-            .sg
-            .resolve(shared::StateGitResolveChoice::UseRemote)
-            .await
-            .unwrap_err();
-        assert!(e.to_string().contains("não pôde ser adotado"), "{e}");
-        assert_eq!(
-            *c3.db.infra().snapshot(),
-            antes,
-            "o estado do servidor ficou intacto"
+        assert!(
+            c3.sg
+                .configure("sync", Some(url), None, None)
+                .await
+                .is_err()
         );
         assert!(
-            c3.sg.status().await.unwrap().paused_reason.is_some(),
-            "continua pausado"
+            c3.sg
+                .resolve(shared::StateGitResolveChoice::UseRemote)
+                .await
+                .is_err()
         );
-        // já "usar o meu" funciona: o README do outro é preservado numa branch de backup no remoto
-        let st = c3
-            .sg
-            .resolve(shared::StateGitResolveChoice::UseLocal)
-            .await
-            .unwrap();
-        assert_eq!(st.paused_reason, None, "{st:?}");
-        let backups = git::run(
-            remote.path(),
-            &["branch", "--list", "rustploy-backup/remote-*"],
-            None,
-        )
-        .unwrap();
-        assert!(backups.contains("rustploy-backup/remote-"), "{backups}");
     }
 
     #[tokio::test]
@@ -2384,7 +2425,8 @@ mod tests {
         );
     }
 
-    /// Um servidor que JÁ tem projetos nunca é sobrescrito em silêncio: continua pausando.
+    /// Um servidor que JÁ tem projetos nunca é sobrescrito, e também não finge que deu certo:
+    /// ligar o sync num repositório com história sem relação com a dele é um erro.
     #[tokio::test]
     async fn servidor_com_estado_proprio_nao_e_sobrescrito_pelo_remoto() {
         let a = cenario().await;
@@ -2394,7 +2436,11 @@ mod tests {
             .unwrap();
         let b = cenario().await; // tem p1 próprio, história própria
         add_env(&b, "LOCAL", "1");
-        let st = b.sg.configure("sync", Some(url), None, None).await.unwrap();
-        assert!(st.paused_reason.is_some(), "deveria pausar por divergência");
+        let e =
+            b.sg.configure("sync", Some(url), None, None)
+                .await
+                .unwrap_err();
+        assert!(matches!(e, StateGitError::Invalid(_)), "{e:?}");
+        assert_eq!(b.sg.settings().await.unwrap().mode, Mode::Off);
     }
 }

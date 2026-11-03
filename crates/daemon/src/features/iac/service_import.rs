@@ -532,10 +532,8 @@ mod e2e {
         let db = std::sync::Arc::new(db);
         let bus = std::sync::Arc::new(crate::platform::event_bus::EventBus::new());
         let ingress = std::sync::Arc::new(crate::features::ingress::IngressController::new());
-        let secrets = std::sync::Arc::new(
-            crate::platform::secrets::SecretsManager::new(&tmp.join("master.key"), db.clone())
-                .unwrap(),
-        );
+        let secrets =
+            std::sync::Arc::new(crate::platform::secrets::SecretsManager::new(db.clone()).unwrap());
         let tls = std::sync::Arc::new(
             crate::features::ingress::TlsManager::new(
                 tmp.join("certs"),

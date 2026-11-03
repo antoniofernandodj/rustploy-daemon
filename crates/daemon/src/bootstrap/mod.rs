@@ -70,15 +70,13 @@ pub async fn run() -> Result<()> {
     let bus = Arc::new(EventBus::new());
     let ingress = Arc::new(IngressController::new());
 
-    let master_key = config::resolve_master_key_path(&config.secrets.master_key_path);
+    let age_key = config::resolve_age_key_path(&config.secrets);
     let secrets = Arc::new(secrets::SecretsManager::open(
-        &master_key,
+        &age_key,
         db.clone(),
         &config.secrets,
         RustployConfig::global_path(),
     )?);
-    // Segredos gravados por versões antigas (passphrase) passam para o formato age.
-    secrets.reencrypt_legacy().await?;
     info!(public_key = %secrets.public_key(), "identidade age dos segredos");
     if config
         .secrets

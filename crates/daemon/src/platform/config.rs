@@ -322,9 +322,10 @@ pub struct MetricsConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SecretsConfig {
-    /// Chave antiga (passphrase). Só serve para ler segredos cifrados por versões anteriores;
-    /// tudo o que é gravado hoje usa `age_identity`.
-    pub master_key_path: String,
+    /// Arquivo da identidade `age` privada do servidor (`AGE-SECRET-KEY-1…`, 0600). Só é lido se
+    /// `age_identity` não estiver no `config.toml`. Ausente → `/etc/rustploy/age.key`.
+    #[serde(default)]
+    pub age_key_path: Option<String>,
     /// Identidade `age` (X25519, `AGE-SECRET-KEY-1…`) que cifra e decifra os segredos
     /// (`ENC[age:…]`). Ausente → o daemon gera uma na primeira subida e a grava aqui.
     /// **Perder esta chave sem ter `recovery_recipient` = perder todos os segredos.**
@@ -365,7 +366,7 @@ impl Default for RustployConfig {
                 history_points: 60,
             },
             secrets: SecretsConfig {
-                master_key_path: "/etc/rustploy/master.key".into(),
+                age_key_path: Some("/etc/rustploy/age.key".into()),
                 age_identity: None,
                 recovery_recipient: None,
             },

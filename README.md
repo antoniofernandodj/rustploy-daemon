@@ -133,7 +133,8 @@ interval_secs  = 2
 history_points = 60
 
 [secrets]
-master_key_path = "/etc/rustploy/master.key"
+age_key_path = "/etc/rustploy/age.key"   # identidade age privada (0600)
+# recovery_recipient = "age1..."            # chave pública de recuperação
 ```
 
 Overrides via variável de ambiente: `RUSTPLOY_SOCKET_PATH`, `RUSTPLOY_DB_PATH`, `RUSTPLOY_LOG_LEVEL`.  

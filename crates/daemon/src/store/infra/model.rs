@@ -102,8 +102,7 @@ pub struct ServiceInfra {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub compose_project: Option<String>,
     pub created_at: DateTime<Utc>,
-    /// Segredo do webhook de push, cifrado (`ENC[age:…]`; um valor em claro vindo da migração é
-    /// cifrado no primeiro boot por `SecretsManager::reencrypt_legacy`).
+    /// Segredo do webhook de push, cifrado (`ENC[age:…]`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub webhook_token: Option<String>,
     /// Secrets **deste serviço** (escopo de serviço, R5). Valor sempre `ENC[age:…]`.

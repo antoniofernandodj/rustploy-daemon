@@ -202,7 +202,7 @@ mod tests {
     async fn secret_ausente_vira_erro_que_diz_qual_e_onde() {
         let dir = tempfile::tempdir().unwrap();
         let db = Arc::new(crate::store::connect(dir.path()).await.unwrap());
-        let secrets = SecretsManager::new(&dir.path().join("master.key"), db).unwrap();
+        let secrets = SecretsManager::new(db).unwrap();
 
         let err = secret_value(
             &secrets,
@@ -226,7 +226,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let db = Arc::new(crate::store::connect(dir.path()).await.unwrap());
         db.seed_project_for_test("proj_1");
-        let secrets = SecretsManager::new(&dir.path().join("master.key"), db).unwrap();
+        let secrets = SecretsManager::new(db).unwrap();
         secrets.set("proj_1", "TOKEN", "abc123").await.unwrap();
 
         let v = secret_value(&secrets, "proj_1", None, "TOKEN", "API_TOKEN", "projeto")
@@ -244,7 +244,7 @@ mod tests {
         let db = Arc::new(crate::store::connect(dir.path()).await.unwrap());
         db.seed_project_for_test("p1");
         db.seed_service_for_test("p1", "s1");
-        let secrets = SecretsManager::new(&dir.path().join("master.key"), db.clone()).unwrap();
+        let secrets = SecretsManager::new(db.clone()).unwrap();
         secrets.set("p1", "SENHA", "do-projeto").await.unwrap();
         secrets.set("p1", "SO_PROJETO", "pp").await.unwrap();
         secrets

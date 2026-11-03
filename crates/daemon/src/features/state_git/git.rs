@@ -312,6 +312,21 @@ pub fn ahead_behind(dir: &Path, branch: &str) -> Result<(usize, usize)> {
     Ok((ahead, behind))
 }
 
+/// O histórico local e o de `refs/remotes/origin/<branch>` têm um ancestral comum? `false` também
+/// quando ainda não há commit local (um servidor que nunca commitou não compartilha nada).
+pub fn shares_history(dir: &Path, branch: &str) -> bool {
+    run(
+        dir,
+        &[
+            "merge-base",
+            "HEAD",
+            &format!("refs/remotes/origin/{branch}"),
+        ],
+        None,
+    )
+    .is_ok()
+}
+
 /// Não há nada por commitar nem arquivo novo/alterado/apagado (fora o que o `.gitignore` esconde)?
 pub fn is_clean(dir: &Path) -> Result<bool> {
     Ok(run(dir, &["status", "--porcelain"], None)?
