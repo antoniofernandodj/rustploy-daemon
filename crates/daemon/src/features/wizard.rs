@@ -746,6 +746,14 @@ fn build_spec_inner(req: &WizardCreateReq) -> Result<ServiceSpec, String> {
             let db = DbKind::from_str(&req.id)
                 .ok_or_else(|| format!("banco desconhecido: {}", req.id))?;
             let mut form = db_form(req);
+            // Quem chama sem preencher (o agente, via MCP) recebe os mesmos padrões que a GUI
+            // pré-preenche: usuário padrão do motor e o banco "app".
+            if db.has_user() && form.user.trim().is_empty() {
+                form.user = db.default_user().to_string();
+            }
+            if db.has_db_name() && form.db_name.trim().is_empty() {
+                form.db_name = "app".to_string();
+            }
             completar_senhas(&mut form, true, db.has_root_password())?;
             Ok(db_spec(db, name, req.project_id.clone(), &form))
         }
@@ -753,6 +761,9 @@ fn build_spec_inner(req: &WizardCreateReq) -> Result<ServiceSpec, String> {
             let b = BrokerKind::from_str(&req.id)
                 .ok_or_else(|| format!("broker desconhecido: {}", req.id))?;
             let mut form = db_form(req);
+            if b.has_user() && form.user.trim().is_empty() {
+                form.user = b.default_user().to_string();
+            }
             // Kafka e NATS não têm usuário/senha no wizard.
             completar_senhas(&mut form, b == BrokerKind::RabbitMq, false)?;
             Ok(broker_spec(b, name, req.project_id.clone(), &form))
@@ -845,6 +856,44 @@ mod senhas_tests {
             && matches!(&e.value, EnvVarValue::Plain(v) if v.len() == PASSWORD_LEN)));
 
         assert!(build_spec(&req("broker", "kafka")).unwrap().env_vars.is_empty());
+    }
+
+    #[test]
+    fn campos_vazios_recebem_os_padroes_da_gui() {
+        let vazio = |kind: &str, id: &str| WizardCreateReq {
+            kind: kind.into(),
+            id: id.into(),
+            project_id: "p".into(),
+            name: "x".into(),
+            app_name: String::new(),
+            db_name: String::new(),
+            user: String::new(),
+            password: String::new(),
+            root_password: String::new(),
+            image: String::new(),
+            use_replica: false,
+            template_values: vec![],
+            expose_external: false,
+        };
+        let plain = |spec: &ServiceSpec, k: &str| {
+            spec.env_vars.iter().find(|e| e.key == k).and_then(|e| match &e.value {
+                EnvVarValue::Plain(v) => Some(v.clone()),
+                _ => None,
+            })
+        };
+        let pg = build_spec(&vazio("database", "postgres")).unwrap();
+        assert_eq!(plain(&pg, "POSTGRES_USER").as_deref(), Some(DbKind::Postgres.default_user()));
+        assert!(!plain(&pg, "POSTGRES_USER").unwrap().is_empty());
+        assert_eq!(plain(&pg, "POSTGRES_DB").as_deref(), Some("app"));
+        let rb = build_spec(&vazio("broker", "rabbitmq")).unwrap();
+        assert_eq!(plain(&rb, "RABBITMQ_DEFAULT_USER").as_deref(), Some("rabbit"));
+        // o que a pessoa digitou continua valendo
+        let mut custom = vazio("database", "postgres");
+        custom.user = "meu".into();
+        custom.db_name = "meubanco".into();
+        let pg2 = build_spec(&custom).unwrap();
+        assert_eq!(plain(&pg2, "POSTGRES_USER").as_deref(), Some("meu"));
+        assert_eq!(plain(&pg2, "POSTGRES_DB").as_deref(), Some("meubanco"));
     }
 
     #[test]
