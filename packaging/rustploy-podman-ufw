@@ -1,0 +1,137 @@
+#!/bin/sh
+# rustploy-podman-ufw — libera o ufw para os containers do Podman (netavark). Idempotente.
+#
+# POR QUE EXISTE
+#   Com Docker, o DNS dos containers fica DENTRO do container (127.0.0.11) e o Docker cuida do iptables.
+#   Com Podman é diferente: o `aardvark-dns` escuta no ENDEREÇO DO HOST de cada bridge (ex.: 10.89.0.1:53 —
+#   não em loopback), e os containers saem para a internet por FORWARD. O ufw padrão ("deny incoming,
+#   deny routed") descarta as duas coisas, e aí:
+#     - os nomes dos serviços (rp_db, rp_cache, rp_s3…) NÃO resolvem dentro dos containers;
+#     - nenhum container alcança a internet (SMTP, APIs de pagamento…).
+#   Os containers continuam se alcançando por IP, o que faz o problema parecer "de rede" e não de firewall.
+#
+# O QUE FAZ  (só com o ufw instalado e ATIVO; ufw inativo = nada filtra, nada a fazer)
+#   Para CADA faixa de containers detectada (abaixo):
+#   1. DNS: containers -> bridges, porta 53 (só dentro da faixa; nada vai à internet).
+#   2. Isolamento: bloqueia o roteamento entre redes de projeto. Vem ANTES da liberação de saída
+#      (o ufw avalia na ordem em que as regras foram criadas).
+#   3. Saída: containers -> qualquer destino. O retorno (ESTABLISHED/RELATED) o próprio ufw já aceita.
+#
+# QUAIS FAIXAS (nada é fixo no código; a união destas fontes, sem repetir):
+#   a. RUSTPLOY_PODMAN_SUBNET (lista separada por espaço) — se definida, é a ÚNICA fonte;
+#   b. as redes `rp_net_*` que o rustploy JÁ criou (`podman network inspect`) — a faixa real de cada uma;
+#   c. os `base` de `default_subnet_pools` do containers.conf — de onde o Podman tira as redes NOVAS;
+#   d. sem (c), o padrão do netavark: 10.89.0.0/16.
+#   Fica de FORA a rede `podman` padrão (10.88.0.0/16): o rustploy nunca a usa, e liberar a saída dela mexeria na
+#   política de containers que NÃO são do rustploy.
+#
+# USO: rustploy-podman-ufw [apply|remove|status]     (padrão: apply)
+#      RUSTPLOY_PODMAN_UFW=0 desliga (para quem prefere gerir o ufw à mão).
+#      RUSTPLOY_CONTAINERS_CONF="arq1 arq2" troca a lista de containers.conf lidos (testes).
+set -u
+
+TAG="rustploy:"
+ACTION="${1:-apply}"
+DEFAULT_POOL="10.89.0.0/16"
+CONF_FILES="${RUSTPLOY_CONTAINERS_CONF:-/usr/share/containers/containers.conf /etc/containers/containers.conf $(ls /etc/containers/containers.conf.d/*.conf 2>/dev/null | tr '\n' ' ')}"
+
+[ "${RUSTPLOY_PODMAN_UFW:-1}" = "0" ] && { echo "rustploy-podman-ufw: desligado (RUSTPLOY_PODMAN_UFW=0)"; exit 0; }
+command -v ufw >/dev/null 2>&1 || { echo "rustploy-podman-ufw: ufw não está instalado; nada a fazer"; exit 0; }
+
+# `ufw status` precisa de root; sem root não há como saber nem aplicar.
+if [ "$(id -u)" != "0" ]; then
+    echo "rustploy-podman-ufw: precisa de root (sudo)" >&2
+    exit 1
+fi
+
+ufw_active() { ufw status 2>/dev/null | grep -q '^Status: active'; }
+
+# Só deixa passar um CIDR IPv4 bem formado (nunca joga texto qualquer no ufw).
+is_cidr() { printf '%s\n' "$1" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$'; }
+
+# Os `base` de default_subnet_pools (TOML: {"base"="10.89.0.0/16","size"=24} ou {base = "…"}).
+pools_from_conf() {
+    for f in $CONF_FILES; do
+        [ -r "$f" ] || continue
+        grep -o 'base"\{0,1\}[[:space:]]*=[[:space:]]*"[0-9./]*"' "$f" 2>/dev/null | grep -o '"[0-9./]*"$' | tr -d '"'
+    done
+}
+
+# As faixas reais das redes do rustploy que já existem.
+subnets_of_existing_nets() {
+    command -v podman >/dev/null 2>&1 || return 0
+    for n in $(podman network ls --format '{{.Name}}' 2>/dev/null | grep '^rp_net_'); do
+        podman network inspect "$n" --format '{{range .Subnets}}{{.Subnet}} {{end}}' 2>/dev/null | tr ' ' '\n'
+    done
+}
+
+detect_subnets() {
+    if [ -n "${RUSTPLOY_PODMAN_SUBNET:-}" ]; then
+        printf '%s\n' $RUSTPLOY_PODMAN_SUBNET | while read -r c; do is_cidr "$c" && echo "$c"; done | sort -u
+        return
+    fi
+    pools="$(pools_from_conf | sort -u)"
+    [ -n "$pools" ] || pools="$DEFAULT_POOL"
+    out="$pools"
+    for s in $(subnets_of_existing_nets | sort -u); do
+        is_cidr "$s" || continue
+        # Já coberta por uma pool /16 (mesmos dois primeiros octetos)? Então não repete.
+        pre="$(printf '%s' "$s" | cut -d. -f1-2)."
+        covered=0
+        for p in $pools; do
+            case "$p" in */16) [ "$(printf '%s' "$p" | cut -d. -f1-2)." = "$pre" ] && covered=1 ;; esac
+        done
+        [ "$covered" = "0" ] && out="$out
+$s"
+    done
+    printf '%s\n' $out | while read -r c; do is_cidr "$c" && echo "$c"; done | sort -u
+}
+
+case "$ACTION" in
+    status)
+        if ufw_active; then
+            echo "ufw ativo. Faixas detectadas: $(detect_subnets | tr '\n' ' ')"
+            echo "Regras do rustploy no ufw:"
+            ufw status | grep "$TAG" || echo "  (nenhuma — containers do Podman sem DNS por nome nem saída)"
+        else
+            echo "ufw inativo: nada filtra os containers."
+        fi
+        ;;
+    remove)
+        ufw_active || exit 0
+        # Acha pelo comentário (não depende de adivinhar a faixa); apaga do maior número para o menor,
+        # porque cada remoção renumera as seguintes.
+        for n in $(ufw status numbered 2>/dev/null | grep "$TAG" | sed -n 's/^\[ *\([0-9][0-9]*\)\].*/\1/p' | sort -rn); do
+            ufw --force delete "$n" >/dev/null 2>&1 || true
+        done
+        echo "rustploy-podman-ufw: regras removidas"
+        ;;
+    apply)
+        if ! ufw_active; then
+            echo "rustploy-podman-ufw: ufw inativo; nada a fazer"
+            exit 0
+        fi
+        SUBNETS="$(detect_subnets)"
+        [ -n "$SUBNETS" ] || { echo "rustploy-podman-ufw: não achei faixa de containers válida" >&2; exit 1; }
+        # A ordem importa nas regras de rota: o isolamento entre redes ANTES da saída geral. Faz-se em
+        # duas passadas (todos os `deny` e depois todos os `allow`), para que uma faixa nunca fique liberada
+        # antes de a outra ser isolada.
+        for s in $SUBNETS; do
+            ufw allow from "$s" to "$s" port 53 comment "$TAG DNS dos containers (aardvark-dns)" >/dev/null || exit 1
+        done
+        # Isolamento entre TODOS os pares de faixas (inclusive cada uma com ela mesma).
+        for a in $SUBNETS; do
+            for b in $SUBNETS; do
+                ufw route deny from "$a" to "$b" comment "$TAG isola as redes dos containers entre si" >/dev/null || exit 1
+            done
+        done
+        for s in $SUBNETS; do
+            ufw route allow from "$s" comment "$TAG saida dos containers para a internet" >/dev/null || exit 1
+        done
+        echo "rustploy-podman-ufw: ufw liberado para os containers do Podman ($(echo $SUBNETS | tr '\n' ' '))"
+        ;;
+    *)
+        echo "uso: rustploy-podman-ufw [apply|remove|status]" >&2
+        exit 2
+        ;;
+esac

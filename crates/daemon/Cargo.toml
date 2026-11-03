@@ -39,6 +39,7 @@ maintainer-scripts   = "../../packaging/debian"
 assets = [
     ["target/release/rustployd",             "usr/bin/rustployd",                       "755"],
     ["target/release/rustployd-fw",          "usr/libexec/rustployd-fw",                "755"],
+    ["../../packaging/rustploy-podman-ufw",  "usr/libexec/rustploy-podman-ufw",         "755"],
     ["target/release/rustploy-cli",          "usr/bin/rustploy-cli",                    "755"],
     ["../../packaging/config.toml",          "etc/rustploy/config.toml",                "644"],
     ["../../packaging/rustployd.service",    "lib/systemd/system/rustployd.service",    "644"],

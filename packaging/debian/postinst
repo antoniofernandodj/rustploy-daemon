@@ -66,6 +66,16 @@ if [ -f "$CONFIG" ]; then
     [ -e "$AGE_KEY" ] && chown rustploy:rustploy "$AGE_KEY" 2>/dev/null && chmod 600 "$AGE_KEY" || true
 fi
 
+# Podman + ufw: o DNS dos containers (aardvark-dns, no endereço do host da bridge) e a saída para a
+# internet são descartados pelo ufw padrão (deny incoming / deny routed). O auxiliar é idempotente e só
+# age com o ufw ATIVO e o motor configurado como Podman (`[docker] socket_path` aponta para o Podman).
+# Nunca derruba a instalação. Desligar: RUSTPLOY_PODMAN_UFW=0.
+if [ -f "$CONFIG" ] && [ -x /usr/libexec/rustploy-podman-ufw ]; then
+    case "$(awk '/^\[/{s=($0=="[docker]")} s && $1=="socket_path" {sub(/^[^=]*=[ \t]*/,""); gsub(/"/,""); print; exit}' "$CONFIG")" in
+        *podman*) /usr/libexec/rustploy-podman-ufw apply || echo "aviso: não consegui ajustar o ufw para o Podman (rode: sudo /usr/libexec/rustploy-podman-ufw apply)" ;;
+    esac
+fi
+
 if [ "$1" = "configure" ]; then
     systemctl daemon-reload              >/dev/null 2>&1 || true
     systemctl enable  rustployd          >/dev/null 2>&1 || true
