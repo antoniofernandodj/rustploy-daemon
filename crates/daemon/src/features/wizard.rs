@@ -553,8 +553,11 @@ impl StorageKind {
     pub fn default_image(self) -> &'static str {
         match self {
             Self::RustFs => "rustfs/rustfs:latest",
-            // O mesmo do blueprint de MinIO do catálogo de templates.
-            Self::MinIo => "minio/minio",
+            // `minio/minio` (Docker Hub e Quay) deixou de ser puxável ("access denied"; verificado
+            // em 2026-11-03 com `podman manifest inspect`). O build do Chainguard roda com o mesmo
+            // comando (`server /data --console-address ":9001"`) e as mesmas variáveis; foi testado
+            // criando um bucket com credencial certa e recusando a errada.
+            Self::MinIo => "cgr.dev/chainguard/minio:latest",
         }
     }
 

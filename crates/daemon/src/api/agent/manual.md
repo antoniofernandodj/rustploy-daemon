@@ -194,6 +194,12 @@ Comandos, por área (campos entre chaves):
   `kind` = `database`, `broker` ou `storage` (RustFS, MinIO) **gera a senha** quando você
   manda `password` vazio e a guarda como secret do serviço: a resposta traz só a referência,
   nunca o valor. É o jeito de criar infra sem ver credencial.
+  **Bucket num Storage:** o Storage não cria bucket sozinho. Crie um job com
+  `trigger_service_id` = o serviço do Storage (o job herda o ambiente dele, já com os
+  secrets decifrados só em memória) e `JobRunNow`. Receita testada (RustFS e MinIO):
+  `compose` = `services:\n  bucket:\n    image: docker.io/amazon/aws-cli\n    command: ["--endpoint-url","http://rp_<nome-do-storage>:9000","s3","mb","s3://<bucket>"]\n    environment:\n      AWS_ACCESS_KEY_ID: ${RUSTFS_ACCESS_KEY}\n      AWS_SECRET_ACCESS_KEY: ${RUSTFS_SECRET_KEY}\n      AWS_DEFAULT_REGION: us-east-1`
+  (MinIO: `${MINIO_ROOT_USER}` / `${MINIO_ROOT_PASSWORD}`), `main_service` = `bucket`.
+  Não use `minio/mc`: a imagem não é mais puxável.
 - **Docker**: `DockerContainers` · `DockerImages` · `DockerVolumes` ·
   `DockerNetworks` · `RemoveContainer{id}` · `RemoveImage{id}` ·
   `RemoveVolume{name}` · `RemoveNetwork{id}` · `StopAllManaged` ·
