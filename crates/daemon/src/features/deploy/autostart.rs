@@ -63,6 +63,8 @@ pub enum Progress {
 }
 
 /// Como subir **um** serviço de verdade. Separado do algoritmo para testá-lo sem Docker.
+// O clippy 1.99 (o do CI) acusa o `#[must_use]` que o `async_trait` põe no método com corpo padrão.
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait Bringer: Send + Sync {
     /// Sobe o serviço e só retorna quando ele está pronto. `Err(motivo)` = não ficou pronto.
