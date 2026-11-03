@@ -214,6 +214,18 @@ existente primeiro (`ServiceGet`, `JobListAll`) e use-o de molde.
 - **Log de container não é persistido.** `LogsGet` lê do Docker ao vivo, e o
   swap de deploy destrói o container antigo junto com o log. Build log
   (`GetBuildLogs`/`build_logs`) esse sim fica guardado.
+- **Você não vê senhas — por desenho.** O daemon mascara o que o agente recebe:
+  env `Plain` cuja chave parece segredo (`*PASSWORD*`, `*PASS*`, `*SECRET*`,
+  `*TOKEN*`, `*KEY*`) vem como `***`; a senha em qualquer `://user:senha@host`
+  (a `internal_url` do `ServiceConnectionInfo`, `DATABASE_URL`…) vem como
+  `user:***@host`; o `.env` e os YAMLs de exportação seguem a mesma regra. Valor
+  `Secret` aparece só como referência. É de propósito generoso (esconde até
+  `VAPID_PUBLIC_KEY`). Proibidos ao agente: `SecretReveal`, `SecretMove` com
+  `SecretToEnv`, `RegistryTokenCreate` e `ServiceExport` com `include_values`.
+  Se você devolver um spec com `***` num `ServiceUpdate`/`ProjectEnvSet`, o
+  daemon restaura o valor real; se não houver original, recusa. Para dar um
+  segredo a um app, referencie um secret (`<secret:NOME>`), não escreva o valor.
+  Isto reduz o risco de engano; não é um cofre (o token é de administrador).
 - **Sem escopo.** O token é o de administrador: não existe modo
   somente-leitura. Comandos destrutivos (`ServiceDelete`, `Prune*`,
   `Remove*`, `StopAllManaged`, `RegistryRepoDelete`) não pedem confirmação —

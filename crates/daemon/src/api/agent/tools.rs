@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 use serde_json::{Value, json};
 use shared::Command;
 
+use crate::api::agent::redigir::{redigir_resposta, restaurar_envs, sobrou_mascara};
 use crate::api::dispatch::dispatch;
 use crate::bootstrap::state::AppState;
 
@@ -189,14 +190,32 @@ pub async fn call(state: &AppState, name: &str, args: &Value) -> Result<Value, T
 }
 
 /// Comandos que o agente (MCP/`rpc`) **nunca** pode executar, qualquer que seja a configuração.
-/// Devolve o motivo, que vai na mensagem de erro. Hoje está vazia de propósito: a Fase 5 do plano
-/// (`docs/plano-backup-estado-em-git.md`, R5) coloca aqui o `SecretReveal`, para o agente não ler
-/// segredo por engano. Já fica ligada ao `rpc` para que o comando novo nasça protegido.
+/// Devolve o motivo, que vai na mensagem de erro. Regra de fundo (docs/plano-credenciais-cifradas-
+/// e-storage.md, Fase A): o agente nunca recebe o valor de um secret. O que *devolve* valor
+/// (`SecretReveal`, token do registry, exportar com valores) fica proibido; o que apenas *carrega*
+/// valor em respostas comuns é mascarado em `redigir`.
 fn proibido_ao_agente(cmd: &Command) -> Option<&'static str> {
     match cmd {
         Command::SecretReveal { .. } => {
             Some("revelar segredos é ação de uma pessoa na GUI/webui, não do agente")
         }
+        // Secret → env cria um `Plain`: o valor passaria a aparecer em `ServiceGet`.
+        Command::SecretMove {
+            op: shared::SecretMoveOp::SecretToEnv,
+            ..
+        } => Some(
+            "converter um secret em variável em claro expõe o valor: é ação de uma pessoa na GUI/webui",
+        ),
+        // A resposta traz o segredo do token em texto plano, uma única vez.
+        Command::RegistryTokenCreate { .. } => Some(
+            "o token do registry é devolvido em texto plano: crie-o na GUI/webui e entregue-o direto ao cliente que vai usá-lo",
+        ),
+        Command::ServiceExport {
+            include_values: true,
+            ..
+        } => Some(
+            "exportar um serviço com valores leva as variáveis em claro: use `include_values: false` ou peça a uma pessoa na GUI/webui",
+        ),
         Command::StateGitResolve { .. } => Some(
             "resolver um histórico divergido descarta um dos lados: é decisão de uma pessoa na GUI/webui",
         ),
@@ -206,7 +225,7 @@ fn proibido_ao_agente(cmd: &Command) -> Option<&'static str> {
 
 /// Executa um `Command` (em JSON) e converte `Response::Err` em falha.
 pub async fn rpc(state: &AppState, command: Value) -> Result<Value, ToolError> {
-    let cmd: Command = serde_json::from_value(command)
+    let mut cmd: Command = serde_json::from_value(command)
         .map_err(|e| ToolError::bad_request(format!("Command inválido: {e}")))?;
     // Atualizar derruba a API e troca o binário: é decisão de uma pessoa, na UI. O agente só
     // pode se o dono ligar `[update] allow_agent_apply` no config.toml.
@@ -222,7 +241,8 @@ pub async fn rpc(state: &AppState, command: Value) -> Result<Value, ToolError> {
     if let Some(motivo) = proibido_ao_agente(&cmd) {
         return Err(ToolError::new("forbidden", motivo));
     }
-    let resposta = serde_json::to_value(
+    restaurar_mascaras(state, &mut cmd).await?;
+    let mut resposta = serde_json::to_value(
         // No heap: o future do `dispatch` é enorme (um `match` com todo
         // handler), e aninhado no da ferramenta estourava a pilha da thread
         // tokio em build debug — `Snapshot` despacha outros comandos por dentro.
@@ -238,7 +258,56 @@ pub async fn rpc(state: &AppState, command: Value) -> Result<Value, ToolError> {
             format!("{code}: {message}"),
         ));
     }
+    redigir_resposta(&mut resposta);
     Ok(resposta)
+}
+
+/// O agente só vê as envs mascaradas (`redigir`), e `ServiceUpdate`/`ProjectEnvSet` substituem
+/// tudo: sem isto, `ServiceGet` → editar → `ServiceUpdate` gravaria `***` por cima da senha real.
+/// Devolve o valor original quando o que chega é a versão mascarada dele; se sobrar mascara sem
+/// original (valor que o agente nunca viu), recusa em vez de corromper.
+async fn restaurar_mascaras(state: &AppState, cmd: &mut Command) -> Result<(), ToolError> {
+    let recusar = |chave: &str| {
+        ToolError::bad_request(format!(
+            "a variável {chave} chegou com o valor mascarado (`***`) e não há valor anterior para \
+             restaurar. O agente não vê esse valor: envie o valor novo, ou use um secret"
+        ))
+    };
+    match cmd {
+        Command::ServiceUpdate { id, spec } => {
+            if let Ok(Some(atual)) = crate::store::services::get(&state.db, id).await {
+                restaurar_envs(&mut spec.env_vars, &atual.spec.env_vars);
+            }
+            if let Some(chave) = sobrou_mascara(&spec.env_vars) {
+                return Err(recusar(chave));
+            }
+        }
+        Command::ProjectEnvSet {
+            project_id,
+            env_vars,
+            ..
+        } => {
+            if let Ok(Some(atual)) = crate::store::projects::get(&state.db, project_id).await {
+                restaurar_envs(env_vars, &atual.env_vars);
+            }
+            if let Some(chave) = sobrou_mascara(env_vars) {
+                return Err(recusar(chave));
+            }
+        }
+        // Sem original para comparar aqui: só impede gravar o literal mascarado.
+        Command::ServiceCreate(spec) => {
+            if let Some(chave) = sobrou_mascara(&spec.env_vars) {
+                return Err(recusar(chave));
+            }
+        }
+        Command::JobCreate { env_vars, .. } | Command::JobUpdate { env_vars, .. } => {
+            if let Some(chave) = sobrou_mascara(env_vars) {
+                return Err(recusar(chave));
+            }
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 /// Como [`rpc`], mas exige a variante `variante` e devolve só o payload dela.
@@ -261,12 +330,15 @@ async fn status(state: &AppState) -> Result<Value, ToolError> {
 /// `Snapshot` devolve JSON **dentro** de uma string.
 async fn snapshot(state: &AppState) -> Result<Value, ToolError> {
     let texto = Box::pin(crate::api::http::snapshot(state)).await;
-    serde_json::from_str(&texto).map_err(|e| {
+    let mut v: Value = serde_json::from_str(&texto).map_err(|e| {
         ToolError::new(
             "unexpected_response",
             format!("snapshot não é JSON válido: {e}"),
         )
-    })
+    })?;
+    // O snapshot não passa pelo `rpc`: mesma redação.
+    redigir_resposta(&mut v);
+    Ok(v)
 }
 
 async fn list_deploys(state: &AppState, args: &Value) -> Result<Value, ToolError> {
@@ -638,6 +710,53 @@ fn source_label(source: Option<&Value>) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn comandos_que_devolvem_valor_de_segredo_sao_proibidos_ao_agente() {
+        let proibidos = [
+            Command::SecretMove {
+                project_id: "p".into(),
+                service_id: None,
+                name: "K".into(),
+                op: shared::SecretMoveOp::SecretToEnv,
+            },
+            Command::RegistryTokenCreate {
+                name: "ci".into(),
+                scope: "push".into(),
+            },
+            Command::ServiceExport {
+                service_id: "s".into(),
+                include_values: true,
+                project_env_keys: vec![],
+            },
+        ];
+        for c in &proibidos {
+            assert!(
+                proibido_ao_agente(c).is_some(),
+                "{c:?} deveria ser proibido"
+            );
+        }
+        // O sentido seguro (env → secret) e a exportação só com nomes seguem liberados.
+        let liberados = [
+            Command::SecretMove {
+                project_id: "p".into(),
+                service_id: None,
+                name: "K".into(),
+                op: shared::SecretMoveOp::EnvToSecret,
+            },
+            Command::ServiceExport {
+                service_id: "s".into(),
+                include_values: false,
+                project_env_keys: vec![],
+            },
+        ];
+        for c in &liberados {
+            assert!(
+                proibido_ao_agente(c).is_none(),
+                "{c:?} deveria ser liberado"
+            );
+        }
+    }
 
     #[test]
     fn revelar_secret_e_proibido_ao_agente_e_o_resto_dos_secrets_nao() {

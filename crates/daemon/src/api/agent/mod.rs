@@ -7,6 +7,7 @@
 
 pub mod access_key;
 pub mod mcp;
+pub mod redigir;
 pub mod tools;
 
 use hyper::StatusCode;
