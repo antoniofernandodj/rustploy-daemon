@@ -57,7 +57,10 @@ pub(crate) fn name_looks_sensitive(key: &str) -> bool {
     // `PASS`/`PWD` como palavra inteira (`RABBITMQ_DEFAULT_PASS`, `DB_PWD`): só como fragmento
     // pegaria `PASSENGER` ou `COMPASS`.
     let word = |w: &str| {
-        up == w || up.ends_with(&format!("_{w}")) || up.starts_with(&format!("{w}_")) || up.contains(&format!("_{w}_"))
+        up == w
+            || up.ends_with(&format!("_{w}"))
+            || up.starts_with(&format!("{w}_"))
+            || up.contains(&format!("_{w}_"))
     };
     SENSITIVE_NAME_PARTS.iter().any(|p| up.contains(p))
         || up == "KEY"
@@ -245,7 +248,14 @@ mod tests {
         ] {
             assert!(name_looks_sensitive(k), "{k} deveria ser sensível");
         }
-        for k in ["COMPASS", "PASSENGER_COUNT", "BYPASS", "MODE", "RABBITMQ_USER", "DEFAULT_PASSIVE"] {
+        for k in [
+            "COMPASS",
+            "PASSENGER_COUNT",
+            "BYPASS",
+            "MODE",
+            "RABBITMQ_USER",
+            "DEFAULT_PASSIVE",
+        ] {
             assert!(!name_looks_sensitive(k), "{k} não deveria ser sensível");
         }
     }

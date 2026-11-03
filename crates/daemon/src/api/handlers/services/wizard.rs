@@ -203,7 +203,12 @@ mod tests {
     #[tokio::test]
     async fn senha_gerada_pelo_daemon_nao_aparece_na_resposta_nem_no_yaml() {
         for (id, kind, secret_key, access_key) in [
-            ("rustfs", "storage", "RUSTFS_SECRET_KEY", Some("RUSTFS_ACCESS_KEY")),
+            (
+                "rustfs",
+                "storage",
+                "RUSTFS_SECRET_KEY",
+                Some("RUSTFS_ACCESS_KEY"),
+            ),
             ("minio", "storage", "MINIO_ROOT_PASSWORD", None),
             ("postgres", "database", "POSTGRES_PASSWORD", None),
             ("rabbitmq", "broker", "RABBITMQ_DEFAULT_PASS", None),
@@ -232,7 +237,11 @@ mod tests {
             if let Some(ak) = access_key {
                 assert!(
                     matches!(
-                        svc.spec.env_vars.iter().find(|v| v.key == ak).map(|v| &v.value),
+                        svc.spec
+                            .env_vars
+                            .iter()
+                            .find(|v| v.key == ak)
+                            .map(|v| &v.value),
                         Some(EnvVarValue::Secret(_))
                     ),
                     "{id}: a access key também vira secret"

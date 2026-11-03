@@ -844,7 +844,11 @@ mod senhas_tests {
             expose_external: false,
         };
         let pg = build_spec(&req("database", "postgres")).unwrap();
-        let senha = pg.env_vars.iter().find(|e| e.key == "POSTGRES_PASSWORD").unwrap();
+        let senha = pg
+            .env_vars
+            .iter()
+            .find(|e| e.key == "POSTGRES_PASSWORD")
+            .unwrap();
         assert!(matches!(&senha.value, EnvVarValue::Plain(v) if v.len() == PASSWORD_LEN));
 
         let my = build_spec(&req("database", "mysql")).unwrap();
@@ -855,7 +859,12 @@ mod senhas_tests {
         assert!(rb.env_vars.iter().any(|e| e.key == "RABBITMQ_DEFAULT_PASS"
             && matches!(&e.value, EnvVarValue::Plain(v) if v.len() == PASSWORD_LEN)));
 
-        assert!(build_spec(&req("broker", "kafka")).unwrap().env_vars.is_empty());
+        assert!(
+            build_spec(&req("broker", "kafka"))
+                .unwrap()
+                .env_vars
+                .is_empty()
+        );
     }
 
     #[test]
@@ -876,17 +885,26 @@ mod senhas_tests {
             expose_external: false,
         };
         let plain = |spec: &ServiceSpec, k: &str| {
-            spec.env_vars.iter().find(|e| e.key == k).and_then(|e| match &e.value {
-                EnvVarValue::Plain(v) => Some(v.clone()),
-                _ => None,
-            })
+            spec.env_vars
+                .iter()
+                .find(|e| e.key == k)
+                .and_then(|e| match &e.value {
+                    EnvVarValue::Plain(v) => Some(v.clone()),
+                    _ => None,
+                })
         };
         let pg = build_spec(&vazio("database", "postgres")).unwrap();
-        assert_eq!(plain(&pg, "POSTGRES_USER").as_deref(), Some(DbKind::Postgres.default_user()));
+        assert_eq!(
+            plain(&pg, "POSTGRES_USER").as_deref(),
+            Some(DbKind::Postgres.default_user())
+        );
         assert!(!plain(&pg, "POSTGRES_USER").unwrap().is_empty());
         assert_eq!(plain(&pg, "POSTGRES_DB").as_deref(), Some("app"));
         let rb = build_spec(&vazio("broker", "rabbitmq")).unwrap();
-        assert_eq!(plain(&rb, "RABBITMQ_DEFAULT_USER").as_deref(), Some("rabbit"));
+        assert_eq!(
+            plain(&rb, "RABBITMQ_DEFAULT_USER").as_deref(),
+            Some("rabbit")
+        );
         // o que a pessoa digitou continua valendo
         let mut custom = vazio("database", "postgres");
         custom.user = "meu".into();
@@ -925,8 +943,14 @@ mod senhas_tests {
         let rustfs = build_spec(&req("rustfs", "")).unwrap();
         assert_eq!(rustfs.db_kind.as_deref(), Some("rustfs"));
         assert_eq!(rustfs.port, 9000);
-        assert_eq!(get(&rustfs, "RUSTFS_ACCESS_KEY").as_deref(), Some("rustfsadmin"));
-        assert_eq!(get(&rustfs, "RUSTFS_SECRET_KEY").unwrap().len(), PASSWORD_LEN);
+        assert_eq!(
+            get(&rustfs, "RUSTFS_ACCESS_KEY").as_deref(),
+            Some("rustfsadmin")
+        );
+        assert_eq!(
+            get(&rustfs, "RUSTFS_SECRET_KEY").unwrap().len(),
+            PASSWORD_LEN
+        );
         let ServiceSource::Compose(c) = &rustfs.source else {
             panic!("storage é Compose")
         };
@@ -934,8 +958,14 @@ mod senhas_tests {
         assert!(!c.content.contains("CORS"), "sem CORS aberto por padrão");
 
         let minio = build_spec(&req("minio", "meu-usuario")).unwrap();
-        assert_eq!(get(&minio, "MINIO_ROOT_USER").as_deref(), Some("meu-usuario"));
-        assert_eq!(get(&minio, "MINIO_ROOT_PASSWORD").unwrap().len(), PASSWORD_LEN);
+        assert_eq!(
+            get(&minio, "MINIO_ROOT_USER").as_deref(),
+            Some("meu-usuario")
+        );
+        assert_eq!(
+            get(&minio, "MINIO_ROOT_PASSWORD").unwrap().len(),
+            PASSWORD_LEN
+        );
 
         assert!(build_spec(&req("s3-inexistente", "")).is_err());
         let rows: serde_json::Value = serde_json::from_str(&storage_rows_json()).unwrap();

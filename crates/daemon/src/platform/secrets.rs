@@ -7,11 +7,7 @@
 
 use age::{secrecy::ExposeSecret, x25519};
 use anyhow::{Context, Result, anyhow, bail};
-use std::{
-    io::Write,
-    path::Path,
-    sync::Arc,
-};
+use std::{io::Write, path::Path, sync::Arc};
 use tracing::{info, warn};
 use ulid::Ulid;
 
@@ -510,7 +506,9 @@ fn valid_env_key(name: &str) -> Result<()> {
         .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
         && chars.all(|c| c.is_ascii_alphanumeric() || c == '_');
     if !ok {
-        bail!("'{name}' não é um nome de variável válido (use letras, números e _, sem começar por número)");
+        bail!(
+            "'{name}' não é um nome de variável válido (use letras, números e _, sem começar por número)"
+        );
     }
     Ok(())
 }
@@ -1133,7 +1131,6 @@ mod tests {
         );
     }
 
-
     // ---- renomear chave de env e secret (Fase C do plano de credenciais) --------------------------
 
     #[tokio::test]
@@ -1142,10 +1139,13 @@ mod tests {
         set_env_plain(&db, Some("s1"), "RABBITMQ_DEFAULT_PASS", "valor");
         db.infra()
             .update(|st| {
-                st.projects[0].services[0].spec.env_comments.push(shared::EnvComment {
-                    text: "# senha do broker".into(),
-                    before_key: Some("RABBITMQ_DEFAULT_PASS".into()),
-                });
+                st.projects[0].services[0]
+                    .spec
+                    .env_comments
+                    .push(shared::EnvComment {
+                        text: "# senha do broker".into(),
+                        before_key: Some("RABBITMQ_DEFAULT_PASS".into()),
+                    });
                 Ok(())
             })
             .unwrap();
@@ -1158,7 +1158,9 @@ mod tests {
         assert_eq!(envs[0].value, EnvVarValue::Plain("valor".into()));
         let st = db.infra().snapshot();
         assert_eq!(
-            st.projects[0].services[0].spec.env_comments[0].before_key.as_deref(),
+            st.projects[0].services[0].spec.env_comments[0]
+                .before_key
+                .as_deref(),
             Some("RABBITMQ_PASS")
         );
     }
@@ -1191,11 +1193,26 @@ mod tests {
         let (db, m, _d) = cenario().await;
         set_env_plain(&db, None, "A", "1");
         set_env_plain(&db, None, "B", "2");
-        assert!(m.rename_env_key("p1", None, "A", "B").await.is_err(), "destino existe");
-        assert!(m.rename_env_key("p1", None, "NADA", "C").await.is_err(), "origem não existe");
-        assert!(m.rename_env_key("p1", None, "A", "1A").await.is_err(), "começa por número");
-        assert!(m.rename_env_key("p1", None, "A", "A B").await.is_err(), "espaço");
-        assert!(m.rename_env_key("p1", None, "A", "A").await.is_err(), "mesmo nome");
+        assert!(
+            m.rename_env_key("p1", None, "A", "B").await.is_err(),
+            "destino existe"
+        );
+        assert!(
+            m.rename_env_key("p1", None, "NADA", "C").await.is_err(),
+            "origem não existe"
+        );
+        assert!(
+            m.rename_env_key("p1", None, "A", "1A").await.is_err(),
+            "começa por número"
+        );
+        assert!(
+            m.rename_env_key("p1", None, "A", "A B").await.is_err(),
+            "espaço"
+        );
+        assert!(
+            m.rename_env_key("p1", None, "A", "A").await.is_err(),
+            "mesmo nome"
+        );
         // nada mudou
         let keys: Vec<_> = env(&db, None).into_iter().map(|v| v.key).collect();
         assert_eq!(keys, ["A", "B"]);
@@ -1210,7 +1227,11 @@ mod tests {
         for sid in ["s1", "s2"] {
             db.infra()
                 .update(|st| {
-                    let svc = st.projects[0].services.iter_mut().find(|s| s.id == sid).unwrap();
+                    let svc = st.projects[0]
+                        .services
+                        .iter_mut()
+                        .find(|s| s.id == sid)
+                        .unwrap();
                     svc.spec.env_vars.push(EnvVar {
                         key: "RABBITMQ_PASS".into(),
                         value: EnvVarValue::Secret("RABBITMQ_DEFAULT_PASS".into()),
@@ -1233,22 +1254,36 @@ mod tests {
         );
         // o valor nunca foi lido: continua o mesmo sob o nome novo
         assert_eq!(
-            m.get_scoped("p1", Some("s1"), "RABBITMQ_PASS").await.unwrap(),
+            m.get_scoped("p1", Some("s1"), "RABBITMQ_PASS")
+                .await
+                .unwrap(),
             "segredo-1"
         );
-        assert!(m.get_scoped("p1", Some("s1"), "RABBITMQ_DEFAULT_PASS").await.is_err());
+        assert!(
+            m.get_scoped("p1", Some("s1"), "RABBITMQ_DEFAULT_PASS")
+                .await
+                .is_err()
+        );
     }
 
     #[tokio::test]
     async fn renomear_secret_de_projeto_respeita_o_sombreamento_do_servico() {
         let (db, m, _d) = cenario().await;
-        m.set_scoped("p1", None, "DB_PASS", "do-projeto").await.unwrap();
+        m.set_scoped("p1", None, "DB_PASS", "do-projeto")
+            .await
+            .unwrap();
         // o s1 tem um secret próprio com o mesmo nome (sombreia o do projeto); o s2 usa o do projeto
-        m.set_scoped("p1", Some("s1"), "DB_PASS", "do-s1").await.unwrap();
+        m.set_scoped("p1", Some("s1"), "DB_PASS", "do-s1")
+            .await
+            .unwrap();
         for sid in ["s1", "s2"] {
             db.infra()
                 .update(|st| {
-                    let svc = st.projects[0].services.iter_mut().find(|s| s.id == sid).unwrap();
+                    let svc = st.projects[0]
+                        .services
+                        .iter_mut()
+                        .find(|s| s.id == sid)
+                        .unwrap();
                     svc.spec.env_vars.push(EnvVar {
                         key: "PASS".into(),
                         value: EnvVarValue::Secret("DB_PASS".into()),
@@ -1270,12 +1305,29 @@ mod tests {
             .await
             .unwrap();
         // env do projeto e do s2 (que resolvia para o do projeto) foram reapontadas
-        assert_eq!(env(&db, None)[0].value, EnvVarValue::Secret("DATABASE_PASSWORD".into()));
-        assert_eq!(env(&db, Some("s2"))[0].value, EnvVarValue::Secret("DATABASE_PASSWORD".into()));
+        assert_eq!(
+            env(&db, None)[0].value,
+            EnvVarValue::Secret("DATABASE_PASSWORD".into())
+        );
+        assert_eq!(
+            env(&db, Some("s2"))[0].value,
+            EnvVarValue::Secret("DATABASE_PASSWORD".into())
+        );
         // o s1 resolvia para o PRÓPRIO secret: a env dele não muda e continua valendo
-        assert_eq!(env(&db, Some("s1"))[0].value, EnvVarValue::Secret("DB_PASS".into()));
-        assert_eq!(m.resolve("p1", Some("s1"), "DB_PASS").await.unwrap(), "do-s1");
-        assert_eq!(m.resolve("p1", Some("s2"), "DATABASE_PASSWORD").await.unwrap(), "do-projeto");
+        assert_eq!(
+            env(&db, Some("s1"))[0].value,
+            EnvVarValue::Secret("DB_PASS".into())
+        );
+        assert_eq!(
+            m.resolve("p1", Some("s1"), "DB_PASS").await.unwrap(),
+            "do-s1"
+        );
+        assert_eq!(
+            m.resolve("p1", Some("s2"), "DATABASE_PASSWORD")
+                .await
+                .unwrap(),
+            "do-projeto"
+        );
     }
 
     #[tokio::test]
@@ -1283,11 +1335,23 @@ mod tests {
         let (_db, m, _d) = cenario().await;
         m.set_scoped("p1", None, "A", "1").await.unwrap();
         m.set_scoped("p1", None, "B", "2").await.unwrap();
-        assert!(m.rename_secret("p1", None, "A", "B").await.is_err(), "destino existe");
-        assert!(m.rename_secret("p1", None, "NADA", "C").await.is_err(), "origem não existe");
+        assert!(
+            m.rename_secret("p1", None, "A", "B").await.is_err(),
+            "destino existe"
+        );
+        assert!(
+            m.rename_secret("p1", None, "NADA", "C").await.is_err(),
+            "origem não existe"
+        );
         assert!(m.rename_secret("p1", None, "A", "").await.is_err(), "vazio");
-        assert!(m.rename_secret("p1", None, "A", "a:b").await.is_err(), "dois-pontos");
-        assert!(m.rename_secret("p1", None, "A", "a b").await.is_err(), "espaço");
+        assert!(
+            m.rename_secret("p1", None, "A", "a:b").await.is_err(),
+            "dois-pontos"
+        );
+        assert!(
+            m.rename_secret("p1", None, "A", "a b").await.is_err(),
+            "espaço"
+        );
         assert_eq!(m.get_scoped("p1", None, "A").await.unwrap(), "1");
     }
 
