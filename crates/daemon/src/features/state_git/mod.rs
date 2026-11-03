@@ -141,6 +141,9 @@ pub struct StateGit {
     debounce: Duration,
     /// De quanto em quanto tempo fazer `fetch` (e repetir o que falhou) sem que nada tenha mudado.
     fetch_every: Duration,
+    /// Chamado depois de uma restauração num servidor limpo: sobe o que foi restaurado, na ordem
+    /// das dependências (o bootstrap liga isto ao religamento do boot).
+    after_restore: std::sync::OnceLock<Box<dyn Fn() + Send + Sync>>,
 }
 
 fn fingerprint(project: &str, scope: &str, what: &str) -> String {
@@ -379,7 +382,13 @@ impl StateGit {
             rt: Mutex::new(Runtime::default()),
             wake: tokio::sync::Notify::new(),
             cycle_lock: tokio::sync::Mutex::new(()),
+            after_restore: std::sync::OnceLock::new(),
         })
+    }
+
+    /// Define o que fazer depois de uma restauração (uma vez só, no bootstrap).
+    pub fn set_after_restore(&self, f: impl Fn() + Send + Sync + 'static) {
+        let _ = self.after_restore.set(Box::new(f));
     }
 
     pub async fn settings(&self) -> anyhow::Result<Settings> {
@@ -584,11 +593,72 @@ impl StateGit {
             rt.paused = None;
             rt.needs_push = mode == Mode::Sync;
         }
+        if mode == Mode::Sync {
+            // Servidor recém-instalado ligando o sync num repositório que já tem história: traz o
+            // estado de volta (Fase 8) em vez de commitar um estado vazio e divergir.
+            if let Err(e) = self.restore_if_virgin().await {
+                let msg = format!("restauração a partir do git falhou: {e:#}");
+                warn!("state_git: {msg}");
+                self.rt.lock().unwrap().last_error = Some(msg);
+            }
+        }
         if mode != Mode::Off {
             // O primeiro commit já nasce limpo (a auditoria acabou de passar).
             self.cycle(true).await;
         }
         Ok(self.status().await?)
+    }
+
+    /// **Restauração num servidor limpo (Fase 8).** Só age quando o servidor é virgem: nenhum projeto
+    /// e nenhum commit local. Busca o remoto e, se a branch existe, aplica a árvore dela (com todas
+    /// as validações do pull, inclusive a de que os secrets decifram com a identidade deste
+    /// servidor: para restaurar secrets, o `age_identity` precisa ser a chave de recuperação ou a
+    /// do servidor antigo). Um servidor que já tem estado próprio nunca é sobrescrito: segue o
+    /// caminho normal e, se os históricos divergirem, pausa.
+    async fn restore_if_virgin(&self) -> anyhow::Result<()> {
+        if !self.db.infra().snapshot().projects.is_empty() {
+            return Ok(());
+        }
+        let s = self.settings().await?;
+        let auth = self.auth_for(&s).await?;
+        let (db, branch, remote) = (self.db.clone(), s.branch.clone(), s.remote.clone());
+        let sha = tokio::task::spawn_blocking(move || {
+            db.infra().exclusive(|root, state| {
+                if !state.projects.is_empty() {
+                    return Ok(None);
+                }
+                git::ensure_repo(root, &branch, remote.as_deref())?;
+                if git::head(root)?.is_some() {
+                    return Ok(None);
+                }
+                if !git::fetch(root, &branch, auth.as_ref())? {
+                    return Ok(None); // repositório vazio: nada a restaurar
+                }
+                anyhow::Ok(git::remote_head(root, &branch))
+            })
+        })
+        .await??;
+        if let Some(sha) = sha {
+            info!(sha = %sha, "state_git: servidor limpo, restaurando o estado do repositório");
+            if let Applied::No(msg) = self.apply_incoming(&sha, true).await {
+                anyhow::bail!(msg);
+            }
+            // O servidor é novo: o que veio do git é para estar no ar. Marca a intenção e religa
+            // na ordem das dependências (as imagens são baixadas/construídas; dados não voltam).
+            let services = crate::store::services::list_all(&self.db).await?;
+            for svc in services.iter().filter(|s| s.spec.autostart) {
+                crate::store::services::set_desired_state(
+                    &self.db,
+                    &svc.id,
+                    crate::store::services::DesiredState::Running,
+                )
+                .await?;
+            }
+            if let Some(f) = self.after_restore.get() {
+                f();
+            }
+        }
+        Ok(())
     }
 
     /// "Sincronizar agora": commit pendente e, em `sync`, push.
@@ -1148,6 +1218,15 @@ mod tests {
     }
 
     async fn cenario() -> Cenario {
+        cenario_com(true).await
+    }
+
+    /// Um servidor recém-instalado: sem nenhum projeto.
+    async fn cenario_limpo() -> Cenario {
+        cenario_com(false).await
+    }
+
+    async fn cenario_com(com_projeto: bool) -> Cenario {
         let dir = tempfile::tempdir().unwrap();
         let db = Arc::new(
             crate::store::connect(&dir.path().join("data"))
@@ -1156,7 +1235,9 @@ mod tests {
         );
         let secrets =
             Arc::new(SecretsManager::new(&dir.path().join("master.key"), db.clone()).unwrap());
-        db.seed_project_for_test("p1");
+        if com_projeto {
+            db.seed_project_for_test("p1");
+        }
         let sg = StateGit::with_debounce(db.clone(), secrets.clone(), Duration::from_millis(150));
         Cenario {
             db,
@@ -2249,5 +2330,71 @@ mod tests {
         let st = c.sg.sync_now().await.unwrap();
         assert_eq!(st.incoming_rejected, None, "{st:?}");
         assert_eq!(st.last_error, None, "{st:?}");
+    }
+
+    /// Fase 8: servidor limpo + repositório com histórico → o estado volta, sem pausar por
+    /// "históricos divergentes" (o servidor novo nunca teve história própria).
+    #[tokio::test]
+    async fn servidor_limpo_restaura_o_estado_do_repositorio() {
+        let a = cenario().await;
+        add_env(&a, "FOO", "bar");
+        a.db.seed_service_for_test("p1", "svc_a");
+        let (_remote_dir, url) = bare_remote();
+        let st =
+            a.sg.configure("sync", Some(url.clone()), None, None)
+                .await
+                .unwrap();
+        assert_eq!(st.last_push_ok, Some(true), "{:?}", st.last_error);
+
+        let b = cenario_limpo().await;
+        assert!(
+            crate::store::projects::list(&b.db)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        let religou = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let flag = religou.clone();
+        b.sg.set_after_restore(move || flag.store(true, std::sync::atomic::Ordering::SeqCst));
+        let st = b.sg.configure("sync", Some(url), None, None).await.unwrap();
+        assert!(
+            st.paused_reason.is_none(),
+            "não deveria pausar: {:?}",
+            st.last_error
+        );
+        assert!(st.last_error.is_none(), "{:?}", st.last_error);
+        let projetos = crate::store::projects::list(&b.db).await.unwrap();
+        assert_eq!(projetos.len(), 1, "o projeto do repositório volta");
+        assert_eq!(projetos[0].id, "p1");
+        assert_eq!(
+            git_out(&b, &["rev-parse", "HEAD"]).trim(),
+            git_out(&a, &["rev-parse", "HEAD"]).trim(),
+            "o servidor novo segue a mesma história"
+        );
+        assert_eq!((st.ahead, st.behind), (0, 0));
+        assert!(
+            religou.load(std::sync::atomic::Ordering::SeqCst),
+            "a restauração religa o que voltou"
+        );
+        assert_eq!(
+            crate::store::services::desired_state(&b.db, "svc_a")
+                .await
+                .unwrap(),
+            crate::store::services::DesiredState::Running
+        );
+    }
+
+    /// Um servidor que JÁ tem projetos nunca é sobrescrito em silêncio: continua pausando.
+    #[tokio::test]
+    async fn servidor_com_estado_proprio_nao_e_sobrescrito_pelo_remoto() {
+        let a = cenario().await;
+        let (_remote_dir, url) = bare_remote();
+        a.sg.configure("sync", Some(url.clone()), None, None)
+            .await
+            .unwrap();
+        let b = cenario().await; // tem p1 próprio, história própria
+        add_env(&b, "LOCAL", "1");
+        let st = b.sg.configure("sync", Some(url), None, None).await.unwrap();
+        assert!(st.paused_reason.is_some(), "deveria pausar por divergência");
     }
 }

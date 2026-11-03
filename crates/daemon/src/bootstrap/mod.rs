@@ -214,6 +214,13 @@ pub async fn run() -> Result<()> {
     // Religa, na ordem das dependências, o que estava no ar antes do reboot (e não foi parado à
     // mão). Depois do worker da fila de deploys: serviço sem container passa por ela.
     deploy::autostart::spawn_boot(state.deploy_ctx());
+    // Servidor limpo que acabou de restaurar o estado do git: sobe o restaurado do mesmo jeito.
+    {
+        let ctx = state.deploy_ctx();
+        state
+            .state_git
+            .set_after_restore(move || deploy::autostart::spawn_boot(ctx.clone()));
+    }
     listeners::spawn(config, &state, &ingress, &tls, registry_storage);
 
     // Todo listener do daemon roda em `tokio::spawn`, então sem isto a
