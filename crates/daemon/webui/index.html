@@ -1500,8 +1500,22 @@
                   No Gitea: Settings → Applications → Generate New Token (escopo: repo).
                 </text>
                 <text class="u-muted" x-show="store.gitProviderKind === 'github'" x-t>
-                  No GitHub: Settings → Developer settings → Personal access tokens → gere um token
-                  com escopo "repo".
+                  No GitHub: Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token.
+                </text>
+                <text class="u-muted" x-show="store.gitProviderKind === 'github'" x-t>
+                  Repository access: marque os repositórios que vai usar (ou "All repositories" para incluir os futuros).
+                </text>
+                <text class="u-muted" x-show="store.gitProviderKind === 'github'" x-t>
+                  Permissões obrigatórias: Metadata → Read-only e Contents → Read-only (listar branches e clonar repositórios privados).
+                </text>
+                <text class="u-muted" x-show="store.gitProviderKind === 'github'" x-t>
+                  Recomendadas para recursos futuros: Webhooks → Read and write e Commit statuses → Read and write.
+                </text>
+                <text class="u-muted" x-show="store.gitProviderKind === 'github'" x-t>
+                  Contents → Read and write só é necessário se este token for usado na sincronização do estado de infra com o git (o push); para deploy, deixe Read-only. Não dê Administration, Secrets nem Workflows.
+                </text>
+                <text class="u-muted" x-show="store.gitProviderKind === 'github'" x-t>
+                  Alternativa: token classic com escopo "repo" (dá acesso a todos os seus repositórios).
                 </text>
               </column>
             </template>
@@ -1909,7 +1923,7 @@
               <text class="u-label-cap" style="margin-top:14px" x-t>COMO ATUALIZAR À MÃO</text>
               <text class="u-muted" x-t>
                 Há uma versão nova. Por enquanto a atualização é manual: rode o comando abaixo na VPS.
-                Seus dados, o config.toml e a master.key são preservados, e os containers dos serviços
+                Seus dados, o config.toml e o age.key são preservados, e os containers dos serviços
                 continuam rodando.
               </text>
               <row class="kv-list__row">
