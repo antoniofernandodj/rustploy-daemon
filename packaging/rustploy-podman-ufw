@@ -87,6 +87,27 @@ $s"
     printf '%s\n' $out | while read -r c; do is_cidr "$c" && echo "$c"; done | sort -u
 }
 
+# Linhas numeradas das regras de ROTA (FWD) do rustploy: "NUM DENY|ALLOW".
+route_rule_lines() {
+    ufw status numbered 2>/dev/null | grep "$TAG" | grep ' FWD ' |
+        sed -n 's/^\[ *\([0-9][0-9]*\)\] .*\(DENY\|ALLOW\) FWD.*/\1 \2/p'
+}
+
+# As regras de rota estão completas E na ordem certa (todo DENY antes de todo ALLOW)?
+route_rules_ok() {
+    route_rule_lines | awk -v wd="$1" -v wa="$2" '
+        $2=="DENY"  { nd++; if ($1>maxd) maxd=$1 }
+        $2=="ALLOW" { na++; if (mina==0 || $1<mina) mina=$1 }
+        END { exit !(nd==wd && na==wa && maxd<mina) }'
+}
+
+# Apaga as regras de rota do rustploy (do maior número para o menor: cada remoção renumera as seguintes).
+delete_route_rules() {
+    for n in $(route_rule_lines | awk '{print $1}' | sort -rn); do
+        ufw --force delete "$n" >/dev/null 2>&1 || true
+    done
+}
+
 case "$ACTION" in
     status)
         if ufw_active; then
@@ -113,21 +134,30 @@ case "$ACTION" in
         fi
         SUBNETS="$(detect_subnets)"
         [ -n "$SUBNETS" ] || { echo "rustploy-podman-ufw: não achei faixa de containers válida" >&2; exit 1; }
-        # A ordem importa nas regras de rota: o isolamento entre redes ANTES da saída geral. Faz-se em
-        # duas passadas (todos os `deny` e depois todos os `allow`), para que uma faixa nunca fique liberada
-        # antes de a outra ser isolada.
         for s in $SUBNETS; do
             ufw allow from "$s" to "$s" port 53 comment "$TAG DNS dos containers (aardvark-dns)" >/dev/null || exit 1
         done
-        # Isolamento entre TODOS os pares de faixas (inclusive cada uma com ela mesma).
-        for a in $SUBNETS; do
-            for b in $SUBNETS; do
-                ufw route deny from "$a" to "$b" comment "$TAG isola as redes dos containers entre si" >/dev/null || exit 1
+
+        # Regras de ROTA: o ufw avalia na ordem da lista, então todo `deny` entre redes tem de vir ANTES do `allow` de
+        # saída. Só acrescentar no fim não basta: se o `allow` já existe e o `deny` falta (ou foi apagado), o `deny`
+        # novo cairia DEPOIS dele e perderia o efeito (isso foi pego no laboratório). Por isso: confere a ordem e,
+        # se estiver errada ou incompleta, refaz as regras de rota do rustploy do zero, com o `deny` inserido no topo.
+        want_deny=0
+        for a in $SUBNETS; do for b in $SUBNETS; do want_deny=$((want_deny + 1)); done; done
+        want_allow=$(echo $SUBNETS | wc -w)
+        if route_rules_ok "$want_deny" "$want_allow"; then
+            :   # já está certo: não mexe (evita uma janela sem regra de saída a cada apply)
+        else
+            delete_route_rules
+            for a in $SUBNETS; do
+                for b in $SUBNETS; do
+                    ufw route insert 1 deny from "$a" to "$b" comment "$TAG isola as redes dos containers entre si" >/dev/null || exit 1
+                done
             done
-        done
-        for s in $SUBNETS; do
-            ufw route allow from "$s" comment "$TAG saida dos containers para a internet" >/dev/null || exit 1
-        done
+            for s in $SUBNETS; do
+                ufw route allow from "$s" comment "$TAG saida dos containers para a internet" >/dev/null || exit 1
+            done
+        fi
         echo "rustploy-podman-ufw: ufw liberado para os containers do Podman ($(echo $SUBNETS | tr '\n' ' '))"
         ;;
     *)
