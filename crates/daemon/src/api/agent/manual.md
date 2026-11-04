@@ -249,8 +249,7 @@ existente primeiro (`ServiceGet`, `JobListAll`) e use-o de molde.
 - **Gerar ou rotacionar um segredo SEM ver o valor: ainda não existe comando para isso.** Só dois caminhos servem hoje: o
   `WizardCreate` de banco/broker/storage, que gera a senha do serviço novo dentro do daemon, e uma pessoa gerando/trocando o
   secret na GUI/webui. **Não improvise** (nem com serviço descartável, nem escolhendo você a senha com `SecretSet`): isso
-  tira o valor do cofre ou o deixa passar por você. O comando certo está planejado (`SecretGenerate`/`SecretRotate`, Fase G do
-  `docs/plano-credenciais-cifradas-e-storage.md`); até lá, peça a uma pessoa.
+  tira o valor do cofre ou o deixa passar por você. O comando certo está planejado (`SecretGenerate`/`SecretRotate`, ainda não existem); até lá, peça a uma pessoa.
 - **Sem escopo.** O token é o de administrador: não existe modo
   somente-leitura. Comandos destrutivos (`ServiceDelete`, `Prune*`,
   `Remove*`, `StopAllManaged`, `RegistryRepoDelete`) não pedem confirmação —
