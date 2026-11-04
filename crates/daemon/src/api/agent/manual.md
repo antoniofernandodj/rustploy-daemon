@@ -246,12 +246,11 @@ existente primeiro (`ServiceGet`, `JobListAll`) e use-o de molde.
   Isto reduz o risco de engano; não é um cofre (o token é de administrador).
 - **`ServiceReload` NÃO relê variáveis nem secrets**: ele só para e inicia o MESMO container, que guarda o
   ambiente de quando foi criado. Trocou um secret/variável? Faça **redeploy** (`deploy`), que cria um container novo.
-- **Rotacionar uma senha sem vê-la** (testado num Postgres real): (1) `WizardCreate` de um banco descartável (a senha nasce no
-  daemon, em secret de serviço); (2) `SecretRename` para `X_NEW` e `SecretMove ServiceSecretToProject`; (3) `ServiceDelete` do
-  descartável; (4) um job com `PGPASSWORD=${ATUAL}` e `NEWPW=${X_NEW}` rodando
-  `echo "ALTER USER CURRENT_USER PASSWORD :'newpw'" | psql -v ON_ERROR_STOP=1 -v newpw="$NEWPW"`; (5) `SecretRename` do antigo
-  para `X_OLD` e do `X_NEW` para o nome em uso; (6) **redeploy** dos serviços que a usam; (7) um job que prova que a nova
-  conecta e a antiga é recusada.
+- **Gerar ou rotacionar um segredo SEM ver o valor: ainda não existe comando para isso.** Só dois caminhos servem hoje: o
+  `WizardCreate` de banco/broker/storage, que gera a senha do serviço novo dentro do daemon, e uma pessoa gerando/trocando o
+  secret na GUI/webui. **Não improvise** (nem com serviço descartável, nem escolhendo você a senha com `SecretSet`): isso
+  tira o valor do cofre ou o deixa passar por você. O comando certo está planejado (`SecretGenerate`/`SecretRotate`, Fase G do
+  `docs/plano-credenciais-cifradas-e-storage.md`); até lá, peça a uma pessoa.
 - **Sem escopo.** O token é o de administrador: não existe modo
   somente-leitura. Comandos destrutivos (`ServiceDelete`, `Prune*`,
   `Remove*`, `StopAllManaged`, `RegistryRepoDelete`) não pedem confirmação —
