@@ -244,6 +244,14 @@ existente primeiro (`ServiceGet`, `JobListAll`) e use-o de molde.
   daemon restaura o valor real; se não houver original, recusa. Para dar um
   segredo a um app, referencie um secret (`<secret:NOME>`), não escreva o valor.
   Isto reduz o risco de engano; não é um cofre (o token é de administrador).
+- **`ServiceReload` NÃO relê variáveis nem secrets**: ele só para e inicia o MESMO container, que guarda o
+  ambiente de quando foi criado. Trocou um secret/variável? Faça **redeploy** (`deploy`), que cria um container novo.
+- **Rotacionar uma senha sem vê-la** (testado num Postgres real): (1) `WizardCreate` de um banco descartável (a senha nasce no
+  daemon, em secret de serviço); (2) `SecretRename` para `X_NEW` e `SecretMove ServiceSecretToProject`; (3) `ServiceDelete` do
+  descartável; (4) um job com `PGPASSWORD=${ATUAL}` e `NEWPW=${X_NEW}` rodando
+  `echo "ALTER USER CURRENT_USER PASSWORD :'newpw'" | psql -v ON_ERROR_STOP=1 -v newpw="$NEWPW"`; (5) `SecretRename` do antigo
+  para `X_OLD` e do `X_NEW` para o nome em uso; (6) **redeploy** dos serviços que a usam; (7) um job que prova que a nova
+  conecta e a antiga é recusada.
 - **Sem escopo.** O token é o de administrador: não existe modo
   somente-leitura. Comandos destrutivos (`ServiceDelete`, `Prune*`,
   `Remove*`, `StopAllManaged`, `RegistryRepoDelete`) não pedem confirmação —
