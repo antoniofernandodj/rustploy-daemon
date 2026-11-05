@@ -2722,7 +2722,7 @@ dependencies = [
 
 [[package]]
 name = "rustploy"
-version = "0.1.33"
+version = "0.1.34"
 dependencies = [
  "age",
  "anyhow",
@@ -2804,6 +2804,8 @@ dependencies = [
 [[package]]
 name = "rustploy-shared"
 version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fbbc4193b7970a3edfa661888bc093ffd885120601add586841b74a805b75bee"
 dependencies = [
  "chrono",
  "serde",
