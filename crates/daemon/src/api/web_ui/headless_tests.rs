@@ -1295,6 +1295,36 @@ async fn update_badge_lights_up_from_the_snapshot() {
     );
 }
 
+/// Abrir Settings já carrega a lista de contas Git (como o botão "Refresh git list"), para a aba
+/// Sync não ficar vazia quando a pessoa não passou pela aba Git antes.
+#[tokio::test]
+async fn opening_settings_loads_the_git_provider_list() {
+    let addr = spawn_static_server().await;
+    let (browser, _handler) = launch().await;
+    let page = open_page(&browser, addr).await;
+    seed_connected(&page).await;
+
+    let out = eval_str(
+        &page,
+        r#"(async () => {
+            const s = Alpine.store('app');
+            const calls = [];
+            s.api = { rpc: async (c) => {
+                calls.push(typeof c === 'string' ? c : Object.keys(c)[0]);
+                return { ok: true, value: { GitProviders: [{ id: 'gp_1', name: 'GitHub', kind: 'Github' }] } };
+            } };
+            s.gitProviders = [];
+            s.nav('settings');
+            await new Promise(r => setTimeout(r, 100));
+            return JSON.stringify([calls.includes('GitProviderList'), s.gitProviders.length]);
+        })()"#,
+    )
+    .await;
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v[0], true, "nav('settings') pede GitProviderList");
+    assert_eq!(v[1], 1, "a lista chega ao estado");
+}
+
 /// A sincronização do estado com o git (Fases 6 e 7 do plano de estado em git): o aviso do topo, a
 /// aba "Sync" do Settings (situação, divergência, commit recusado, removidos, auditoria), o selo
 /// "mudança pendente de deploy" e o container órfão em Runtime → Containers. Tudo vem do snapshot.

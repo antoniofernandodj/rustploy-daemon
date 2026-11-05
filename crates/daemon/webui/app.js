@@ -364,6 +364,9 @@ document.addEventListener("alpine:init", () => {
     nav(view) {
       this.stopServiceLogs();
       this.view = view;
+      // Settings já carrega a lista de contas Git, como o botão "Refresh git list": a aba Sync
+      // depende dela e não pode ficar vazia só porque a pessoa não passou pela aba Git antes.
+      if (view === "settings") this.gitProviderRefresh();
     },
 
     persistPrefs() {
