@@ -151,7 +151,7 @@ fn fingerprint(project: &str, scope: &str, what: &str) -> String {
 }
 
 /// Achados que **impedem** o commit: as certezas sempre, e as suspeitas que o usuário não liberou.
-fn blocking(state: &InfraState, allow: &BTreeSet<String>) -> Vec<Finding> {
+pub(crate) fn blocking(state: &InfraState, allow: &BTreeSet<String>) -> Vec<Finding> {
     plaintext_findings(state)
         .into_iter()
         .filter(|f| {

@@ -1345,8 +1345,6 @@
                   @click="store.settingsTab = 'web'">Web Server</button>
           <button type="button" :class="store.settingsTab === 'git' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'"
                   @click="store.settingsTab = 'git'">Git</button>
-          <button type="button" :class="store.settingsTab === 'iac' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'"
-                  @click="store.settingsTab = 'iac'">Infra as Code</button>
           <button type="button" :class="store.settingsTab === 'maintenance' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'"
                   @click="store.settingsTab = 'maintenance'" x-t>Manutenção</button>
           <button type="button" :class="store.settingsTab === 'gitsync' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'"
@@ -1527,88 +1525,6 @@
           </column>
         </column>
 
-        <!-- Infra as Code -->
-        <column class="u-fill-all" x-show="store.settingsTab === 'iac'">
-          <column class="form-panel">
-            <!-- Mesmo fluxo do app desktop (views/home/settings/iac.gvb): o manifesto
-                 é um .zip com rustploy.yml + rustploy.vars.toml. O texto continua
-                 visível para conferir/copiar (screens do zip: zip.js). -->
-            <text class="u-label-cap" x-t>EXPORTAR</text>
-            <text class="u-muted" x-t>
-              Gera um `.zip` com rustploy.yml + rustploy.vars.toml e o baixa pelo navegador. Os
-              valores das env vars ficam só no TOML; secrets nunca saem do daemon.
-            </text>
-            <row class="env__add">
-              <button class="btn btn--primary" type="button" @click="store.manifestExport()" x-t>Exportar para um .zip…</button>
-              <text class="u-muted" x-text="store.manifestExportMessage"></text>
-            </row>
-
-            <template x-if="store.manifestHasExport">
-              <column>
-                <row class="env__head">
-                  <text class="u-label-cap">rustploy.yml</text>
-                  <button class="btn btn--copy" type="button" @click="$store.app.copyText(store.manifestYaml, 'texto')" x-t>Copiar</button>
-                </row>
-                <textarea class="env__editor" readonly x-model="store.manifestYaml"></textarea>
-                <row class="env__head">
-                  <text class="u-label-cap">rustploy.vars.toml</text>
-                  <button class="btn btn--copy" type="button" @click="$store.app.copyText(store.manifestDotenv, 'texto')" x-t>Copiar</button>
-                </row>
-                <textarea class="env__editor" readonly x-model="store.manifestDotenv"></textarea>
-              </column>
-            </template>
-
-            <hr class="rule" />
-            <text class="u-label-cap" x-t>IMPORTAR</text>
-            <text class="u-muted" x-t>
-              Escolha o `.zip` do manifesto (o mesmo que o Exportar gera). Ele precisa ter exatamente
-              um .yml e um .toml na raiz — nada mais, ou o import é recusado. Falta o valor de alguma
-              variável usada no YAML? Também é cancelado antes de aplicar qualquer coisa (a faltante
-              vem rotulada com o escopo, ex. "Chiquitos/api: APP_PORT").
-            </text>
-
-            <label class="check-row">
-              <input type="checkbox" x-model="store.manifestPrune" /><span x-t>Remover serviços ausentes do manifesto (prune)</span>
-            </label>
-            <label class="check-row">
-              <input type="checkbox" x-model="store.manifestDeploy" /><span x-t>Disparar deploy dos serviços criados/alterados</span>
-            </label>
-
-            <row class="env__add" style="margin-top:8px">
-              <input class="field__input" type="file" accept=".zip,application/zip" @change="store.manifestPickZip($event)" />
-            </row>
-            <text class="u-muted" x-show="store.manifestZipName" x-text="$t('Zip carregado: ') + store.manifestZipName"></text>
-
-            <text class="u-label-cap" x-t>…OU COLE O TEXTO</text>
-            <text class="u-label-cap">rustploy.yml</text>
-            <textarea class="env__editor" x-model="store.manifestImportYaml"
-                      @input="store.manifestZipName = ''"
-                      placeholder="Cole aqui o YAML exportado (ou escrito à mão)" x-t:placeholder></textarea>
-            <text class="u-label-cap">rustploy.vars.toml</text>
-            <textarea class="env__editor" x-model="store.manifestImportDotenv"
-                      @input="store.manifestZipName = ''"
-                      placeholder='Cole aqui o TOML de variáveis ([project."App".env] com DB_PASS = "s3cr3t")'></textarea>
-
-            <row class="env__add" style="margin-top:8px">
-              <button class="btn btn--primary" type="button" @click="store.manifestImport()" x-t>Importar</button>
-              <text class="u-muted" x-text="store.manifestImportMessage"></text>
-            </row>
-
-            <text class="u-error" x-show="store.manifestHasMissing" x-text="$t('Variáveis sem valor no TOML: ') + store.manifestMissingVars"></text>
-
-            <template x-if="store.manifestHasReport">
-              <column>
-                <text class="u-label-cap" x-t>RESULTADO</text>
-                <column class="kv-list">
-                  <template x-for="(manifestReportLine, index) in store.manifestReportLines" :key="index">
-                    <row class="kv-list__row"><text class="u-muted" x-text="manifestReportLine"></text></row>
-                  </template>
-                </column>
-              </column>
-            </template>
-          </column>
-        </column>
-
         <!-- Sincronização do estado com o git (Fases 6 e 7 de docs/plano-backup-estado-em-git.md).
              O status vem no snapshot (store.stateGitStatus); aqui só o formulário e as ações. -->
         <column class="u-fill-all" x-show="store.settingsTab === 'gitsync'">
@@ -1753,6 +1669,20 @@
                 </row>
               </template>
             </column>
+          </column>
+
+          <!-- Baixar a infra: os mesmos arquivos que vão para o repositório (secrets como ENC[age:…]). -->
+          <column class="form-panel">
+            <text class="u-label-cap" x-t>BAIXAR A INFRA</text>
+            <text class="u-muted" x-t>
+              Baixa um .zip com os mesmos arquivos que a sincronização grava no repositório (settings.yml, providers.yml e
+              projects/&lt;id&gt;/project.yml), com os secrets cifrados. Serve de cópia fora do GitHub. Para restaurar,
+              ponha a árvore num repositório e sincronize.
+            </text>
+            <row class="form-actions">
+              <button class="btn btn--primary" type="button" @click="store.infraDownload()" x-t>Baixar infra</button>
+              <text class="u-muted" x-text="store.infraDownloadMessage"></text>
+            </row>
           </column>
         </column>
 

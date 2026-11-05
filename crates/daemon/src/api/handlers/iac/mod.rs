@@ -24,35 +24,6 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         Command::ServiceImport(req) => {
             crate::features::iac::service_import::handle(state.iac_ctx(), req).await
         }
-        Command::ManifestApply {
-            manifests,
-            prune,
-            deploy,
-        } => {
-            crate::features::iac::manifest_apply::handle(state.iac_ctx(), manifests, prune, deploy)
-                .await
-        }
-        Command::ManifestExport { project_id } => {
-            crate::features::iac::manifest_export::handle(state.iac_ctx(), project_id).await
-        }
-        Command::ManifestExportAll => {
-            crate::features::iac::manifest_export_all::handle(state.iac_ctx()).await
-        }
-        Command::ManifestImport {
-            yaml,
-            dotenv,
-            prune,
-            deploy,
-        } => {
-            crate::features::iac::manifest_import::handle(
-                state.iac_ctx(),
-                yaml,
-                dotenv,
-                prune,
-                deploy,
-            )
-            .await
-        }
         _ => RpResponse::err("NotImplemented", "command not yet implemented"),
     }
 }

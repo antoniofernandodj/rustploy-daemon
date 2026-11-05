@@ -61,6 +61,7 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         Command::SecretList { .. } => "SecretList",
         Command::SecretReveal { .. } => "SecretReveal",
         Command::InfraAudit => "InfraAudit",
+        Command::InfraDownload => "InfraDownload",
         Command::StateGitStatus => "StateGitStatus",
         Command::StateGitConfigure { .. } => "StateGitConfigure",
         Command::StateGitSyncNow => "StateGitSyncNow",
@@ -71,10 +72,6 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         Command::SecretMove { .. } => "SecretMove",
         Command::SecretRename { .. } => "SecretRename",
         Command::EnvKeyRename { .. } => "EnvKeyRename",
-        Command::ManifestApply { .. } => "ManifestApply",
-        Command::ManifestExport { .. } => "ManifestExport",
-        Command::ManifestExportAll => "ManifestExportAll",
-        Command::ManifestImport { .. } => "ManifestImport",
         Command::JobCreate { .. } => "JobCreate",
         Command::JobUpdate { .. } => "JobUpdate",
         Command::JobDelete { .. } => "JobDelete",
@@ -184,11 +181,7 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         | Command::GitBranchList { .. } => handlers::git::dispatch(state, cmd).await,
         Command::ServiceExportPlan { .. }
         | Command::ServiceExport { .. }
-        | Command::ServiceImport(_)
-        | Command::ManifestApply { .. }
-        | Command::ManifestExport { .. }
-        | Command::ManifestExportAll
-        | Command::ManifestImport { .. } => handlers::iac::dispatch(state, cmd).await,
+        | Command::ServiceImport(_) => handlers::iac::dispatch(state, cmd).await,
         Command::JobCreate { .. }
         | Command::JobUpdate { .. }
         | Command::JobDelete { .. }
@@ -230,7 +223,8 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         | Command::SecretMove { .. }
         | Command::SecretRename { .. }
         | Command::EnvKeyRename { .. }
-        | Command::InfraAudit => handlers::secrets::dispatch(state, cmd).await,
+        | Command::InfraAudit
+        | Command::InfraDownload => handlers::secrets::dispatch(state, cmd).await,
         Command::StateGitStatus
         | Command::StateGitConfigure { .. }
         | Command::StateGitSyncNow

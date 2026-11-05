@@ -1,15 +1,8 @@
-import { t } from "./i18n.js";
-// zip.js — o `.zip` do Infra as Code no navegador.
+// zip.js — monta um `.zip` no navegador, sem biblioteca.
 //
-// O app desktop exporta/importa o manifesto como UM arquivo `.zip` com exatamente
-// `rustploy.yml` + `rustploy.vars.toml` na raiz (rustploy-gui/src/manifest_zip.rs).
-// Este módulo faz o mesmo no navegador, sem biblioteca: escreve um zip sem
-// compressão (são dois arquivos de texto pequenos) e lê o que o desktop grava
-// (deflate) ou qualquer zip com entradas "stored"/"deflate". As regras de
-// validação e as mensagens são as do desktop — mudou lá, muda aqui.
-
-export const YML_ENTRY = "rustploy.yml";
-export const TOML_ENTRY = "rustploy.vars.toml";
+// Usado por "Baixar infra" (Settings → Sync): os arquivos que o daemon devolve em
+// `InfraFiles` viram um zip sem compressão (são poucos arquivos de texto). O app
+// desktop faz o mesmo com `zip_write` do motor.
 
 const textEncoder = new TextEncoder();
 
@@ -36,13 +29,13 @@ function dosDateTime(date) {
   return { time: time & 0xffff, day: day & 0xffff };
 }
 
-/** Monta o zip do manifesto: `rustploy.yml` e `rustploy.vars.toml`, sem compressão. */
-export function buildManifestZip(yaml, toml) {
+/** Monta o zip a partir de `[{ path, content }]` (texto), sem compressão, na ordem recebida. */
+export function buildZip(files) {
   const { time, day } = dosDateTime(new Date());
-  const entries = [
-    { name: textEncoder.encode(YML_ENTRY), data: textEncoder.encode(yaml) },
-    { name: textEncoder.encode(TOML_ENTRY), data: textEncoder.encode(toml) },
-  ];
+  const entries = files.map((file) => ({
+    name: textEncoder.encode(file.path),
+    data: textEncoder.encode(file.content),
+  }));
 
   const chunks = [];
   const central = [];
@@ -89,115 +82,4 @@ export function buildManifestZip(yaml, toml) {
   end.setUint32(12, centralSize, true);
   end.setUint32(16, offset, true);
   return new Blob([...chunks, ...central, new Uint8Array(end.buffer)], { type: "application/zip" });
-}
-
-async function inflateRaw(bytes) {
-  if (typeof DecompressionStream === "undefined") {
-    throw new Error(t("este navegador não descomprime zip — use um navegador recente"));
-  }
-  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
-  return new Uint8Array(await new Response(stream).arrayBuffer());
-}
-
-/** Lê as entradas do zip: `[{ name, isDir, bytes }]`. */
-async function readEntries(buffer) {
-  const bytes = new Uint8Array(buffer);
-  const view = new DataView(buffer);
-
-  // Fim do diretório central: a assinatura mais perto do fim (o comentário do zip pode ter até 64 KiB).
-  let eocd = -1;
-  for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 22 - 0xffff); i--) {
-    if (view.getUint32(i, true) === 0x06054b50) {
-      eocd = i;
-      break;
-    }
-  }
-  if (eocd < 0) throw new Error(t("zip inválido: não achei o fim do arquivo (não é um .zip?)"));
-
-  const count = view.getUint16(eocd + 10, true);
-  let pos = view.getUint32(eocd + 16, true);
-  if (count === 0xffff || pos === 0xffffffff) throw new Error(t("zip inválido: zip64 não é suportado"));
-
-  const decoder = new TextDecoder("utf-8", { fatal: false });
-  const entries = [];
-  for (let i = 0; i < count; i++) {
-    if (pos + 46 > bytes.length || view.getUint32(pos, true) !== 0x02014b50) {
-      throw new Error(t`erro ao ler a entrada ${i} do zip`);
-    }
-    const flags = view.getUint16(pos + 8, true);
-    const method = view.getUint16(pos + 10, true);
-    const compressedSize = view.getUint32(pos + 20, true);
-    const nameLength = view.getUint16(pos + 28, true);
-    const extraLength = view.getUint16(pos + 30, true);
-    const commentLength = view.getUint16(pos + 32, true);
-    const localOffset = view.getUint32(pos + 42, true);
-    const name = decoder.decode(bytes.subarray(pos + 46, pos + 46 + nameLength));
-    pos += 46 + nameLength + extraLength + commentLength;
-
-    const isDir = name.endsWith("/");
-    if (isDir) {
-      entries.push({ name, isDir, bytes: new Uint8Array(0) });
-      continue;
-    }
-    if (flags & 1) throw new Error(t`${name}: o zip está protegido por senha`);
-    if (localOffset + 30 > bytes.length || view.getUint32(localOffset, true) !== 0x04034b50) {
-      throw new Error(t`erro ao ler a entrada ${i} do zip`);
-    }
-    const dataStart = localOffset + 30 + view.getUint16(localOffset + 26, true) + view.getUint16(localOffset + 28, true);
-    const raw = bytes.subarray(dataStart, dataStart + compressedSize);
-    if (method === 0) entries.push({ name, isDir, bytes: raw });
-    else if (method === 8) entries.push({ name, isDir, bytes: await inflateRaw(raw) });
-    else throw new Error(t`${name}: método de compressão ${method} não suportado`);
-  }
-  return entries;
-}
-
-/**
- * Valida e lê o `.zip` importado: **exatamente** um `*.yml`/`*.yaml` e um
- * `*.toml`, na raiz, e nada mais (as mesmas regras do app desktop).
- * Devolve `{ ok: true, yaml, toml }` ou `{ ok: false, error }`.
- */
-export async function readManifestZip(file) {
-  let entries;
-  try {
-    entries = await readEntries(await file.arrayBuffer());
-  } catch (error) {
-    const message = String(error?.message || error);
-    return { ok: false, error: message.startsWith(t("zip inválido")) ? message : t`zip inválido: ${message}` };
-  }
-
-  const decoder = new TextDecoder("utf-8", { fatal: true });
-  let yaml = null;
-  let toml = null;
-  const extras = [];
-  for (const entry of entries) {
-    if (entry.isDir || entry.name.includes("/")) {
-      extras.push(entry.name);
-      continue;
-    }
-    const lower = entry.name.toLowerCase();
-    const isYaml = lower.endsWith(".yml") || lower.endsWith(".yaml");
-    const isToml = lower.endsWith(".toml");
-    if (!isYaml && !isToml) {
-      extras.push(entry.name);
-      continue;
-    }
-    let content;
-    try {
-      content = decoder.decode(entry.bytes);
-    } catch {
-      return { ok: false, error: t`${entry.name} não é texto UTF-8 válido` };
-    }
-    if (isYaml) {
-      if (yaml !== null) return { ok: false, error: t("o zip tem mais de um arquivo .yml") };
-      yaml = content;
-    } else {
-      if (toml !== null) return { ok: false, error: t("o zip tem mais de um arquivo .toml") };
-      toml = content;
-    }
-  }
-  if (extras.length) return { ok: false, error: t`o zip só pode ter um .yml e um .toml — sobrou: ${extras.join(", ")}` };
-  if (yaml === null) return { ok: false, error: t("o zip não tem um arquivo .yml") };
-  if (toml === null) return { ok: false, error: t("o zip não tem um arquivo .toml") };
-  return { ok: true, yaml, toml };
 }

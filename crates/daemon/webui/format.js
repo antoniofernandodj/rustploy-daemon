@@ -932,7 +932,7 @@ export function jobSummaryRows(list, term, inflight) {
   return rows;
 }
 
-// ── Settings (Web Server / Git / Infra as Code) ───────────────────────────
+// ── Settings (Web Server / Git / Sync) ───────────────────────────
 
 /** Redirect URI do OAuth (`{base}/oauth/{gitea|github}/callback`). Porta
  * literal de helpers.luau::oauth_redirect_uri. */

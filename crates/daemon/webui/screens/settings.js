@@ -1,4 +1,4 @@
-// screens/settings.js — tela "Settings": Web Server / Git / Infra as Code.
+// screens/settings.js — tela "Settings": Web Server / Git / Sync / Manutenção / Updates.
 // Porta da seção `equals="settings"` de home.gv. Todo o estado editável mora
 // no store (app.js, x-model direto) — este módulo só formata os provedores
 // Git pra exibição.

@@ -175,8 +175,8 @@ Comandos, por área (campos entre chaves):
   as variáveis que o usam. Use estes dois para alinhar nomes entre serviços (ex.:
   `RABBITMQ_DEFAULT_PASS` do broker × `RABBITMQ_PASS` do código) sem tocar em senha.
   `service_id` omitido = escopo do projeto.
-- **Infra as code**: `ManifestExport{project_id}` · `ManifestExportAll` ·
-  `ManifestImport{yaml, dotenv, prune, deploy}` · `ManifestApply{manifests, prune, deploy}` ·
+- **Infra as code**: `InfraDownload` (os arquivos que o `state_git` grava no repositório, com
+  os secrets como `ENC[age:…]`; recusado enquanto houver valor em claro — veja `InfraAudit`) ·
   `ServiceExportPlan{service_id}` · `ServiceExport{service_id, include_values, project_env_keys}` ·
   `ServiceImport(…)`
 - **Jobs one-shot**: `JobListAll` · `JobList{project_id}` · `JobCreate{…}` ·

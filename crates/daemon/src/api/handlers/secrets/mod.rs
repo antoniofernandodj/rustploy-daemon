@@ -2,6 +2,7 @@
 
 pub mod env_key_rename;
 pub mod infra_audit;
+pub mod infra_download;
 pub mod secret_delete;
 pub mod secret_list;
 pub mod secret_move;
@@ -53,6 +54,7 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
             to,
         } => env_key_rename::handle(state, project_id, service_id, from, to).await,
         Command::InfraAudit => infra_audit::handle(state).await,
+        Command::InfraDownload => infra_download::handle(state).await,
         _ => RpResponse::err("NotImplemented", "command not yet implemented"),
     }
 }

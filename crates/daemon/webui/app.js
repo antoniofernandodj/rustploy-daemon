@@ -32,7 +32,7 @@ import { registerDirectives } from "./directives.js";
 import { registerWindows } from "./wm.js";
 import { registerIcons } from "./icons.js";
 import { registerBusy } from "./busy.js";
-import { buildManifestZip, readManifestZip } from "./zip.js";
+import { buildZip } from "./zip.js";
 import {
   formatUptime,
   formatBytes,
@@ -235,20 +235,7 @@ document.addEventListener("alpine:init", () => {
     gitProviderPersonalAccessToken: "",
     gitProviderMessage: "",
     gitProviderOauthUrl: "",
-    manifestYaml: "",
-    manifestDotenv: "",
-    manifestHasExport: false,
-    manifestExportMessage: "",
-    manifestImportYaml: "",
-    manifestImportDotenv: "",
-    manifestZipName: "", // nome do .zip escolhido para importar ("" = texto colado à mão)
-    manifestPrune: false,
-    manifestDeploy: false,
-    manifestHasMissing: false,
-    manifestMissingVars: "",
-    manifestHasReport: false,
-    manifestReportLines: [],
-    manifestImportMessage: "",
+    infraDownloadMessage: "",
 
     // Settings → Manutenção (limpeza automática de Docker) — ver
     // docs/plano-limpeza-automatica-docker.md. Porta de handlers/settings.luau
@@ -1955,25 +1942,19 @@ document.addEventListener("alpine:init", () => {
       await this.gitProviderRefresh();
     },
 
-    /** O manifesto é um `.zip` com `rustploy.yml` + `rustploy.vars.toml`, como no
-     * app desktop (handlers/settings.luau::manifest_export). O texto continua
-     * visível abaixo para conferir ou copiar. */
-    async manifestExport() {
-      this.manifestExportMessage = t("exportando…");
-      const manifestExportAllResponse = await this.api.rpcChecked("ManifestExportAll");
-      if (!manifestExportAllResponse.ok || !manifestExportAllResponse.value?.ManifestBundle) {
-        const reason = manifestExportAllResponse.ok ? t("resposta inesperada") : manifestExportAllResponse.error;
-        this.manifestExportMessage = "erro: " + reason;
+    /** "Baixar infra": o daemon devolve os mesmos arquivos que o `state_git` grava no repositório
+     * (secrets como `ENC[age:…]`); aqui só viram um `.zip` e descem pelo navegador. */
+    async infraDownload() {
+      this.infraDownloadMessage = t("baixando…");
+      const infraDownloadResponse = await this.api.rpcChecked("InfraDownload");
+      if (!infraDownloadResponse.ok || !infraDownloadResponse.value?.InfraFiles) {
+        const reason = infraDownloadResponse.ok ? t("resposta inesperada") : infraDownloadResponse.error;
+        this.infraDownloadMessage = "erro: " + reason;
         this.toastError("erro: " + reason);
         return;
       }
-      const bundle = manifestExportAllResponse.value.ManifestBundle;
-      this.manifestYaml = bundle.yaml || "";
-      this.manifestDotenv = bundle.dotenv || "";
-      this.manifestHasExport = true;
-
       const zipName = "rustploy-infra.zip";
-      const zipUrl = URL.createObjectURL(buildManifestZip(this.manifestYaml, this.manifestDotenv));
+      const zipUrl = URL.createObjectURL(buildZip(infraDownloadResponse.value.InfraFiles));
       const link = document.createElement("a");
       link.href = zipUrl;
       link.download = zipName;
@@ -1981,111 +1962,8 @@ document.addEventListener("alpine:init", () => {
       link.click();
       link.remove();
       setTimeout(() => URL.revokeObjectURL(zipUrl), 10000);
-
-      this.manifestExportMessage = t("baixado como ") + zipName;
-      this.toastOk(t("Infra as Code exportado"));
-    },
-
-    /** "Importar de um .zip…": lê e VALIDA o zip (exatamente um .yml e um .toml
-     * na raiz, nada mais — mesmas regras do desktop) e preenche os dois campos. */
-    async manifestPickZip(event) {
-      const input = event.target;
-      const file = input.files?.[0];
-      input.value = ""; // permite escolher o mesmo arquivo de novo
-      if (!file) return;
-      const zipManifest = await readManifestZip(file);
-      if (!zipManifest.ok) {
-        const invalidZipPrefix = t("zip inválido: ");
-        const zipErrorDetail = zipManifest.error.startsWith(invalidZipPrefix) ? zipManifest.error.slice(invalidZipPrefix.length) : zipManifest.error;
-        this.manifestImportMessage = invalidZipPrefix + zipErrorDetail;
-        this.toastError(zipErrorDetail);
-        return;
-      }
-      this.manifestImportYaml = zipManifest.yaml;
-      this.manifestImportDotenv = zipManifest.toml;
-      this.manifestZipName = file.name;
-      this.manifestImportMessage = t("zip lido: ") + file.name + t(" — confira as opções e clique em Importar");
-    },
-
-    /** 3 formas de resposta possíveis (mesma distinção de handlers/
-     * settings.luau::manifest_import): MissingEnvVars (nada aplicado), Err
-     * (rpc-level), ou ManifestReport (sucesso). */
-    async manifestImport() {
-      this.manifestHasMissing = false;
-      this.manifestHasReport = false;
-      this.manifestMissingVars = "";
-      this.manifestReportLines = [];
-
-      const yaml = this.manifestImportYaml || "";
-      if (!yaml.trim()) {
-        this.toastWarn(t("escolha o .zip do manifesto (ou cole o YAML)"));
-        return;
-      }
-      const dotenv = this.manifestImportDotenv || "";
-      const prune = this.manifestPrune;
-      const deploy = this.manifestDeploy;
-
-      // Prune remove serviços: o usuário vê o que marcou antes de aplicar
-      // (o desktop abre a mesma confirmação, destrutiva quando prune está ligado).
-      const origin = this.manifestZipName ? t("Do zip ") + this.manifestZipName + ": " : "";
-      const confirmed = confirm(
-        t("Aplicar este manifesto?\n\n") +
-          origin + yaml.length + t(" B de YAML + ") + dotenv.length + t(" B de TOML.\n\n") +
-          t("• Remover serviços ausentes (prune): ") + (prune ? t("SIM") : t("não")) + "\n" +
-          t("• Disparar deploy dos alterados: ") + (deploy ? t("SIM") : t("não"))
-      );
-      if (!confirmed) {
-        this.manifestImportMessage = t("cancelado");
-        return;
-      }
-
-      this.manifestImportMessage = t("importando…");
-      const manifestImportResponse = await this.api.rpc({
-        ManifestImport: { yaml, dotenv, prune, deploy },
-      });
-      if (!manifestImportResponse.ok) {
-        this.manifestImportMessage = "erro: " + manifestImportResponse.error;
-        this.toastError(manifestImportResponse.error);
-        return;
-      }
-      const applyResult = manifestImportResponse.value;
-      if (applyResult?.MissingEnvVars) {
-        this.manifestHasMissing = true;
-        this.manifestMissingVars = applyResult.MissingEnvVars.join(", ");
-        this.manifestImportMessage = t("faltam variáveis — nada foi aplicado");
-        this.toastError(t("Faltam variáveis no TOML: ") + this.manifestMissingVars);
-        return;
-      }
-      if (applyResult?.Err) {
-        this.manifestImportMessage = `erro: ${applyResult.Err.code}: ${applyResult.Err.message}`;
-        this.toastError(applyResult.Err.message);
-        return;
-      }
-      if (!applyResult?.ManifestReport) {
-        this.manifestImportMessage = t("resposta inesperada do daemon");
-        return;
-      }
-      const actions = applyResult.ManifestReport.actions || [];
-      const lines = actions.map((action) => `[${action.action}] ${action.kind} ${action.name}`);
-      // O `ApplyReport` não tem lista própria de removidos: o prune aparece em
-      // `actions` com o verbo Deleted.
-      const pruned = actions.filter((action) => action.action === "Deleted").map((action) => action.name);
-      if (pruned.length > 0) {
-        lines.push(t("removidos (prune): ") + pruned.join(", "));
-      } else if (prune) {
-        lines.push(t("prune ligado — nenhum serviço ausente para remover"));
-      }
-      const deployed = applyResult.ManifestReport.deployed || [];
-      if (deployed.length > 0) {
-        lines.push(t("deploy disparado: ") + deployed.join(", "));
-      } else if (deploy) {
-        lines.push(t("deploy ligado — nada mudou para disparar"));
-      }
-      this.manifestReportLines = lines;
-      this.manifestHasReport = true;
-      this.manifestImportMessage = t("import concluído ✓");
-      this.toastOk(t("Infra as Code importado"));
-      await this.refreshNow();
+      this.infraDownloadMessage = t("baixado como ") + zipName;
+      this.toastOk(t("Infra baixada"));
     },
 
     // ── Settings → Manutenção (limpeza automática de Docker) ────────────

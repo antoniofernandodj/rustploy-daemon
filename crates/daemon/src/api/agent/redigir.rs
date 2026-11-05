@@ -141,10 +141,7 @@ pub fn redigir(valor: &mut Value) {
 /// [`redigir`] mais os pacotes de exportação, que carregam texto (YAML/`.env`) em vez de envs
 /// estruturadas.
 pub fn redigir_resposta(resposta: &mut Value) {
-    if let Some(Value::String(yaml)) = resposta.get_mut("Manifest") {
-        *yaml = mascarar_linhas(yaml);
-    }
-    for variante in ["ManifestBundle", "ServiceBundleYaml"] {
+    for variante in ["ServiceBundleYaml"] {
         if let Some(Value::Object(campos)) = resposta.get_mut(variante) {
             for campo in ["yaml", "dotenv"] {
                 if let Some(Value::String(texto)) = campos.get_mut(campo) {
@@ -277,13 +274,13 @@ mod tests {
 
     #[test]
     fn dotenv_e_yaml_mascaram_so_chaves_sensiveis() {
-        let mut v = json!({"ManifestBundle": {
+        let mut v = json!({"ServiceBundleYaml": {
             "yaml": "env:\n  POSTGRES_PASSWORD: secret:POSTGRES_PASSWORD\n  JWT_SECRET: abc\n  MODE: production\n",
             "dotenv": "POSTGRES_PASSWORD=SENHA\nMODE=production\nREF=${X}\nTOKEN=${TOKEN}\n",
         }});
         redigir_resposta(&mut v);
-        let yaml = v["ManifestBundle"]["yaml"].as_str().unwrap();
-        let dotenv = v["ManifestBundle"]["dotenv"].as_str().unwrap();
+        let yaml = v["ServiceBundleYaml"]["yaml"].as_str().unwrap();
+        let dotenv = v["ServiceBundleYaml"]["dotenv"].as_str().unwrap();
         assert!(
             yaml.contains("POSTGRES_PASSWORD: secret:POSTGRES_PASSWORD"),
             "{yaml}"
