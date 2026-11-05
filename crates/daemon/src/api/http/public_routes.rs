@@ -516,7 +516,10 @@ mod tests {
             commit(r#""a.rs""#, r#""b.rs""#, ""),
             commit("", r#""b.rs""#, r#""c.rs""#)
         ));
-        assert_eq!(extract_changed_files(&body), Some(w(&["a.rs", "b.rs", "c.rs"])));
+        assert_eq!(
+            extract_changed_files(&body),
+            Some(w(&["a.rs", "b.rs", "c.rs"]))
+        );
     }
 
     #[test]
@@ -526,7 +529,10 @@ mod tests {
         assert_eq!(extract_changed_files(b"not json"), None);
         assert_eq!(extract_changed_files(&push("")), None);
         // commit sem uma das listas
-        assert_eq!(extract_changed_files(&push(r#"{"added":["a"],"modified":["b"]}"#)), None);
+        assert_eq!(
+            extract_changed_files(&push(r#"{"added":["a"],"modified":["b"]}"#)),
+            None
+        );
         // só um merge, sem arquivo nenhum
         assert_eq!(extract_changed_files(&push(&commit("", "", ""))), None);
     }
@@ -534,9 +540,9 @@ mod tests {
     #[test]
     fn muitos_commits_pode_estar_truncado() {
         let um = commit("", r#""docs/x.md""#, "");
-        let dez = vec![um.as_str(); 10].join(",");
+        let dez = [um.as_str(); 10].join(",");
         assert_eq!(extract_changed_files(&push(&dez)), None);
-        let nove = vec![um.as_str(); 9].join(",");
+        let nove = [um.as_str(); 9].join(",");
         assert!(extract_changed_files(&push(&nove)).is_some());
     }
 
@@ -546,16 +552,28 @@ mod tests {
         assert!(path_matches("src/", "src/a/b.rs"));
         assert!(path_matches("./src", "src/a.rs"));
         assert!(path_matches("Cargo.toml", "Cargo.toml"));
-        assert!(!path_matches("src", "srcs/a.rs"), "prefixo de texto não é diretório");
+        assert!(
+            !path_matches("src", "srcs/a.rs"),
+            "prefixo de texto não é diretório"
+        );
         assert!(!path_matches("Cargo.toml", "crates/x/Cargo.toml"));
         assert!(path_matches(".", "qualquer/coisa"));
         // glob
         assert!(path_matches("crates/**", "crates/api/src/main.rs"));
-        assert!(path_matches("crates/*", "crates/api/src/main.rs"), "glob vale para o diretório pai");
+        assert!(
+            path_matches("crates/*", "crates/api/src/main.rs"),
+            "glob vale para o diretório pai"
+        );
         assert!(!path_matches("crates/*", "other/api/main.rs"));
         assert!(path_matches("**/Cargo.toml", "crates/x/Cargo.toml"));
-        assert!(path_matches("dockerfiles/*.dockerfile", "dockerfiles/api.dockerfile"));
-        assert!(!path_matches("dockerfiles/*.dockerfile", "dockerfiles/sub/api.dockerfile"));
+        assert!(path_matches(
+            "dockerfiles/*.dockerfile",
+            "dockerfiles/api.dockerfile"
+        ));
+        assert!(!path_matches(
+            "dockerfiles/*.dockerfile",
+            "dockerfiles/sub/api.dockerfile"
+        ));
     }
 
     #[test]
@@ -564,10 +582,22 @@ mod tests {
         let src = push(&commit("", r#""crates/api/src/main.rs""#, ""));
         let watch = w(&["crates/api", "Cargo.lock"]);
         assert!(skip_by_watch_paths(&watch, &docs), "só docs mudou: ignora");
-        assert!(!skip_by_watch_paths(&watch, &src), "mexeu em crates/api: faz deploy");
-        assert!(!skip_by_watch_paths(&[], &docs), "sem watch_paths: comportamento de sempre");
-        assert!(!skip_by_watch_paths(&watch, b"not json"), "sem dado: faz deploy");
-        assert!(!skip_by_watch_paths(&watch, br#"{"ref":"refs/heads/main"}"#));
+        assert!(
+            !skip_by_watch_paths(&watch, &src),
+            "mexeu em crates/api: faz deploy"
+        );
+        assert!(
+            !skip_by_watch_paths(&[], &docs),
+            "sem watch_paths: comportamento de sempre"
+        );
+        assert!(
+            !skip_by_watch_paths(&watch, b"not json"),
+            "sem dado: faz deploy"
+        );
+        assert!(!skip_by_watch_paths(
+            &watch,
+            br#"{"ref":"refs/heads/main"}"#
+        ));
         // um dos arquivos casa entre vários
         let misto = push(&commit(r#""docs/a.md""#, r#""Cargo.lock""#, ""));
         assert!(!skip_by_watch_paths(&watch, &misto));
