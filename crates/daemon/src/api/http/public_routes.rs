@@ -63,19 +63,36 @@ pub async fn webhook(req: Request<Incoming>, state: AppState) -> Response<Full<B
         Ok(c) => c.to_bytes(),
         Err(_) => Bytes::new(),
     };
-    if let Some(payload_branch) = extract_push_branch(&body)
-        && let Ok(Some(service)) = crate::store::services::get(&state.db, &service_id).await
+    let service = crate::store::services::get(&state.db, &service_id)
+        .await
+        .ok()
+        .flatten();
+    if let Some(service) = &service
         && let shared::ServiceSource::Git(git) = &service.spec.source
-        && !git.branch.is_empty()
-        && git.branch != payload_branch
     {
-        info!(
-            service_id = %service_id,
-            configured = %git.branch,
-            received = %payload_branch,
-            "webhook: branch do payload não confere com a configurada, deploy ignorado"
-        );
-        return resp(StatusCode::OK, "skipped: branch mismatch");
+        if let Some(payload_branch) = extract_push_branch(&body)
+            && !git.branch.is_empty()
+            && git.branch != payload_branch
+        {
+            info!(
+                service_id = %service_id,
+                configured = %git.branch,
+                received = %payload_branch,
+                "webhook: branch do payload não confere com a configurada, deploy ignorado"
+            );
+            return resp(StatusCode::OK, "skipped: branch mismatch");
+        }
+
+        // Filtro por caminhos: com `watch_paths` preenchido, só dispara se o push mexeu em algum
+        // deles. Qualquer dúvida (ver `extract_changed_files`) dispara o deploy.
+        if skip_by_watch_paths(&git.watch_paths, &body) {
+            info!(
+                service_id = %service_id,
+                watch_paths = ?git.watch_paths,
+                "webhook: nenhum arquivo do push casa com watch_paths, deploy ignorado"
+            );
+            return resp(StatusCode::OK, "skipped: no watched path changed");
+        }
     }
 
     info!(service_id = %service_id, "webhook: disparando deploy");
@@ -94,6 +111,102 @@ fn extract_push_branch(body: &[u8]) -> Option<String> {
     let v: serde_json::Value = serde_json::from_slice(body).ok()?;
     let r = v.get("ref")?.as_str()?;
     r.strip_prefix("refs/heads/").map(str::to_string)
+}
+
+/// A partir de quantos commits no payload a lista de arquivos pode estar truncada: o GitHub manda
+/// no máximo 20 commits e o Gitea 10 por padrão. Daí em diante não dá para afirmar que "nada
+/// casou", então o deploy é feito.
+const MAX_COMMITS_CONFIAVEIS: usize = 10;
+
+/// Arquivos alterados por um push (GitHub/Gitea/Gogs/GitLab: `commits[].added|modified|removed`),
+/// sem repetição. `None` quando **não dá para saber** — nesse caso o chamador faz o deploy:
+/// - corpo que não é JSON, ou sem `commits` (Docker Hub, `curl` manual);
+/// - `commits` vazio (branch nova, force push sem commits novos);
+/// - algum commit sem uma das três listas;
+/// - `commits` com [`MAX_COMMITS_CONFIAVEIS`] itens ou mais (a lista pode estar truncada);
+/// - nenhuma lista com arquivo (ex.: só um commit de merge): sem dado, não se descarta o push.
+fn extract_changed_files(body: &[u8]) -> Option<Vec<String>> {
+    let v: serde_json::Value = serde_json::from_slice(body).ok()?;
+    let commits = v.get("commits")?.as_array()?;
+    if commits.is_empty() || commits.len() >= MAX_COMMITS_CONFIAVEIS {
+        return None;
+    }
+    let mut files: Vec<String> = Vec::new();
+    for commit in commits {
+        for chave in ["added", "modified", "removed"] {
+            for f in commit.get(chave)?.as_array()? {
+                let f = f.as_str()?;
+                if !files.iter().any(|x| x == f) {
+                    files.push(f.to_string());
+                }
+            }
+        }
+    }
+    if files.is_empty() { None } else { Some(files) }
+}
+
+/// `true` quando o deploy deve ser **ignorado**: há `watch_paths`, sabemos os arquivos do push e
+/// nenhum casa com nenhum deles.
+fn skip_by_watch_paths(watch_paths: &[String], body: &[u8]) -> bool {
+    if watch_paths.is_empty() {
+        return false;
+    }
+    match extract_changed_files(body) {
+        Some(files) => !files
+            .iter()
+            .any(|f| watch_paths.iter().any(|w| path_matches(w, f))),
+        None => false,
+    }
+}
+
+/// Uma entrada de `watch_paths` casa um arquivo (caminho relativo à raiz do repositório) quando
+/// é o próprio arquivo, um diretório que o contém (`src` casa `src/a/b.rs`) ou, se tiver `*`,
+/// um glob: `*` não atravessa `/`, `**` atravessa; o glob também vale para qualquer diretório
+/// pai do arquivo (`crates/*` casa `crates/api/src/main.rs`). `.` casa o repositório inteiro.
+fn path_matches(pattern: &str, file: &str) -> bool {
+    let pat = pattern.trim().trim_start_matches("./").trim_matches('/');
+    let file = file.trim_start_matches('/');
+    if pat.is_empty() || pat == "." {
+        return true;
+    }
+    if !pat.contains('*') {
+        return file == pat || file.strip_prefix(pat).is_some_and(|r| r.starts_with('/'));
+    }
+    let mut fim = 0;
+    loop {
+        let fim_prox = file[fim..].find('/').map(|i| fim + i);
+        let candidato = &file[..fim_prox.unwrap_or(file.len())];
+        if glob_match(pat.as_bytes(), candidato.as_bytes()) {
+            return true;
+        }
+        match fim_prox {
+            Some(i) => fim = i + 1,
+            None => return false,
+        }
+    }
+}
+
+/// Glob mínimo: `*` = qualquer coisa menos `/`, `**` = qualquer coisa.
+fn glob_match(pat: &[u8], txt: &[u8]) -> bool {
+    match pat.split_first() {
+        None => txt.is_empty(),
+        Some((b'*', resto)) => {
+            let (livre, resto) = match resto.split_first() {
+                Some((b'*', r)) => (true, r),
+                _ => (false, resto),
+            };
+            for i in 0..=txt.len() {
+                if glob_match(resto, &txt[i..]) {
+                    return true;
+                }
+                if i < txt.len() && !livre && txt[i] == b'/' {
+                    break;
+                }
+            }
+            false
+        }
+        Some((c, resto)) => txt.first() == Some(c) && glob_match(resto, &txt[1..]),
+    }
 }
 
 fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
@@ -354,7 +467,7 @@ fn percent_decode(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::extract_push_branch;
+    use super::{extract_changed_files, extract_push_branch, path_matches, skip_by_watch_paths};
 
     #[test]
     fn extrai_branch_de_payload_github_gitea() {
@@ -384,5 +497,79 @@ mod tests {
     fn branch_com_barra_no_nome() {
         let body = br#"{"ref":"refs/heads/feature/login"}"#;
         assert_eq!(extract_push_branch(body), Some("feature/login".to_string()));
+    }
+
+    fn push(commits: &str) -> Vec<u8> {
+        format!(r#"{{"ref":"refs/heads/main","commits":[{commits}]}}"#).into_bytes()
+    }
+    fn commit(added: &str, modified: &str, removed: &str) -> String {
+        format!(r#"{{"added":[{added}],"modified":[{modified}],"removed":[{removed}]}}"#)
+    }
+    fn w(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn arquivos_de_varios_commits_sem_repeticao() {
+        let body = push(&format!(
+            "{},{}",
+            commit(r#""a.rs""#, r#""b.rs""#, ""),
+            commit("", r#""b.rs""#, r#""c.rs""#)
+        ));
+        assert_eq!(extract_changed_files(&body), Some(w(&["a.rs", "b.rs", "c.rs"])));
+    }
+
+    #[test]
+    fn sem_dado_confiavel_nao_se_sabe_os_arquivos() {
+        // sem `commits`, não-JSON, commits vazio
+        assert_eq!(extract_changed_files(br#"{"ref":"refs/heads/main"}"#), None);
+        assert_eq!(extract_changed_files(b"not json"), None);
+        assert_eq!(extract_changed_files(&push("")), None);
+        // commit sem uma das listas
+        assert_eq!(extract_changed_files(&push(r#"{"added":["a"],"modified":["b"]}"#)), None);
+        // só um merge, sem arquivo nenhum
+        assert_eq!(extract_changed_files(&push(&commit("", "", ""))), None);
+    }
+
+    #[test]
+    fn muitos_commits_pode_estar_truncado() {
+        let um = commit("", r#""docs/x.md""#, "");
+        let dez = vec![um.as_str(); 10].join(",");
+        assert_eq!(extract_changed_files(&push(&dez)), None);
+        let nove = vec![um.as_str(); 9].join(",");
+        assert!(extract_changed_files(&push(&nove)).is_some());
+    }
+
+    #[test]
+    fn casamento_de_caminhos() {
+        assert!(path_matches("src", "src/a/b.rs"));
+        assert!(path_matches("src/", "src/a/b.rs"));
+        assert!(path_matches("./src", "src/a.rs"));
+        assert!(path_matches("Cargo.toml", "Cargo.toml"));
+        assert!(!path_matches("src", "srcs/a.rs"), "prefixo de texto não é diretório");
+        assert!(!path_matches("Cargo.toml", "crates/x/Cargo.toml"));
+        assert!(path_matches(".", "qualquer/coisa"));
+        // glob
+        assert!(path_matches("crates/**", "crates/api/src/main.rs"));
+        assert!(path_matches("crates/*", "crates/api/src/main.rs"), "glob vale para o diretório pai");
+        assert!(!path_matches("crates/*", "other/api/main.rs"));
+        assert!(path_matches("**/Cargo.toml", "crates/x/Cargo.toml"));
+        assert!(path_matches("dockerfiles/*.dockerfile", "dockerfiles/api.dockerfile"));
+        assert!(!path_matches("dockerfiles/*.dockerfile", "dockerfiles/sub/api.dockerfile"));
+    }
+
+    #[test]
+    fn filtro_por_caminhos_so_ignora_quando_tem_certeza() {
+        let docs = push(&commit("", r#""docs/a.md""#, ""));
+        let src = push(&commit("", r#""crates/api/src/main.rs""#, ""));
+        let watch = w(&["crates/api", "Cargo.lock"]);
+        assert!(skip_by_watch_paths(&watch, &docs), "só docs mudou: ignora");
+        assert!(!skip_by_watch_paths(&watch, &src), "mexeu em crates/api: faz deploy");
+        assert!(!skip_by_watch_paths(&[], &docs), "sem watch_paths: comportamento de sempre");
+        assert!(!skip_by_watch_paths(&watch, b"not json"), "sem dado: faz deploy");
+        assert!(!skip_by_watch_paths(&watch, br#"{"ref":"refs/heads/main"}"#));
+        // um dos arquivos casa entre vários
+        let misto = push(&commit(r#""docs/a.md""#, r#""Cargo.lock""#, ""));
+        assert!(!skip_by_watch_paths(&watch, &misto));
     }
 }
