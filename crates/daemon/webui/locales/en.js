@@ -1,6 +1,8 @@
 // locales/en.js — catálogo em inglês, por texto de origem (ver i18n.js).
 // Chave = o texto como está escrito no HTML/JS; `{{n}}` = o n-ésimo `${{}}` de um template. Sem entrada, o texto aparece como foi escrito.
 export default {
+  "Carregar anteriores": "Load earlier",
+  "— outro container: ": "— other container: ",
   "BAIXAR A INFRA": "DOWNLOAD THE INFRA",
   "Baixar infra": "Download infra",
   "Baixa um .zip com os mesmos arquivos que a sincronização grava no repositório (settings.yml, providers.yml e projects/<id>/project.yml), com os secrets cifrados. Serve de cópia fora do GitHub. Para restaurar, ponha a árvore num repositório e sincronize.": "Downloads a .zip with the same files the sync writes to the repository (settings.yml, providers.yml and projects/<id>/project.yml), with secrets encrypted. It is a copy outside GitHub. To restore, put the tree in a repository and sync.",

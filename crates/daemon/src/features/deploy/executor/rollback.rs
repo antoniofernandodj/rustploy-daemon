@@ -45,6 +45,13 @@ impl DeployExecutor {
                 containers::find_staging(&self.docker.inner, &svc.id, &svc.spec.name, &dep_short, i)
                     .await
             {
+                // A evidência do deploy que falhou está no log deste container: guarda antes de apagar.
+                crate::features::observability::container_logs::capture_final(
+                    &self.docker.inner,
+                    &svc.id,
+                    &id,
+                )
+                .await;
                 let _ = containers::remove(&self.docker.inner, &id).await;
                 info!(deployment_id = %dep.id, replica = i, container_id = %id, "step[RollingBack]: staging removido");
             }

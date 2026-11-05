@@ -111,6 +111,13 @@ impl DeployExecutor {
         match containers::find_old_containers(&self.docker.inner, &svc.id, &dep.id).await {
             Ok(old_ids) => {
                 for old in &old_ids {
+                    // O log do container antigo morre com ele: guarda o que sobrou antes.
+                    crate::features::observability::container_logs::capture_final(
+                        &self.docker.inner,
+                        &svc.id,
+                        old,
+                    )
+                    .await;
                     let _ = containers::remove(&self.docker.inner, old).await;
                 }
                 if !old_ids.is_empty() {

@@ -59,6 +59,47 @@ pub struct RustployConfig {
     pub update: UpdateConfig,
     #[serde(default)]
     pub state_git: StateGitConfig,
+    #[serde(default)]
+    pub logs: LogsConfig,
+}
+
+/// `[logs]`: persistência do log de runtime dos containers (`platform::log_store`). Plano:
+/// `docs/plano-log-de-runtime-persistido.md`. Todos os campos têm padrão.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LogsConfig {
+    /// Liga a gravação. Desligada, o log segue só ao vivo (como antes).
+    #[serde(default = "default_logs_enabled")]
+    pub enabled: bool,
+    /// Apaga segmentos mais velhos que isso.
+    #[serde(default = "default_logs_retention_days")]
+    pub retention_days: u32,
+    /// Teto de disco por serviço (bytes); o segmento mais velho sai primeiro.
+    #[serde(default = "default_logs_max_bytes")]
+    pub max_bytes_per_service: u64,
+}
+
+fn default_logs_enabled() -> bool {
+    true
+}
+
+fn default_logs_retention_days() -> u32 {
+    14
+}
+
+fn default_logs_max_bytes() -> u64 {
+    50 * 1024 * 1024
+}
+
+/// `Default` à mão (e não derivado) pelo mesmo motivo do `[env_backup]`: a seção ausente cai aqui e
+/// um `bool`/número derivado seria `false`/`0`.
+impl Default for LogsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_logs_enabled(),
+            retention_days: default_logs_retention_days(),
+            max_bytes_per_service: default_logs_max_bytes(),
+        }
+    }
 }
 
 /// `[state_git]`: só o ritmo do `fetch`. Modo, repositório e provider são configurados pela UI e
@@ -376,6 +417,7 @@ impl Default for RustployConfig {
             registry: RegistryConfig::default(),
             update: UpdateConfig::default(),
             state_git: StateGitConfig::default(),
+            logs: LogsConfig::default(),
         }
     }
 }

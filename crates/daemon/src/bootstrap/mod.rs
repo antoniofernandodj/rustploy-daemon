@@ -153,6 +153,19 @@ pub async fn run() -> Result<()> {
     )
     .await;
 
+    // Log de runtime persistido (`[logs]`): antes dos laços que o alimentam. Pastas de serviços que
+    // não existem mais (apagados com o daemon fora do ar) são limpas aqui.
+    if let Some(log_store) = crate::platform::log_store::init(db_path.join("logs"), &config.logs) {
+        info!(
+            retention_days = config.logs.retention_days,
+            max_bytes_per_service = config.logs.max_bytes_per_service,
+            "log de runtime persistido ligado"
+        );
+        if let Ok(all) = store::services::list_all(&db).await {
+            log_store.retain_services(all.into_iter().map(|s| s.id).collect());
+        }
+    }
+
     workers::spawn_standalone(config, &db, &docker, &bus, &backup_dir);
 
     bus.publish(Event::DaemonReady {

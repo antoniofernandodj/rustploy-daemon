@@ -65,6 +65,10 @@ pub async fn handle(state: ServicesContext, id: String) -> RpResponse {
     }
     match crate::store::services::delete(&state.db, &id).await {
         Ok(true) => {
+            // O histórico de log do serviço vai junto.
+            if let Some(store) = crate::platform::log_store::global() {
+                store.delete_service(&id);
+            }
             // Sem regra órfã: com o serviço fora do DB, fecha a porta no
             // firewall (a menos que outro serviço compartilhe a mesma porta).
             if let Some(port) = host_port

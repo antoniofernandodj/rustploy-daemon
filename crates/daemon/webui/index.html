@@ -2655,6 +2655,7 @@
         <column class="modal__box" x-win="'service_logs'" data-w="900" data-h="560">
           <row class="modal__head">
             <text class="u-label-cap" x-text="'LOGS · ' + ($store.app.serviceNameById($store.app.selectedServiceId) || '')"></text>
+            <button class="btn btn--ghost" type="button" x-show="$store.app.serviceLogMore" @click="$store.app.serviceLogLoadOlder()" x-t>Carregar anteriores</button>
             <button class="btn btn--ghost" type="button" @click="$store.app.logWin = false" x-t>Fechar</button>
           </row>
           <column class="modal__body log-panel" style="border:none; border-radius:0">
@@ -2663,7 +2664,7 @@
                 <template x-for="(serviceLogLine, index) in $store.app.serviceLogLines" :key="index">
                   <row class="log-panel__line">
                     <text class="log-panel__time" x-text="$store.app.timeHms(serviceLogLine.timestamp)"></text>
-                    <text class="log-panel__text" :style="serviceLogLine.stream === 'Stderr' ? 'color:#F85149' : ''" x-text="serviceLogLine.line"></text>
+                    <text class="log-panel__text" :style="serviceLogLine.sep ? 'color:#8B949E; font-style:italic' : (serviceLogLine.stream === 'Stderr' ? 'color:#F85149' : '')" x-text="serviceLogLine.line"></text>
                   </row>
                 </template>
                 <text class="u-muted" x-fallback="$store.app.serviceLogLines" style="padding:12px" x-t>Aguardando linhas de log…</text>
@@ -3299,6 +3300,7 @@
             <column class="log-panel" x-show="store.serviceTab === 'logs'">
               <row class="env__head">
                 <text class="u-muted-grow" x-text="(store.serviceLogLines || []).length + $t(' linhas · ao vivo')"></text>
+                <button class="btn btn--sm-ghost" type="button" x-show="store.serviceLogMore" @click="store.serviceLogLoadOlder()" x-t>Carregar anteriores</button>
                 <button class="btn btn--sm-ghost" type="button" @click="store.logWin = true" x-t>Abrir em janela 📋</button>
               </row>
               <column class="u-fill-all" x-follow>
@@ -3306,7 +3308,7 @@
                   <template x-for="(serviceLogLine, index) in store.serviceLogLines" :key="index">
                     <row class="log-panel__line">
                       <text class="log-panel__time" x-text="timeHms(serviceLogLine.timestamp)"></text>
-                      <text class="log-panel__text" :style="serviceLogLine.stream === 'Stderr' ? 'color:#F85149' : ''" x-text="serviceLogLine.line"></text>
+                      <text class="log-panel__text" :style="serviceLogLine.sep ? 'color:#8B949E; font-style:italic' : (serviceLogLine.stream === 'Stderr' ? 'color:#F85149' : '')" x-text="serviceLogLine.line"></text>
                     </row>
                   </template>
                   <text class="u-muted" x-fallback="store.serviceLogLines" style="padding:12px" x-t>

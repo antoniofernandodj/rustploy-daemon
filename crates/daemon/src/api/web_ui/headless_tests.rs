@@ -1088,6 +1088,92 @@ async fn infra_download_zip() {
     );
 }
 
+/// Aba Logs do serviço: nasce do log guardado (`LogsHistory`), "Carregar anteriores" põe a página
+/// mais velha por cima e marca onde o container mudou; sem histórico, cai no `LogsGet` ao vivo.
+#[tokio::test]
+async fn service_logs_start_from_history_and_load_older() {
+    let addr = spawn_static_server().await;
+    let (browser, _handler) = launch().await;
+    let page = open_page(&browser, addr).await;
+    seed_connected(&page).await;
+
+    let out = eval_str(
+        &page,
+        r#"(async () => {
+            const s = Alpine.store('app');
+            const calls = [];
+            const e = (t, c, line, stream = 'Stdout') => ({ timestamp: t, container_id: c, stream, line });
+            s.api = { baseUrl: location.origin, token: 't',
+                rpcChecked: async (cmd) => {
+                    const a = cmd.LogsHistory;
+                    calls.push(['older', a.before]);
+                    return { ok: true, value: { LogsHistory: {
+                        entries: [e('2026-11-05T01:00:00Z', 'aaaaaaaaaaaa1234', 'velho 1'), e('2026-11-05T01:00:01Z', 'aaaaaaaaaaaa1234', 'velho 2')],
+                        next_before: null } } };
+                },
+                rpc: async (cmd) => {
+                    if (cmd.LogsHistory) {
+                        calls.push(['seed', cmd.LogsHistory.before ?? null]);
+                        return { ok: true, value: { LogsHistory: {
+                            entries: [e('2026-11-05T02:00:00Z', 'bbbbbbbbbbbb9999', 'novo 1'), e('2026-11-05T02:00:01Z', 'bbbbbbbbbbbb9999', 'novo erro', 'Stderr')],
+                            next_before: '2026-11-05T02:00:00Z' } } };
+                    }
+                    return { ok: false, error: 'stub' };
+                } };
+            s.selectedServiceId = 'svc_1'; s.serviceTab = 'logs';
+            await s.startServiceLogs();
+            const seeded = s.serviceLogLines.map(l => l.line);
+            const more1 = s.serviceLogMore;
+            await s.serviceLogLoadOlder();
+            return JSON.stringify({ seeded, more1, after: s.serviceLogLines.map(l => l.line),
+                more2: s.serviceLogMore, calls });
+        })()"#,
+    )
+    .await;
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["seeded"], serde_json::json!(["novo 1", "novo erro"]));
+    assert_eq!(v["more1"], "2026-11-05T02:00:00Z", "há mais log guardado");
+    assert_eq!(
+        v["after"],
+        serde_json::json!([
+            "velho 1",
+            "velho 2",
+            "— other container: bbbbbbbbbbbb —",
+            "novo 1",
+            "novo erro"
+        ]),
+        "o mais velho vem por cima, com separador onde o container mudou"
+    );
+    assert_eq!(v["more2"], serde_json::Value::Null, "acabou o histórico");
+    assert_eq!(
+        v["calls"][1],
+        serde_json::json!(["older", "2026-11-05T02:00:00Z"])
+    );
+
+    // Sem histórico (Compose, log desligado): cai no log ao vivo do motor.
+    let fallback = eval_str(
+        &page,
+        r#"(async () => {
+            const s = Alpine.store('app');
+            s.api = { baseUrl: location.origin, token: 't',
+                rpcChecked: async () => ({ ok: false, error: 'stub' }),
+                rpc: async (cmd) => cmd.LogsGet
+                    ? { ok: true, value: { Logs: [{ stream: 'Stdout', line: 'ao vivo', timestamp: '2026-11-05T03:00:00Z' }] } }
+                    : { ok: false, error: 'LogsDisabled' } };
+            s.serviceLogLines = [];
+            await s.startServiceLogs();
+            return JSON.stringify({ lines: s.serviceLogLines.map(l => l.line), more: s.serviceLogMore });
+        })()"#,
+    )
+    .await;
+    assert_eq!(fallback, r##"{"lines":["ao vivo"],"more":null}"##);
+    assert_eq!(
+        errors(&page).await,
+        Vec::<String>::new(),
+        "sem erros de JS no console"
+    );
+}
+
 /// Tela "Em execução": só o que `snapshot.dashboard` traz, com o webhook mascarado até
 /// "Mostrar", os pré-deploy checks na ordem e os atalhos de abrir/deploy/parar.
 #[tokio::test]

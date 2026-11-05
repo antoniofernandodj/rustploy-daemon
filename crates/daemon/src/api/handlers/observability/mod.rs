@@ -5,6 +5,7 @@ pub mod check_update;
 pub mod daemon_status;
 pub mod ingress;
 pub mod logs_get;
+pub mod logs_history;
 pub mod ping;
 pub mod update_status;
 
@@ -24,6 +25,12 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         Command::IngressRoutes => ingress::routes(state).await,
         Command::IngressReconcile { service_id } => ingress::reconcile(state, service_id).await,
         Command::LogsGet { service_id, tail } => logs_get::handle(state, service_id, tail).await,
+        Command::LogsHistory {
+            service_id,
+            before,
+            limit,
+            container_id,
+        } => logs_history::handle(state, service_id, before, limit, container_id).await,
         _ => RpResponse::err("NotImplemented", "command not yet implemented"),
     }
 }

@@ -4,20 +4,9 @@
 //! clientes. Eles mapeiam para os modelos internos [`Project`] e [`ServiceSpec`]
 //! de forma ergonômica para edição humana e versionamento em Git.
 
-
-
 use serde::{Deserialize, Serialize};
 use shared::*;
 use std::collections::BTreeMap;
-
-
-
-
-
-
-
-
-
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct ServiceManifest {
@@ -137,7 +126,6 @@ pub struct ResourcesManifest {
 // --------------------------------------------------------------------------
 // Conversão manifesto -> modelos internos
 // --------------------------------------------------------------------------
-
 
 impl ServiceManifest {
     pub fn to_spec(
@@ -348,7 +336,6 @@ impl ResourcesManifest {
     }
 }
 
-
 // --------------------------------------------------------------------------
 // Helpers
 // --------------------------------------------------------------------------
@@ -380,13 +367,6 @@ pub(crate) fn env_vars_to_map(vars: &[EnvVar]) -> BTreeMap<String, String> {
         })
         .collect()
 }
-
-
-
-
-
-
-
 
 /// `host:container` ou `host:container:ro`.
 fn parse_volume(s: &str) -> Option<VolumeMount> {
@@ -468,6 +448,4 @@ mod tests {
         assert_eq!(humanize_mem(256 * 1024 * 1024), "256m");
         assert_eq!(humanize_mem(2 * 1024 * 1024 * 1024), "2g");
     }
-
-
 }

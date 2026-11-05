@@ -285,6 +285,8 @@ document.addEventListener("alpine:init", () => {
     serviceLoading: false,
     serviceLogLines: [],
     serviceLogStream: null,
+    // `next_before` do LogsHistory: há log mais antigo guardado para carregar (null = não há).
+    serviceLogMore: null,
 
     // ── Toasts ────────────────────────────────────────────────────────
     // O par do `toast{ message, kind }` do glacier-ui na GUI desktop: mesmos
@@ -2124,7 +2126,55 @@ document.addEventListener("alpine:init", () => {
       const LINE_MAX = 4000;
       let line = stripAnsi(logEntry.line || "");
       if (line.length > LINE_MAX) line = line.slice(0, LINE_MAX) + "…";
-      return { stream: logEntry.stream, line, timestamp: logEntry.timestamp };
+      const container = logEntry.container_id ? String(logEntry.container_id).slice(0, 12) : "";
+      return { stream: logEntry.stream, line, timestamp: logEntry.timestamp, container };
+    },
+
+    /** Entradas do LogsHistory (ordem cronológica) → linhas da tela, com um separador onde o
+     * container muda (o histórico atravessa deploys). `previousContainer` = container da linha que
+     * vem logo antes (para o encontro com o que já está na tela). */
+    historyToLines(entries, previousContainer = "") {
+      const lines = [];
+      let current = previousContainer;
+      for (const entry of entries) {
+        const cleaned = this.cleanLogEntry(entry);
+        if (cleaned.container && current && cleaned.container !== current) {
+          lines.push({ sep: true, stream: "Stdout", line: t("— outro container: ") + cleaned.container + " —", timestamp: cleaned.timestamp, container: "" });
+        }
+        if (cleaned.container) current = cleaned.container;
+        lines.push(cleaned);
+      }
+      return lines;
+    },
+
+    /** Container da primeira linha real da tela (para o separador ao prepor histórico). */
+    firstLogContainer() {
+      const first = this.serviceLogLines.find((line) => !line.sep && line.container);
+      return first ? first.container : "";
+    },
+
+    /** "Carregar anteriores": a página de log guardado anterior ao que a tela já mostra. */
+    async serviceLogLoadOlder() {
+      const serviceId = this.selectedServiceId;
+      if (!this.serviceLogMore || !serviceId) return;
+      const response = await this.api.rpcChecked({
+        LogsHistory: { service_id: serviceId, before: this.serviceLogMore, limit: 500 },
+      });
+      const history = response.ok ? response.value?.LogsHistory : null;
+      if (!history) {
+        this.toastError(response.ok ? t("resposta inesperada") : response.error);
+        return;
+      }
+      if (serviceId !== this.selectedServiceId) return;
+      // Separador no encontro: o container do fim do trecho novo × o da primeira linha já na tela.
+      const older = this.historyToLines(history.entries || []);
+      const joinFrom = older.length ? older[older.length - 1].container || "" : "";
+      const joinTo = this.firstLogContainer();
+      if (joinFrom && joinTo && joinFrom !== joinTo) {
+        older.push({ sep: true, stream: "Stdout", line: t("— outro container: ") + joinTo + " —", timestamp: older[older.length - 1].timestamp, container: "" });
+      }
+      this.serviceLogLines = [...older, ...this.serviceLogLines];
+      this.serviceLogMore = history.next_before || null;
     },
 
     /** Exposta no store (não só no módulo) porque o modal de logs de job é
@@ -2138,8 +2188,18 @@ document.addEventListener("alpine:init", () => {
       // client iced (handlers/services.luau::open_logs_window): sem isso, um
       // serviço já rodando há tempo (sem stdout novo desde então) mostra a
       // aba vazia para sempre, mesmo tendo logs de sobra.
-      const seed = await this.api.rpc({ LogsGet: { service_id: serviceId, tail: 500 } });
-      this.serviceLogLines = ((seed.ok && seed.value?.Logs) || []).map(this.cleanLogEntry);
+      // Prefere o log guardado (atravessa deploys e dá "Carregar anteriores"); sem histórico
+      // (Compose, serviço sem log gravado, `[logs] enabled = false`), cai no log ao vivo do motor.
+      this.serviceLogMore = null;
+      const stored = await this.api.rpc({ LogsHistory: { service_id: serviceId, limit: 500 } });
+      const history = stored.ok ? stored.value?.LogsHistory : null;
+      if (history && (history.entries || []).length > 0) {
+        this.serviceLogLines = this.historyToLines(history.entries);
+        this.serviceLogMore = history.next_before || null;
+      } else {
+        const seed = await this.api.rpc({ LogsGet: { service_id: serviceId, tail: 500 } });
+        this.serviceLogLines = ((seed.ok && seed.value?.Logs) || []).map(this.cleanLogEntry);
+      }
       // A troca de aba pode ter acontecido enquanto o fetch estava em voo —
       // se o usuário já saiu da aba Logs (ou do serviço), não abre a stream.
       if (this.serviceTab !== "logs" || this.selectedServiceId !== serviceId) return;

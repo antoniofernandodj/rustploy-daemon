@@ -164,8 +164,10 @@ Comandos, por área (campos entre chaves):
   `GetBuildLogs{deployment_id}` · `DeployEngineStatus` ·
   `DeployQueuePromote{deployment_id}` · `DeployQueueReorder{order}` ·
   `DeployQueuePause{paused}`
-- **Logs de container**: `LogsGet{service_id, tail}` (para acompanhar ao vivo,
-  use o SSE `/api/services/<id>/logs`)
+- **Logs de container**: `LogsGet{service_id, tail}` (ao vivo; para acompanhar,
+  use o SSE `/api/services/<id>/logs`) · `LogsHistory{service_id, before?, limit,
+  container_id?}` (o log **persistido**, que atravessa deploys e rollbacks; pagine
+  para trás repetindo com o `next_before` da resposta)
 - **Segredos**: `SecretList{project_id}` · `SecretSet{project_id, name, value}` ·
   `SecretDelete{project_id, name}` ·
   `SecretMove{project_id, service_id?, name, op}` (`EnvToSecret`, escopos…) ·
@@ -231,9 +233,12 @@ existente primeiro (`ServiceGet`, `JobListAll`) e use-o de molde.
 
 - **`ServiceUpdate` é substituição total, não patch.** Faça `ServiceGet`, mude
   o campo, devolva o spec inteiro. Campo omitido é campo apagado.
-- **Log de container não é persistido.** `LogsGet` lê do Docker ao vivo, e o
-  swap de deploy destrói o container antigo junto com o log. Build log
-  (`GetBuildLogs`/`build_logs`) esse sim fica guardado.
+- **Log de container: `LogsGet` é ao vivo, `LogsHistory` é o histórico.** O swap de
+  deploy destrói o container antigo, mas o daemon grava o log de cada container
+  (14 dias / 50 MiB por serviço, `[logs]` no `config.toml`) e guarda o que sobrou
+  antes de remover o antigo ou o de staging que falhou. Para "o que aconteceu
+  antes do último deploy", use `LogsHistory`. Serviços Compose seguem só ao vivo.
+  Build log (`GetBuildLogs`/`build_logs`) também fica guardado.
 - **Você não vê senhas — por desenho.** O daemon mascara o que o agente recebe:
   env `Plain` cuja chave parece segredo (`*PASSWORD*`, `*PASS*`, `*SECRET*`,
   `*TOKEN*`, `*KEY*`) vem como `***`; a senha em qualquer `://user:senha@host`
