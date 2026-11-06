@@ -38,6 +38,8 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         Command::ServiceReload { .. } => "ServiceReload",
         Command::LogsGet { .. } => "LogsGet",
         Command::LogsHistory { .. } => "LogsHistory",
+        Command::LogsExecutions { .. } => "LogsExecutions",
+        Command::LogsExecutionDelete { .. } => "LogsExecutionDelete",
         Command::RecentDeployments { .. } => "RecentDeployments",
         Command::GetBuildLogs { .. } => "GetBuildLogs",
         Command::ServiceConnectionInfo { .. } => "ServiceConnectionInfo",
@@ -203,7 +205,11 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         | Command::IngressRoutes
         | Command::IngressReconcile { .. }
         | Command::LogsGet { .. }
-        | Command::LogsHistory { .. } => handlers::observability::dispatch(state, cmd).await,
+        | Command::LogsHistory { .. }
+        | Command::LogsExecutions { .. }
+        | Command::LogsExecutionDelete { .. } => {
+            handlers::observability::dispatch(state, cmd).await
+        }
         Command::ProjectCreate { .. }
         | Command::ProjectList
         | Command::ProjectDelete { .. }

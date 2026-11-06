@@ -10,7 +10,7 @@ pub async fn handle(
     service_id: String,
     before: Option<DateTime<Utc>>,
     limit: usize,
-    container_id: Option<String>,
+    containers: Vec<String>,
 ) -> RpResponse {
     match crate::store::services::get(&state.db, &service_id).await {
         Ok(Some(_)) => {}
@@ -23,10 +23,9 @@ pub async fn handle(
             "o log persistido está desligado ([logs] enabled = false no config.toml)",
         );
     };
-    let read = tokio::task::spawn_blocking(move || {
-        store.read(&service_id, before, limit, container_id.as_deref())
-    })
-    .await;
+    let read =
+        tokio::task::spawn_blocking(move || store.read(&service_id, before, limit, &containers))
+            .await;
     match read {
         Ok((entries, next_before)) => RpResponse::LogsHistory {
             entries,

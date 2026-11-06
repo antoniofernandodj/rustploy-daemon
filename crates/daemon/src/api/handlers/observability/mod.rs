@@ -4,6 +4,7 @@ pub mod apply_update;
 pub mod check_update;
 pub mod daemon_status;
 pub mod ingress;
+pub mod logs_executions;
 pub mod logs_get;
 pub mod logs_history;
 pub mod ping;
@@ -30,7 +31,17 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
             before,
             limit,
             container_id,
-        } => logs_history::handle(state, service_id, before, limit, container_id).await,
+            container_ids,
+        } => {
+            let mut containers = container_ids;
+            containers.extend(container_id);
+            logs_history::handle(state, service_id, before, limit, containers).await
+        }
+        Command::LogsExecutions { service_id } => logs_executions::list(state, service_id).await,
+        Command::LogsExecutionDelete {
+            service_id,
+            container_ids,
+        } => logs_executions::delete(state, service_id, container_ids).await,
         _ => RpResponse::err("NotImplemented", "command not yet implemented"),
     }
 }

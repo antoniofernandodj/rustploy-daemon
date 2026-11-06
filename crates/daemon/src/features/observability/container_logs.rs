@@ -74,6 +74,7 @@ async fn stream_container(
     // repetidas); sem histórico, as últimas 100 como sempre. `timestamps` dá o instante REAL de cada
     // linha, que é o que se grava (e que torna a deduplicação exata).
     let resume_from = last_persisted(&service_id, &container_id).await;
+    register_exec(&docker, &service_id, &container_id).await;
     let opts = LogsOptions::<String> {
         follow: true,
         stdout: true,
@@ -149,6 +150,31 @@ async fn stream_container(
             }
         }
     }
+}
+
+/// Anota no armazenamento a que deploy e a que imagem pertence a execução (um `inspect_container`,
+/// feito uma vez por stream). Falhar aqui só deixa a lista sem essas colunas: nunca interrompe o log.
+async fn register_exec(docker: &Docker, service_id: &str, container_id: &str) {
+    let Some(store) = crate::platform::log_store::global() else {
+        return;
+    };
+    let Ok(info) = docker
+        .inspect_container(
+            container_id,
+            None::<bollard::container::InspectContainerOptions>,
+        )
+        .await
+    else {
+        return;
+    };
+    let config = info.config;
+    let deployment_id = config
+        .as_ref()
+        .and_then(|c| c.labels.as_ref())
+        .and_then(|l| l.get("rustploy.deployment_id"))
+        .cloned();
+    let image = config.and_then(|c| c.image);
+    store.set_exec(service_id, container_id, deployment_id, image);
 }
 
 /// Último instante já gravado desse container (se o armazenamento está ligado).
@@ -238,6 +264,7 @@ pub async fn capture_final(docker: &Docker, service_id: &str, container_id: &str
         return;
     };
     let since = last_persisted(service_id, container_id).await;
+    register_exec(docker, service_id, container_id).await;
     let opts = LogsOptions::<String> {
         follow: false,
         stdout: true,

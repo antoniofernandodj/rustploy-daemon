@@ -1174,6 +1174,105 @@ async fn service_logs_start_from_history_and_load_older() {
     );
 }
 
+/// Aba Logs por execução: o painel ao vivo mostra SÓ a execução atual; as anteriores viram uma lista
+/// (deploy, imagem, desfecho) com "Ver logs" (janela só dela, com data e hora), excluir e
+/// "limpar selecionados" (em lote, com confirmação); depois de excluir a lista recarrega.
+#[tokio::test]
+async fn service_log_executions_list_open_and_delete() {
+    let addr = spawn_static_server().await;
+    let (browser, _handler) = launch().await;
+    let page = open_page(&browser, addr).await;
+    seed_connected(&page).await;
+
+    let out = eval_str(
+        &page,
+        r#"(async () => {
+            const s = Alpine.store('app');
+            window.confirm = () => true;
+            const calls = [];
+            let executions = [
+              { container_ids: ['cur000000001'], deployment_id: 'dep_3', image: 'api:3', started_at: '2026-11-06T10:00:00Z', ended_at: '2026-11-06T11:00:00Z', lines: 30, bytes: 3000, current: true, partial: false, outcome: 'Live' },
+              { container_ids: ['old000000002'], deployment_id: 'dep_2', image: 'api:2', started_at: '2026-11-05T10:00:00Z', ended_at: '2026-11-05T11:00:00Z', lines: 20, bytes: 2000, current: false, partial: false, outcome: 'Stopped' },
+              { container_ids: ['bad000000003'], deployment_id: 'dep_1', image: 'api:1', started_at: '2026-11-04T10:00:00Z', ended_at: '2026-11-04T10:05:00Z', lines: 5, bytes: 500, current: false, partial: true, outcome: 'Failed' },
+            ];
+            const entry = (c, line) => ({ timestamp: '2026-11-05T10:00:00Z', container_id: c, stream: 'Stdout', line });
+            s.api = { baseUrl: location.origin, token: 't',
+                rpcChecked: async (cmd) => {
+                    if (cmd.LogsHistory) {
+                        calls.push(['history', cmd.LogsHistory.container_ids]);
+                        return { ok: true, value: { LogsHistory: { entries: [entry('old000000002', 'da execução velha')], next_before: null } } };
+                    }
+                    if (cmd.LogsExecutionDelete) {
+                        calls.push(['delete', cmd.LogsExecutionDelete.container_ids]);
+                        executions = executions.filter(e => !cmd.LogsExecutionDelete.container_ids.includes(e.container_ids[0]));
+                        return { ok: true, value: { LogsExecutionsDeleted: { deleted: cmd.LogsExecutionDelete.container_ids.length, freed_bytes: 2500 } } };
+                    }
+                    return { ok: false, error: 'stub' };
+                },
+                rpc: async (cmd) => {
+                    if (cmd.LogsExecutions) return { ok: true, value: { LogsExecutions: executions } };
+                    if (cmd.LogsHistory) {
+                        calls.push(['live', cmd.LogsHistory.container_ids]);
+                        return { ok: true, value: { LogsHistory: { entries: [entry('cur000000001', 'ao vivo atual')], next_before: null } } };
+                    }
+                    return { ok: false, error: 'stub' };
+                } };
+            s.selectedServiceId = 'svc_1'; s.serviceTab = 'logs';
+            await s.startServiceLogs();
+            const live = s.serviceLogLines.map(l => l.line);
+            const past = s.serviceLogExecutions.map(r => [r.key, r.outcomeLabel, r.partial]);
+            await s.serviceLogExecutionOpen(s.serviceLogExecutions[0]);
+            const win = { title: s.serviceLogExecWin.title, lines: s.serviceLogExecWin.lines.map(l => l.line) };
+            s.serviceLogToggleAll();
+            const selected = [...s.serviceLogSelected];
+            await s.serviceLogSelectedDelete();
+            return JSON.stringify({ live, past, win, selected, calls,
+                after: s.serviceLogExecutions.length, sel_after: s.serviceLogSelected.length });
+        })()"#,
+    )
+    .await;
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["live"], serde_json::json!(["ao vivo atual"]));
+    assert_eq!(
+        v["calls"][0],
+        serde_json::json!(["live", ["cur000000001"]]),
+        "o painel ao vivo pede só a execução atual"
+    );
+    assert_eq!(
+        v["past"],
+        serde_json::json!([
+            ["old000000002", "Replaced", false],
+            ["bad000000003", "Failed", true]
+        ]),
+        "a atual não entra na lista; desfecho e parcial aparecem"
+    );
+    assert_eq!(v["win"]["lines"], serde_json::json!(["da execução velha"]));
+    assert!(
+        v["win"]["title"].as_str().unwrap().contains("→"),
+        "o título diz qual execução é"
+    );
+    assert_eq!(
+        v["calls"][1],
+        serde_json::json!(["history", ["old000000002"]])
+    );
+    assert_eq!(
+        v["selected"],
+        serde_json::json!(["old000000002", "bad000000003"])
+    );
+    assert_eq!(
+        v["calls"][2],
+        serde_json::json!(["delete", ["old000000002", "bad000000003"]]),
+        "limpar selecionados = uma chamada em lote"
+    );
+    assert_eq!(v["after"], 0, "a lista recarrega depois de excluir");
+    assert_eq!(v["sel_after"], 0);
+    assert_eq!(
+        errors(&page).await,
+        Vec::<String>::new(),
+        "sem erros de JS no console"
+    );
+}
+
 /// Tela "Em execução": só o que `snapshot.dashboard` traz, com o webhook mascarado até
 /// "Mostrar", os pré-deploy checks na ordem e os atalhos de abrir/deploy/parar.
 #[tokio::test]

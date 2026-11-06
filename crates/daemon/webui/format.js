@@ -28,6 +28,50 @@ export function dateDayMonthHourMinuteSecond(isoTimestamp) {
   return `${padTwoDigits(date.getDate())}/${padTwoDigits(date.getMonth() + 1)} ${padTwoDigits(date.getHours())}:${padTwoDigits(date.getMinutes())}:${padTwoDigits(date.getSeconds())}`;
 }
 
+/** "dd/mm/aaaa HH:MM:SS" local (log de uma execução antiga: a data importa). */
+export function dateTimeFull(isoTimestamp) {
+  const epochMs = toEpochMs(isoTimestamp);
+  if (epochMs === null) return "";
+  const date = new Date(epochMs);
+  const padTwoDigits = (value) => String(value).padStart(2, "0");
+  return `${padTwoDigits(date.getDate())}/${padTwoDigits(date.getMonth() + 1)}/${date.getFullYear()} ${padTwoDigits(date.getHours())}:${padTwoDigits(date.getMinutes())}:${padTwoDigits(date.getSeconds())}`;
+}
+
+/** Linhas da lista "Execuções anteriores" (LogsExecutions): rótulos prontos para a tela. */
+export function logExecutionRows(executions) {
+  return (executions || []).map((execution) => {
+    const outcome = execution.outcome || "";
+    let outcomeLabel = t("sem deploy associado");
+    let outcomeKind = "muted";
+    if (outcome === "Failed" || outcome === "RollingBack") {
+      outcomeLabel = t("Falhou");
+      outcomeKind = "bad";
+    } else if (outcome === "Stopped" || outcome === "Pruning") {
+      outcomeLabel = t("Substituída");
+    } else if (outcome === "Live") {
+      outcomeLabel = t("Ativa");
+      outcomeKind = "ok";
+    } else if (outcome) {
+      outcomeLabel = outcome;
+    }
+    return {
+      key: (execution.container_ids || [])[0] || "",
+      containerIds: execution.container_ids || [],
+      deploymentId: execution.deployment_id || "",
+      image: execution.image || "",
+      started: dateTimeFull(execution.started_at),
+      ended: dateTimeFull(execution.ended_at),
+      lines: execution.lines || 0,
+      size: formatBytes(execution.bytes || 0),
+      bytes: execution.bytes || 0,
+      current: !!execution.current,
+      partial: !!execution.partial,
+      outcomeLabel,
+      outcomeKind,
+    };
+  });
+}
+
 /** "dd/mm HH:MM" local (sem segundos — usado em listas Docker/Registry). */
 export function dateDayMonthHourMinute(isoTimestamp) {
   const epochMs = toEpochMs(isoTimestamp);

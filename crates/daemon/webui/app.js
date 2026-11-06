@@ -41,6 +41,8 @@ import {
   timeHms,
   dateDayMonthHourMinuteSecond,
   dateDayMonthHourMinute,
+  dateTimeFull,
+  logExecutionRows,
   parseDotenv,
   dotenvErrorsMessage,
   dotenvFromVars,
@@ -287,6 +289,14 @@ document.addEventListener("alpine:init", () => {
     serviceLogStream: null,
     // `next_before` do LogsHistory: há log mais antigo guardado para carregar (null = não há).
     serviceLogMore: null,
+    // Execuções (um container = uma execução) com log guardado: a que a aba mostra ao vivo
+    // (`serviceLogShown`, só ela) e as anteriores da lista (`serviceLogExecutions`), com a
+    // seleção para "Limpar selecionados" (`serviceLogSelected` = chaves) e a janela de uma
+    // execução passada (`serviceLogExecWin` = null | { title, containerIds, lines, more }).
+    serviceLogShown: null,
+    serviceLogExecutions: [],
+    serviceLogSelected: [],
+    serviceLogExecWin: null,
 
     // ── Toasts ────────────────────────────────────────────────────────
     // O par do `toast{ message, kind }` do glacier-ui na GUI desktop: mesmos
@@ -2177,9 +2187,115 @@ document.addEventListener("alpine:init", () => {
       this.serviceLogMore = history.next_before || null;
     },
 
+    // ── Logs por execução ────────────────────────────────────────────────────
+
+    /** Lê as execuções do serviço: a atual (ou, parado, a mais recente) alimenta o painel ao vivo,
+     * as outras viram a lista "Execuções anteriores". Sem log guardado (Compose, desligado), a
+     * lista fica vazia e o painel cai no log ao vivo do motor. */
+    async serviceLogExecutionsLoad() {
+      const serviceId = this.selectedServiceId;
+      const response = await this.api.rpc({ LogsExecutions: { service_id: serviceId } });
+      if (serviceId !== this.selectedServiceId) return;
+      const rows = response.ok ? logExecutionRows(response.value?.LogsExecutions) : [];
+      const shown = rows.find((row) => row.current) || rows[0] || null;
+      this.serviceLogShown = shown;
+      this.serviceLogExecutions = rows.filter((row) => row !== shown);
+      // A seleção só vale para o que ainda existe (depois de excluir/limpar).
+      const keys = new Set(this.serviceLogExecutions.map((row) => row.key));
+      this.serviceLogSelected = this.serviceLogSelected.filter((key) => keys.has(key));
+    },
+
+    serviceLogToggle(key) {
+      this.serviceLogSelected = this.serviceLogSelected.includes(key)
+        ? this.serviceLogSelected.filter((other) => other !== key)
+        : [...this.serviceLogSelected, key];
+    },
+
+    serviceLogToggleAll() {
+      const all = this.serviceLogExecutions.map((row) => row.key);
+      this.serviceLogSelected = this.serviceLogSelected.length === all.length ? [] : all;
+    },
+
+    serviceLogSelectedBytes() {
+      return this.serviceLogExecutions
+        .filter((row) => this.serviceLogSelected.includes(row.key))
+        .reduce((sum, row) => sum + row.bytes, 0);
+    },
+
+    /** Abre a janela de uma execução passada: só as linhas dela, com data e hora, sem ao vivo. */
+    async serviceLogExecutionOpen(row) {
+      const serviceId = this.selectedServiceId;
+      const response = await this.api.rpcChecked({
+        LogsHistory: { service_id: serviceId, limit: 500, container_ids: row.containerIds },
+      });
+      const history = response.ok ? response.value?.LogsHistory : null;
+      if (!history) {
+        this.toastError(response.ok ? t("resposta inesperada") : response.error);
+        return;
+      }
+      this.serviceLogExecWin = {
+        title: `${t("Execução")} ${row.started} → ${row.ended}`,
+        containerIds: row.containerIds,
+        lines: (history.entries || []).map((entry) => this.cleanLogEntry(entry)),
+        more: history.next_before || null,
+      };
+    },
+
+    /** "Carregar anteriores" dentro da janela de uma execução passada. */
+    async serviceLogExecutionLoadOlder() {
+      const win = this.serviceLogExecWin;
+      const serviceId = this.selectedServiceId;
+      if (!win || !win.more || !serviceId) return;
+      const response = await this.api.rpcChecked({
+        LogsHistory: { service_id: serviceId, before: win.more, limit: 500, container_ids: win.containerIds },
+      });
+      const history = response.ok ? response.value?.LogsHistory : null;
+      if (!history) {
+        // Excluída por outro cliente depois de aberta: erro claro, não "vazio".
+        this.toastError(response.ok ? t("resposta inesperada") : response.error);
+        return;
+      }
+      if (this.serviceLogExecWin !== win) return;
+      win.lines = [...(history.entries || []).map((entry) => this.cleanLogEntry(entry)), ...win.lines];
+      win.more = history.next_before || null;
+    },
+
+    /** Exclui execuções (irreversível) e recarrega a lista. */
+    async serviceLogExecutionsDelete(keys, message) {
+      const serviceId = this.selectedServiceId;
+      if (!serviceId || keys.length === 0) return;
+      if (!confirm(message)) return;
+      const response = await this.api.rpcChecked({
+        LogsExecutionDelete: { service_id: serviceId, container_ids: keys },
+      });
+      const done = response.ok ? response.value?.LogsExecutionsDeleted : null;
+      if (!done) {
+        this.toastError(response.ok ? t("resposta inesperada") : response.error);
+        return;
+      }
+      this.toastOk(t`${done.deleted} execução(ões) excluída(s) · ${formatBytes(done.freed_bytes)} liberados`);
+      await this.serviceLogExecutionsLoad();
+    },
+
+    serviceLogExecutionDelete(row) {
+      return this.serviceLogExecutionsDelete(
+        [row.key],
+        t`Excluir o log desta execução (${row.started})? Ação irreversível.`
+      );
+    },
+
+    serviceLogSelectedDelete() {
+      const keys = [...this.serviceLogSelected];
+      return this.serviceLogExecutionsDelete(
+        keys,
+        t`Excluir o log de ${keys.length} execução(ões) (${formatBytes(this.serviceLogSelectedBytes())})? Ação irreversível.`
+      );
+    },
+
     /** Exposta no store (não só no módulo) porque o modal de logs de job é
      * global — ver bloco "Modais globais de Jobs" em index.html. */
     timeHms,
+    dateTimeFull,
 
     async startServiceLogs() {
       this.stopServiceLogs();
@@ -2191,7 +2307,17 @@ document.addEventListener("alpine:init", () => {
       // Prefere o log guardado (atravessa deploys e dá "Carregar anteriores"); sem histórico
       // (Compose, serviço sem log gravado, `[logs] enabled = false`), cai no log ao vivo do motor.
       this.serviceLogMore = null;
-      const stored = await this.api.rpc({ LogsHistory: { service_id: serviceId, limit: 500 } });
+      this.serviceLogShown = null;
+      this.serviceLogExecutions = [];
+      this.serviceLogSelected = [];
+      this.serviceLogExecWin = null;
+      // Só a execução atual (ou a mais recente, com o serviço parado): as outras ficam na lista.
+      await this.serviceLogExecutionsLoad();
+      if (this.serviceTab !== "logs" || this.selectedServiceId !== serviceId) return;
+      const shownIds = this.serviceLogShown ? this.serviceLogShown.containerIds : [];
+      const stored = await this.api.rpc({
+        LogsHistory: { service_id: serviceId, limit: 500, container_ids: shownIds },
+      });
       const history = stored.ok ? stored.value?.LogsHistory : null;
       if (history && (history.entries || []).length > 0) {
         this.serviceLogLines = this.historyToLines(history.entries);

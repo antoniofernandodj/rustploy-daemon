@@ -166,8 +166,13 @@ Comandos, por área (campos entre chaves):
   `DeployQueuePause{paused}`
 - **Logs de container**: `LogsGet{service_id, tail}` (ao vivo; para acompanhar,
   use o SSE `/api/services/<id>/logs`) · `LogsHistory{service_id, before?, limit,
-  container_id?}` (o log **persistido**, que atravessa deploys e rollbacks; pagine
-  para trás repetindo com o `next_before` da resposta)
+  container_id?, container_ids?}` (o log **persistido**, que atravessa deploys e
+  rollbacks; pagine para trás repetindo com o `next_before` da resposta) ·
+  `LogsExecutions{service_id}` (as **execuções** com log guardado, uma por
+  container, da mais nova: início/fim, `deployment_id`, imagem, linhas, bytes,
+  `current`, `partial` e o `outcome` do deploy) · `LogsExecutionDelete{service_id,
+  container_ids}` (**apaga** o log dessas execuções — irreversível, vários de uma
+  vez; a execução atual é recusada com `ExecutionRunning`)
 - **Segredos**: `SecretList{project_id}` · `SecretSet{project_id, name, value}` ·
   `SecretDelete{project_id, name}` ·
   `SecretMove{project_id, service_id?, name, op}` (`EnvToSecret`, escopos…) ·
@@ -237,7 +242,9 @@ existente primeiro (`ServiceGet`, `JobListAll`) e use-o de molde.
   deploy destrói o container antigo, mas o daemon grava o log de cada container
   (14 dias / 50 MiB por serviço, `[logs]` no `config.toml`) e guarda o que sobrou
   antes de remover o antigo ou o de staging que falhou. Para "o que aconteceu
-  antes do último deploy", use `LogsHistory`. Serviços Compose seguem só ao vivo.
+  antes do último deploy", use `LogsHistory`; para o log de **uma** execução (um
+  container), liste com `LogsExecutions` e passe o id dela em `container_ids`.
+  `LogsExecutionDelete` é irreversível: só use a pedido. Serviços Compose seguem só ao vivo.
   Build log (`GetBuildLogs`/`build_logs`) também fica guardado.
 - **Você não vê senhas — por desenho.** O daemon mascara o que o agente recebe:
   env `Plain` cuja chave parece segredo (`*PASSWORD*`, `*PASS*`, `*SECRET*`,

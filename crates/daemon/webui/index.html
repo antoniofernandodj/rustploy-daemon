@@ -2674,6 +2674,29 @@
         </column>
       </column>
 
+      <!-- ── Janela: log de uma execução passada (histórico, sem ao vivo) ───── -->
+      <column class="modal__backdrop" x-show="$store.app.serviceLogExecWin">
+        <column class="modal__box" x-win="'service_log_exec'" data-w="900" data-h="560">
+          <row class="modal__head">
+            <text class="u-label-cap" x-text="'LOGS · ' + ($store.app.serviceNameById($store.app.selectedServiceId) || '') + ' · ' + ($store.app.serviceLogExecWin ? $store.app.serviceLogExecWin.title : '')"></text>
+            <button class="btn btn--ghost" type="button" x-show="$store.app.serviceLogExecWin && $store.app.serviceLogExecWin.more" @click="$store.app.serviceLogExecutionLoadOlder()" x-t>Carregar anteriores</button>
+            <button class="btn btn--ghost" type="button" @click="$store.app.serviceLogExecWin = null" x-t>Fechar</button>
+          </row>
+          <column class="modal__body log-panel" style="border:none; border-radius:0">
+            <column class="u-fill-all">
+              <column class="log-panel__body">
+                <template x-for="(execLine, index) in ($store.app.serviceLogExecWin ? $store.app.serviceLogExecWin.lines : [])" :key="index">
+                  <row class="log-panel__line">
+                    <text class="log-panel__time log-panel__time--full" x-text="$store.app.dateTimeFull(execLine.timestamp)"></text>
+                    <text class="log-panel__text" :style="execLine.stream === 'Stderr' ? 'color:#F85149' : ''" x-text="execLine.line"></text>
+                  </row>
+                </template>
+              </column>
+            </column>
+          </column>
+        </column>
+      </column>
+
       <!-- ── Detalhe de serviço ───────────────────────────────────────── -->
       <column class="content" x-data="serviceDetail" x-show="$store.app.view === 'service'">
         <row class="service__head">
@@ -3296,10 +3319,10 @@
               </row>
             </column>
 
-            <!-- Logs -->
+            <!-- Logs: a execução atual ao vivo (só ela) + a lista das anteriores -->
             <column class="log-panel" x-show="store.serviceTab === 'logs'">
               <row class="env__head">
-                <text class="u-muted-grow" x-text="(store.serviceLogLines || []).length + $t(' linhas · ao vivo')"></text>
+                <text class="u-muted-grow" x-text="$t('Logs de execução') + ' · ' + (store.serviceLogLines || []).length + $t(' linhas · ao vivo')"></text>
                 <button class="btn btn--sm-ghost" type="button" x-show="store.serviceLogMore" @click="store.serviceLogLoadOlder()" x-t>Carregar anteriores</button>
                 <button class="btn btn--sm-ghost" type="button" @click="store.logWin = true" x-t>Abrir em janela 📋</button>
               </row>
@@ -3315,6 +3338,31 @@
                     Aguardando linhas de log…
                   </text>
                 </column>
+              </column>
+            </column>
+
+            <!-- Execuções anteriores (logs guardados): ver em janela, excluir, limpar selecionados -->
+            <column class="form-panel" x-show="store.serviceTab === 'logs' && store.serviceLogExecutions.length > 0">
+              <row class="env__head">
+                <text class="u-label-cap u-muted-grow" x-t>EXECUÇÕES ANTERIORES</text>
+                <button class="btn btn--sm-ghost" type="button" @click="store.serviceLogToggleAll()" x-t>Selecionar todas</button>
+                <button class="btn btn--danger btn--sm" type="button" :disabled="store.serviceLogSelected.length === 0" @click="store.serviceLogSelectedDelete()"
+                  x-text="$t('Limpar selecionados') + ' (' + store.serviceLogSelected.length + ')'"></button>
+              </row>
+              <column class="kv-list">
+                <template x-for="logExecution in store.serviceLogExecutions" :key="logExecution.key">
+                  <row class="kv-list__row">
+                    <input type="checkbox" :checked="store.serviceLogSelected.includes(logExecution.key)" @change="store.serviceLogToggle(logExecution.key)" />
+                    <column style="gap:2px;flex:1 1 auto;min-width:0">
+                      <text class="kv-list__val kv-list__val--compact" x-text="logExecution.started + ' → ' + logExecution.ended"></text>
+                      <text class="u-muted" x-text="(logExecution.deploymentId || '') + (logExecution.image ? ' · ' + logExecution.image : '') + ' · ' + logExecution.lines + $t(' linhas') + ' · ' + logExecution.size"></text>
+                    </column>
+                    <text class="badge__label" :style="logExecution.outcomeKind === 'bad' ? 'color:#F85149' : ''" x-text="logExecution.outcomeLabel"></text>
+                    <text class="badge__label" x-show="logExecution.partial" x-t>parcial</text>
+                    <button class="btn btn--ghost btn--sm" type="button" @click="store.serviceLogExecutionOpen(logExecution)" x-t>Ver logs</button>
+                    <button class="btn btn--ghost btn--sm" type="button" @click="store.serviceLogExecutionDelete(logExecution)" x-t>Excluir</button>
+                  </row>
+                </template>
               </column>
             </column>
 
