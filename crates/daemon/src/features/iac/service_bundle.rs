@@ -251,7 +251,7 @@ mod tests {
             resources: ResourceLimits::default(),
             run_command: None,
             run_args: vec![],
-            db_kind: None,
+            product: None,
             domains: vec![
                 DomainRoute {
                     domain: "api.a.tech".into(),

@@ -258,7 +258,7 @@ async fn analyze(state: &IacContext, req: &ServiceImportReq) -> Result<Analysis,
              comum (o compartilhamento depende dos projetos e usuários do servidor de origem).",
         ));
     }
-    if !manifest.volumes.is_empty() || manifest.db.is_some() {
+    if !manifest.volumes.is_empty() || manifest.product.is_some() {
         warnings.push(warn_item(
             "data_not_copied",
             "Só a configuração foi copiada: os DADOS (volumes, conteúdo do banco) não vêm junto.",
@@ -328,7 +328,7 @@ async fn analyze(state: &IacContext, req: &ServiceImportReq) -> Result<Analysis,
         g.provider_id = Some(id.clone());
     }
     if final_name != orig_name
-        && let (ServiceSource::Compose(c), Some(_)) = (&mut spec.source, &spec.db_kind)
+        && let (ServiceSource::Compose(c), Some(_)) = (&mut spec.source, &spec.product)
     {
         let renamed = rename_compose_alias(&c.content, &orig_name, &final_name);
         if renamed != c.content {
@@ -592,7 +592,7 @@ mod e2e {
             resources: ResourceLimits::default(),
             run_command: None,
             run_args: vec![],
-            db_kind: None,
+            product: None,
             domains: vec![
                 DomainRoute {
                     domain: "api.a.tech".into(),

@@ -759,7 +759,7 @@ document.addEventListener("alpine:init", () => {
         resources: { cpu_shares: 0, mem_limit_bytes: 0 },
         run_command: null,
         run_args: [],
-        db_kind: null,
+        product: null,
         domains: [],
       };
       const serviceCreateResponse = await this.api.rpcChecked({ ServiceCreate: spec });

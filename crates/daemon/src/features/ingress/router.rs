@@ -265,7 +265,7 @@ mod tests {
             resources: Default::default(),
             run_command: None,
             run_args: vec![],
-            db_kind: None,
+            product: None,
             domains: domains
                 .iter()
                 .map(|d| DomainRoute {

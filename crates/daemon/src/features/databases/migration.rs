@@ -218,7 +218,7 @@ fn dest_image(server: &Service) -> Result<String> {
     let host = crate::platform::connection::compose_host(
         &c.content,
         c.ingress_service.as_deref(),
-        server.spec.db_kind.as_deref(),
+        server.spec.product.as_deref(),
     );
     crate::platform::connection::compose_services(&c.content)
         .into_iter()
@@ -244,7 +244,7 @@ fn source_image(svc: &Service) -> Option<String> {
     let host = crate::platform::connection::compose_host(
         &c.content,
         c.ingress_service.as_deref(),
-        svc.spec.db_kind.as_deref(),
+        svc.spec.product.as_deref(),
     );
     crate::platform::connection::compose_services(&c.content)
         .into_iter()
@@ -262,7 +262,7 @@ async fn dependents(
 ) -> Result<Vec<Service>> {
     let mut out = vec![];
     for s in store::services::list(&state.db, &source.spec.project_id).await? {
-        if s.id == source.id || s.spec.db_kind.is_some() {
+        if s.id == source.id || s.spec.product.is_some() {
             continue;
         }
         if !matches!(
@@ -366,7 +366,7 @@ async fn run_inner(state: &MigrationContext, rec: &mut Record, cur: &mut usize) 
     let server = store::services::get(&state.db, &dest.server_service_id)
         .await?
         .ok_or_else(|| anyhow!("servidor de destino não encontrado"))?;
-    let engine = Engine::from_kind(source.spec.db_kind.as_deref())
+    let engine = Engine::from_kind(source.spec.product.as_deref())
         .ok_or_else(|| anyhow!("motor não suportado"))?;
     let network = store::projects::network_name(&state.db, &source.spec.project_id).await?;
     let src_db = rec.m.source_database.clone();
@@ -374,7 +374,7 @@ async fn run_inner(state: &MigrationContext, rec: &mut Record, cur: &mut usize) 
     // 1. Pré-checagem ────────────────────────────────────────────────────────
     *cur = 0;
     step(state, rec, 0, "running", "").await;
-    if Engine::from_kind(server.spec.db_kind.as_deref()) != Some(engine) {
+    if Engine::from_kind(server.spec.product.as_deref()) != Some(engine) {
         bail!(
             "origem e destino precisam ser do mesmo motor (MySQL ↔ MariaDB também não é permitido)"
         );
@@ -419,7 +419,7 @@ async fn run_inner(state: &MigrationContext, rec: &mut Record, cur: &mut usize) 
             shared::ServiceSource::Compose(c) => c.ingress_service.as_deref(),
             _ => None,
         },
-        source.spec.db_kind.as_deref(),
+        source.spec.product.as_deref(),
     )
     .unwrap_or_else(|| shared::app_network_alias(&source.spec.name));
     let _ = shared_db::exec_sh(engine, &src_cid, &sh, &stdin)

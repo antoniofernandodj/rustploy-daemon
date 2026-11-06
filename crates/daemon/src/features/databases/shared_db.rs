@@ -38,7 +38,7 @@ impl Engine {
         }
     }
 
-    /// `db_kind` que `crate::platform::connection` entende.
+    /// `product` que `crate::platform::connection` entende.
     pub fn kind_id(self) -> &'static str {
         match self {
             Self::Postgres => "postgres",

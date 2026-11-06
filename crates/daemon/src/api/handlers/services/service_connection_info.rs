@@ -17,7 +17,7 @@ pub async fn handle(state: AppState, service_id: String) -> RpResponse {
             Ok(v) => v.into_iter().collect(),
             Err(e) => return RpResponse::err("EnvError", e.to_string()),
         };
-    let kind = svc.spec.db_kind.as_deref();
+    let kind = svc.spec.product.as_deref();
 
     let host = match &svc.spec.source {
         ServiceSource::Compose(c) => {

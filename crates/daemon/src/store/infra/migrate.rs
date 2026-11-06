@@ -150,7 +150,16 @@ pub async fn read_sql(db: &Db) -> Result<(InfraState, Vec<String>)> {
             ));
             continue;
         };
-        let spec: ServiceSpec = serde_json::from_str(&spec)
+        // SQLite antigo: o JSON ainda pode trazer `db_kind` (hoje `product`); sem renomear, o
+        // `serde(default)` o engoliria e o banco viraria serviço comum.
+        let mut spec_json: serde_json::Value = serde_json::from_str(&spec)
+            .with_context(|| format!("spec do serviço '{name}' ({id})"))?;
+        if let Some(obj) = spec_json.as_object_mut()
+            && let Some(v) = obj.remove("db_kind")
+        {
+            obj.entry("product").or_insert(v);
+        }
+        let spec: ServiceSpec = serde_json::from_value(spec_json)
             .with_context(|| format!("spec do serviço '{name}' ({id})"))?;
         service_owner.insert(id.clone(), project_id);
         p.services.push(ServiceInfra {

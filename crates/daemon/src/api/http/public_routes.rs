@@ -59,10 +59,28 @@ pub async fn webhook(req: Request<Incoming>, state: AppState) -> Response<Full<B
     // reconhecível — qualquer outro caso (Docker Hub, curl manual sem body,
     // provider não suportado) dispara o deploy do jeito de sempre; não dá pra
     // bloquear silenciosamente um trigger que a gente não sabe interpretar.
-    let body = match http_body_util::BodyExt::collect(req.into_body()).await {
+    let content_type = req
+        .headers()
+        .get(hyper::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_owned();
+    let is_ping = req
+        .headers()
+        .get("x-github-event")
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|e| e.eq_ignore_ascii_case("ping"));
+    let raw_body = match http_body_util::BodyExt::collect(req.into_body()).await {
         Ok(c) => c.to_bytes(),
         Err(_) => Bytes::new(),
     };
+    // O "ping" que o GitHub manda ao criar o webhook não é um push: não deploya.
+    if is_ping {
+        info!(service_id = %service_id, "webhook: ping do GitHub, nada a fazer");
+        return resp(StatusCode::OK, "pong");
+    }
+    // `application/x-www-form-urlencoded` (padrão da UI do GitHub) traz o JSON em `payload=`.
+    let body = json_body(&content_type, raw_body);
     let service = crate::store::services::get(&state.db, &service_id)
         .await
         .ok()
@@ -101,6 +119,25 @@ pub async fn webhook(req: Request<Incoming>, state: AppState) -> Response<Full<B
     });
 
     resp(StatusCode::OK, "deploy triggered")
+}
+
+/// Devolve o corpo como JSON: `application/json` (e qualquer outro tipo) passa como veio; com
+/// `application/x-www-form-urlencoded` o JSON está no campo `payload` (percent-decoding). Form sem
+/// `payload` vira corpo vazio, que dispara o deploy sem filtros (como um `curl` manual).
+fn json_body(content_type: &str, body: Bytes) -> Bytes {
+    let is_form = content_type.split(';').next().is_some_and(|t| {
+        t.trim()
+            .eq_ignore_ascii_case("application/x-www-form-urlencoded")
+    });
+    if !is_form {
+        return body;
+    }
+    let text = String::from_utf8_lossy(&body);
+    url_decode_pairs(&text)
+        .into_iter()
+        .find(|(k, _)| k == "payload")
+        .map(|(_, v)| Bytes::from(v))
+        .unwrap_or_default()
 }
 
 /// Extrai o nome curto da branch de um payload de push GitHub/Gitea/Gogs
@@ -467,7 +504,45 @@ fn percent_decode(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{extract_changed_files, extract_push_branch, path_matches, skip_by_watch_paths};
+    use super::{
+        extract_changed_files, extract_push_branch, json_body, path_matches, skip_by_watch_paths,
+    };
+    use bytes::Bytes;
+
+    #[test]
+    fn form_urlencoded_entrega_o_json_do_payload() {
+        let json = r#"{"ref":"refs/heads/dev","commits":[{"added":[],"modified":["a b.rs"],"removed":[]}]}"#;
+        let enc: String = json
+            .bytes()
+            .map(|b| match b {
+                b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' => (b as char).to_string(),
+                _ => format!("%{b:02X}"),
+            })
+            .collect();
+        let body = Bytes::from(format!("payload={enc}"));
+        let out = json_body("application/x-www-form-urlencoded; charset=utf-8", body);
+        assert_eq!(extract_push_branch(&out), Some("dev".to_string()));
+        assert_eq!(
+            extract_changed_files(&out),
+            Some(vec!["a b.rs".to_string()])
+        );
+    }
+
+    #[test]
+    fn json_e_outros_tipos_passam_intactos() {
+        let b = Bytes::from_static(br#"{"ref":"refs/heads/main"}"#);
+        assert_eq!(json_body("application/json", b.clone()), b);
+        assert_eq!(json_body("", b.clone()), b);
+    }
+
+    #[test]
+    fn form_sem_payload_vira_corpo_vazio() {
+        let out = json_body(
+            "application/x-www-form-urlencoded",
+            Bytes::from_static(b"foo=bar"),
+        );
+        assert!(out.is_empty());
+    }
 
     #[test]
     fn extrai_branch_de_payload_github_gitea() {

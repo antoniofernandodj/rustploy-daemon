@@ -19,10 +19,10 @@ pub fn pct_encode(s: &str) -> String {
     out
 }
 
-/// Esquema de URI por `db_kind`; `None` = sem esquema (Kafka, serviço comum).
+/// Esquema de URI por `product`; `None` = sem esquema (Kafka, serviço comum).
 /// MariaDB usa `mysql://` (a maioria dos drivers não conhece `mariadb://`).
-pub fn scheme(db_kind: Option<&str>) -> Option<&'static str> {
-    match db_kind.map(str::to_ascii_lowercase).as_deref() {
+pub fn scheme(product: Option<&str>) -> Option<&'static str> {
+    match product.map(str::to_ascii_lowercase).as_deref() {
         Some("postgres" | "postgresql") => Some("postgresql"),
         Some("mysql" | "mariadb") => Some("mysql"),
         Some("redis") => Some("redis"),
@@ -52,9 +52,9 @@ fn non_empty(s: Option<&str>) -> Option<&str> {
 
 /// URI padrão (`scheme://user:senha@host:porta/database`) que os drivers
 /// aceitam como `DATABASE_URL`. Sem esquema conhecido, só `host:porta`.
-pub fn connection_url(db_kind: Option<&str>, t: &ConnTarget<'_>) -> String {
+pub fn connection_url(product: Option<&str>, t: &ConnTarget<'_>) -> String {
     let hp = format!("{}:{}", t.host, t.port);
-    let Some(scheme) = scheme(db_kind) else {
+    let Some(scheme) = scheme(product) else {
         return hp;
     };
     let (user, pass) = (non_empty(t.user), non_empty(t.password));
@@ -88,7 +88,7 @@ pub fn connection_url(db_kind: Option<&str>, t: &ConnTarget<'_>) -> String {
 /// vars nas convenções que o wizard grava (`wizard::db_env_vars`). `get`
 /// devolve o valor já resolvido (projeto + serviço, secrets decifradas).
 pub fn credentials(
-    db_kind: Option<&str>,
+    product: Option<&str>,
     get: impl Fn(&str) -> Option<String>,
 ) -> (
     Option<String>,
@@ -97,7 +97,7 @@ pub fn credentials(
     Option<&'static str>,
 ) {
     let g = |k: &str| get(k).filter(|v| !v.is_empty());
-    match db_kind.map(str::to_ascii_lowercase).as_deref() {
+    match product.map(str::to_ascii_lowercase).as_deref() {
         Some("postgres" | "postgresql") => (
             g("POSTGRES_DB"),
             g("POSTGRES_USER"),
@@ -171,12 +171,12 @@ pub fn compose_services(content: &str) -> Vec<(String, Option<String>)> {
 
 /// Host (chave do serviço no YAML) que recebe a conexão numa stack Compose:
 /// `ingress_service` se preenchido; senão o único serviço; senão o que tem
-/// imagem do `db_kind`; senão `None` (quem chama cai no nome do container, que
+/// imagem do `product`; senão `None` (quem chama cai no nome do container, que
 /// sempre resolve — em vez de inventar um).
 pub fn compose_host(
     content: &str,
     ingress_service: Option<&str>,
-    db_kind: Option<&str>,
+    product: Option<&str>,
 ) -> Option<String> {
     if let Some(i) = ingress_service.filter(|s| !s.is_empty()) {
         return Some(i.to_string());
@@ -185,7 +185,7 @@ pub fn compose_host(
     if let [(k, _)] = services.as_slice() {
         return Some(k.clone());
     }
-    let kind = db_kind?.to_ascii_lowercase();
+    let kind = product?.to_ascii_lowercase();
     let needle = match kind.as_str() {
         "postgresql" => "postgres",
         "mongo" => "mongo",
@@ -201,9 +201,9 @@ pub fn compose_host(
 }
 
 /// Bancos que podem ser servidor compartilhado / ter databases gerenciados.
-pub fn is_sql_or_mongo(db_kind: Option<&str>) -> bool {
+pub fn is_sql_or_mongo(product: Option<&str>) -> bool {
     matches!(
-        db_kind.map(str::to_ascii_lowercase).as_deref(),
+        product.map(str::to_ascii_lowercase).as_deref(),
         Some("postgres" | "postgresql" | "mysql" | "mariadb" | "mongodb" | "mongo")
     )
 }
@@ -215,7 +215,7 @@ pub fn is_sql_or_mongo(db_kind: Option<&str>) -> bool {
 pub fn validate_shared_rules(
     name: &str,
     source: &shared::ServiceSource,
-    db_kind: Option<&str>,
+    product: Option<&str>,
     shared: bool,
 ) -> Result<(), String> {
     let reserved = |n: &str| {
@@ -239,7 +239,7 @@ pub fn validate_shared_rules(
         ));
     }
     if shared {
-        if !is_sql_or_mongo(db_kind) {
+        if !is_sql_or_mongo(product) {
             return Err(
                 "só Postgres, MySQL, MariaDB e MongoDB podem ser servidor compartilhado".into(),
             );

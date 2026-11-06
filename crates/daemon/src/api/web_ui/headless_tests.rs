@@ -498,7 +498,7 @@ async fn rename_service_in_general_tab() {
             s.serviceDeployments = [];
             s.serviceDetail = {
                 id: 'svc_1', status: 'Running', live_container_id: null,
-                spec: { name: 'banco', port: 5432, replicas: 1, project_id: 'prj_1', db_kind: 'postgres',
+                spec: { name: 'banco', port: 5432, replicas: 1, project_id: 'prj_1', product: 'postgres',
                     env_vars: [], domains: [],
                     source: { Compose: { content: 'services:\n  # comentário\n\n  rp_banco:\n    image: postgres:18\n' } },
                     healthcheck: { kind: 'None', interval_secs: 5, timeout_secs: 3, retries: 10, start_period_secs: 5 } },
@@ -555,10 +555,10 @@ async fn rename_service_in_general_tab() {
         "mesmo nome não salva; vazio só avisa"
     );
 
-    // Nome novo: manda o spec inteiro (fonte, porta, db_kind) só com o nome trocado.
+    // Nome novo: manda o spec inteiro (fonte, porta, product) só com o nome trocado.
     let saved = eval_str(
         &page,
-        &format!("(async () => {{ const d = {d}; d.editName = '  meu-banco  '; await d.renameService(); const x = window.__saved[0]; return JSON.stringify({{ n: window.__saved.length, msg: x.msg, name: x.spec.name, port: x.spec.port, kind: x.spec.db_kind, content: x.spec.source.Compose.content, edit: d.editName }}); }})()")
+        &format!("(async () => {{ const d = {d}; d.editName = '  meu-banco  '; await d.renameService(); const x = window.__saved[0]; return JSON.stringify({{ n: window.__saved.length, msg: x.msg, name: x.spec.name, port: x.spec.port, kind: x.spec.product, content: x.spec.source.Compose.content, edit: d.editName }}); }})()")
     )
     .await;
     let v: serde_json::Value = serde_json::from_str(&saved).unwrap();
@@ -727,7 +727,7 @@ async fn shared_server_databases_tab() {
             s.toastOk = () => {};
             s.serviceDetail = {
                 id: 'svc_1', status: 'Running', live_container_id: null,
-                spec: { name: 'pg', port: 5432, replicas: 1, project_id: 'prj_i', db_kind: 'postgres', shared: {},
+                spec: { name: 'pg', port: 5432, replicas: 1, project_id: 'prj_i', product: 'postgres', shared: {},
                     env_vars: [], domains: [],
                     source: { Compose: { content: 'services:\n  rp_pg:\n    image: postgres:18\n' } },
                     healthcheck: { kind: 'None', interval_secs: 5, timeout_secs: 3, retries: 10, start_period_secs: 5 } },
@@ -803,7 +803,7 @@ async fn migrate_old_database_tab() {
             s.serviceDeployments = [];
             s.serviceDetail = {
                 id: 'svc_old', status: 'Running', live_container_id: null,
-                spec: { name: 'banco', port: 5432, replicas: 1, project_id: 'prj_a', db_kind: 'postgres',
+                spec: { name: 'banco', port: 5432, replicas: 1, project_id: 'prj_a', product: 'postgres',
                     env_vars: [{ key: 'POSTGRES_DB', value: { Plain: 'meu_db' } }], domains: [],
                     source: { Compose: { content: 'services:\n  rp_banco:\n    image: postgres:18\n' } },
                     healthcheck: { kind: 'None', interval_secs: 5, timeout_secs: 3, retries: 10, start_period_secs: 5 } },

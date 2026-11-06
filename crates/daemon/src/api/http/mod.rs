@@ -436,6 +436,27 @@ async fn service_archive_upload(
     }
 }
 
+/// Cliente antigo (GUI/webui anteriores ao rename `db_kind` → `product`) gravando um serviço de
+/// banco/broker/storage: o `serde` ignora a chave velha e `ServiceUpdate` é substituição total, então
+/// o serviço perderia o `product` e viraria comum, em silêncio. Recusa com a causa. `db_kind: null`
+/// passa (nada a perder: serviço comum).
+fn legacy_product_key(body: &[u8]) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_slice(body).ok()?;
+    let obj = v.as_object()?;
+    let spec = obj
+        .get("ServiceCreate")
+        .or_else(|| obj.get("ServiceUpdate").and_then(|u| u.get("spec")))?;
+    match spec.get("db_kind") {
+        Some(k) if !k.is_null() => Some(
+            "este cliente é de uma versão anterior: o campo `db_kind` foi renomeado para `product`. \
+             Gravar assim apagaria o tipo do serviço (banco/broker/storage). Atualize a GUI/webui \
+             (na webui, recarregue com Ctrl+Shift+R)."
+                .to_string(),
+        ),
+        _ => None,
+    }
+}
+
 /// `POST /api/rpc`: decode a `Command`, run it through `dispatch`, encode the
 /// `Response` back as JSON.
 async fn rpc(req: Request<Incoming>, state: AppState) -> Response<ApiBody> {
@@ -445,6 +466,9 @@ async fn rpc(req: Request<Incoming>, state: AppState) -> Response<ApiBody> {
         Ok(c) => c.to_bytes(),
         Err(_) => return text(StatusCode::BAD_REQUEST, "erro ao ler o corpo"),
     };
+    if let Some(msg) = legacy_product_key(&body) {
+        return text(StatusCode::BAD_REQUEST, msg);
+    }
     let cmd: Command = match serde_json::from_slice(&body) {
         Ok(c) => c,
         Err(e) => return text(StatusCode::BAD_REQUEST, format!("comando inválido: {e}")),
@@ -1125,6 +1149,21 @@ pub(super) fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn recusa_db_kind_preenchido_em_create_e_update_mas_nao_null_nem_outros_comandos() {
+        let r = |j: &str| super::legacy_product_key(j.as_bytes());
+        assert!(
+            r(r#"{"ServiceUpdate":{"id":"s","spec":{"name":"x","db_kind":"postgres"}}}"#).is_some()
+        );
+        assert!(r(r#"{"ServiceCreate":{"name":"x","db_kind":"kafka"}}"#).is_some());
+        assert!(r(r#"{"ServiceUpdate":{"id":"s","spec":{"name":"x","db_kind":null}}}"#).is_none());
+        assert!(
+            r(r#"{"ServiceUpdate":{"id":"s","spec":{"name":"x","product":"postgres"}}}"#).is_none()
+        );
+        assert!(r(r#"{"ServiceGet":{"id":"s"}}"#).is_none());
+        assert!(r("não é json").is_none());
+    }
+
     use super::*;
 
     fn req_com_auth(valor: Option<&str>) -> Request<()> {

@@ -19,7 +19,7 @@ pub async fn start(state: AppState, mut req: MigrationStartReq) -> RpResponse {
         Ok(None) => return err("NotFound", "banco antigo não encontrado"),
         Err(e) => return err("DatabaseError", e.to_string()),
     };
-    let Some(engine) = Engine::from_kind(source.spec.db_kind.as_deref()) else {
+    let Some(engine) = Engine::from_kind(source.spec.product.as_deref()) else {
         return err(
             "Unsupported",
             "só bancos Postgres, MySQL, MariaDB e MongoDB podem migrar",

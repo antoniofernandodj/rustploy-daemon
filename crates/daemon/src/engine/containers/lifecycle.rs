@@ -19,9 +19,12 @@ use tracing::{debug, info, warn};
 
 /// Dá ao container o alias `alias` na rede `network`, reconectando-o
 /// (`disconnect` + `connect`): o Docker não altera aliases de um endpoint
-/// existente. **O IP do container na rede muda** — quem guardou o IP (ingress)
-/// precisa relê-lo. Não faz nada se o alias já estiver lá (retomada de deploy
-/// pela recovery), para não derrubar conexões à toa.
+/// existente. A reconexão **pede o mesmo IPv4** que o container tinha: com IP novo, toda
+/// conexão que o app abriu no staging (RabbitMQ, banco, Redis…) ficava muda — o IP de origem
+/// mudou — e só morria por timeout de heartbeat 2–3 min depois (visto no Chiquitos; reproduzido
+/// com podman + RabbitMQ). Se o engine recusar o IP fixo, reconecta sem ele (o deploy não pode
+/// falhar por isso) e o IP muda como antes — quem guardou o IP (ingress) deve relê-lo de
+/// qualquer forma. Não faz nada se o alias já estiver lá (retomada de deploy pela recovery).
 pub async fn attach_network_alias(
     docker: &Docker,
     container_id: &str,
@@ -43,6 +46,13 @@ pub async fn attach_network_alias(
         debug!(container_id = %container_id, alias = %alias, "alias já presente");
         return Ok(());
     }
+    let ipv4 = info
+        .network_settings
+        .as_ref()
+        .and_then(|n| n.networks.as_ref())
+        .and_then(|n| n.get(network))
+        .and_then(|e| e.ip_address.clone())
+        .filter(|ip| !ip.is_empty());
     docker
         .disconnect_network(
             network,
@@ -53,23 +63,40 @@ pub async fn attach_network_alias(
         )
         .await
         .map_err(|e| anyhow!("falha ao desconectar {container_id} de {network}: {e}"))?;
-    docker
-        .connect_network(
+    let connect = |ip: Option<String>| {
+        docker.connect_network(
             network,
             ConnectNetworkOptions {
                 container: container_id.to_string(),
-                endpoint_config: EndpointSettings {
-                    aliases: Some(vec![alias.to_string()]),
-                    ..Default::default()
-                },
+                endpoint_config: endpoint_with_alias(alias, ip),
             },
         )
-        .await
-        .map_err(|e| {
+    };
+    if let Err(e) = connect(ipv4.clone()).await {
+        let Some(ip) = &ipv4 else {
+            return Err(anyhow!(
+                "falha ao reconectar {container_id} a {network} com alias {alias}: {e}"
+            ));
+        };
+        warn!(container_id = %container_id, ip = %ip, error = %e, "engine recusou manter o IP; reconectando com IP novo");
+        connect(None).await.map_err(|e| {
             anyhow!("falha ao reconectar {container_id} a {network} com alias {alias}: {e}")
         })?;
+    }
     info!(container_id = %container_id, network = %network, alias = %alias, "alias de rede atribuído");
     Ok(())
+}
+
+/// Endpoint de rede com o alias e, se houver, o IPv4 fixo.
+fn endpoint_with_alias(alias: &str, ipv4: Option<String>) -> EndpointSettings {
+    EndpointSettings {
+        aliases: Some(vec![alias.to_string()]),
+        ipam_config: ipv4.map(|ip| bollard::models::EndpointIpamConfig {
+            ipv4_address: Some(ip),
+            ..Default::default()
+        }),
+        ..Default::default()
+    }
 }
 
 /// Cria o container de staging de uma réplica já na rede do projeto
@@ -368,4 +395,103 @@ pub async fn remove(docker: &Docker, container_id: &str) -> Result<()> {
         "removido"
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn endpoint_leva_o_alias_e_o_ip_fixo_quando_ha() {
+        let e = endpoint_with_alias("rp_api", Some("10.89.2.8".into()));
+        assert_eq!(e.aliases, Some(vec!["rp_api".to_string()]));
+        assert_eq!(
+            e.ipam_config.and_then(|i| i.ipv4_address).as_deref(),
+            Some("10.89.2.8")
+        );
+        let sem_ip = endpoint_with_alias("rp_api", None);
+        assert!(sem_ip.ipam_config.is_none());
+    }
+
+    /// Contra um engine de verdade (Docker ou Podman): o alias entra e o **IP não muda**.
+    /// `cargo test -p rustploy alias_mantem_o_ip -- --ignored --nocapture`
+    /// (imagem local qualquer em `RP_TEST_IMAGE`, padrão `redis:alpine`).
+    #[tokio::test]
+    #[ignore = "precisa de um engine Docker/Podman rodando"]
+    async fn alias_mantem_o_ip() {
+        use bollard::network::CreateNetworkOptions;
+        let docker = Docker::connect_with_local_defaults().expect("engine");
+        let image = std::env::var("RP_TEST_IMAGE").unwrap_or_else(|_| "redis:alpine".into());
+        let pid = std::process::id();
+        let (net, name) = (
+            format!("rp_teste_ip_net_{pid}"),
+            format!("rp_teste_ip_{pid}"),
+        );
+        docker
+            .create_network(CreateNetworkOptions {
+                name: net.clone(),
+                ..Default::default()
+            })
+            .await
+            .expect("rede");
+        // O 2º container mantém a rede (e o netns rootless) de pé quando o 1º desconecta;
+        // sem ele, o Podman rootless tenta matar o processo do netns e leva "permission denied".
+        let companheiro = format!("{name}_c");
+        for n in [&name, &companheiro] {
+            docker
+                .create_container(
+                    Some(CreateContainerOptions {
+                        name: n.clone(),
+                        platform: None,
+                    }),
+                    Config {
+                        image: Some(image.clone()),
+                        host_config: Some(HostConfig {
+                            network_mode: Some(net.clone()),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .expect("container");
+            docker
+                .start_container(n, None::<StartContainerOptions<String>>)
+                .await
+                .expect("start");
+        }
+
+        let ip_de = |docker: Docker, name: String, net: String| async move {
+            let i = docker
+                .inspect_container(&name, None::<InspectContainerOptions>)
+                .await
+                .unwrap();
+            let ep = i.network_settings.unwrap().networks.unwrap()[&net].clone();
+            (
+                ep.ip_address.unwrap_or_default(),
+                ep.aliases.unwrap_or_default(),
+            )
+        };
+        let (antes, _) = ip_de(docker.clone(), name.clone(), net.clone()).await;
+        let r = attach_network_alias(&docker, &name, &net, "rp_teste_alias").await;
+        let (depois, aliases) = ip_de(docker.clone(), name.clone(), net.clone()).await;
+
+        for n in [&name, &companheiro] {
+            let _ = docker
+                .remove_container(
+                    n,
+                    Some(RemoveContainerOptions {
+                        force: true,
+                        ..Default::default()
+                    }),
+                )
+                .await;
+        }
+        let _ = docker.remove_network(&net).await;
+
+        r.expect("attach_network_alias");
+        assert!(!antes.is_empty());
+        assert_eq!(antes, depois, "o IP mudou na reconexão");
+        assert!(aliases.iter().any(|a| a == "rp_teste_alias"), "{aliases:?}");
+    }
 }

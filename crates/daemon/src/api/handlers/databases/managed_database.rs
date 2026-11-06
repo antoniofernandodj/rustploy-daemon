@@ -26,7 +26,7 @@ async fn server(state: &AppState, id: &str) -> Result<(Service, Engine), RpRespo
             "este serviço não é um servidor compartilhado",
         ));
     }
-    let Some(engine) = Engine::from_kind(svc.spec.db_kind.as_deref()) else {
+    let Some(engine) = Engine::from_kind(svc.spec.product.as_deref()) else {
         return Err(RpResponse::err(
             "Unsupported",
             "motor de banco não suportado",
@@ -191,7 +191,7 @@ pub async fn list_all(state: AppState) -> RpResponse {
     };
     let mut out = vec![];
     for svc in servers.iter().filter(|s| s.spec.shared.is_some()) {
-        let Some(engine) = Engine::from_kind(svc.spec.db_kind.as_deref()) else {
+        let Some(engine) = Engine::from_kind(svc.spec.product.as_deref()) else {
             continue;
         };
         if let Ok(rows) = store::managed_database::list(&state.db, &svc.id).await {

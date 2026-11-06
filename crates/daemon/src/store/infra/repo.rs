@@ -30,6 +30,28 @@ impl Repo {
     pub fn open(dir: impl Into<PathBuf>) -> Result<Self> {
         let tree = FileTree::open(dir)?;
         let state = InfraState::read(&tree)?;
+        // Pasta num schema antigo: guarda uma cópia, grava no formato novo e confere que relê igual.
+        if let (Some(old), Some(st)) = (super::model::disk_schema(&tree)?, &state)
+            && old < super::model::SCHEMA
+        {
+            let bak = tree.root().with_extension(format!("bak-schema{old}"));
+            for rel in tree.list()? {
+                if let Some(bytes) = tree.read(&rel)? {
+                    let dest = bak.join(&rel);
+                    if let Some(parent) = dest.parent() {
+                        std::fs::create_dir_all(parent)?;
+                    }
+                    std::fs::write(dest, bytes)?;
+                }
+            }
+            st.write(&tree)?;
+            anyhow::ensure!(
+                InfraState::read(&tree)?.as_ref() == Some(st),
+                "o estado regravado no schema {} não relê igual",
+                super::model::SCHEMA
+            );
+            tracing::info!(de = old, para = super::model::SCHEMA, backup = %bak.display(), "infra: formato atualizado");
+        }
         Ok(Self {
             tree,
             changes: tokio::sync::watch::channel(0).0,
@@ -115,6 +137,10 @@ impl Repo {
         *self.state.write().unwrap() = new.clone();
         self.changes.send_modify(|v| *v += 1);
         finish(self.tree.root())?;
+        // Árvore vinda do remoto num schema antigo: o estado em memória já foi convertido, mas o
+        // disco ficou com os bytes velhos (e o `finish` acabou de alinhar o git a eles). Regrava no
+        // formato atual para o próximo ciclo commitar e empurrar a chave renomeada ao remoto.
+        self.upgrade_disk(&new)?;
         Ok((old, new))
     }
 
@@ -130,11 +156,20 @@ impl Repo {
         new.validate()?;
         let old = self.state.read().unwrap().clone();
         let new = Arc::new(new);
+        self.upgrade_disk(&new)?; // merge à mão num schema antigo
         if *old != *new {
             *self.state.write().unwrap() = new.clone();
             self.changes.send_modify(|v| *v += 1);
         }
         Ok((old, new))
+    }
+
+    /// Regrava `st` se a pasta ainda estiver num schema anterior ao atual. Chamar com o lock tomado.
+    fn upgrade_disk(&self, st: &InfraState) -> Result<()> {
+        if super::model::disk_schema(&self.tree)?.is_some_and(|v| v < super::model::SCHEMA) {
+            st.write(&self.tree)?;
+        }
+        Ok(())
     }
 
     /// Substitui o estado em memória pelo que está no disco (depois da migração).

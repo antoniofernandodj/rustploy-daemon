@@ -43,9 +43,11 @@ pub struct ServiceManifest {
     pub command: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub args: Vec<String>,
-    /// Tipo de banco: postgres | mongodb | mariadb | mysql | redis
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub db: Option<String>,
+    /// Produto gerenciado: postgres | mongodb | mariadb | mysql | redis | kafka | rabbitmq | nats |
+    /// rustfs | minio. A chave se chamava `db:` (renomeada em 2026-11, junto com `ServiceSpec.product`);
+    /// o alias deixa os manifestos antigos entrarem. TODO: tirar o alias na release seguinte.
+    #[serde(default, alias = "db", skip_serializing_if = "Option::is_none")]
+    pub product: Option<String>,
     /// Servidor de banco compartilhado entre projetos (ver `ServiceSpec::shared`).
     /// Os projetos autorizados ficam no banco do daemon, não no manifesto.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -161,7 +163,7 @@ impl ServiceManifest {
                 .unwrap_or_default(),
             run_command: self.command.clone(),
             run_args: self.args.clone(),
-            db_kind: self.db.clone(),
+            product: self.product.clone(),
             domains: self.domains.clone(),
             // TODO(pre-deploy-gate): o manifesto ainda não expõe o pré-deploy
             // check; fica vazio no import/export.
@@ -191,7 +193,7 @@ impl ServiceManifest {
             resources: ResourcesManifest::from_limits(&spec.resources),
             command: spec.run_command.clone(),
             args: spec.run_args.clone(),
-            db: spec.db_kind.clone(),
+            product: spec.product.clone(),
             shared: spec.shared.is_some(),
         }
     }

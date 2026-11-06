@@ -191,7 +191,7 @@ document.addEventListener("alpine:init", () => {
     sharedDatabaseLabel: "",
     serviceFormSharedDatabase: { name: "", project: "", env: "", limit: "", timeout: "", overwrite: false, skipEnv: false },
     get canShare() {
-      const normalizedKind = (this.svc?.spec?.db_kind || "").toLowerCase();
+      const normalizedKind = (this.svc?.spec?.product || "").toLowerCase();
       return (
         ["postgres", "postgresql", "mysql", "mariadb", "mongodb", "mongo"].includes(normalizedKind) &&
         !!this.svc?.spec?.source?.Compose
@@ -589,9 +589,9 @@ document.addEventListener("alpine:init", () => {
         hostPort: spec.host_port || "—",
         domain: domain || "—",
         tls: tls ? "enabled" : "disabled",
-        databaseKind: spec.db_kind || null,
+        databaseKind: spec.product || null,
         internalUrl: this.connectionUrl || "—",
-        externalUrl: externalUrl(domain, tls, spec.host_port, spec.db_kind, this.store.api.baseUrl, spec.env_vars),
+        externalUrl: externalUrl(domain, tls, spec.host_port, spec.product, this.store.api.baseUrl, spec.env_vars),
       };
     },
 

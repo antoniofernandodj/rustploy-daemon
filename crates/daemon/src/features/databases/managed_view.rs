@@ -14,7 +14,7 @@ fn host_for(svc: &Service, project_id: &str) -> String {
         && let Some(h) = connection::compose_host(
             &c.content,
             c.ingress_service.as_deref(),
-            svc.spec.db_kind.as_deref(),
+            svc.spec.product.as_deref(),
         )
     {
         return h;

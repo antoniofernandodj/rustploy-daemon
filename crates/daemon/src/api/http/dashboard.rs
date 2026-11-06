@@ -58,7 +58,7 @@ pub struct DashboardCheck {
 
 /// Tipo do serviço e o rótulo curto do cartão.
 fn classify(svc: &Service) -> (&'static str, String) {
-    if let Some(engine) = svc.spec.db_kind.as_deref() {
+    if let Some(engine) = svc.spec.product.as_deref() {
         let engine = engine.to_lowercase();
         if BROKER_KINDS.contains(&engine.as_str()) {
             return ("broker", format!("Broker · {engine}"));
@@ -66,7 +66,7 @@ fn classify(svc: &Service) -> (&'static str, String) {
         if STORAGE_KINDS.contains(&engine.as_str()) {
             return ("storage", format!("Storage · {engine}"));
         }
-        let _ = DATABASE_KINDS; // qualquer outro `db_kind` também é banco
+        let _ = DATABASE_KINDS; // qualquer outro `product` também é banco
         return ("database", format!("Banco · {engine}"));
     }
     match &svc.spec.source {
@@ -114,7 +114,7 @@ pub fn build(
                         _ => None,
                     };
                     let engine = matches!(kind, "database" | "broker" | "storage")
-                        .then(|| svc.spec.db_kind.clone())
+                        .then(|| svc.spec.product.clone())
                         .flatten();
                     DashboardService {
                         service_id: svc.id.clone(),
@@ -239,7 +239,7 @@ mod tests {
                 resources: shared::ResourceLimits::default(),
                 run_command: None,
                 run_args: vec![],
-                db_kind: None,
+                product: None,
                 domains: vec![],
                 pre_deploy_job_id: None,
                 pre_deploy_job_ids: vec!["job_a".into(), "job_gone".into()],
@@ -349,12 +349,12 @@ mod tests {
     }
 
     #[test]
-    fn db_kind_decides_database_or_broker_over_the_source() {
+    fn product_decides_database_or_broker_over_the_source() {
         let projects = [project("p1")];
         let mut database = service("s1", "p1", ServiceStatus::Running, registry());
-        database.spec.db_kind = Some("postgres".into());
+        database.spec.product = Some("postgres".into());
         let mut broker = service("s2", "p1", ServiceStatus::Running, registry());
-        broker.spec.db_kind = Some("kafka".into());
+        broker.spec.product = Some("kafka".into());
         let plain = service("s3", "p1", ServiceStatus::Running, registry());
 
         let result = dashboard(&projects, &[database, broker, plain]);

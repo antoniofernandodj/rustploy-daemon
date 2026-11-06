@@ -110,7 +110,7 @@ fn check_shared_rules(spec: &ServiceSpec) -> Result<()> {
     crate::platform::connection::validate_shared_rules(
         &spec.name,
         &spec.source,
-        spec.db_kind.as_deref(),
+        spec.product.as_deref(),
         spec.shared.is_some(),
     )
     .map_err(|e| anyhow::anyhow!(e))
@@ -292,7 +292,15 @@ pub async fn update_status(
              VALUES (?, ?, ?, 'Stopped', ?)
              ON CONFLICT(service_id) DO UPDATE SET
                 status = excluded.status,
-                live_container_id = excluded.live_container_id,
+                -- Queued/Deploying sem container: o deploy novo ainda está sendo construído e o container
+                -- ANTIGO segue no ar. Apagar o id aqui cegava logs, métricas, watchdog e o parar durante
+                -- todo o build, e fazia o reconcile achar que o Live antigo não rodava (vira Stopped).
+                live_container_id = CASE
+                    WHEN excluded.live_container_id IS NULL
+                         AND excluded.status IN ('Queued', 'Deploying')
+                    THEN service_runtime.live_container_id
+                    ELSE excluded.live_container_id
+                END,
                 updated_at = excluded.updated_at",
         )
         .bind(id)
@@ -429,7 +437,7 @@ fn test_compose_spec(name: String, project_id: String) -> ServiceSpec {
         resources: shared::ResourceLimits::default(),
         run_command: None,
         run_args: vec![],
-        db_kind: None,
+        product: None,
         domains: vec![],
         pre_deploy_job_id: None,
         pre_deploy_job_ids: vec![],
@@ -464,7 +472,7 @@ mod tests {
             resources: shared::ResourceLimits::default(),
             run_command: None,
             run_args: vec![],
-            db_kind: None,
+            product: None,
             domains: vec![],
             pre_deploy_job_id: None,
             pre_deploy_job_ids: vec![],
@@ -646,6 +654,37 @@ mod tests {
             .unwrap();
         assert!(get_desired_running(&db).await.unwrap().is_empty());
         let _ = b;
+    }
+
+    #[tokio::test]
+    async fn queued_e_deploying_preservam_o_container_ao_vivo_e_os_demais_estados_limpam() {
+        let db = mem_db().await;
+        let svc = create(&db, spec("api", "proj_a")).await.unwrap();
+        let cid = |db: &Db, id: String| {
+            let db = db.clone();
+            async move { get(&db, &id).await.unwrap().unwrap().live_container_id }
+        };
+        update_status(&db, &svc.id, &ServiceStatus::Running, Some("c_velho"))
+            .await
+            .unwrap();
+        update_status(&db, &svc.id, &ServiceStatus::Queued, None)
+            .await
+            .unwrap();
+        assert_eq!(cid(&db, svc.id.clone()).await.as_deref(), Some("c_velho"));
+        update_status(&db, &svc.id, &ServiceStatus::Deploying, None)
+            .await
+            .unwrap();
+        assert_eq!(cid(&db, svc.id.clone()).await.as_deref(), Some("c_velho"));
+        // um id novo vence
+        update_status(&db, &svc.id, &ServiceStatus::Running, Some("c_novo"))
+            .await
+            .unwrap();
+        assert_eq!(cid(&db, svc.id.clone()).await.as_deref(), Some("c_novo"));
+        // parar limpa
+        update_status(&db, &svc.id, &ServiceStatus::Stopped, None)
+            .await
+            .unwrap();
+        assert_eq!(cid(&db, svc.id.clone()).await, None);
     }
 
     #[tokio::test]

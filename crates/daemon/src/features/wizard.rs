@@ -331,7 +331,7 @@ fn base_spec(
     source: ServiceSource,
     port: u16,
     env_vars: Vec<EnvVar>,
-    db_kind: Option<String>,
+    product: Option<String>,
 ) -> ServiceSpec {
     ServiceSpec {
         name,
@@ -349,7 +349,7 @@ fn base_spec(
         resources: ResourceLimits::default(),
         run_command: None,
         run_args: vec![],
-        db_kind,
+        product,
         domains: vec![],
         pre_deploy_job_id: None,
         pre_deploy_job_ids: vec![],
@@ -941,7 +941,7 @@ mod senhas_tests {
                 })
         };
         let rustfs = build_spec(&req("rustfs", "")).unwrap();
-        assert_eq!(rustfs.db_kind.as_deref(), Some("rustfs"));
+        assert_eq!(rustfs.product.as_deref(), Some("rustfs"));
         assert_eq!(rustfs.port, 9000);
         assert_eq!(
             get(&rustfs, "RUSTFS_ACCESS_KEY").as_deref(),

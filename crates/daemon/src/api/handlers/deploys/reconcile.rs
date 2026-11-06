@@ -69,6 +69,13 @@ pub async fn fix_stale_live(state: &AppState, deployments: Vec<Deployment>) -> V
 
         // First Live for this service: verify the container is actually running.
         if !is_container_running(state, &dep.service_id).await {
+            // O deploy pode ter sido enfileirado entre o guard acima e a leitura dentro de
+            // `is_container_running` (corrida de milissegundos, mas o reconcile roda a cada snapshot):
+            // confere de novo antes de condenar o Live antigo.
+            if service_is_deploying(state, &dep.service_id).await {
+                out.push(dep);
+                continue;
+            }
             warn!(
                 deployment_id = %dep.id,
                 service_id = %dep.service_id,
