@@ -437,7 +437,14 @@ mod tests {
         // O 2º container mantém a rede (e o netns rootless) de pé quando o 1º desconecta;
         // sem ele, o Podman rootless tenta matar o processo do netns e leva "permission denied".
         let companheiro = format!("{name}_c");
-        for n in [&name, &companheiro] {
+        // `RP_TEST_SEM_COMPANHEIRO=1`: só o container testado na rede (o caso do deploy real).
+        let sem_companheiro = std::env::var("RP_TEST_SEM_COMPANHEIRO").is_ok();
+        let ativos: Vec<&String> = if sem_companheiro {
+            vec![&name]
+        } else {
+            vec![&name, &companheiro]
+        };
+        for n in ativos {
             docker
                 .create_container(
                     Some(CreateContainerOptions {
