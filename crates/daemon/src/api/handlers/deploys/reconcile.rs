@@ -9,11 +9,36 @@
 ///      All older Live deployments for the same service → Pruning.
 ///   2. For the most recent Live deployment per service, verify its container
 ///      is actually running. If not → Stopped.
+use crate::store::services::DesiredState;
 use crate::{bootstrap::state::AppState, engine};
 use chrono::Utc;
 use shared::{DeployState, Deployment, Event, ServiceStatus};
 use std::collections::HashSet;
-use tracing::warn;
+use std::time::Duration;
+use tracing::{info, warn};
+
+/// Mensagem da transição `Live → Stopped` feita por este reconcile. É também a marca que
+/// [`is_reconcile_stop`] procura para saber que o `Stopped` não foi decisão de ninguém.
+const STOPPED_BY_RECONCILE: &str = "container not running at read time";
+
+/// Janela, depois do boot do daemon, em que um container parado de um serviço que a pessoa quer no ar
+/// ainda **não subiu** — o autostart o religa em seguida (e tenta de novo se falhar). Condenar o
+/// deploy `Live` nesse intervalo o deixava `Stopped` para sempre, mesmo com o container de volta, e o
+/// `update_status(Stopped, None)` apagava o `live_container_id`.
+const BOOT_GRACE: Duration = Duration::from_secs(10 * 60);
+
+/// Num container parado, o `Live` deve ser poupado? Só quando a intenção é "no ar" **e** o daemon
+/// acabou de subir: depois da janela, um container que sumiu de fato continua sendo corrigido.
+fn spare_during_boot(desired: DesiredState, daemon_uptime: Duration) -> bool {
+    desired == DesiredState::Running && daemon_uptime < BOOT_GRACE
+}
+
+/// Este deploy está `Stopped` por obra do reconcile (e não por um "Parar" de uma pessoa, que tem outra
+/// mensagem)? Só esse pode voltar a `Live` quando o container volta.
+fn is_reconcile_stop(dep: &Deployment) -> bool {
+    dep.state == DeployState::Stopped
+        && dep.states_log.last().and_then(|t| t.message.as_deref()) == Some(STOPPED_BY_RECONCILE)
+}
 
 /// Passa para Pruning/Stopped os deployments marcados Live que já não estão no
 /// ar (só o mais recente de cada serviço pode ser Live), sem tocar em serviço
@@ -23,10 +48,35 @@ pub async fn fix_stale_live(state: &AppState, deployments: Vec<Deployment>) -> V
     // The list is already ordered by started_at DESC, so the first Live entry
     // per service_id is the candidate; subsequent ones are stale.
     let mut seen_live: HashSet<String> = HashSet::new();
+    // Serviços cujo deploy MAIS RECENTE (a lista vem do mais novo para o mais antigo) já foi visto.
+    let mut seen_service: HashSet<String> = HashSet::new();
     let mut out = Vec::with_capacity(deployments.len());
 
     for mut dep in deployments {
+        let is_newest = seen_service.insert(dep.service_id.clone());
+
         if dep.state != DeployState::Live {
+            // O mais recente foi condenado por este reconcile (container ainda não tinha subido, ou
+            // o `live_container_id` foi apagado) e o container voltou: o deploy volta a ser o Live.
+            if is_newest
+                && is_reconcile_stop(&dep)
+                && !service_is_deploying(state, &dep.service_id).await
+                && is_container_running(state, &dep.service_id).await
+            {
+                info!(
+                    deployment_id = %dep.id,
+                    service_id = %dep.service_id,
+                    "reconcile: o container voltou — deployment Stopped pelo reconcile volta a Live"
+                );
+                transition_deployment(
+                    state,
+                    &mut dep,
+                    DeployState::Live,
+                    "container running again",
+                )
+                .await;
+                seen_live.insert(dep.service_id.clone());
+            }
             out.push(dep);
             continue;
         }
@@ -76,18 +126,23 @@ pub async fn fix_stale_live(state: &AppState, deployments: Vec<Deployment>) -> V
                 out.push(dep);
                 continue;
             }
+            // Boot do daemon: o container ainda não foi religado pelo autostart. Poupa o Live (e o
+            // `live_container_id`) em vez de condenar um serviço que está prestes a voltar.
+            let desired = crate::store::services::desired_state(&state.db, &dep.service_id)
+                .await
+                .unwrap_or(DesiredState::Stopped);
+            if spare_during_boot(desired, state.started_at.elapsed()) {
+                seen_live.insert(dep.service_id.clone());
+                out.push(dep);
+                continue;
+            }
             warn!(
                 deployment_id = %dep.id,
                 service_id = %dep.service_id,
                 "reconcile: deployment Live mas container não está rodando — corrigindo para Stopped"
             );
-            transition_deployment(
-                state,
-                &mut dep,
-                DeployState::Stopped,
-                "container not running at read time",
-            )
-            .await;
+            transition_deployment(state, &mut dep, DeployState::Stopped, STOPPED_BY_RECONCILE)
+                .await;
             let _ = crate::store::services::update_status(
                 &state.db,
                 &dep.service_id,
@@ -175,4 +230,56 @@ async fn is_container_running(state: &AppState, service_id: &str) -> bool {
         }
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn dep(state: DeployState, last_message: Option<&str>) -> Deployment {
+        serde_json::from_value(serde_json::json!({
+            "id": "dep_1", "service_id": "svc_1", "image": "rp_x",
+            "state": serde_json::to_value(&state).unwrap(),
+            "started_at": "2026-11-07T00:00:00Z", "finished_at": null,
+            "states_log": last_message.map(|m| vec![serde_json::json!({
+                "from": "Live", "to": serde_json::to_value(&state).unwrap(),
+                "at": "2026-11-07T00:00:00Z", "message": m,
+            })]).unwrap_or_default(),
+        }))
+        .expect("Deployment de teste")
+    }
+
+    #[test]
+    fn poupa_o_live_so_com_intencao_de_rodar_e_daemon_recem_subido() {
+        let logo = Duration::from_secs(30);
+        let depois = BOOT_GRACE + Duration::from_secs(1);
+        assert!(spare_during_boot(DesiredState::Running, logo));
+        assert!(
+            !spare_during_boot(DesiredState::Running, depois),
+            "passada a janela, um container que sumiu volta a ser corrigido"
+        );
+        assert!(
+            !spare_during_boot(DesiredState::Stopped, logo),
+            "serviço parado de propósito não é poupado"
+        );
+    }
+
+    #[test]
+    fn so_o_stopped_do_reconcile_pode_voltar_a_live() {
+        assert!(is_reconcile_stop(&dep(
+            DeployState::Stopped,
+            Some(STOPPED_BY_RECONCILE)
+        )));
+        // um "Parar" de uma pessoa tem outra mensagem: não volta sozinho
+        assert!(!is_reconcile_stop(&dep(
+            DeployState::Stopped,
+            Some("stopped by user")
+        )));
+        assert!(!is_reconcile_stop(&dep(DeployState::Stopped, None)));
+        // e só vale para Stopped
+        assert!(!is_reconcile_stop(&dep(
+            DeployState::Failed,
+            Some(STOPPED_BY_RECONCILE)
+        )));
+    }
 }
