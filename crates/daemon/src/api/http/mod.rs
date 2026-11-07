@@ -457,6 +457,54 @@ fn legacy_product_key(body: &[u8]) -> Option<String> {
     }
 }
 
+/// Campos do `spec` atual que o payload de um `ServiceUpdate` simplesmente não traz.
+///
+/// `ServiceUpdate` substitui tudo e o `serde(default)` preenche o que falta com o vazio: um
+/// cliente que reenvia o spec de memória (ou montado à mão) apagaria, sem erro, env, domínios,
+/// dependências… Só conta quando o valor atual **não é vazio** (null, `[]`, `{}`, `false`, `0`,
+/// `""`): omitir um campo que já estava vazio não perde nada. Limpar de propósito continua
+/// possível mandando a chave explícita (`"domains": []`).
+fn omitted_spec_fields(current: &serde_json::Value, payload: &serde_json::Value) -> Vec<String> {
+    let (Some(cur), Some(new)) = (current.as_object(), payload.as_object()) else {
+        return Vec::new();
+    };
+    let vazio = |v: &serde_json::Value| match v {
+        serde_json::Value::Null => true,
+        serde_json::Value::Bool(b) => !b,
+        serde_json::Value::Number(n) => n.as_f64() == Some(0.0),
+        serde_json::Value::String(s) => s.is_empty(),
+        serde_json::Value::Array(a) => a.is_empty(),
+        serde_json::Value::Object(o) => o.is_empty(),
+    };
+    let mut out: Vec<String> = cur
+        .iter()
+        .filter(|(k, v)| !new.contains_key(*k) && !vazio(v))
+        .map(|(k, _)| k.clone())
+        .collect();
+    out.sort();
+    out
+}
+
+/// Recusa um `ServiceUpdate` que omite campos preenchidos do serviço (ver [`omitted_spec_fields`]).
+async fn partial_update_refusal(body: &[u8], state: &AppState) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_slice(body).ok()?;
+    let upd = v.as_object()?.get("ServiceUpdate")?;
+    let id = upd.get("id")?.as_str()?;
+    let spec = upd.get("spec")?;
+    let atual = crate::store::services::get(&state.db, id).await.ok()??;
+    let atual = serde_json::to_value(&atual.spec).ok()?;
+    let faltam = omitted_spec_fields(&atual, spec);
+    if faltam.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "ServiceUpdate substitui o serviço inteiro, e o payload não traz campos que o serviço já \
+         tem preenchidos: {}. Gravar assim os apagaria. Faça ServiceGet, mude só o que precisa e \
+         devolva o spec completo (para limpar de propósito, envie a chave vazia, ex. \"domains\": []).",
+        faltam.join(", ")
+    ))
+}
+
 /// `POST /api/rpc`: decode a `Command`, run it through `dispatch`, encode the
 /// `Response` back as JSON.
 async fn rpc(req: Request<Incoming>, state: AppState) -> Response<ApiBody> {
@@ -467,6 +515,9 @@ async fn rpc(req: Request<Incoming>, state: AppState) -> Response<ApiBody> {
         Err(_) => return text(StatusCode::BAD_REQUEST, "erro ao ler o corpo"),
     };
     if let Some(msg) = legacy_product_key(&body) {
+        return text(StatusCode::BAD_REQUEST, msg);
+    }
+    if let Some(msg) = partial_update_refusal(&body, &state).await {
         return text(StatusCode::BAD_REQUEST, msg);
     }
     let cmd: Command = match serde_json::from_slice(&body) {
@@ -1149,6 +1200,32 @@ pub(super) fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn update_que_omite_campo_preenchido_e_recusado_mas_vazio_ou_explicito_passa() {
+        let atual = serde_json::json!({
+            "name":"api","product":"postgres","domains":[{"domain":"a.com"}],
+            "depends_on":[],"autostart":true,"host_port":null,"replicas":1
+        });
+        let f = |p: serde_json::Value| super::omitted_spec_fields(&atual, &p);
+        // Omitiu `product`, `domains`, `autostart` e `replicas` (preenchidos): recusa.
+        assert_eq!(
+            f(serde_json::json!({"name":"api"})),
+            ["autostart", "domains", "product", "replicas"]
+        );
+        // Spec completo (inclusive limpando de propósito com `[]`/null): passa.
+        assert!(
+            f(serde_json::json!({"name":"api","product":null,"domains":[],"depends_on":[],
+                "autostart":false,"host_port":null,"replicas":1}))
+            .is_empty()
+        );
+        // Campo atual vazio omitido não perde nada.
+        assert!(
+            f(serde_json::json!({"name":"api","product":"postgres","domains":[{"domain":"a.com"}],
+                "autostart":true,"replicas":1}))
+            .is_empty()
+        );
+    }
+
     #[test]
     fn recusa_db_kind_preenchido_em_create_e_update_mas_nao_null_nem_outros_comandos() {
         let r = |j: &str| super::legacy_product_key(j.as_bytes());

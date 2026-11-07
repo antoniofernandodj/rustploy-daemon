@@ -237,7 +237,9 @@ existente primeiro (`ServiceGet`, `JobListAll`) e use-o de molde.
 ## 6. Armadilhas
 
 - **`ServiceUpdate` é substituição total, não patch.** Faça `ServiceGet`, mude
-  o campo, devolva o spec inteiro. Campo omitido é campo apagado.
+  o campo, devolva o spec inteiro. Campo omitido é campo apagado: pelo `/api/rpc`
+  o daemon recusa (400) um `ServiceUpdate` que omite campos que o serviço já tem
+  preenchidos; para limpar de propósito, mande a chave vazia (`"domains": []`).
 - **Log de container: `LogsGet` é ao vivo, `LogsHistory` é o histórico.** O swap de
   deploy destrói o container antigo, mas o daemon grava o log de cada container
   (14 dias / 50 MiB por serviço, `[logs]` no `config.toml`) e guarda o que sobrou

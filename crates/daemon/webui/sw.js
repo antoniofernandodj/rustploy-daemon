@@ -41,7 +41,13 @@ const APP_SHELL = [
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)).then(() => self.skipWaiting())
+    // `cache: "reload"` ignora o cache HTTP: os assets saem com `Cache-Control: immutable` por 1 ano
+    // e as URLs não levam hash, então um `addAll` simples encheria o cache novo com os bytes
+    // velhos que o navegador ainda guarda — e a atualização do daemon nunca apareceria.
+    caches
+      .open(CACHE_NAME)
+      .then((cache) => cache.addAll(APP_SHELL.map((url) => new Request(url, { cache: "reload" }))))
+      .then(() => self.skipWaiting())
   );
 });
 
