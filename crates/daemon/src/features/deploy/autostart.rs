@@ -371,6 +371,19 @@ impl DockerBringer {
                 return Ok(());
             }
             if tokio::time::Instant::now() >= deadline {
+                // Sem healthcheck configurado, o TCP é só uma cortesia para ordenar dependências
+                // (banco antes da app). Um worker de fila não escuta porta nenhuma: o deploy e o
+                // watchdog tratam `None` como "nada a testar", então aqui o container rodando basta.
+                // Sem isso, todo boot marcava o worker como Error e arrastava quem depende dele.
+                if hc.kind == HealthcheckKind::None
+                    && crate::features::observability::watchdog::container_is_running(
+                        &self.ctx.docker.inner,
+                        container_id,
+                    )
+                    .await
+                {
+                    return Ok(());
+                }
                 return Err(format!(
                     "não ficou pronto em {}s",
                     self.policy.ready_timeout.as_secs()
