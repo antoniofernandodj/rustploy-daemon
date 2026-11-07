@@ -170,6 +170,7 @@ impl ServiceManifest {
             pre_deploy_job_id: None,
             pre_deploy_job_ids: vec![],
             depends_on: vec![],
+            registry_auto_deploy: false,
             autostart: true,
             shared: self.shared.then(shared::SharedServerConfig::default),
         }
@@ -394,17 +395,15 @@ fn format_volume(v: &VolumeMount) -> String {
 /// Aceita `1024`, `256k`, `256m`, `2g` (case-insensitive).
 fn parse_mem(s: &str) -> Option<u64> {
     let s = s.trim();
-    if s.is_empty() {
-        return None;
-    }
-    let (num, mult) = match s.chars().last().unwrap().to_ascii_lowercase() {
+    let (num, mult) = match s.chars().last()?.to_ascii_lowercase() {
         'k' => (&s[..s.len() - 1], 1024u64),
         'm' => (&s[..s.len() - 1], 1024 * 1024),
         'g' => (&s[..s.len() - 1], 1024 * 1024 * 1024),
         c if c.is_ascii_digit() => (s, 1),
         _ => return None,
     };
-    num.trim().parse::<u64>().ok().map(|n| n * mult)
+    // `checked_mul`: o manifesto vem de fora, e `99999999999g` estouraria o u64.
+    num.trim().parse::<u64>().ok()?.checked_mul(mult)
 }
 
 fn humanize_mem(bytes: u64) -> String {
@@ -441,6 +440,17 @@ fn is_zero_u64(n: &u64) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_mem_nao_estoura_nem_entra_em_panico_com_entrada_ruim() {
+        assert_eq!(parse_mem(""), None);
+        assert_eq!(parse_mem("   "), None);
+        assert_eq!(parse_mem("g"), None, "sem número");
+        assert_eq!(parse_mem("12x"), None);
+        assert_eq!(parse_mem("é"), None, "último char multibyte");
+        assert_eq!(parse_mem("99999999999999999g"), None, "estouraria o u64");
+        assert_eq!(parse_mem(" 2G "), Some(2 * 1024 * 1024 * 1024));
+    }
 
     #[test]
     fn mem_round_trip() {

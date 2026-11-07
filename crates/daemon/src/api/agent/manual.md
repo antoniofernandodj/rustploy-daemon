@@ -178,6 +178,11 @@ Comandos, por área (campos entre chaves):
   `SecretMove{project_id, service_id?, name, op}` (`EnvToSecret`, escopos…) ·
   `EnvKeyRename{project_id, service_id?, from, to}` — troca só a **chave** de uma
   variável, mantendo o valor (que você não vê) ·
+  `EnvValueSet{project_id, service_id?, key, value}` — troca só o **valor** de uma
+  variável existente, na mesma posição (`value` é `{"Plain":"…"}` ou
+  `{"Secret":"NOME"}`, e o secret precisa existir no escopo); é a forma segura de
+  editar um valor, sem o `ServiceUpdate`/`ProjectEnvSet` que substituem tudo. O valor
+  `***` é recusado ·
   `SecretRename{project_id, service_id?, from, to}` — renomeia o secret e reaponta
   as variáveis que o usam. Use estes dois para alinhar nomes entre serviços (ex.:
   `RABBITMQ_DEFAULT_PASS` do broker × `RABBITMQ_PASS` do código) sem tocar em senha.
@@ -212,7 +217,7 @@ Comandos, por área (campos entre chaves):
   seguro). **Não use `aws-cli`** com o nome interno: o botocore rejeita hostname com `_` (`Invalid endpoint:
   http://rp_s3:9000`) — o `curl --aws-sigv4` aceita. Não use `minio/mc`: a imagem não é mais puxável.
 - **Docker**: `DockerContainers` · `DockerImages` · `DockerVolumes` ·
-  `DockerNetworks` · `RemoveContainer{id}` · `RemoveImage{id}` ·
+  `DockerNetworks` · `StopContainer{id}` (só container **órfão**: o de um serviço se para pelo serviço) · `RemoveContainer{id}` · `RemoveImage{id}` ·
   `RemoveVolume{name}` · `RemoveNetwork{id}` · `StopAllManaged` ·
   `PruneContainers` · `PruneImages{all}` · `PruneVolumes{all}` ·
   `PruneBuildCache` · `PruneNetworks` · `DockerCleanupConfigGet` ·
@@ -229,7 +234,22 @@ Comandos, por área (campos entre chaves):
   consulta, nunca instala; cache de horas) · `Snapshot` (o painel inteiro, JSON
   dentro de uma string) · `GetDaemonSettings` ·
   `SetDaemonSettings{acme_email?, registry_domain?}` · `EnvBackupList` ·
-  `EnvBackupRestore{snapshot}`
+  `EnvBackupRestore{snapshot}` · `UpdateStatus` (andamento ou resultado da última
+  atualização) · `ApplyUpdate{allow_active_deploys?}` e `UpdateRollback` (instalam/
+  desfazem uma versão: **recusados** ao agente, a menos que o dono ligue
+  `[update] allow_agent_apply`)
+- **Estado em git (`state_git`)**: `StateGitStatus` (situação da sincronização) ·
+  `StateGitConfigure{mode, remote?, branch?, provider_id?}` (`off` | `commit` |
+  `sync`; ligar é recusado enquanto houver valor em claro, veja `InfraAudit`) ·
+  `StateGitSyncNow` (commit pendente e, em `sync`, fetch + push) · `StateGitResume`
+  (retoma depois de uma divergência resolvida no repositório) ·
+  `StateGitDismissRemoval{id}` (esquece uma marca "removido no git") ·
+  `InfraAuditAllow{project, scope, what, allowed}` (marca uma **suspeita** da
+  auditoria como "não é segredo"; certezas não podem ser liberadas). `StateGitResolve`
+  descarta um dos lados e é **proibido** ao agente: peça a uma pessoa na GUI/webui.
+- **Aquecimento**: `ServiceWarmStatusList` (status de todos os serviços Git/zip) ·
+  `ServiceWarm{service_id, force?}` (constrói a imagem na vaga da fila para o próximo
+  deploy achar o cache quente; o fim vem em `Event::ServiceWarmChanged`)
 
 Quando não souber a forma de um tipo (`ServiceSpec`, `JobCreate`…), leia um
 existente primeiro (`ServiceGet`, `JobListAll`) e use-o de molde.

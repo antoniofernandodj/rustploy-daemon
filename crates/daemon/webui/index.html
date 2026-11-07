@@ -2035,8 +2035,10 @@
                     </row>
                     <row class="kv-list__row" x-show="!envVar.isComment">
                       <button class="env__del" type="button" @click="deleteEnvVar(envVar.key)">✕</button>
-                      <button class="btn btn--ghost btn--sm" type="button" @click="projectRename('env', envVar.key)"
+                      <button class="btn btn--ghost btn--sm" type="button" @click="startEnvEdit(envVar, 'key')"
                         :title="$t('Renomear (o valor não muda)')">✏️</button>
+                      <button class="btn btn--ghost btn--sm" type="button" @click="startEnvEdit(envVar, 'value')"
+                        :title="$t('Editar o valor no lugar')">✎</button>
                       <button class="btn btn--ghost btn--sm" type="button" x-show="!envVar.isSecret" @click="projectEnvToSecret(envVar.key)"
                         :title="$t('Mover para secret (o valor passa a ser guardado cifrado)')">🔒</button>
                       <button class="btn btn--ghost btn--sm" type="button" x-show="!envVar.isSecret" @click="projectEnvToService(envVar.key)"
@@ -2044,8 +2046,21 @@
                       <button class="btn btn--ghost btn--sm" type="button" x-show="envVar.isSecret" @click="projectSecretToEnv(envVar.secretName)"
                         :title="$t('Voltar para variável em claro (o valor deixa de ser cifrado)')">🔓</button>
                       <text class="env__sep"></text>
-                      <text class="env__key" x-text="envVar.key"></text>
-                      <text class="kv-list__val kv-list__val--compact" x-text="envVar.isSecret ? '(secret)' : envVar.value"></text>
+<template x-if="isEnvEditing(envVar.key, 'key')">
+                        <input class="env__inline env__key" type="text" x-model="envEdit.draft" x-init="$nextTick(() => { $el.focus(); $el.select(); })"
+                           @keydown.enter.prevent="commitEnvEdit(envVar)" @keydown.escape.prevent="cancelEnvEdit()" @blur="commitEnvEdit(envVar)" />
+                      </template>
+                      <template x-if="!isEnvEditing(envVar.key, 'key')">
+                        <text class="env__key" x-text="envVar.key"></text>
+                      </template>
+                      <template x-if="isEnvEditing(envVar.key, 'value')">
+                        <input class="env__inline kv-list__val kv-list__val--compact" type="text" x-model="envEdit.draft" x-init="$nextTick(() => { $el.focus(); $el.select(); })"
+                           :placeholder="envVar.isSecret ? $t('nome do secret') : ''"
+                           @keydown.enter.prevent="commitEnvEdit(envVar)" @keydown.escape.prevent="cancelEnvEdit()" @blur="commitEnvEdit(envVar)" />
+                      </template>
+                      <template x-if="!isEnvEditing(envVar.key, 'value')">
+                        <text class="kv-list__val kv-list__val--compact" x-text="envVar.isSecret ? '(secret)' : envVar.value"></text>
+                      </template>
                     </row>
                   </column>
                 </template>
@@ -3060,8 +3075,10 @@
                         </row>
                         <row class="kv-list__row" x-show="!envVar.isComment">
                           <button class="env__del" type="button" @click="deleteEnvVar(envVar.key)">✕</button>
-                          <button class="btn btn--ghost btn--sm" type="button" @click="serviceRename('env', envVar.key)"
+                          <button class="btn btn--ghost btn--sm" type="button" @click="startEnvEdit(envVar, 'key')"
                             :title="$t('Renomear (o valor não muda)')">✏️</button>
+                          <button class="btn btn--ghost btn--sm" type="button" @click="startEnvEdit(envVar, 'value')"
+                            :title="$t('Editar o valor no lugar')">✎</button>
                           <button class="btn btn--ghost btn--sm" type="button" x-show="!envVar.isSecret" @click="envToSecret(envVar.key)"
                             :title="$t('Mover para secret (o valor passa a ser guardado cifrado)')">🔒</button>
                           <button class="btn btn--ghost btn--sm" type="button" x-show="!envVar.isSecret" @click="envToProject(envVar.key)"
@@ -3069,8 +3086,21 @@
                           <button class="btn btn--ghost btn--sm" type="button" x-show="envVar.isSecret" @click="serviceSecretToEnv(envVar.secretName)"
                             :title="$t('Voltar para variável em claro (o valor deixa de ser cifrado)')">🔓</button>
                           <text class="env__sep"></text>
-                          <text class="env__key" x-text="envVar.key"></text>
-                          <text class="kv-list__val kv-list__val--compact" x-text="envVar.isSecret ? '(secret)' : envVar.value"></text>
+<template x-if="isEnvEditing(envVar.key, 'key')">
+                            <input class="env__inline env__key" type="text" x-model="envEdit.draft" x-init="$nextTick(() => { $el.focus(); $el.select(); })"
+                                   @keydown.enter.prevent="commitEnvEdit(envVar)" @keydown.escape.prevent="cancelEnvEdit()" @blur="commitEnvEdit(envVar)" />
+                          </template>
+                          <template x-if="!isEnvEditing(envVar.key, 'key')">
+                            <text class="env__key" x-text="envVar.key"></text>
+                          </template>
+                          <template x-if="isEnvEditing(envVar.key, 'value')">
+                            <input class="env__inline kv-list__val kv-list__val--compact" type="text" x-model="envEdit.draft" x-init="$nextTick(() => { $el.focus(); $el.select(); })"
+                                   :placeholder="envVar.isSecret ? $t('nome do secret') : ''"
+                                   @keydown.enter.prevent="commitEnvEdit(envVar)" @keydown.escape.prevent="cancelEnvEdit()" @blur="commitEnvEdit(envVar)" />
+                          </template>
+                          <template x-if="!isEnvEditing(envVar.key, 'value')">
+                            <text class="kv-list__val kv-list__val--compact" x-text="envVar.isSecret ? '(secret)' : envVar.value"></text>
+                          </template>
                         </row>
                       </column>
                     </template>
@@ -3379,6 +3409,16 @@
                 <span x-t>Religar quando o daemon subir</span>
               </label>
               <text class="u-muted" x-t>Ligado, o daemon traz este serviço de volta depois de um reinício (só se ele estava rodando). Serviço parado à mão continua parado.</text>
+
+              <template x-if="svc?.spec?.source?.Registry">
+                <column style="gap:6px">
+                  <label class="check-row" style="margin-top:14px">
+                    <input type="checkbox" x-model="advancedRegistryAutoDeploy" />
+                    <span x-t>Redeployar a cada push no registry embutido</span>
+                  </label>
+                  <text class="u-muted" x-t>Só para uma imagem do registry deste próprio servidor: cada docker push do mesmo repositório e tag redeploya este serviço sozinho (docker login, build, push). Desligado por padrão.</text>
+                </column>
+              </template>
 
               <row class="env__add" style="margin-top:14px">
                 <button class="btn btn--primary" type="button" @click="saveAdvanced()" x-t>Save</button>

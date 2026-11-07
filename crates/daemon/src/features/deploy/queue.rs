@@ -61,11 +61,18 @@ impl DeployQueue {
         })
     }
 
+    /// Trava o estado da fila. Um `Mutex` envenenado (outra thread entrou em pânico segurando a
+    /// trava) não derruba a fila inteira: o estado é só listas de ids, que seguem válidas, então
+    /// segue-se com o que havia em vez de propagar o pânico para todo deploy seguinte.
+    fn lock(&self) -> std::sync::MutexGuard<'_, QueueInner> {
+        self.inner.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     /// Enfileira um deployment e acorda o worker. Idempotente: ignora se o id já
     /// está na fila ou rodando.
     pub fn enqueue(&self, dep_id: String) {
         {
-            let mut g = self.inner.lock().unwrap();
+            let mut g = self.lock();
             if g.running.as_deref() == Some(dep_id.as_str()) || g.queued.contains(&dep_id) {
                 return;
             }
@@ -77,7 +84,7 @@ impl DeployQueue {
     /// Remove um deployment **enfileirado** (não afeta o que está rodando —
     /// abortar o running é papel do `active_deploys`). Retorna `true` se removeu.
     pub fn remove_queued(&self, dep_id: &str) -> bool {
-        let mut g = self.inner.lock().unwrap();
+        let mut g = self.lock();
         if let Some(pos) = g.queued.iter().position(|d| d == dep_id) {
             g.queued.remove(pos);
             true
@@ -88,7 +95,7 @@ impl DeployQueue {
 
     /// Move um enfileirado para o início da fila ("furar fila").
     pub fn promote(&self, dep_id: &str) {
-        let mut g = self.inner.lock().unwrap();
+        let mut g = self.lock();
         if let Some(pos) = g.queued.iter().position(|d| d == dep_id)
             && let Some(d) = g.queued.remove(pos)
         {
@@ -99,7 +106,7 @@ impl DeployQueue {
     /// Reordena a fila para a ordem dada. Ids desconhecidos são ignorados;
     /// enfileirados não citados vão ao fim, preservando a ordem relativa.
     pub fn reorder(&self, order: &[String]) {
-        let mut g = self.inner.lock().unwrap();
+        let mut g = self.lock();
         let mut remaining: VecDeque<String> = std::mem::take(&mut g.queued);
         let mut next = VecDeque::with_capacity(remaining.len());
         for id in order {
@@ -116,7 +123,7 @@ impl DeployQueue {
     /// Pausa/retoma a fila. Ao retomar, acorda o worker e os jobs que esperavam.
     pub fn set_paused(&self, paused: bool) {
         {
-            let mut g = self.inner.lock().unwrap();
+            let mut g = self.lock();
             g.paused = paused;
         }
         self.paused_tx.send_replace(paused);
@@ -127,7 +134,7 @@ impl DeployQueue {
 
     /// Snapshot para o handler de status: `(running, queued_em_ordem, paused)`.
     pub fn snapshot(&self) -> (Option<String>, Vec<String>, bool) {
-        let g = self.inner.lock().unwrap();
+        let g = self.lock();
         (
             g.running.clone(),
             g.queued.iter().cloned().collect(),
@@ -137,7 +144,7 @@ impl DeployQueue {
 
     /// Há algo na fila e ela não está pausada?
     fn has_ready(&self) -> bool {
-        let g = self.inner.lock().unwrap();
+        let g = self.lock();
         !g.paused && !g.queued.is_empty()
     }
 
@@ -151,12 +158,9 @@ impl DeployQueue {
             while !self.has_ready() {
                 self.wait().await;
             }
-            let permit = self
-                .slot
-                .clone()
-                .acquire_owned()
-                .await
-                .expect("semáforo da fila nunca é fechado");
+            let permit = self.slot.clone().acquire_owned().await.expect(
+                "o semáforo da fila vive na própria fila e nunca é fechado (`close` não é chamado)",
+            );
             // Enquanto esperava a vaga, o item pode ter sido removido ou a fila
             // pausada: `take_next` reconfere e devolve `None` nesses casos.
             if let Some(id) = self.take_next() {
@@ -174,12 +178,9 @@ impl DeployQueue {
         loop {
             // O `Err` só ocorreria com o `Sender` destruído — ele vive na fila.
             let _ = paused.wait_for(|p| !*p).await;
-            let permit = self
-                .slot
-                .clone()
-                .acquire_owned()
-                .await
-                .expect("semáforo da fila nunca é fechado");
+            let permit = self.slot.clone().acquire_owned().await.expect(
+                "o semáforo da fila vive na própria fila e nunca é fechado (`close` não é chamado)",
+            );
             // A fila pode ter sido pausada enquanto esperávamos a vaga.
             if !*paused.borrow() {
                 return permit;
@@ -199,7 +200,7 @@ impl DeployQueue {
 
     /// Tira o próximo da fila e marca como running. `None` se vazia OU pausada.
     fn take_next(&self) -> Option<String> {
-        let mut g = self.inner.lock().unwrap();
+        let mut g = self.lock();
         if g.paused {
             return None;
         }
@@ -211,7 +212,7 @@ impl DeployQueue {
     }
 
     fn clear_running(&self) {
-        self.inner.lock().unwrap().running = None;
+        self.lock().running = None;
     }
 
     async fn wait(&self) {
@@ -293,6 +294,23 @@ mod tests {
 
     fn queued(q: &DeployQueue) -> Vec<String> {
         q.snapshot().1
+    }
+
+    #[test]
+    fn mutex_envenenado_nao_derruba_a_fila() {
+        let q = DeployQueue::new();
+        q.enqueue("a".into());
+        // uma thread entra em pânico segurando a trava
+        let q2 = q.clone();
+        let _ = std::thread::spawn(move || {
+            let _g = q2.inner.lock().unwrap();
+            panic!("pânico de propósito com a trava na mão");
+        })
+        .join();
+        assert!(q.inner.is_poisoned());
+        // a fila segue funcionando, com o que já havia
+        q.enqueue("b".into());
+        assert_eq!(queued(&q), ["a", "b"]);
     }
 
     #[test]

@@ -441,6 +441,54 @@ impl SecretsManager {
         })
     }
 
+    /// Troca só o **valor** de uma env do projeto (`service_id: None`) ou de um serviço, na mesma
+    /// posição da lista — a edição "no lugar" da tela, sem reenviar a lista inteira.
+    ///
+    /// Um `Secret(nome)` precisa existir no escopo da env: num serviço vale o secret dele **ou** o
+    /// do projeto (a resolução é "serviço primeiro, depois projeto", ver [`Self::resolve`]); numa
+    /// env do projeto, só o do projeto. A máscara `***` (o que uma tela mostra no lugar de um
+    /// segredo) é recusada: gravá-la apagaria o valor real sem aviso.
+    pub async fn set_env_value(
+        &self,
+        project_id: &str,
+        service_id: Option<&str>,
+        key: &str,
+        value: EnvVarValue,
+    ) -> Result<()> {
+        match &value {
+            EnvVarValue::Plain(v) if v == "***" => {
+                bail!("o valor `***` é a máscara de um segredo, não um valor: nada foi gravado")
+            }
+            EnvVarValue::Secret(name) => valid_secret_name(name)?,
+            EnvVarValue::Plain(_) => {}
+        }
+        self.db.infra().update(|st| {
+            let p = project_mut(st, project_id)?;
+            if let EnvVarValue::Secret(name) = &value {
+                let no_projeto = p.secrets.iter().any(|s| &s.key == name);
+                let existe = match service_id {
+                    None => no_projeto,
+                    Some(sid) => {
+                        no_projeto || service_mut(p, sid)?.secrets.iter().any(|s| &s.key == name)
+                    }
+                };
+                if !existe {
+                    bail!("não existe um secret chamado '{name}' neste escopo");
+                }
+            }
+            let (vars, onde) = match service_id {
+                None => (&mut p.env_vars, "o projeto"),
+                Some(sid) => (&mut service_mut(p, sid)?.spec.env_vars, "o serviço"),
+            };
+            let var = vars
+                .iter_mut()
+                .find(|v| v.key == key)
+                .ok_or_else(|| anyhow!("{onde} não tem uma env chamada '{key}'"))?;
+            var.value = value;
+            Ok(())
+        })
+    }
+
     /// Renomeia um **secret** (do projeto, ou de um serviço) e, na mesma transação, reaponta as
     /// envs `Secret(from)` que resolviam para ele. O valor cifrado não é lido nem reescrito.
     ///
@@ -1185,6 +1233,75 @@ mod tests {
         assert_eq!(
             m.resolve("p1", Some("s1"), "DB_PASSWORD").await.unwrap(),
             "hunter2"
+        );
+    }
+
+    #[tokio::test]
+    async fn trocar_valor_de_env_mantem_a_posicao_e_valida() {
+        let (db, m, _d) = cenario().await;
+        set_env_plain(&db, None, "A", "1");
+        set_env_plain(&db, None, "B", "2");
+        set_env_plain(&db, None, "C", "3");
+        m.set_env_value("p1", None, "B", EnvVarValue::Plain("novo".into()))
+            .await
+            .unwrap();
+        let envs = env(&db, None);
+        let keys: Vec<_> = envs.iter().map(|v| v.key.as_str()).collect();
+        assert_eq!(keys, ["A", "B", "C"], "a posição não muda");
+        assert_eq!(envs[1].value, EnvVarValue::Plain("novo".into()));
+        assert_eq!(envs[0].value, EnvVarValue::Plain("1".into()));
+        // valor vazio é legítimo
+        m.set_env_value("p1", None, "A", EnvVarValue::Plain(String::new()))
+            .await
+            .unwrap();
+        assert_eq!(env(&db, None)[0].value, EnvVarValue::Plain(String::new()));
+        // recusas: chave inexistente, máscara, secret que não existe
+        assert!(
+            m.set_env_value("p1", None, "NADA", EnvVarValue::Plain("x".into()))
+                .await
+                .is_err()
+        );
+        assert!(
+            m.set_env_value("p1", None, "C", EnvVarValue::Plain("***".into()))
+                .await
+                .is_err()
+        );
+        assert!(
+            m.set_env_value("p1", None, "C", EnvVarValue::Secret("FANTASMA".into()))
+                .await
+                .is_err()
+        );
+        assert_eq!(env(&db, None)[2].value, EnvVarValue::Plain("3".into()));
+    }
+
+    #[tokio::test]
+    async fn trocar_valor_para_secret_existente_no_servico_e_no_projeto() {
+        use shared::SecretMoveOp::EnvToSecret;
+        let (db, m, _d) = cenario().await;
+        set_env_plain(&db, Some("s1"), "SENHA", "hunter2");
+        set_env_plain(&db, Some("s1"), "OUTRA", "x");
+        m.move_secret("p1", Some("s1"), "SENHA", EnvToSecret)
+            .await
+            .unwrap();
+        // o secret `SENHA` é do serviço: OUTRA pode apontar para ele
+        m.set_env_value(
+            "p1",
+            Some("s1"),
+            "OUTRA",
+            EnvVarValue::Secret("SENHA".into()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            env(&db, Some("s1"))[1].value,
+            EnvVarValue::Secret("SENHA".into())
+        );
+        // numa env do PROJETO, o secret do serviço não vale
+        set_env_plain(&db, None, "P", "1");
+        assert!(
+            m.set_env_value("p1", None, "P", EnvVarValue::Secret("SENHA".into()))
+                .await
+                .is_err()
         );
     }
 

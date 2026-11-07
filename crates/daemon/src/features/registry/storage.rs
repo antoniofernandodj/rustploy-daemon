@@ -64,6 +64,18 @@ pub struct RegistryStorage {
     /// blob finalizado no meio do sweep não estaria no snapshot e seria
     /// apagado como órfão.
     commit_lock: Mutex<()>,
+    /// Quem quer saber de cada tag publicada (push-to-deploy). Preenchido uma vez no boot por
+    /// [`RegistryStorage::subscribe_pushes`]; sem assinante, publicar não custa nada.
+    pushes: std::sync::OnceLock<tokio::sync::mpsc::UnboundedSender<PushedTag>>,
+}
+
+/// Uma tag que acabou de ser gravada por um `PUT /v2/<repo>/manifests/<tag>`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PushedTag {
+    pub repo: String,
+    pub tag: String,
+    /// `sha256:<hex>` do manifest gravado.
+    pub digest: String,
 }
 
 impl RegistryStorage {
@@ -74,7 +86,26 @@ impl RegistryStorage {
             root,
             uploads: RwLock::new(HashMap::new()),
             commit_lock: Mutex::new(()),
+            pushes: std::sync::OnceLock::new(),
         })
+    }
+
+    /// Passa a receber cada tag publicada. Só a primeira chamada vale (o consumidor é um só, o do
+    /// push-to-deploy); as seguintes devolvem `None`.
+    pub fn subscribe_pushes(&self) -> Option<tokio::sync::mpsc::UnboundedReceiver<PushedTag>> {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        self.pushes.set(tx).ok().map(|()| rx)
+    }
+
+    /// Avisa o assinante (se houver) de uma tag nova. Nunca falha: o push já foi gravado.
+    pub fn notify_push(&self, repo: &str, tag: &str, digest_hex: &str) {
+        if let Some(tx) = self.pushes.get() {
+            let _ = tx.send(PushedTag {
+                repo: repo.to_string(),
+                tag: tag.to_string(),
+                digest: format!("sha256:{digest_hex}"),
+            });
+        }
     }
 
     /// Ver `commit_lock`. Adquirir ANTES de qualquer validação/escrita da

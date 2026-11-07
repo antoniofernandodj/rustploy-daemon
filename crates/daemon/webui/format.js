@@ -235,6 +235,16 @@ export function parseSecretRef(text) {
   return name || null;
 }
 
+/** O valor de uma env como o `EnvValueSet` espera, a partir do texto digitado na edição no lugar:
+ * `<secret:NOME>`/`secret:NOME` (ou qualquer texto, se a variável JÁ era um secret: aí o texto é o
+ * nome do secret) vira `{Secret}`; o resto é `{Plain}`. */
+export function envValueFromDraft(draft, wasSecret) {
+  const ref = parseSecretRef(draft);
+  if (ref) return { Secret: ref };
+  if (wasSecret) return { Secret: (draft || "").trim() };
+  return { Plain: draft };
+}
+
 /** env_vars + env_comments → texto `.env` (KEY=VALUE, secrets como
  * `<secret:NOME>`, comentários `# ...` na posição ancorada por `before_key`).
  * Porta literal de format/service_detail.luau::env_dotenv_with_comments. */

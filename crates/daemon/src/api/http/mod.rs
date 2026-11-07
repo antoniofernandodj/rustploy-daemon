@@ -1214,14 +1214,18 @@ mod tests {
         );
         // Spec completo (inclusive limpando de propósito com `[]`/null): passa.
         assert!(
-            f(serde_json::json!({"name":"api","product":null,"domains":[],"depends_on":[],
-                "autostart":false,"host_port":null,"replicas":1}))
+            f(
+                serde_json::json!({"name":"api","product":null,"domains":[],"depends_on":[],
+                "autostart":false,"host_port":null,"replicas":1})
+            )
             .is_empty()
         );
         // Campo atual vazio omitido não perde nada.
         assert!(
-            f(serde_json::json!({"name":"api","product":"postgres","domains":[{"domain":"a.com"}],
-                "autostart":true,"replicas":1}))
+            f(
+                serde_json::json!({"name":"api","product":"postgres","domains":[{"domain":"a.com"}],
+                "autostart":true,"replicas":1})
+            )
             .is_empty()
         );
     }

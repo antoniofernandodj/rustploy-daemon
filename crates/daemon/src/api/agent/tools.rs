@@ -749,6 +749,13 @@ mod tests {
                 include_values: false,
                 project_env_keys: vec![],
             },
+            // O agente grava um valor que ele mesmo escolheu; nada de segredo volta para ele.
+            Command::EnvValueSet {
+                project_id: "p".into(),
+                service_id: None,
+                key: "K".into(),
+                value: shared::EnvVarValue::Plain("v".into()),
+            },
         ];
         for c in &liberados {
             assert!(

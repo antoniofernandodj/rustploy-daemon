@@ -58,7 +58,7 @@ pub struct DeployExecutor {
 /// do deploy executor puxando no mesmo host) ou pelo domínio público
 /// configurado (sem porta — o acesso externo passa pelo ingress, não fala
 /// direto com a porta 5100).
-fn is_embedded_registry_image(image: &str, port: u16, domain: Option<&str>) -> bool {
+pub(crate) fn is_embedded_registry_image(image: &str, port: u16, domain: Option<&str>) -> bool {
     if image.starts_with(&format!("127.0.0.1:{port}/")) {
         return true;
     }

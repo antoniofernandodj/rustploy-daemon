@@ -15,6 +15,7 @@ import {
   formatDuration,
   stateLabelKind,
   dotenvFromVars,
+  envValueFromDraft,
   parseDotenv,
   dotenvErrorsMessage,
   confirmEnvKey,
@@ -697,6 +698,45 @@ document.addEventListener("alpine:init", () => {
       }
     },
 
+    // ── Edição no lugar da chave/valor de uma variável DESTE serviço ────────
+    // Mesmo desenho do projeto (ver `envEdit` em project_detail.js): a linha vira um input; Enter ou
+    // clicar fora grava (se mudou), Esc desiste. Chave: EnvKeyRename; valor: EnvValueSet.
+    envEdit: null,
+    startEnvEdit(row, field) {
+      this.envEdit = { key: row.key, field, draft: field === "key" ? row.key : row.isSecret ? row.secretName : row.value };
+    },
+    isEnvEditing(key, field) {
+      return !!this.envEdit && this.envEdit.key === key && this.envEdit.field === field;
+    },
+    cancelEnvEdit() {
+      this.envEdit = null;
+    },
+    async commitEnvEdit(row) {
+      const edit = this.envEdit;
+      if (!edit) return;
+      this.envEdit = null; // antes do await: o blur que vem junto com o Enter não grava duas vezes
+      const scope = { project_id: this.svc.spec.project_id, service_id: this.svc.id };
+      let response;
+      if (edit.field === "key") {
+        const to = edit.draft.trim();
+        if (!to || to === row.key) return;
+        response = await this.store.api.rpcChecked({ EnvKeyRename: { ...scope, from: row.key, to } });
+        this.store.toastResult(response, t`renomeado: ${row.key} → ${to}`);
+      } else {
+        const current = row.isSecret ? row.secretName : row.value;
+        if (edit.draft === current) return;
+        response = await this.store.api.rpcChecked({
+          EnvValueSet: { ...scope, key: row.key, value: envValueFromDraft(edit.draft, row.isSecret) },
+        });
+        this.store.toastResult(response, t`valor de ${row.key} salvo`);
+      }
+      if (response.ok) {
+        await this.store.fetchServiceDetail(this.svc.id);
+        await this.store.refreshNow();
+        await this.loadServiceSecrets();
+      }
+    },
+
     /** ✏️: renomeia a chave de uma variável (`kind` "env") ou o nome de um secret ("secret") DESTE
      * serviço, sem o valor passar pela tela. Ver `projectRename` em project_detail.js. */
     async serviceRename(kind, from) {
@@ -878,6 +918,7 @@ document.addEventListener("alpine:init", () => {
     advancedReplicas: "1",
     advancedRunCommand: "",
     advancedAutostart: true,
+    advancedRegistryAutoDeploy: false,
     advancedDependencyAddId: "",
 
     initAdvancedForm() {
@@ -886,6 +927,7 @@ document.addEventListener("alpine:init", () => {
       this.advancedReplicas = String(spec.replicas || 1);
       this.advancedRunCommand = spec.run_command || "";
       this.advancedAutostart = spec.autostart !== false;
+      this.advancedRegistryAutoDeploy = spec.registry_auto_deploy === true;
       this.advancedDependencyAddId = "";
       this.advancedPreDeployCheckAddJobId = "";
     },
@@ -903,6 +945,7 @@ document.addEventListener("alpine:init", () => {
       const runCommand = this.advancedRunCommand.trim();
       spec.run_command = runCommand || null;
       spec.autostart = this.advancedAutostart;
+      spec.registry_auto_deploy = this.advancedRegistryAutoDeploy;
       await this.store.saveServiceSpec(spec, t("advanced salvo"));
     },
 

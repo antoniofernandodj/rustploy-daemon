@@ -75,6 +75,7 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         Command::SecretMove { .. } => "SecretMove",
         Command::SecretRename { .. } => "SecretRename",
         Command::EnvKeyRename { .. } => "EnvKeyRename",
+        Command::EnvValueSet { .. } => "EnvValueSet",
         Command::JobCreate { .. } => "JobCreate",
         Command::JobUpdate { .. } => "JobUpdate",
         Command::JobDelete { .. } => "JobDelete",
@@ -231,6 +232,7 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         | Command::SecretMove { .. }
         | Command::SecretRename { .. }
         | Command::EnvKeyRename { .. }
+        | Command::EnvValueSet { .. }
         | Command::InfraAudit
         | Command::InfraDownload => handlers::secrets::dispatch(state, cmd).await,
         Command::StateGitStatus
@@ -267,4 +269,63 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
     let ok = !matches!(resp, RpResponse::Err { .. });
     info!(ok, command = cmd_name, "← Response");
     resp
+}
+
+/// O manual do agente (`agent/manual.md`) é escrito à mão e já divergiu dos `Command` reais.
+/// Os nomes vêm do `match` exaustivo de [`dispatch`] — o compilador garante que nenhum `Command`
+/// novo fica de fora dele —, então cobrar cada um no manual fecha a lacuna sem `schemars` nem
+/// publicar o `shared`: um comando novo que ninguém documentou **quebra este teste**.
+#[cfg(test)]
+mod manual_do_agente {
+    /// Comandos que o manual não precisa listar, cada um com a razão.
+    const FORA_DO_MANUAL: &[(&str, &str)] = &[
+        (
+            "GitOAuthStart",
+            "devolve uma URL para uma pessoa abrir no navegador; o agente usa PAT (`GitProviderCreate`)",
+        ),
+        (
+            "Unknown",
+            "rótulo de log para uma variante que este daemon não reconhece",
+        ),
+    ];
+
+    fn nomes_dos_comandos() -> Vec<String> {
+        let fonte = include_str!("dispatch.rs");
+        let corpo = fonte
+            .split("let cmd_name = match &cmd {")
+            .nth(1)
+            .and_then(|r| r.split("};").next())
+            .expect("o match de nomes de comandos sumiu do dispatch");
+        corpo
+            .lines()
+            .filter_map(|l| l.split("=> \"").nth(1))
+            .filter_map(|r| r.split('"').next())
+            .map(str::to_string)
+            .collect()
+    }
+
+    #[test]
+    fn todo_comando_esta_no_manual_do_agente() {
+        let manual = include_str!("agent/manual.md");
+        let nomes = nomes_dos_comandos();
+        assert!(nomes.len() > 100, "extraí só {} nomes", nomes.len());
+        let ausentes: Vec<&String> = nomes
+            .iter()
+            .filter(|n| !FORA_DO_MANUAL.iter().any(|(f, _)| f == n))
+            .filter(|n| {
+                // palavra inteira: `ServiceGet` não pode ser "achado" dentro de `ServiceGetX`
+                !manual.match_indices(n.as_str()).any(|(i, _)| {
+                    let antes = manual[..i].chars().next_back();
+                    let depois = manual[i + n.len()..].chars().next();
+                    !antes.is_some_and(|c| c.is_alphanumeric() || c == '_')
+                        && !depois.is_some_and(|c| c.is_alphanumeric() || c == '_')
+                })
+            })
+            .collect();
+        assert!(
+            ausentes.is_empty(),
+            "comandos que o manual do agente não menciona (documente em agent/manual.md ou \
+             liste em FORA_DO_MANUAL com a razão): {ausentes:?}"
+        );
+    }
 }

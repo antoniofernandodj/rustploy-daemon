@@ -2722,7 +2722,7 @@ dependencies = [
 
 [[package]]
 name = "rustploy"
-version = "0.1.36"
+version = "0.1.37"
 dependencies = [
  "age",
  "anyhow",
@@ -2748,7 +2748,7 @@ dependencies = [
  "reqwest 0.12.28",
  "rustls",
  "rustls-pemfile",
- "rustploy-shared 0.19.0",
+ "rustploy-shared 0.20.0",
  "rustploy-update-core",
  "serde",
  "serde_json",
@@ -2803,9 +2803,9 @@ dependencies = [
 
 [[package]]
 name = "rustploy-shared"
-version = "0.19.0"
+version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f92b41ab7af9b6ce3f934cd66b84f95476d88eb3e80b5d3f9388dc051aa92e93"
+checksum = "15669819db6b953c1fe9681777b889cebc6cf8514b775ac08af952be780722c3"
 dependencies = [
  "chrono",
  "serde",

@@ -13,6 +13,7 @@ import {
   dotenvErrorsMessage,
   confirmEnvKey,
   envRowsWithComments,
+  envValueFromDraft,
   jobSummaryRows,
   formatBytes,
 } from "../format.js";
@@ -204,6 +205,41 @@ document.addEventListener("alpine:init", () => {
     },
     copySecret(name) {
       return this.store.copyText(this.revealedSecrets[name] ?? "", t("valor"));
+    },
+
+    // ── Edição no lugar da chave/valor de uma variável ─────────────────
+    // `envEdit` = { key, field: "key" | "value", draft } — a própria linha vira um input, sem levar
+    // a variável para um formulário (numa lista grande o formulário ficava fora da tela).
+    // Enter ou clicar fora grava (se mudou); Esc desiste. Chave: EnvKeyRename; valor: EnvValueSet.
+    envEdit: null,
+    startEnvEdit(row, field) {
+      this.envEdit = { key: row.key, field, draft: field === "key" ? row.key : row.isSecret ? row.secretName : row.value };
+    },
+    isEnvEditing(key, field) {
+      return !!this.envEdit && this.envEdit.key === key && this.envEdit.field === field;
+    },
+    cancelEnvEdit() {
+      this.envEdit = null;
+    },
+    async commitEnvEdit(row) {
+      const edit = this.envEdit;
+      if (!edit) return;
+      this.envEdit = null; // antes do await: o blur que vem junto com o Enter não grava duas vezes
+      const projectId = this.store.selectedProjectId;
+      if (edit.field === "key") {
+        const to = edit.draft.trim();
+        if (!to || to === row.key) return;
+        const renameResponse = await this.store.api.rpcChecked({ EnvKeyRename: { project_id: projectId, from: row.key, to } });
+        this.store.toastResult(renameResponse, t`renomeado: ${row.key} → ${to}`);
+      } else {
+        const current = row.isSecret ? row.secretName : row.value;
+        if (edit.draft === current) return;
+        const setResponse = await this.store.api.rpcChecked({
+          EnvValueSet: { project_id: projectId, key: row.key, value: envValueFromDraft(edit.draft, row.isSecret) },
+        });
+        this.store.toastResult(setResponse, t`valor de ${row.key} salvo`);
+      }
+      await this.store.refreshNow();
     },
 
     // ── Renomear (EnvKeyRename / SecretRename) ─────────────────────────

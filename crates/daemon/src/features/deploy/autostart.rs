@@ -479,6 +479,7 @@ mod tests {
                 pre_deploy_job_ids: vec![],
                 shared: None,
                 depends_on: deps.iter().map(|d| d.to_string()).collect(),
+                registry_auto_deploy: false,
                 autostart: true,
             },
             compose_project: None,

@@ -565,6 +565,8 @@ async fn put_manifest(
 
     if !is_digest_ref {
         registry_db::upsert_tag(db, &repo.id, reference, &info.digest).await?;
+        // Push-to-deploy: só uma tag mudou de fato (push por digest não move nada).
+        storage.notify_push(repo_name, reference, &info.digest);
     }
 
     Ok(Response::builder()
@@ -714,6 +716,12 @@ mod tests {
     /// header `Authorization` pronto pros testes que exercitam o fluxo normal;
     /// testes de auth em si criam seus próprios tokens/headers.
     async fn spawn_test_registry() -> (std::net::SocketAddr, String, Arc<Db>) {
+        let (addr, auth, db, _storage) = spawn_test_registry_with_storage().await;
+        (addr, auth, db)
+    }
+
+    async fn spawn_test_registry_with_storage()
+    -> (std::net::SocketAddr, String, Arc<Db>, Arc<RegistryStorage>) {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let dir = std::env::temp_dir().join(format!("rp_registry_http_test_{}", Ulid::new()));
@@ -727,8 +735,8 @@ mod tests {
             .unwrap();
         let auth = basic_auth_header("test-push", secret);
 
-        tokio::spawn(serve(listener, db.clone(), storage));
-        (addr, auth, db)
+        tokio::spawn(serve(listener, db.clone(), storage.clone()));
+        (addr, auth, db, storage)
     }
 
     fn build_req(
@@ -769,7 +777,8 @@ mod tests {
 
     #[tokio::test]
     async fn push_pull_fluxo_completo() {
-        let (addr, auth, _db) = spawn_test_registry().await;
+        let (addr, auth, _db, storage) = spawn_test_registry_with_storage().await;
+        let mut pushes = storage.subscribe_pushes().expect("primeiro assinante");
 
         // 1. GET /v2/ autenticado — 200, sem desafio (credencial já válida).
         let (status, headers, _) = send(
@@ -870,6 +879,19 @@ mod tests {
                 .unwrap(),
             format!("sha256:{manifest_digest}")
         );
+        // Push-to-deploy: a tag publicada chega ao assinante, com o digest do manifest.
+        let pushed = pushes
+            .try_recv()
+            .expect("o PUT por tag deve avisar o assinante");
+        assert_eq!(
+            pushed,
+            super::super::storage::PushedTag {
+                repo: "hello".into(),
+                tag: "v1".into(),
+                digest: format!("sha256:{manifest_digest}"),
+            }
+        );
+        assert!(pushes.try_recv().is_err(), "um aviso por PUT");
 
         // 7. GET manifests/v1 (por tag) — corpo idêntico byte-a-byte.
         let (status, headers, body) = send(

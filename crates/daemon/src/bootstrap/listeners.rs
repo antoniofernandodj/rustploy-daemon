@@ -114,6 +114,13 @@ pub fn spawn(
     // Registry OCI embutido (ver docs/plano-registry-embutido.md). Bind falho apenas loga e
     // desabilita o listener, como os demais listeners opcionais acima.
     if let Some(storage) = registry_storage {
+        // Push-to-deploy: cada tag publicada redeploya os serviços com `registry_auto_deploy`.
+        if let Some(rx) = storage.subscribe_pushes() {
+            let state2 = state.clone();
+            tokio::spawn(async move {
+                registry::push_deploy::run(state2, rx).await;
+            });
+        }
         let db2 = state.db.clone();
         let port = config.registry.port;
         tokio::spawn(async move {

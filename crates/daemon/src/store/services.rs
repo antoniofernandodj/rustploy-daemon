@@ -442,6 +442,7 @@ fn test_compose_spec(name: String, project_id: String) -> ServiceSpec {
         pre_deploy_job_id: None,
         pre_deploy_job_ids: vec![],
         depends_on: vec![],
+        registry_auto_deploy: false,
         autostart: true,
         shared: None,
     }
@@ -477,6 +478,7 @@ mod tests {
             pre_deploy_job_id: None,
             pre_deploy_job_ids: vec![],
             depends_on: vec![],
+            registry_auto_deploy: false,
             autostart: true,
             shared: None,
         }
