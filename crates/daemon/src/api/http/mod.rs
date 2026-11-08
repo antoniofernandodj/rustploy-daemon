@@ -38,6 +38,7 @@ use shared::{Command, Event, Response as RpResponse};
 use tracing::{error, info, warn};
 
 use super::agent;
+use super::agent::policy::{Caller, Level, VISITOR_LEVEL};
 use super::web_ui;
 use crate::api::dispatch::dispatch;
 use crate::bootstrap::state::AppState;
@@ -127,10 +128,32 @@ pub async fn run(state: AppState, cfg: ApiConfig, tls: Option<Arc<TlsManager>>) 
             None => None,
         };
 
-    let token = Arc::new(token);
+    let master = cfg
+        .master_token
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned);
+    if master.is_some() && token.is_none() {
+        warn!("API: master_token sem token configurado — ignorado (sem token a API está aberta)");
+    }
+    let visitor_level = match cfg.visitor_level.as_deref().map(str::trim) {
+        None | Some("") => Level::Operator,
+        Some(v) => Level::parse(v).unwrap_or_else(|| {
+            warn!(valor = v, "API: [api].visitor_level inválido (use observer, operator ou admin) — usando operator");
+            Level::Operator
+        }),
+    };
+    let auth = Arc::new(Auth {
+        master: master.filter(|_| token.is_some()),
+        token,
+        visitor_level,
+    });
     info!(
         addr = %addr,
-        auth = token.is_some(),
+        auth = auth.token.is_some(),
+        master = auth.master.is_some(),
+        visitor_level = auth.visitor_level.as_str(),
         tls = acceptor.is_some(),
         "API HTTP/SSE: escutando"
     );
@@ -144,34 +167,28 @@ pub async fn run(state: AppState, cfg: ApiConfig, tls: Option<Arc<TlsManager>>) 
             }
         };
         let state = state.clone();
-        let token = token.clone();
+        let auth = auth.clone();
         let acceptor = acceptor.clone();
         tokio::spawn(async move {
             match acceptor {
                 Some(acc) => match acc.accept(stream).await {
-                    Ok(tls_stream) => {
-                        serve_conn(TokioIo::new(tls_stream), state, token, peer).await
-                    }
+                    Ok(tls_stream) => serve_conn(TokioIo::new(tls_stream), state, auth, peer).await,
                     Err(e) => tracing::debug!(
                         peer = %peer, error = %e, "API: TLS handshake falhou"
                     ),
                 },
-                None => serve_conn(TokioIo::new(stream), state, token, peer).await,
+                None => serve_conn(TokioIo::new(stream), state, auth, peer).await,
             }
         });
     }
 }
 
 /// Serves one HTTP/1.1 connection over `io` (plain TCP or a TLS stream).
-async fn serve_conn<I>(
-    io: I,
-    state: AppState,
-    token: Arc<Option<String>>,
-    peer: std::net::SocketAddr,
-) where
+async fn serve_conn<I>(io: I, state: AppState, auth: Arc<Auth>, peer: std::net::SocketAddr)
+where
     I: hyper::rt::Read + hyper::rt::Write + Unpin + 'static,
 {
-    let svc = service_fn(move |req| handle(req, state.clone(), token.clone(), peer));
+    let svc = service_fn(move |req| handle(req, state.clone(), auth.clone(), peer));
     if let Err(e) = hyper::server::conn::http1::Builder::new()
         .serve_connection(io, svc)
         .await
@@ -188,7 +205,7 @@ async fn serve_conn<I>(
 async fn handle(
     req: Request<Incoming>,
     state: AppState,
-    token: Arc<Option<String>>,
+    auth: Arc<Auth>,
     peer: std::net::SocketAddr,
 ) -> Result<Response<ApiBody>, Infallible> {
     // Rotas públicas — servidas ANTES do gate de Bearer porque cada uma tem a
@@ -233,7 +250,9 @@ async fn handle(
             } else {
                 "http"
             };
-            return Ok(login(req, token.as_deref(), peer, scheme).await);
+            // O login é a porta de entrada do **agente**: só aceita o token de conexão da chave atual
+            // (a de visitante, quando há uma mestra). A mestra nunca é trocada por aqui.
+            return Ok(login(req, auth.token.as_deref(), peer, scheme).await);
         }
         (&Method::GET, p) => {
             // Web UI/PWA (crates/daemon/webui/): HTML/CSS/JS/ícones
@@ -247,18 +266,20 @@ async fn handle(
         _ => {}
     }
 
-    // Bearer-token auth (constant-time), only when a token is configured.
-    if let Some(expected) = token.as_ref()
-        && let Err(motivo) = auth_check(&req, expected)
-    {
-        warn!(
-            peer = %peer,
-            path = %req.uri().path(),
-            motivo = %motivo,
-            "API: 401 — requisição recusada"
-        );
-        return Ok(text(StatusCode::UNAUTHORIZED, "unauthorized"));
-    }
+    // Bearer-token auth (constant-time), only when a token is configured. Diz também QUEM chama: a
+    // chave mestra (ou a única de sempre) não tem limite; a de visitante passa pelos níveis.
+    let caller = match auth.caller(&req) {
+        Ok(c) => c,
+        Err(motivo) => {
+            warn!(
+                peer = %peer,
+                path = %req.uri().path(),
+                motivo = %motivo,
+                "API: 401 — requisição recusada"
+            );
+            return Ok(text(StatusCode::UNAUTHORIZED, "unauthorized"));
+        }
+    };
 
     // Upload de zip: `POST /api/services/<id>/archive`. Tratado antes do `match`
     // porque o handler **move** `req` (lê o corpo binário), o que colide com o
@@ -269,6 +290,12 @@ async fn handle(
             .strip_prefix("/api/services/")
             .and_then(|s| s.strip_suffix("/archive"))
         {
+            // Subir um zip troca o código que o serviço roda: só `admin`.
+            if let Caller::Visitor(l) = caller
+                && l < Level::Admin
+            {
+                return Ok(visitor_forbidden("subir o código de um serviço", l));
+            }
             return Ok(if id.is_empty() {
                 text(StatusCode::NOT_FOUND, "not found")
             } else {
@@ -278,8 +305,8 @@ async fn handle(
     }
 
     Ok(match (req.method(), req.uri().path()) {
-        (&Method::POST, "/api/rpc") => rpc(req, state).await,
-        (&Method::POST, "/mcp") => mcp(req, state).await,
+        (&Method::POST, "/api/rpc") => rpc(req, state, caller).await,
+        (&Method::POST, "/mcp") => mcp(req, state, caller).await,
         // Sem stream SSE servidor→cliente no MCP: o spec manda 405 no GET.
         (&Method::GET | &Method::DELETE, "/mcp") => {
             text(StatusCode::METHOD_NOT_ALLOWED, "use POST /mcp")
@@ -291,10 +318,15 @@ async fn handle(
         (&Method::GET, "/api/access-key") => {
             let chave = agent::access_key_for(
                 &agent::public_address(&state.api, &crate::platform::config::outbound_ip()),
-                token.as_deref(),
+                auth.token.as_deref(),
             );
             json_value(StatusCode::OK, &serde_json::json!({ "key": chave }))
         }
+        // O snapshot do SSE traz as variáveis em claro: o visitante não o recebe.
+        (&Method::GET, "/api/events") if matches!(caller, Caller::Visitor(_)) => visitor_forbidden(
+            "o fluxo de eventos (traz variáveis em claro)",
+            Level::Observer,
+        ),
         (&Method::GET, "/api/events") => events(state),
         (&Method::GET, "/api/health") => text(StatusCode::OK, "ok"),
         // SSE dedicado de logs de runtime de um serviço: `/api/services/<id>/logs`.
@@ -363,7 +395,7 @@ async fn login(
 }
 
 /// `POST /mcp`: o servidor MCP do agente (ver `agent::mcp`).
-async fn mcp(req: Request<Incoming>, state: AppState) -> Response<ApiBody> {
+async fn mcp(req: Request<Incoming>, state: AppState, caller: Caller) -> Response<ApiBody> {
     // A qual servidor o agente está ligado (ver `agent::mcp::handle`).
     let server = req
         .headers()
@@ -379,7 +411,11 @@ async fn mcp(req: Request<Incoming>, state: AppState) -> Response<ApiBody> {
         Ok(c) => c.to_bytes(),
         Err(_) => return text(StatusCode::BAD_REQUEST, "erro ao ler o corpo"),
     };
-    match agent::mcp::handle(&state, &body, &server).await {
+    // O nível do visitante vale em tudo o que a chamada fizer (`tools::rpc` o lê do contexto da tarefa).
+    let resultado = VISITOR_LEVEL
+        .scope(caller.level(), agent::mcp::handle(&state, &body, &server))
+        .await;
+    match resultado {
         Some((status, resposta)) => json_value(status, &resposta),
         None => Response::builder()
             .status(StatusCode::ACCEPTED)
@@ -507,7 +543,7 @@ async fn partial_update_refusal(body: &[u8], state: &AppState) -> Option<String>
 
 /// `POST /api/rpc`: decode a `Command`, run it through `dispatch`, encode the
 /// `Response` back as JSON.
-async fn rpc(req: Request<Incoming>, state: AppState) -> Response<ApiBody> {
+async fn rpc(req: Request<Incoming>, state: AppState, caller: Caller) -> Response<ApiBody> {
     // Lê o Accept-Encoding ANTES de consumir o corpo com `into_body`.
     let accept_gzip = accepts_gzip(&req);
     let body = match req.into_body().collect().await {
@@ -524,7 +560,21 @@ async fn rpc(req: Request<Incoming>, state: AppState) -> Response<ApiBody> {
         Ok(c) => c,
         Err(e) => return text(StatusCode::BAD_REQUEST, format!("comando inválido: {e}")),
     };
-    let resp = dispatch(state, cmd).await;
+    let resp = match caller {
+        Caller::Master => dispatch(state, cmd).await,
+        // A mesma função do MCP: lista de proibições, nível, restauração de máscaras e redação da
+        // resposta. Antes o `/api/rpc` ignorava tudo isso e contornava o MCP com o mesmo token.
+        Caller::Visitor(nivel) => {
+            let comando = serde_json::to_value(&cmd).unwrap_or(serde_json::Value::Null);
+            let resultado = VISITOR_LEVEL
+                .scope(Some(nivel), agent::tools::rpc(&state, comando))
+                .await;
+            match resultado {
+                Ok(valor) => return json_value(StatusCode::OK, &valor),
+                Err(e) => shared::Response::err(e.code, e.message),
+            }
+        }
+    };
     match serde_json::to_vec(&resp) {
         Ok(bytes) => json_response(bytes, accept_gzip),
         Err(e) => text(
@@ -1092,6 +1142,44 @@ async fn send_log_batch(
 /// de "token certo, daemon errado" do lado do cliente, e sem isso a única saída
 /// é adivinhar. O motivo é logado (nunca o token em si — só o comprimento, que
 /// já separa "colou um token truncado/com lixo" de "token de outra instalação").
+/// As chaves da API e o nível da de visitante. Sem `master`, `token` vale para tudo (como sempre).
+#[derive(Debug, Clone)]
+pub struct Auth {
+    pub token: Option<String>,
+    pub master: Option<String>,
+    pub visitor_level: Level,
+}
+
+impl Auth {
+    /// Quem chama. Sem token configurado a API é aberta (loopback): vale como mestra.
+    fn caller<B>(&self, req: &Request<B>) -> Result<Caller, String> {
+        let Some(token) = self.token.as_deref() else {
+            return Ok(Caller::Master);
+        };
+        match self.master.as_deref() {
+            None => auth_check(req, token).map(|()| Caller::Master),
+            Some(master) => {
+                if auth_check(req, master).is_ok() {
+                    return Ok(Caller::Master);
+                }
+                auth_check(req, token).map(|()| Caller::Visitor(self.visitor_level))
+            }
+        }
+    }
+}
+
+/// `403` para a chave de visitante, dizendo o que fazer.
+fn visitor_forbidden(o_que: &str, nivel: Level) -> Response<ApiBody> {
+    text(
+        StatusCode::FORBIDDEN,
+        format!(
+            "a chave de visitante (nível `{}`) não pode: {o_que}. Entre com a chave mestra \
+             (`rustployd access-key --master`).",
+            nivel.as_str()
+        ),
+    )
+}
+
 fn auth_check<B>(req: &Request<B>, expected: &str) -> Result<(), String> {
     let Some(raw) = req.headers().get(hyper::header::AUTHORIZATION) else {
         return Err("sem header Authorization".into());
@@ -1284,6 +1372,312 @@ mod tests {
             None,
             None,
         )
+    }
+
+    // ── Chave mestra e visitante (docs/plano-limites-do-agente-mcp.md, itens 0, B, C e D) ──────────
+
+    fn auth(token: Option<&str>, master: Option<&str>) -> Auth {
+        Auth {
+            token: token.map(str::to_owned),
+            master: master.map(str::to_owned),
+            visitor_level: Level::Operator,
+        }
+    }
+
+    #[test]
+    fn sem_mestra_a_chave_unica_vale_para_tudo() {
+        let a = auth(Some("chave"), None);
+        assert_eq!(
+            a.caller(&req_com_auth(Some("Bearer chave"))),
+            Ok(Caller::Master)
+        );
+        assert!(a.caller(&req_com_auth(Some("Bearer outra"))).is_err());
+        assert!(a.caller(&req_com_auth(None)).is_err());
+        // sem token configurado a API é aberta (loopback)
+        assert_eq!(
+            auth(None, None).caller(&req_com_auth(None)),
+            Ok(Caller::Master)
+        );
+    }
+
+    #[test]
+    fn com_mestra_a_chave_atual_vira_visitante() {
+        let a = auth(Some("chave"), Some("mestra"));
+        assert_eq!(
+            a.caller(&req_com_auth(Some("Bearer mestra"))),
+            Ok(Caller::Master)
+        );
+        assert_eq!(
+            a.caller(&req_com_auth(Some("Bearer chave"))),
+            Ok(Caller::Visitor(Level::Operator))
+        );
+        assert!(a.caller(&req_com_auth(Some("Bearer qualquer"))).is_err());
+        assert!(a.caller(&req_com_auth(None)).is_err());
+    }
+
+    async fn como_visitante(
+        state: &AppState,
+        nivel: Level,
+        comando: serde_json::Value,
+    ) -> Result<serde_json::Value, agent::tools::ToolError> {
+        VISITOR_LEVEL
+            .scope(Some(nivel), agent::tools::rpc(state, comando))
+            .await
+    }
+
+    async fn como_mestra(state: &AppState, comando: serde_json::Value) -> serde_json::Value {
+        let cmd: Command = serde_json::from_value(comando).unwrap();
+        serde_json::to_value(dispatch(state.clone(), cmd).await).unwrap()
+    }
+
+    #[tokio::test]
+    async fn visitante_passa_pelas_proibicoes_e_pelos_niveis_no_rpc() {
+        use serde_json::json;
+        let state = estado_de_teste().await;
+        let proj = como_mestra(
+            &state,
+            json!({"ProjectCreate":{"name":"p","description":null}}),
+        )
+        .await;
+        let pid = proj["Project"]["id"]
+            .as_str()
+            .expect("projeto criado")
+            .to_owned();
+
+        // proibido a qualquer visitante, mesmo `admin` (a mestra continua podendo, pela rota dela)
+        for nivel in [Level::Observer, Level::Operator, Level::Admin] {
+            let e = como_visitante(
+                &state,
+                nivel,
+                json!({"SecretReveal":{"project_id":pid,"name":"X"}}),
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(e.code, "forbidden");
+        }
+        // item B: liberar suspeita da auditoria é de pessoa
+        let e = como_visitante(
+            &state,
+            Level::Admin,
+            json!({"InfraAuditAllow":{"project":"p","scope":"s","what":"w","allowed":true}}),
+        )
+        .await
+        .unwrap_err();
+        assert!(e.message.contains("auditoria"), "{}", e.message);
+
+        // níveis: observador lê, operador opera, só admin cria
+        assert!(
+            como_visitante(&state, Level::Observer, json!("ProjectList"))
+                .await
+                .is_ok()
+        );
+        let e = como_visitante(
+            &state,
+            Level::Observer,
+            json!({"EnvValueSet":{"project_id":pid,"key":"A","value":{"Plain":"x"}}}),
+        )
+        .await
+        .unwrap_err();
+        assert!(e.message.contains("operator"), "{}", e.message);
+        let e = como_visitante(
+            &state,
+            Level::Operator,
+            json!({"ProjectCreate":{"name":"outro","description":null}}),
+        )
+        .await
+        .unwrap_err();
+        assert!(e.message.contains("admin"), "{}", e.message);
+        assert!(
+            como_visitante(
+                &state,
+                Level::Admin,
+                json!({"ProjectCreate":{"name":"outro","description":null}}),
+            )
+            .await
+            .is_ok()
+        );
+    }
+
+    #[tokio::test]
+    async fn visitante_nao_ve_senha_em_claro_pelo_rpc_e_a_mestra_ve() {
+        use serde_json::json;
+        let state = estado_de_teste().await;
+        let proj = como_mestra(
+            &state,
+            json!({"ProjectCreate":{"name":"p","description":null}}),
+        )
+        .await;
+        let pid = proj["Project"]["id"].as_str().unwrap().to_owned();
+        como_mestra(
+            &state,
+            json!({"ProjectEnvSet":{"project_id":pid,"env_vars":[
+                {"key":"DB_PASSWORD","value":{"Plain":"minhasenha"}},
+                {"key":"MODE","value":{"Plain":"production"}}],"env_comments":[]}}),
+        )
+        .await;
+
+        let mestra = como_mestra(&state, json!("ProjectList")).await.to_string();
+        assert!(mestra.contains("minhasenha"), "a mestra vê o valor real");
+
+        let visita = como_visitante(&state, Level::Operator, json!("ProjectList"))
+            .await
+            .unwrap()
+            .to_string();
+        assert!(
+            !visita.contains("minhasenha"),
+            "o visitante nunca vê a senha: {visita}"
+        );
+        assert!(
+            visita.contains("production"),
+            "o que não é sensível aparece"
+        );
+
+        // e editar sem conhecer o valor: devolver `***` restaura o real (ProjectEnvSet)
+        como_visitante(
+            &state,
+            Level::Operator,
+            json!({"ProjectEnvSet":{"project_id":pid,"env_vars":[
+                {"key":"DB_PASSWORD","value":{"Plain":"***"}},
+                {"key":"MODE","value":{"Plain":"staging"}}],"env_comments":[]}}),
+        )
+        .await
+        .unwrap();
+        let depois = como_mestra(&state, json!("ProjectList")).await.to_string();
+        assert!(
+            depois.contains("minhasenha") && depois.contains("staging"),
+            "{depois}"
+        );
+    }
+
+    #[tokio::test]
+    async fn operador_nao_muda_o_que_o_servico_roda_mas_muda_replicas() {
+        use serde_json::json;
+        let state = estado_de_teste().await;
+        let proj = como_mestra(
+            &state,
+            json!({"ProjectCreate":{"name":"p","description":null}}),
+        )
+        .await;
+        let pid = proj["Project"]["id"].as_str().unwrap().to_owned();
+        let spec =
+            serde_json::to_value(crate::features::wizard::app_spec("api".into(), pid.clone()))
+                .unwrap();
+        let svc = como_mestra(&state, json!({"ServiceCreate": spec})).await;
+        let sid = svc["Service"]["id"]
+            .as_str()
+            .expect("serviço criado")
+            .to_owned();
+        let atual = svc["Service"]["spec"].clone();
+
+        // réplicas: do operador
+        let mut novo = atual.clone();
+        novo["replicas"] = json!(3);
+        como_visitante(
+            &state,
+            Level::Operator,
+            json!({"ServiceUpdate":{"id":sid,"spec":novo}}),
+        )
+        .await
+        .unwrap();
+
+        // montar uma pasta do servidor e rodar um comando: não é do operador
+        let mut perigoso = atual.clone();
+        perigoso["volumes"] =
+            json!([{"host_path":"/etc/rustploy","container_path":"/dados","read_only":false}]);
+        perigoso["run_command"] = json!("cat /dados/age.key");
+        let e = como_visitante(
+            &state,
+            Level::Operator,
+            json!({"ServiceUpdate":{"id":sid,"spec":perigoso.clone()}}),
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            e.message.contains("volumes") && e.message.contains("run_command"),
+            "{}",
+            e.message
+        );
+        // o admin pode (com o risco descrito no plano)
+        assert!(
+            como_visitante(
+                &state,
+                Level::Admin,
+                json!({"ServiceUpdate":{"id":sid,"spec":perigoso}})
+            )
+            .await
+            .is_ok()
+        );
+    }
+
+    /// Item C: o visitante vê `DB_PASSWORD=***` num job e só quer desligá-lo. O `JobUpdate` substitui o
+    /// job inteiro, então ele devolve o `***`; o daemon tem de restaurar a senha real (antes recusava).
+    #[tokio::test]
+    async fn visitante_liga_e_desliga_job_com_senha_sem_perder_a_senha() {
+        use serde_json::json;
+        let state = estado_de_teste().await;
+        let proj = como_mestra(
+            &state,
+            json!({"ProjectCreate":{"name":"p","description":null}}),
+        )
+        .await;
+        let pid = proj["Project"]["id"].as_str().unwrap().to_owned();
+        let spec =
+            serde_json::to_value(crate::features::wizard::app_spec("api".into(), pid.clone()))
+                .unwrap();
+        let svc = como_mestra(&state, json!({"ServiceCreate": spec})).await;
+        let sid = svc["Service"]["id"].as_str().unwrap().to_owned();
+        let job = como_mestra(
+            &state,
+            json!({"JobCreate":{
+                "project_id": pid, "trigger_service_id": sid, "name": "backup",
+                "compose": "services:\n  main:\n    image: alpine\n", "main_service": "main",
+                "env_vars":[{"key":"DB_PASSWORD","value":{"Plain":"minhasenha"}},
+                            {"key":"DESTINO","value":{"Plain":"s3"}}],
+                "env_comments":[], "recurrence": null }}),
+        )
+        .await;
+        let jid = job["Job"]["id"]
+            .as_str()
+            .unwrap_or_else(|| panic!("job criado: {job}"))
+            .to_owned();
+
+        // o visitante lista (senha mascarada) e devolve o job com `enabled` trocado
+        let lista = como_visitante(&state, Level::Operator, json!("JobListAll"))
+            .await
+            .unwrap();
+        assert!(!lista.to_string().contains("minhasenha"));
+
+        // `JobUpdate` do operador: só o que não muda o que roda
+        let corpo = |enabled: bool| {
+            json!({"JobUpdate":{
+                "id": jid, "name":"backup",
+                "compose": "services:\n  main:\n    image: alpine\n", "main_service":"main",
+                "env_vars":[{"key":"DB_PASSWORD","value":{"Plain":"***"}},
+                            {"key":"DESTINO","value":{"Plain":"s3"}}],
+                "env_comments":[], "enabled": enabled, "recurrence": null }})
+        };
+        // o operador liga/desliga (a senha mascarada volta ao valor real)...
+        como_visitante(&state, Level::Operator, corpo(false))
+            .await
+            .unwrap();
+        // ...mas não troca o que o job roda
+        let mut perigoso = corpo(false);
+        perigoso["JobUpdate"]["compose"] =
+            json!("services:\n  main:\n    image: alpine\n    command: cat /dados/age.key\n");
+        let e = como_visitante(&state, Level::Operator, perigoso.clone())
+            .await
+            .unwrap_err();
+        assert!(e.message.contains("compose"), "{}", e.message);
+        como_visitante(&state, Level::Admin, perigoso)
+            .await
+            .unwrap();
+
+        let depois = como_mestra(&state, json!("JobListAll")).await.to_string();
+        assert!(
+            depois.contains("minhasenha"),
+            "a senha real tem de continuar lá: {depois}"
+        );
+        assert!(depois.contains("\"enabled\":false"), "{depois}");
     }
 
     /// As linhas que saem do SSE de logs de um job, na ordem em que chegaram.

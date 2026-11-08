@@ -256,6 +256,15 @@ existente primeiro (`ServiceGet`, `JobListAll`) e use-o de molde.
 
 ## 6. Armadilhas
 
+- **Chave de visitante e níveis.** Se o dono gerou uma chave **mestra**, a chave que você recebeu é a de
+  **visitante** e tem um nível (`observer` só lê; `operator` opera o que já existe; `admin` também cria e
+  apaga). Um comando acima do seu nível volta como `forbidden`, com o nível exigido e o seu. O `operator`
+  **não** muda o que um serviço ou job **roda** (`source`, `run_command`, `run_args`, `volumes`, `product`,
+  `shared`; num job, `compose`, `git_source`, `main_service`), mas edita variáveis, domínios, réplicas,
+  healthcheck, recursos e liga/desliga jobs. Em qualquer nível não há `SecretReveal`, `InfraAuditAllow`,
+  token do registry nem export com valores, e `GET /api/events` é recusado. Sem mestra configurada, vale o
+  que está neste manual, sem níveis.
+
 - **`ServiceUpdate` é substituição total, não patch.** Faça `ServiceGet`, mude
   o campo, devolva o spec inteiro. Campo omitido é campo apagado: pelo `/api/rpc`
   o daemon recusa (400) um `ServiceUpdate` que omite campos que o serviço já tem

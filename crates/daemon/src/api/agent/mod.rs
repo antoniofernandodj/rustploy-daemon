@@ -7,6 +7,7 @@
 
 pub mod access_key;
 pub mod mcp;
+pub mod policy;
 pub mod redigir;
 pub mod tools;
 
@@ -150,8 +151,129 @@ pub fn access_key_for(address: &str, token: Option<&str>) -> Option<String> {
     )
 }
 
-/// Imprime o token de conexão e sai — `rustployd access-key`.
+/// Chave do `config.toml` da chave mestra.
+pub const MASTER_TOKEN_KEY: &str = "master_token";
+
+/// Gera uma chave mestra (256 bits, hex). **Falha** se o sistema não der bytes aleatórios — uma chave
+/// de zeros seria pior do que nenhuma.
+pub fn generate_master_token() -> anyhow::Result<String> {
+    use std::io::Read;
+    let mut bytes = [0u8; 32];
+    std::fs::File::open("/dev/urandom")?.read_exact(&mut bytes)?;
+    Ok(hex::encode(bytes))
+}
+
+/// O texto do `config.toml` com `master_token = "<chave>"` logo abaixo do `token` de `[api]`
+/// (trocando uma linha `master_token` que já exista). `None` quando não há `token` em `[api]`.
+fn with_master_token(contents: &str, master: &str) -> Option<String> {
+    let line = format!(
+        "{MASTER_TOKEN_KEY} = \"{master}\"  # chave mestra: só quem a tem passa dos limites do visitante"
+    );
+    let key_of = |l: &str| -> Option<String> {
+        let t = l.trim_start();
+        if t.starts_with('#') {
+            return None;
+        }
+        t.split_once('=')
+            .map(|(name, _)| name.trim().trim_matches('"').to_owned())
+    };
+    let mut out: Vec<String> = Vec::new();
+    let (mut in_api, mut inserted) = (false, false);
+    for l in contents.lines() {
+        let t = l.trim();
+        if t.starts_with('[') {
+            in_api = t == "[api]";
+        }
+        if in_api && key_of(l).as_deref() == Some(MASTER_TOKEN_KEY) {
+            continue;
+        }
+        out.push(l.to_owned());
+        if in_api && !inserted && key_of(l).as_deref() == Some("token") {
+            out.push(line.clone());
+            inserted = true;
+        }
+    }
+    if !inserted {
+        return None;
+    }
+    let mut updated = out.join("\n");
+    if contents.ends_with('\n') {
+        updated.push('\n');
+    }
+    Some(updated)
+}
+
+/// `rustployd access-key --master`: imprime o token de conexão da chave **mestra**, gerando-a e
+/// gravando-a no `config.toml` se ainda não existir. A mestra só vale depois de reiniciar o daemon.
+fn print_master_key_and_exit(config: &crate::platform::config::RustployConfig) -> ! {
+    let fail = |msg: String| -> ! {
+        eprintln!("{msg}");
+        std::process::exit(1);
+    };
+    if config
+        .api
+        .token
+        .as_deref()
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .is_none()
+    {
+        fail("sem [api].token configurado: a chave mestra só faz sentido com uma chave de visitante (o `token`). Defina api.token primeiro.".into());
+    }
+    let address = public_address(&config.api, &crate::platform::config::outbound_ip());
+    let existing = config
+        .api
+        .master_token
+        .as_deref()
+        .map(str::trim)
+        .filter(|t| !t.is_empty());
+    let (master, created) = match existing {
+        Some(m) => (m.to_owned(), false),
+        None => {
+            let Some(path) = config_file_in_use() else {
+                fail("não achei o config.toml em uso (RUSTPLOY_CONFIG, /etc/rustploy/config.toml): grave `master_token` à mão em [api].".into());
+            };
+            let master = match generate_master_token() {
+                Ok(m) => m,
+                Err(e) => fail(format!("não consegui gerar bytes aleatórios: {e}")),
+            };
+            let contents = match std::fs::read_to_string(&path) {
+                Ok(c) => c,
+                Err(e) => fail(format!("não consegui ler {}: {e}", path.display())),
+            };
+            let Some(updated) = with_master_token(&contents, &master) else {
+                fail(format!(
+                    "não achei a linha `token = ...` em [api] de {}",
+                    path.display()
+                ));
+            };
+            if let Err(e) = std::fs::write(&path, updated) {
+                fail(format!("não consegui gravar {}: {e}", path.display()));
+            }
+            eprintln!(
+                "chave mestra gravada em {}. Reinicie o rustployd (`sudo systemctl restart rustployd`) para valer: \
+                 a chave atual passa a ser a de **visitante** (nível `operator`, ajustável em [api].visitor_level) \
+                 e só esta mestra tem acesso total. Entre na GUI/webui com o token abaixo.",
+                path.display()
+            );
+            (master, true)
+        }
+    };
+    let _ = created;
+    match access_key_for(&address, Some(&master)) {
+        Some(key) => {
+            println!("{key}");
+            std::process::exit(0);
+        }
+        None => fail("não consegui montar o token de conexão".into()),
+    }
+}
+
+/// Imprime o token de conexão e sai — `rustployd access-key` (`--master`: o da chave mestra).
 pub fn print_access_key_and_exit(config: &crate::platform::config::RustployConfig) -> ! {
+    if std::env::args().nth(2).as_deref() == Some("--master") {
+        print_master_key_and_exit(config);
+    }
     let address = public_address(&config.api, &crate::platform::config::outbound_ip());
     match access_key_for(&address, config.api.token.as_deref()) {
         Some(key) => {
@@ -382,5 +504,47 @@ mod tests {
             with_connection_token("[api]\nport = 9797\n", "abc", "CHAVE"),
             None
         );
+    }
+
+    #[test]
+    fn mestra_entra_logo_abaixo_do_token_de_api_e_troca_a_antiga() {
+        let toml = "[daemon]\nx = 1\n\n[api]\nport = 9797\ntoken = \"visitante\"\ndomain = \"a.com\"\n\n[registry]\nport = 5100\n";
+        let novo = with_master_token(toml, "abc123").unwrap();
+        let linhas: Vec<&str> = novo.lines().collect();
+        let i = linhas
+            .iter()
+            .position(|l| l.starts_with("token = "))
+            .unwrap();
+        assert!(
+            linhas[i + 1].starts_with("master_token = \"abc123\""),
+            "{novo}"
+        );
+        // uma segunda geração troca a linha, não duplica
+        let de_novo = with_master_token(&novo, "def456").unwrap();
+        assert_eq!(de_novo.matches("master_token").count(), 1);
+        assert!(de_novo.contains("def456") && !de_novo.contains("abc123"));
+        // continua sendo um config válido de [api] (o serde lê o campo)
+        let cfg: toml::Table = toml::from_str(&de_novo).unwrap();
+        assert_eq!(cfg["api"]["master_token"].as_str(), Some("def456"));
+        // só mexe na seção [api]
+        assert_eq!(de_novo.matches("master_token").count(), 1);
+    }
+
+    #[test]
+    fn mestra_sem_token_de_api_nao_grava_nada() {
+        assert_eq!(with_master_token("[api]\nport = 9797\n", "x"), None);
+        assert_eq!(with_master_token("[outra]\ntoken = \"t\"\n", "x"), None);
+    }
+
+    #[test]
+    fn chave_mestra_gerada_tem_256_bits_e_nao_repete() {
+        let (a, b) = (
+            generate_master_token().unwrap(),
+            generate_master_token().unwrap(),
+        );
+        assert_eq!(a.len(), 64);
+        assert!(a.bytes().all(|c| c.is_ascii_hexdigit()));
+        assert_ne!(a, b);
+        assert_ne!(a, "0".repeat(64));
     }
 }

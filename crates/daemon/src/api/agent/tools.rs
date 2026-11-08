@@ -219,6 +219,11 @@ fn proibido_ao_agente(cmd: &Command) -> Option<&'static str> {
         Command::StateGitResolve { .. } => Some(
             "resolver um histórico divergido descarta um dos lados: é decisão de uma pessoa na GUI/webui",
         ),
+        // Marcar uma suspeita como "não é segredo" tira a trava que impede valor em claro de ir
+        // para o git: quem decide isso é uma pessoa, não o agente.
+        Command::InfraAuditAllow { .. } => Some(
+            "liberar uma suspeita da auditoria (\"isto não é segredo\") é decisão de uma pessoa na GUI/webui",
+        ),
         _ => None,
     }
 }
@@ -240,6 +245,26 @@ pub async fn rpc(state: &AppState, command: Value) -> Result<Value, ToolError> {
     }
     if let Some(motivo) = proibido_ao_agente(&cmd) {
         return Err(ToolError::new("forbidden", motivo));
+    }
+    // Chave de visitante (há uma mestra configurada): o nível dela limita o que vale; a mestra e a chave
+    // única de sempre não passam por aqui.
+    if let Some(nivel) = super::policy::current_level() {
+        super::policy::check(&cmd, nivel).map_err(|m| ToolError::new("forbidden", m))?;
+        if nivel < super::policy::Level::Admin {
+            match &cmd {
+                Command::ServiceUpdate { id, spec } => {
+                    verificar_servico_congelado(state, id, spec).await?
+                }
+                Command::JobUpdate {
+                    id,
+                    compose,
+                    git_source,
+                    main_service,
+                    ..
+                } => verificar_job_congelado(state, id, compose, git_source, main_service).await?,
+                _ => {}
+            }
+        }
     }
     restaurar_mascaras(state, &mut cmd).await?;
     let mut resposta = serde_json::to_value(
@@ -300,7 +325,18 @@ async fn restaurar_mascaras(state: &AppState, cmd: &mut Command) -> Result<(), T
                 return Err(recusar(chave));
             }
         }
-        Command::JobCreate { env_vars, .. } | Command::JobUpdate { env_vars, .. } => {
+        Command::JobCreate { env_vars, .. } => {
+            if let Some(chave) = sobrou_mascara(env_vars) {
+                return Err(recusar(chave));
+            }
+        }
+        // `JobUpdate` substitui o job inteiro, como o `ServiceUpdate`: o agente vê as variáveis
+        // sensíveis como `***` e as devolve assim. Sem restaurar o valor real, ele não conseguia
+        // editar (nem ligar/desligar) um job com senha em claro.
+        Command::JobUpdate { id, env_vars, .. } => {
+            if let Ok(Some(atual)) = crate::store::job::get(&state.db, id).await {
+                restaurar_envs(env_vars, &atual.env_vars);
+            }
             if let Some(chave) = sobrou_mascara(env_vars) {
                 return Err(recusar(chave));
             }
@@ -308,6 +344,62 @@ async fn restaurar_mascaras(state: &AppState, cmd: &mut Command) -> Result<(), T
         _ => {}
     }
     Ok(())
+}
+
+/// Um visitante abaixo de `admin` não muda o que um serviço **roda** (fonte, comando, volumes…): isso é
+/// criar código novo no servidor. Compara o spec novo com o atual.
+async fn verificar_servico_congelado(
+    state: &AppState,
+    id: &str,
+    novo: &shared::ServiceSpec,
+) -> Result<(), ToolError> {
+    let Ok(Some(atual)) = crate::store::services::get(&state.db, id).await else {
+        return Ok(()); // serviço que não existe: o handler responde NotFound
+    };
+    let (a, n) = (
+        serde_json::to_value(&atual.spec).unwrap_or(Value::Null),
+        serde_json::to_value(novo).unwrap_or(Value::Null),
+    );
+    let mudou = super::policy::frozen_spec_changes(&a, &n);
+    if mudou.is_empty() {
+        return Ok(());
+    }
+    Err(ToolError::new(
+        "forbidden",
+        format!(
+            "a chave de visitante não muda o que o serviço roda: {} (nível `admin`). Variáveis, domínios, \
+             réplicas, healthcheck e recursos podem ser editados.",
+            mudou.join(", ")
+        ),
+    ))
+}
+
+/// Idem para um job: o operador liga/desliga, renomeia e edita variáveis e recorrência, mas não muda o
+/// que ele roda (`compose`, fonte git, serviço principal).
+async fn verificar_job_congelado(
+    state: &AppState,
+    id: &str,
+    compose: &str,
+    git_source: &Option<shared::JobGitSource>,
+    main_service: &str,
+) -> Result<(), ToolError> {
+    let Ok(Some(atual)) = crate::store::job::get(&state.db, id).await else {
+        return Ok(());
+    };
+    let a = serde_json::to_value(&atual).unwrap_or(Value::Null);
+    let n = json!({ "compose": compose, "git_source": git_source, "main_service": main_service });
+    let mudou = super::policy::frozen_job_changes(&a, &n);
+    if mudou.is_empty() {
+        return Ok(());
+    }
+    Err(ToolError::new(
+        "forbidden",
+        format!(
+            "a chave de visitante não muda o que o job roda: {} (nível `admin`). Nome, variáveis, recorrência \
+             e ligado/desligado podem ser editados.",
+            mudou.join(", ")
+        ),
+    ))
 }
 
 /// Como [`rpc`], mas exige a variante `variante` e devolve só o payload dela.

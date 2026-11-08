@@ -221,6 +221,16 @@ pub struct ApiConfig {
     pub port: u16,
     #[serde(default)]
     pub token: Option<String>,
+    /// Chave **mestra** (opcional). Enquanto ausente, `token` vale para tudo, como sempre. **Com ela**, o
+    /// `token` vira a chave de **visitante** (a que se entrega a um agente) e passa por
+    /// `visitor_level` em qualquer rota; só a mestra tem acesso total. Gerar e gravar:
+    /// `rustployd access-key --master`. Ver `docs/plano-limites-do-agente-mcp.md`.
+    #[serde(default)]
+    pub master_token: Option<String>,
+    /// Até onde vai a chave de visitante quando há uma mestra: `observer` (só lê), `operator` (opera o que
+    /// já existe; é o padrão) ou `admin`. Ver `api::agent::policy`.
+    #[serde(default)]
+    pub visitor_level: Option<String>,
     /// Domínio público da própria API. Quando definido (não vazio), o listener
     /// da API termina TLS **nesta mesma porta** com um certificado Let's Encrypt
     /// provisionado automaticamente via ACME (requer ACME habilitado + porta 80
@@ -252,6 +262,8 @@ impl Default for ApiConfig {
             bind_address: default_api_bind(),
             port: default_api_port(),
             token: None,
+            master_token: None,
+            visitor_level: None,
             domain: None,
             max_connections: default_api_max_connections(),
         }
