@@ -41,6 +41,7 @@ pub async fn create(db: &Db, name: String, description: Option<String>) -> Resul
         secrets: vec![],
         managed_databases: vec![],
         shared_access: vec![],
+        service_order: vec![],
     };
     let out = to_project(&rec);
     // A validação do repositório recusa nome repetido (era o `UNIQUE(name)` do SQL).

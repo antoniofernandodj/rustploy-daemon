@@ -144,6 +144,7 @@ pub fn required_level(cmd: &Command) -> Level {
         | Command::DeployQueuePause { .. }
         | Command::LogsExecutionDelete { .. }
         | Command::ProjectUpdate { .. }
+        | Command::ProjectServicesReorder { .. }
         | Command::ProjectEnvSet { .. }
         | Command::EnvKeyRename { .. }
         | Command::EnvValueSet { .. }

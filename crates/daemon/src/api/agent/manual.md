@@ -152,6 +152,7 @@ Comandos, por área (campos entre chaves):
 
 - **Projetos**: `ProjectList` · `ProjectCreate{name, description?}` ·
   `ProjectUpdate{id, name, description?}` · `ProjectDelete{id}` ·
+  `ProjectServicesReorder{project_id, service_ids}` (ordem de exibição dos serviços; vai no `project.yml`) ·
   `ProjectEnvSet{project_id, env_vars, env_comments}`
 - **Serviços**: `ServiceList{project_id}` · `ServiceGet{id}` ·
   `ServiceCreate(ServiceSpec)` · `ServiceUpdate{id, spec}` ·

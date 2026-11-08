@@ -1092,6 +1092,37 @@
       <!-- Janela "Ações do job": todas as ações de uma linha de job, nas duas
            entradas (tela "Schedules" e aba "Jobs" do projeto). O estado
            quente/frio vem do `JobWarmStatus` do daemon, nunca deduzido aqui. -->
+      <!-- Modal "reordenar serviços": arraste (ou ↑/↓) e Reordenar grava a ordem no
+           project.yml; Cancelar descarta. -->
+      <column class="modal__backdrop" x-show="$store.app.servicesReorder">
+        <column class="modal__box" x-win="'services_reorder'" data-w="420" data-h="480">
+          <row class="modal__head">
+            <text class="u-label-cap" x-t>Reordenar serviços</text>
+          </row>
+          <column class="modal__body">
+            <text class="u-muted" x-t>Arraste para mudar a ordem em que os cards aparecem.</text>
+            <template x-for="(reorderRow, reorderIndex) in $store.app.servicesReorderRows" :key="reorderRow.id">
+              <row class="list-row" draggable="true"
+                   :class="{ drop_over: $store.app.servicesReorderOverId === reorderRow.id && $store.app.servicesReorderDragId !== reorderRow.id, dragging: $store.app.servicesReorderDragId === reorderRow.id }"
+                   @dragstart="$store.app.servicesReorderDragId = reorderRow.id; $event.dataTransfer.effectAllowed = 'move'; $event.dataTransfer.setData('text/plain', reorderRow.id)"
+                   @dragover.prevent="$store.app.servicesReorderOverId = reorderRow.id"
+                   @dragleave="$store.app.servicesReorderOverId === reorderRow.id && ($store.app.servicesReorderOverId = null)"
+                   @dragend="$store.app.servicesReorderDragId = null; $store.app.servicesReorderOverId = null"
+                   @drop.prevent="$store.app.servicesReorderMove($store.app.servicesReorderDragId, reorderRow.id); $store.app.servicesReorderDragId = null; $store.app.servicesReorderOverId = null">
+                <text class="env__drag-handle">⠿</text>
+                <text class="u-grow" x-text="reorderRow.name"></text>
+                <button class="env__del" type="button" :disabled="reorderIndex === 0" @click="$store.app.servicesReorderStep(reorderRow.id, -1)">↑</button>
+                <button class="env__del" type="button" :disabled="reorderIndex === $store.app.servicesReorderRows.length - 1" @click="$store.app.servicesReorderStep(reorderRow.id, 1)">↓</button>
+              </row>
+            </template>
+            <row class="dialog__actions">
+              <button class="btn btn--primary" type="button" @click="$store.app.saveServicesReorder()" x-t>Reordenar</button>
+              <button class="btn btn--ghost" type="button" @click="$store.app.closeServicesReorder()" x-t>Cancelar</button>
+            </row>
+          </column>
+        </column>
+      </column>
+
       <!-- Modal "plano de deploy": ordem em que o lote entra na fila.
            Serviço com dependências: Confirmar / Só o serviço / Rejeitar.
            Projeto: Aceitar / Rejeitar. -->
@@ -1939,6 +1970,7 @@
           <column class="u-grow"></column>
           <row class="proj-bar__actions" x-show="!editing">
             <button class="btn btn--sm-ghost" type="button" @click="store.requestProjectDeploy()" x-t>Deploy</button>
+            <button class="btn btn--sm-ghost" type="button" @click="store.openServicesReorder()" x-t>Reordenar serviços</button>
             <button class="btn btn--sm-primary" type="button" @click="store.openNewService()" x-t>+ Novo serviço</button>
             <button class="btn btn--sm-ghost" type="button" @click="store.openProjectWin(project)" x-t>Editar projeto</button>
             <button class="btn btn--sm-danger" type="button" x-show="canDelete"

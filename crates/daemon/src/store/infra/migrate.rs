@@ -126,6 +126,7 @@ pub async fn read_sql(db: &Db) -> Result<(InfraState, Vec<String>)> {
                 secrets: vec![],
                 managed_databases: vec![],
                 shared_access: vec![],
+                service_order: vec![],
             },
         );
     }

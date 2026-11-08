@@ -61,20 +61,20 @@ fn assemble(s: &ServiceInfra, rt: Option<&Runtime>) -> Service {
     }
 }
 
-/// Todos os serviços do YAML, em ordem de criação, com o runtime junto.
+/// Todos os serviços do YAML, com o runtime junto: projeto por projeto, e dentro de cada um na ordem
+/// de exibição (`service_order`, depois criação).
 async fn all_services(db: &Db) -> Result<Vec<(Service, Option<Runtime>)>> {
     let rts = runtimes(db).await?;
     let st = db.infra().snapshot();
-    let mut out: Vec<(Service, Option<Runtime>)> = st
+    let out: Vec<(Service, Option<Runtime>)> = st
         .projects
         .iter()
-        .flat_map(|p| p.services.iter())
+        .flat_map(|p| p.services_in_order())
         .map(|s| {
             let rt = rts.get(&s.id).cloned();
             (assemble(s, rt.as_ref()), rt)
         })
         .collect();
-    out.sort_by(|a, b| (a.0.created_at, &a.0.id).cmp(&(b.0.created_at, &b.0.id)));
     Ok(out)
 }
 
@@ -168,6 +168,38 @@ pub async fn create(db: &Db, spec: ServiceSpec) -> Result<Service> {
     let svc = assemble(&rec, None);
     info!(service_id = %svc.id, name = %svc.spec.name, "db::services::create: salvo");
     Ok(svc)
+}
+
+/// Define a ordem de exibição dos serviços de um projeto: `ids` na ordem desejada; os que não
+/// vierem ficam no fim, na ordem em que já eram mostrados. `Err(motivo)` (aninhado) para id
+/// repetido, de outro projeto, ou projeto inexistente — e nada muda.
+pub async fn reorder(
+    db: &Db,
+    project_id: &str,
+    ids: &[String],
+) -> Result<std::result::Result<(), String>> {
+    db.infra().update(|st| {
+        let Some(project) = st.projects.iter_mut().find(|p| p.id == project_id) else {
+            return Ok(Err("project not found".to_string()));
+        };
+        let mut seen = std::collections::HashSet::new();
+        for id in ids {
+            if !project.services.iter().any(|s| &s.id == id) {
+                return Ok(Err(format!("serviço {id} não é deste projeto")));
+            }
+            if !seen.insert(id.as_str()) {
+                return Ok(Err(format!("serviço {id} repetido")));
+            }
+        }
+        let rest: Vec<String> = project
+            .services_in_order()
+            .into_iter()
+            .map(|s| s.id.clone())
+            .filter(|id| !ids.contains(id))
+            .collect();
+        project.service_order = ids.iter().cloned().chain(rest).collect();
+        Ok(Ok(()))
+    })
 }
 
 pub async fn list(db: &Db, project_id: &str) -> Result<Vec<Service>> {
@@ -500,6 +532,100 @@ mod tests {
         // Nome que normaliza para o mesmo safe_name ("my-api" == "my_api") → erro.
         create(&db, spec("my-api", "proj_a")).await.unwrap();
         assert!(create(&db, spec("my_api", "proj_a")).await.is_err());
+    }
+
+    fn names(list: &[Service]) -> Vec<String> {
+        list.iter().map(|s| s.spec.name.clone()).collect()
+    }
+
+    #[tokio::test]
+    async fn reorder_muda_a_ordem_e_vai_ao_yaml() {
+        let db = mem_db().await;
+        let a = create(&db, spec("a", "proj_a")).await.unwrap();
+        let b = create(&db, spec("b", "proj_a")).await.unwrap();
+        let c = create(&db, spec("c", "proj_a")).await.unwrap();
+        assert_eq!(names(&list(&db, "proj_a").await.unwrap()), ["a", "b", "c"]);
+
+        reorder(&db, "proj_a", &[c.id.clone(), a.id.clone(), b.id.clone()])
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(names(&list(&db, "proj_a").await.unwrap()), ["c", "a", "b"]);
+        assert_eq!(names(&list_all(&db).await.unwrap()), ["c", "a", "b"]);
+
+        // A ordem mora no project.yml, em `service_order`.
+        let yaml = String::from_utf8(
+            db.infra()
+                .tree()
+                .read("projects/proj_a/project.yml")
+                .unwrap()
+                .unwrap(),
+        )
+        .unwrap();
+        let bloco = yaml.split("service_order:").nth(1).expect(&yaml);
+        let pos = |id: &str| bloco.find(id).unwrap();
+        assert!(pos(&c.id) < pos(&a.id) && pos(&a.id) < pos(&b.id), "{yaml}");
+
+        // Um serviço novo entra no fim; apagar um serviço poda o id da ordem.
+        let d = create(&db, spec("d", "proj_a")).await.unwrap();
+        assert_eq!(
+            names(&list(&db, "proj_a").await.unwrap()),
+            ["c", "a", "b", "d"]
+        );
+        delete(&db, &a.id).await.unwrap();
+        assert_eq!(names(&list(&db, "proj_a").await.unwrap()), ["c", "b", "d"]);
+        let yaml = String::from_utf8(
+            db.infra()
+                .tree()
+                .read("projects/proj_a/project.yml")
+                .unwrap()
+                .unwrap(),
+        )
+        .unwrap();
+        assert!(
+            yaml.split("service_order:")
+                .nth(1)
+                .is_none_or(|b| !b.contains(&a.id)),
+            "{yaml}"
+        );
+        let _ = d;
+    }
+
+    #[tokio::test]
+    async fn reorder_mantem_no_fim_quem_nao_veio_e_recusa_id_ruim() {
+        let db = mem_db().await;
+        let a = create(&db, spec("a", "proj_a")).await.unwrap();
+        let b = create(&db, spec("b", "proj_a")).await.unwrap();
+        let c = create(&db, spec("c", "proj_a")).await.unwrap();
+        let outro = create(&db, spec("x", "proj_b")).await.unwrap();
+
+        // Só `c` informado: `a` e `b` seguem depois, na ordem em que estavam.
+        reorder(&db, "proj_a", std::slice::from_ref(&c.id))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(names(&list(&db, "proj_a").await.unwrap()), ["c", "a", "b"]);
+
+        // Id de outro projeto, repetido ou projeto inexistente: erro e nada muda.
+        assert!(
+            reorder(&db, "proj_a", std::slice::from_ref(&outro.id))
+                .await
+                .unwrap()
+                .is_err()
+        );
+        assert!(
+            reorder(&db, "proj_a", &[a.id.clone(), a.id.clone()])
+                .await
+                .unwrap()
+                .is_err()
+        );
+        assert!(
+            reorder(&db, "nao_existe", std::slice::from_ref(&b.id))
+                .await
+                .unwrap()
+                .is_err()
+        );
+        assert_eq!(names(&list(&db, "proj_a").await.unwrap()), ["c", "a", "b"]);
     }
 
     #[tokio::test]

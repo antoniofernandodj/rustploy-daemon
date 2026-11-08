@@ -20,6 +20,7 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         Command::ProjectList => "ProjectList",
         Command::ProjectDelete { .. } => "ProjectDelete",
         Command::ProjectUpdate { .. } => "ProjectUpdate",
+        Command::ProjectServicesReorder { .. } => "ProjectServicesReorder",
         Command::ProjectEnvSet { .. } => "ProjectEnvSet",
         Command::ServiceCreate(_) => "ServiceCreate",
         Command::ServiceExportPlan { .. } => "ServiceExportPlan",
@@ -229,6 +230,7 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         | Command::ProjectList
         | Command::ProjectDelete { .. }
         | Command::ProjectUpdate { .. }
+        | Command::ProjectServicesReorder { .. }
         | Command::ProjectEnvSet { .. } => handlers::projects::dispatch(state, cmd).await,
         Command::RegistryStatus
         | Command::RegistryRepoList

@@ -157,6 +157,10 @@ document.addEventListener("alpine:init", () => {
     jobActionsJobId: "",
     /** Plano de deploy em lote aguardando decisão: { kind: "service"|"project", id, fromDetail, items } ou null. */
     deployPlan: null,
+    /** Modal "reordenar serviços": { projectId, ids: [id…] } (ordem em edição) ou null. */
+    servicesReorder: null,
+    servicesReorderDragId: null,
+    servicesReorderOverId: null,
     // Janelas (wm.js) "Novo projeto/Editar projeto" e "Novo serviço": estado no
     // store porque várias telas as abrem (grid de projetos, tela do projeto).
     // `projectWin` = null (fechada) | {} (novo) | {id,name,description} (editar).
@@ -912,6 +916,62 @@ document.addEventListener("alpine:init", () => {
         return;
       }
       this.deployPlan = { kind: "project", id: projectId, fromDetail: false, items };
+    },
+
+    /** Abre o modal com os serviços do projeto na ordem atual do daemon. */
+    openServicesReorder() {
+      const projectId = this.selectedProjectId;
+      const ids = ((this.snap && this.snap.services) || [])
+        .filter((entry) => entry.service.spec.project_id === projectId)
+        .map((entry) => entry.service.id);
+      if (ids.length < 2) {
+        this.toastWarn(t("Nada para reordenar"));
+        return;
+      }
+      this.servicesReorder = { projectId, ids };
+    },
+
+    closeServicesReorder() {
+      this.servicesReorder = null;
+      this.servicesReorderDragId = null;
+      this.servicesReorderOverId = null;
+    },
+
+    /** Linhas do modal: id + nome, na ordem em edição. */
+    get servicesReorderRows() {
+      if (!this.servicesReorder) return [];
+      const byId = new Map(((this.snap && this.snap.services) || []).map((entry) => [entry.service.id, entry.service.spec.name]));
+      return this.servicesReorder.ids.map((id) => ({ id, name: byId.get(id) || id }));
+    },
+
+    /** Move `fromId` para a posição de `toId` (solta A sobre B: A passa a ficar antes de B). */
+    servicesReorderMove(fromId, toId) {
+      if (!this.servicesReorder || !fromId || fromId === toId) return;
+      const ids = this.servicesReorder.ids.filter((id) => id !== fromId);
+      ids.splice(ids.indexOf(toId), 0, fromId);
+      this.servicesReorder.ids = ids;
+    },
+
+    /** Botões ↑/↓: troca com o vizinho (alternativa ao arrastar). */
+    servicesReorderStep(id, delta) {
+      if (!this.servicesReorder) return;
+      const ids = [...this.servicesReorder.ids];
+      const from = ids.indexOf(id);
+      const to = from + delta;
+      if (from < 0 || to < 0 || to >= ids.length) return;
+      [ids[from], ids[to]] = [ids[to], ids[from]];
+      this.servicesReorder.ids = ids;
+    },
+
+    /** "Reordenar": grava no daemon (vai para o project.yml) e os cards se reordenam. */
+    async saveServicesReorder() {
+      const reorder = this.servicesReorder;
+      if (!reorder) return;
+      const reorderResponse = await this.api.rpcChecked({
+        ProjectServicesReorder: { project_id: reorder.projectId, service_ids: reorder.ids },
+      });
+      if (this.toastResult(reorderResponse, t("serviços reordenados"))) this.closeServicesReorder();
+      await this.refreshNow();
     },
 
     closeDeployPlan() {

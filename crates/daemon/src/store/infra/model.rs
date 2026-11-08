@@ -94,6 +94,30 @@ pub struct ProjectInfra {
     /// Servidores de banco compartilhado que **este projeto** está autorizado a alcançar.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub shared_access: Vec<SharedAccessInfra>,
+    /// Ordem de exibição dos serviços (ids), escolhida à mão. A lista `services` fica
+    /// ordenada por nome (bytes estáveis no git); esta diz como mostrar. Vazia = ordem
+    /// de criação. Ids de serviços que não existem mais são podados em `normalize`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub service_order: Vec<String>,
+}
+
+impl ProjectInfra {
+    /// Serviços na ordem de exibição: primeiro os de `service_order`, na ordem dela; os
+    /// que ela não cita (criados depois) vêm em seguida, por data de criação.
+    pub fn services_in_order(&self) -> Vec<&ServiceInfra> {
+        let mut out: Vec<&ServiceInfra> = self.services.iter().collect();
+        out.sort_by_key(|s| {
+            (
+                self.service_order
+                    .iter()
+                    .position(|id| id == &s.id)
+                    .unwrap_or(usize::MAX),
+                s.created_at,
+                s.id.clone(),
+            )
+        });
+        out
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -213,6 +237,12 @@ impl InfraState {
             p.jobs
                 .sort_by(|a, b| (&a.created_at, &a.id).cmp(&(&b.created_at, &b.id)));
             p.secrets.sort_by(|a, b| a.key.cmp(&b.key));
+            // Ordem manual: sem repetidos e sem ids de serviços que já não existem.
+            let existing: std::collections::HashSet<&str> =
+                p.services.iter().map(|s| s.id.as_str()).collect();
+            let mut seen = std::collections::HashSet::new();
+            p.service_order
+                .retain(|id| existing.contains(id.as_str()) && seen.insert(id.clone()));
             for s in &mut p.services {
                 s.secrets.sort_by(|a, b| a.key.cmp(&b.key));
             }
@@ -445,6 +475,7 @@ mod tests {
             }],
             managed_databases: vec![],
             shared_access: vec![],
+            service_order: vec![],
         }
     }
 
@@ -558,6 +589,7 @@ mod schema_v1_tests {
                 secrets: vec![],
                 managed_databases: vec![],
                 shared_access: vec![],
+                service_order: vec![],
             }],
         };
         let mut f = st.to_files().unwrap();

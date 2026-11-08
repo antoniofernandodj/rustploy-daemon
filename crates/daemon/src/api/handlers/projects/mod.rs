@@ -4,6 +4,7 @@ pub mod project_create;
 pub mod project_delete;
 pub mod project_env_set;
 pub mod project_list;
+pub mod project_services_reorder;
 pub mod project_update;
 
 use crate::bootstrap::state::AppState;
@@ -21,6 +22,10 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
             name,
             description,
         } => project_update::handle(state, id, name, description).await,
+        Command::ProjectServicesReorder {
+            project_id,
+            service_ids,
+        } => project_services_reorder::handle(state, project_id, service_ids).await,
         Command::ProjectEnvSet {
             project_id,
             env_vars,

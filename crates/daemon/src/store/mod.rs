@@ -68,6 +68,7 @@ impl Db {
                         secrets: vec![],
                         managed_databases: vec![],
                         shared_access: vec![],
+                        service_order: vec![],
                     });
                 }
                 Ok(())

@@ -437,6 +437,54 @@ async fn deploy_plan_modal_lists_order_and_buttons() {
     assert_eq!(errors(&page).await, Vec::<String>::new(), "sem erros de JS");
 }
 
+/// Modal "reordenar serviços": mover (↑/↓ e arrastar) muda só a ordem em edição;
+/// Cancelar descarta e o RPC vai com os ids na nova ordem.
+#[tokio::test]
+async fn services_reorder_modal_moves_and_cancels() {
+    let addr = spawn_static_server().await;
+    let (browser, _handler) = launch().await;
+    let page = open_page(&browser, addr).await;
+    seed_connected(&page).await;
+
+    let seed = r#"(() => {
+        const s = Alpine.store('app');
+        s.snap = { ...(s.snap || {}), services: [['a','alfa'], ['b','beta'], ['c','gama']].map(([k, n]) => ({ service: { id: 'svc_' + k, status: 'Running', spec: { name: n, project_id: 'prj_1' } } })) };
+        s.selectedProjectId = 'prj_1';
+        s.openServicesReorder();
+        s.servicesReorderStep('svc_c', -1);          // a b c -> a c b
+        s.servicesReorderMove('svc_b', 'svc_a');     // a c b -> b a c
+        return s.servicesReorder.ids.join(',');
+    })()"#;
+    assert_eq!(
+        eval_str(&page, seed).await,
+        "svc_b,svc_a,svc_c",
+        "ordem em edição"
+    );
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    let text = eval_str(
+        &page,
+        "document.querySelector('[x-win=\"\\'services_reorder\\'\"]')?.innerText || ''",
+    )
+    .await;
+    assert!(
+        text.contains("Reorder") && text.contains("Cancel"),
+        "botões: {text}"
+    );
+    assert!(
+        text.find("beta") < text.find("alfa") && text.find("alfa") < text.find("gama"),
+        "linhas na ordem editada: {text}"
+    );
+
+    page.evaluate("Alpine.store('app').closeServicesReorder()")
+        .await
+        .expect("cancela");
+    assert_eq!(
+        eval_str(&page, "String(Alpine.store('app').servicesReorder)").await,
+        "null"
+    );
+    assert_eq!(errors(&page).await, Vec::<String>::new(), "sem erros de JS");
+}
+
 /// Detalhe de serviço + a aba General (edição de origem — Compose / Git
 /// / conta conectada / Zip), implementada nesta sessão. `serviceDetail`
 /// não é derivado de `snap` (o real vem de `fetchServiceDetail`), então
