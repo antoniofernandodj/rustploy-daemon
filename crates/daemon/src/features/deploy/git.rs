@@ -172,6 +172,7 @@ pub async fn clone(
 pub async fn resolve_clone_credentials(
     db: &Db,
     secrets: &SecretsManager,
+    clone_url: &str,
     provider_id: Option<&str>,
     credentials: Option<&str>,
     manual_username: Option<&str>,
@@ -181,8 +182,19 @@ pub async fn resolve_clone_credentials(
     let token = if let Some(pid) = provider_id {
         match crate::store::git_providers::get(db, pid).await {
             Ok(Some(p)) => {
-                provider_login = p.account_login.clone();
-                crate::features::git_providers::usable_token(secrets, &p).ok()
+                // A credencial do provider só vai para o host do próprio provider; para qualquer
+                // outro o clone segue sem ela (falha clara de "repositório inacessível") em vez de
+                // entregar o token a quem escolheu a URL.
+                match crate::features::git_providers::usable_token_for_url(secrets, &p, clone_url) {
+                    Ok(tok) => {
+                        provider_login = p.account_login.clone();
+                        Some(tok)
+                    }
+                    Err(e) => {
+                        tracing::warn!(provider = %pid, error = %e, "clone sem a credencial do provider");
+                        None
+                    }
+                }
             }
             _ => None,
         }

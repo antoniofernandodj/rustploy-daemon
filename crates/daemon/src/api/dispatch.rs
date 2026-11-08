@@ -129,7 +129,13 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         Command::RegistryTokenCreate { .. } => "RegistryTokenCreate",
         Command::RegistryTokenList => "RegistryTokenList",
         Command::RegistryTokenRevoke { .. } => "RegistryTokenRevoke",
-        _ => "Unknown",
+        Command::DeployQueueReorder { .. } => "DeployQueueReorder",
+        Command::DeployQueuePromote { .. } => "DeployQueuePromote",
+        Command::DeployQueuePause { .. } => "DeployQueuePause",
+        Command::LogsSubscribe { .. } => "LogsSubscribe",
+        Command::LogsUnsubscribe { .. } => "LogsUnsubscribe",
+        Command::MetricsSubscribe { .. } => "MetricsSubscribe",
+        Command::MetricsUnsubscribe { .. } => "MetricsUnsubscribe",
     };
     info!(command = cmd_name, "→ Request");
 
@@ -272,8 +278,9 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
 }
 
 /// O manual do agente (`agent/manual.md`) é escrito à mão e já divergiu dos `Command` reais.
-/// Os nomes vêm do `match` exaustivo de [`dispatch`] — o compilador garante que nenhum `Command`
-/// novo fica de fora dele —, então cobrar cada um no manual fecha a lacuna sem `schemars` nem
+/// Os nomes vêm do `match` de nomes de [`dispatch`], que **não tem braço curinga** (`_`): o compilador
+/// obriga cada `Command` novo a entrar nele — uma versão anterior tinha um `_ => "Unknown"` que deixava
+/// 7 comandos de fora sem ninguém ver. Cobrar cada nome no manual fecha a lacuna sem `schemars` nem
 /// publicar o `shared`: um comando novo que ninguém documentou **quebra este teste**.
 #[cfg(test)]
 mod manual_do_agente {
@@ -283,9 +290,16 @@ mod manual_do_agente {
             "GitOAuthStart",
             "devolve uma URL para uma pessoa abrir no navegador; o agente usa PAT (`GitProviderCreate`)",
         ),
+        // Restos do protocolo antigo, sem handler: o streaming é por SSE (`/api/events`, `/api/services/<id>/logs`).
+        ("LogsSubscribe", "sem handler; use o SSE de logs"),
+        ("LogsUnsubscribe", "sem handler; use o SSE de logs"),
         (
-            "Unknown",
-            "rótulo de log para uma variante que este daemon não reconhece",
+            "MetricsSubscribe",
+            "sem handler; as métricas vêm no SSE `/api/events`",
+        ),
+        (
+            "MetricsUnsubscribe",
+            "sem handler; as métricas vêm no SSE `/api/events`",
         ),
     ];
 

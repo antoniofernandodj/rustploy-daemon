@@ -52,6 +52,7 @@ impl DeployExecutor {
         let (token, clone_username) = crate::features::deploy::git::resolve_clone_credentials(
             &self.db,
             &self.secrets,
+            &git.url,
             git.provider_id.as_deref(),
             git.credentials.as_deref(),
             git.username.as_deref(),

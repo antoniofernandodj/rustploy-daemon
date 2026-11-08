@@ -556,12 +556,18 @@ impl StateGit {
                             "um repositório https precisa de um provider git cadastrado para a credencial".into(),
                         )
                     })?;
-                    if crate::store::git_providers::get(&self.db, pid)
-                        .await?
-                        .is_none()
-                    {
+                    let Some(provider) = crate::store::git_providers::get(&self.db, pid).await?
+                    else {
                         return Err(StateGitError::Invalid(format!(
                             "provider {pid} não encontrado"
+                        )));
+                    };
+                    // Recusa já na configuração (e não só no primeiro push): o repositório tem de ser
+                    // do servidor do provider, senão a credencial dele não seria enviada.
+                    if !git_providers::credential_matches_url(&provider, r) {
+                        return Err(StateGitError::Invalid(format!(
+                            "o repositório {r} não é do servidor do provider '{}': a credencial dele só é enviada ao próprio provider",
+                            provider.name
                         )));
                     }
                 }
@@ -1159,7 +1165,9 @@ impl StateGit {
         let p = crate::store::git_providers::get(&self.db, pid)
             .await?
             .ok_or_else(|| anyhow::anyhow!("provider {pid} não encontrado"))?;
-        let token = git_providers::usable_token(&self.secrets, &p)?;
+        // O token do provider só vai para o servidor do próprio provider: sem esta conferência, quem
+        // configura o `remote` mandava a credencial para qualquer host https.
+        let token = git_providers::usable_token_for_url(&self.secrets, &p, remote)?;
         Ok(Some(Auth {
             username: p
                 .account_login

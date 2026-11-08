@@ -21,6 +21,7 @@ pub(crate) async fn clone_git_source(
     let (token, username) = git::resolve_clone_credentials(
         db,
         secrets,
+        &git.url,
         git.provider_id.as_deref(),
         git.credentials.as_deref(),
         git.username.as_deref(),

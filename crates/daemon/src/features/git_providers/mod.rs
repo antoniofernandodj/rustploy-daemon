@@ -147,6 +147,66 @@ pub fn usable_token(secrets: &SecretsManager, p: &StoredProvider) -> Result<Stri
     secrets.decrypt(enc)
 }
 
+/// Host e porta de uma URL `https://` (sem usuário/senha, em minúsculas, porta 443 por padrão).
+///
+/// Serve para comparar **autoridades**, nunca prefixos de texto: `github.com.atacante.com` e
+/// `https://github.com@atacante.com` têm de dar hosts diferentes de `github.com`. `None` se não for
+/// `https://` ou não tiver host.
+pub fn https_authority(url: &str) -> Option<(String, u16)> {
+    let rest = url.trim().strip_prefix("https://")?;
+    let authority = rest.split(['/', '?', '#']).next()?;
+    // Tudo antes do último `@` é usuário/senha: o host de verdade vem depois dele.
+    let hostport = authority.rsplit_once('@').map_or(authority, |(_, h)| h);
+    let (host, port) = match hostport.rsplit_once(':') {
+        Some((h, p)) if !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()) => {
+            (h, p.parse::<u16>().ok()?)
+        }
+        _ => (hostport, 443),
+    };
+    let host = host.trim_matches(['[', ']']).to_ascii_lowercase();
+    (!host.is_empty() && !host.chars().any(char::is_whitespace)).then_some((host, port))
+}
+
+/// O endereço (host e porta) a que a credencial deste provider pertence: o do `base_url`, e
+/// `github.com` para o GitHub público (cujo `base_url` fica vazio).
+pub fn provider_authority(p: &StoredProvider) -> Option<(String, u16)> {
+    let base = p.base_url.trim().trim_end_matches('/');
+    if kind_of(p) == GitProviderKind::Github
+        && (base.is_empty() || base == "https://github.com" || base == "http://github.com")
+    {
+        return Some(("github.com".to_string(), 443));
+    }
+    https_authority(base)
+}
+
+/// A credencial deste provider pode ser enviada a `url`? Só se o host (e a porta) forem os do próprio
+/// provider. Sem isso, quem escolhe a URL de um clone ou do `state_git` receberia o token do provider:
+/// bastava apontar para um servidor que responda "401, preciso de login".
+pub fn credential_matches_url(p: &StoredProvider, url: &str) -> bool {
+    match (provider_authority(p), https_authority(url)) {
+        (Some(a), Some(b)) => a == b,
+        _ => false,
+    }
+}
+
+/// [`usable_token`], mas só se `url` for do provider (ver [`credential_matches_url`]).
+pub fn usable_token_for_url(
+    secrets: &SecretsManager,
+    p: &StoredProvider,
+    url: &str,
+) -> Result<String> {
+    if !credential_matches_url(p, url) {
+        let onde = provider_authority(p)
+            .map(|(h, port)| format!("{h}:{port}"))
+            .unwrap_or_else(|| "?".into());
+        anyhow::bail!(
+            "o endereço não é do provider git '{}' ({onde}): a credencial dele não é enviada a outro servidor",
+            p.name
+        );
+    }
+    usable_token(secrets, p)
+}
+
 /// Attempts to refresh an expired OAuth access token, persisting the new pair.
 /// Returns the fresh access token on success. PAT providers (or those without a
 /// refresh token) yield `None` — there's nothing to refresh.
@@ -201,4 +261,120 @@ pub async fn refresh_access_token(
     .await
     .ok()?;
     Some(tokens.access_token)
+}
+
+#[cfg(test)]
+mod host_da_credencial_tests {
+    use super::*;
+
+    fn provider(kind: &str, base_url: &str) -> StoredProvider {
+        StoredProvider {
+            id: "gp_1".into(),
+            kind: kind.into(),
+            name: "teste".into(),
+            base_url: base_url.into(),
+            auth_mode: "Pat".into(),
+            oauth_client_id: None,
+            oauth_client_secret_enc: None,
+            access_token_enc: None,
+            refresh_token_enc: None,
+            account_login: None,
+            account_avatar: None,
+            created_at: chrono::Utc::now(),
+        }
+    }
+
+    #[test]
+    fn autoridade_ignora_caixa_usuario_e_caminho() {
+        let gh = ("github.com".to_string(), 443);
+        assert_eq!(
+            https_authority("https://github.com/a/b.git"),
+            Some(gh.clone())
+        );
+        assert_eq!(
+            https_authority("https://GitHub.COM/a/b.git"),
+            Some(gh.clone())
+        );
+        assert_eq!(
+            https_authority("https://user:tok@github.com/a/b.git"),
+            Some(gh.clone())
+        );
+        assert_eq!(
+            https_authority("https://git.exemplo.com:8443/x"),
+            Some(("git.exemplo.com".into(), 8443))
+        );
+        assert_eq!(https_authority("http://github.com/a"), None, "só https");
+        assert_eq!(https_authority("git@github.com:a/b.git"), None);
+        assert_eq!(https_authority("https://"), None);
+    }
+
+    #[test]
+    fn github_publico_so_aceita_github_com() {
+        let p = provider("github", "");
+        assert!(credential_matches_url(
+            &p,
+            "https://github.com/dono/repo.git"
+        ));
+        assert!(credential_matches_url(
+            &p,
+            "https://x:y@GITHUB.com/dono/repo.git"
+        ));
+        // as tentativas de enganar
+        assert!(!credential_matches_url(
+            &p,
+            "https://github.com.atacante.com/dono/repo.git"
+        ));
+        assert!(!credential_matches_url(
+            &p,
+            "https://github.com@atacante.com/dono/repo.git"
+        ));
+        assert!(!credential_matches_url(
+            &p,
+            "https://atacante.com/github.com/repo.git"
+        ));
+        assert!(
+            !credential_matches_url(&p, "https://github.com:8443/dono/repo.git"),
+            "outra porta"
+        );
+        assert!(
+            !credential_matches_url(&p, "http://github.com/dono/repo.git"),
+            "sem TLS"
+        );
+        assert!(
+            !credential_matches_url(&p, "https://api.github.com/dono/repo.git"),
+            "outro host"
+        );
+    }
+
+    #[test]
+    fn gitea_e_enterprise_usam_o_host_do_base_url() {
+        let g = provider("gitea", "https://git.exemplo.com:3000/");
+        assert!(credential_matches_url(
+            &g,
+            "https://git.exemplo.com:3000/o/r.git"
+        ));
+        assert!(
+            !credential_matches_url(&g, "https://git.exemplo.com/o/r.git"),
+            "porta diferente"
+        );
+        assert!(!credential_matches_url(
+            &g,
+            "https://outro.exemplo.com:3000/o/r.git"
+        ));
+        let e = provider("github", "https://ghe.empresa.com");
+        assert!(credential_matches_url(
+            &e,
+            "https://ghe.empresa.com/o/r.git"
+        ));
+        assert!(
+            !credential_matches_url(&e, "https://github.com/o/r.git"),
+            "Enterprise não é o github.com"
+        );
+    }
+
+    #[test]
+    fn provider_sem_base_url_valido_nao_envia_credencial() {
+        let p = provider("gitea", "");
+        assert!(!credential_matches_url(&p, "https://qualquer.com/o/r.git"));
+    }
 }

@@ -342,6 +342,7 @@ async fn build_in_dir(
             let (token, username) = git::resolve_clone_credentials(
                 &state.db,
                 &state.secrets,
+                &source.url,
                 source.provider_id.as_deref(),
                 source.credentials.as_deref(),
                 source.username.as_deref(),
