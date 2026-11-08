@@ -158,7 +158,14 @@ Comandos, por área (campos entre chaves):
   `ServiceDelete{id}` · `ServiceStop{service_id}` · `ServiceReload{service_id}` ·
   `ServiceConnectionInfo{service_id}` · `GetWebhookUrl{service_id}` ·
   `RegenerateWebhookToken{service_id}`
-- **Deploys**: `DeployStart{service_id}` · `DeployAbort{deployment_id}` ·
+- **Deploys**: `DeployStart{service_id}` (só aquele serviço) ·
+  `DeployWithDependencies{service_id, skip_running?}` (o serviço **e a árvore de dependências dele**,
+  na ordem: quem não depende de ninguém primeiro; resposta `DeployBatch` com cada serviço e seu
+  `deployment_id`; se o deploy de uma dependência falhar, quem depende dela **não roda**) ·
+  `DeployWithDependenciesPlan{service_id, skip_running?}` e `ProjectDeployPlan{project_id, skip_running?}`
+  (só mostram a ordem que o deploy acima usaria, **sem enfileirar**) ·
+  `ProjectDeploy{project_id, skip_running?}` (todos os serviços do projeto, cada um com as suas
+  dependências, na ordem necessária; `skip_running` pula o que já está no ar) · `DeployAbort{deployment_id}` ·
   `DeployRollback{service_id}` · `DeployHistory{service_id, limit}` ·
   `DeployDelete{deployment_id}` · `RecentDeployments{limit}` ·
   `GetBuildLogs{deployment_id}` · `DeployEngineStatus` ·

@@ -155,6 +155,8 @@ document.addEventListener("alpine:init", () => {
     // Janela "Ações do job" (wm.js): todas as ações de uma linha de job num só
     // lugar, porque a lista de botões não cabia na linha. "" = fechada.
     jobActionsJobId: "",
+    /** Plano de deploy em lote aguardando decisão: { kind: "service"|"project", id, fromDetail, items } ou null. */
+    deployPlan: null,
     // Janelas (wm.js) "Novo projeto/Editar projeto" e "Novo serviço": estado no
     // store porque várias telas as abrem (grid de projetos, tela do projeto).
     // `projectWin` = null (fechada) | {} (novo) | {id,name,description} (editar).
@@ -877,6 +879,83 @@ document.addEventListener("alpine:init", () => {
      * sem abrir a tela dele. O desfecho vira toast como no deploy da tela do
      * serviço (`deployTrackId`). */
     async deployServiceFromList(serviceId) {
+      await this.requestServiceDeploy(serviceId, false);
+    },
+
+    /** Pede o plano (ordem das dependências). Sem dependências além do próprio
+     * serviço, deploya direto como sempre; com dependências abre o modal. */
+    async requestServiceDeploy(serviceId, fromDetail) {
+      const planResponse = await this.api.rpcChecked({
+        DeployWithDependenciesPlan: { service_id: serviceId, skip_running: false },
+      });
+      const items = planResponse.ok ? planResponse.value?.DeployBatch : null;
+      if (!items || items.length <= 1) {
+        await this.deploySingle(serviceId, fromDetail);
+        return;
+      }
+      this.deployPlan = { kind: "service", id: serviceId, fromDetail, items };
+    },
+
+    /** Botão "Deploy" do projeto: sempre mostra a ordem de tudo. */
+    async requestProjectDeploy() {
+      const projectId = this.selectedProjectId;
+      const planResponse = await this.api.rpcChecked({
+        ProjectDeployPlan: { project_id: projectId, skip_running: false },
+      });
+      if (!planResponse.ok) {
+        this.toastError("erro: " + planResponse.error);
+        return;
+      }
+      const items = planResponse.value?.DeployBatch || [];
+      if (items.length === 0) {
+        this.toastWarn(t("Nada para deployar"));
+        return;
+      }
+      this.deployPlan = { kind: "project", id: projectId, fromDetail: false, items };
+    },
+
+    closeDeployPlan() {
+      this.deployPlan = null;
+    },
+
+    /** "Confirmar"/"Aceitar": enfileira o lote na ordem do plano. */
+    async confirmDeployPlan() {
+      const plan = this.deployPlan;
+      if (!plan) return;
+      this.deployPlan = null;
+      const command =
+        plan.kind === "project"
+          ? { ProjectDeploy: { project_id: plan.id, skip_running: false } }
+          : { DeployWithDependencies: { service_id: plan.id, skip_running: false } };
+      const batchResponse = await this.api.rpcChecked(command);
+      if (batchResponse.ok) {
+        const queued = (batchResponse.value?.DeployBatch || []).filter((item) => item.status === "Queued").length;
+        this.toastOk(t`deploy na fila: ${queued}`);
+      } else {
+        this.toastError("erro: " + batchResponse.error);
+      }
+      if (plan.fromDetail) await this.fetchServiceDetail(plan.id);
+      await this.refreshNow();
+    },
+
+    /** "Só o serviço": ignora as dependências. */
+    async deployPlanOnlyService() {
+      const plan = this.deployPlan;
+      if (!plan) return;
+      this.deployPlan = null;
+      await this.deploySingle(plan.id, plan.fromDetail);
+    },
+
+    /** Texto de uma linha do plano: "1. nome (skipped)". */
+    deployPlanLine(item, index) {
+      return `${index + 1}. ${item.service_name}` + (item.status === "Queued" ? "" : ` (${String(item.status).toLowerCase()})`);
+    },
+
+    async deploySingle(serviceId, fromDetail) {
+      if (fromDetail) {
+        await this.deployStartNow();
+        return;
+      }
       const deployStartResponse = await this.api.rpcChecked({ DeployStart: { service_id: serviceId } });
       if (deployStartResponse.ok) this.deployTrackId = serviceId;
       this.toastResult(deployStartResponse, t("deploy iniciado"));
@@ -884,6 +963,10 @@ document.addEventListener("alpine:init", () => {
     },
 
     async deployStart() {
+      await this.requestServiceDeploy(this.selectedServiceId, true);
+    },
+
+    async deployStartNow() {
       const serviceId = this.selectedServiceId;
       this.serviceMessage = t("iniciando deploy…");
       const deployStartResponse = await this.api.rpcChecked({ DeployStart: { service_id: serviceId } });

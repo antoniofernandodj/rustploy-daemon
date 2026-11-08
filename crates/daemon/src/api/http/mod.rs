@@ -1680,6 +1680,341 @@ mod tests {
         assert!(depois.contains("\"enabled\":false"), "{depois}");
     }
 
+    // ── Deploy com a árvore de dependências ───────────────────────────────────────────────────────
+
+    /// Cria um serviço (imagem `nginx`) com as dependências dadas; devolve o id.
+    async fn cria_servico(state: &AppState, projeto: &str, nome: &str, deps: &[&str]) -> String {
+        use serde_json::json;
+        let mut spec = serde_json::to_value(crate::features::wizard::app_spec(
+            nome.into(),
+            projeto.into(),
+        ))
+        .unwrap();
+        spec["source"] = json!({"Registry": {"image": "nginx"}});
+        spec["depends_on"] = json!(deps);
+        let r = como_mestra(state, json!({"ServiceCreate": spec})).await;
+        r["Service"]["id"]
+            .as_str()
+            .unwrap_or_else(|| panic!("serviço {nome} criado: {r}"))
+            .to_owned()
+    }
+
+    fn nomes_do_lote(r: &serde_json::Value) -> Vec<String> {
+        r["DeployBatch"]
+            .as_array()
+            .unwrap_or_else(|| panic!("esperava DeployBatch: {r}"))
+            .iter()
+            .map(|i| i["service_name"].as_str().unwrap().to_owned())
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn deploy_com_dependencias_enfileira_na_ordem_e_so_a_arvore() {
+        use serde_json::json;
+        let state = estado_de_teste().await;
+        let proj = como_mestra(
+            &state,
+            json!({"ProjectCreate":{"name":"p","description":null}}),
+        )
+        .await;
+        let pid = proj["Project"]["id"].as_str().unwrap().to_owned();
+        let db = cria_servico(&state, &pid, "db", &[]).await;
+        let cache = cria_servico(&state, &pid, "cache", &[]).await;
+        let api = cria_servico(&state, &pid, "api", &[&db, &cache]).await;
+        let front = cria_servico(&state, &pid, "front", &[&api]).await;
+        let _solto = cria_servico(&state, &pid, "solto", &[]).await;
+
+        let r = como_mestra(
+            &state,
+            json!({"DeployWithDependencies":{"service_id": front}}),
+        )
+        .await;
+        // dependências antes de quem depende; o serviço fora da árvore não entra
+        let nomes = nomes_do_lote(&r);
+        let pos = |n: &str| nomes.iter().position(|x| x == n).unwrap();
+        assert_eq!(nomes.len(), 4, "{nomes:?}");
+        assert!(pos("db") < pos("api") && pos("cache") < pos("api") && pos("api") < pos("front"));
+        assert!(!nomes.contains(&"solto".to_string()));
+        assert!(
+            r["DeployBatch"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|i| i["status"] == "Queued"),
+            "{r}"
+        );
+
+        // a ordem da FILA é a do plano (a vaga é única e a fila FIFO)
+        let na_fila: Vec<String> = state.deploy_queue.snapshot().1;
+        let do_plano: Vec<String> = r["DeployBatch"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|i| i["deployment_id"].as_str().unwrap().to_owned())
+            .collect();
+        assert_eq!(na_fila, do_plano);
+    }
+
+    #[tokio::test]
+    async fn o_plano_mostra_a_ordem_sem_enfileirar_nada() {
+        use serde_json::json;
+        let state = estado_de_teste().await;
+        let proj = como_mestra(
+            &state,
+            json!({"ProjectCreate":{"name":"p","description":null}}),
+        )
+        .await;
+        let pid = proj["Project"]["id"].as_str().unwrap().to_owned();
+        let db = cria_servico(&state, &pid, "db", &[]).await;
+        let api = cria_servico(&state, &pid, "api", &[&db]).await;
+
+        let r = como_mestra(
+            &state,
+            json!({"DeployWithDependenciesPlan":{"service_id": api}}),
+        )
+        .await;
+        assert_eq!(nomes_do_lote(&r), ["db", "api"]);
+        let itens = r["DeployBatch"].as_array().unwrap();
+        assert!(
+            itens
+                .iter()
+                .all(|i| i["status"] == "Queued" && i["deployment_id"].is_null()),
+            "{r}"
+        );
+        assert!(
+            state.deploy_queue.snapshot().1.is_empty(),
+            "o plano não enfileira"
+        );
+
+        // o projeto inteiro também
+        let r = como_mestra(&state, json!({"ProjectDeployPlan":{"project_id": pid}})).await;
+        assert_eq!(nomes_do_lote(&r), ["db", "api"]);
+        assert!(state.deploy_queue.snapshot().1.is_empty());
+
+        // um observador (só lê) pode pedir o plano, mas não o deploy
+        assert!(
+            como_visitante(
+                &state,
+                Level::Observer,
+                json!({"DeployWithDependenciesPlan":{"service_id": api}})
+            )
+            .await
+            .is_ok()
+        );
+        assert!(
+            como_visitante(
+                &state,
+                Level::Observer,
+                json!({"DeployWithDependencies":{"service_id": api}})
+            )
+            .await
+            .is_err()
+        );
+        assert!(state.deploy_queue.snapshot().1.is_empty());
+    }
+
+    #[tokio::test]
+    async fn deploy_do_projeto_enfileira_todos_os_servicos_em_ordem() {
+        use serde_json::json;
+        let state = estado_de_teste().await;
+        let proj = como_mestra(
+            &state,
+            json!({"ProjectCreate":{"name":"p","description":null}}),
+        )
+        .await;
+        let pid = proj["Project"]["id"].as_str().unwrap().to_owned();
+        let db = cria_servico(&state, &pid, "db", &[]).await;
+        let api = cria_servico(&state, &pid, "api", &[&db]).await;
+        cria_servico(&state, &pid, "front", &[&api]).await;
+        cria_servico(&state, &pid, "worker", &[&db]).await;
+
+        let r = como_mestra(&state, json!({"ProjectDeploy":{"project_id": pid}})).await;
+        let nomes = nomes_do_lote(&r);
+        let pos = |n: &str| nomes.iter().position(|x| x == n).unwrap();
+        assert_eq!(nomes.len(), 4, "todos os serviços do projeto: {nomes:?}");
+        assert!(pos("db") < pos("api") && pos("db") < pos("worker") && pos("api") < pos("front"));
+        assert_eq!(state.deploy_queue.snapshot().1.len(), 4);
+
+        // projeto sem serviços: erro claro
+        let vazio = como_mestra(
+            &state,
+            json!({"ProjectCreate":{"name":"vazio","description":null}}),
+        )
+        .await;
+        let vid = vazio["Project"]["id"].as_str().unwrap().to_owned();
+        let e = como_mestra(&state, json!({"ProjectDeploy":{"project_id": vid}})).await;
+        assert!(e.get("Err").is_some(), "{e}");
+    }
+
+    #[tokio::test]
+    async fn quem_depende_de_um_deploy_que_falhou_nao_roda() {
+        use serde_json::json;
+        let state = estado_de_teste().await;
+        let proj = como_mestra(
+            &state,
+            json!({"ProjectCreate":{"name":"p","description":null}}),
+        )
+        .await;
+        let pid = proj["Project"]["id"].as_str().unwrap().to_owned();
+        let db = cria_servico(&state, &pid, "db", &[]).await;
+        let api = cria_servico(&state, &pid, "api", &[&db]).await;
+        let r = como_mestra(
+            &state,
+            json!({"DeployWithDependencies":{"service_id": api}}),
+        )
+        .await;
+        let itens = r["DeployBatch"].as_array().unwrap();
+        let dep_db = itens[0]["deployment_id"].as_str().unwrap().to_owned();
+        let dep_api = itens[1]["deployment_id"].as_str().unwrap().to_owned();
+
+        // o deploy do db termina em Failed
+        let dep = crate::store::deployments::get(&state.db, &dep_db)
+            .await
+            .unwrap()
+            .unwrap();
+        crate::store::deployments::transition(
+            &state.db,
+            &dep_db,
+            &dep.state,
+            shared::DeployState::Failed,
+            Some("build falhou".into()),
+        )
+        .await
+        .unwrap();
+
+        // a trava enxerga o motivo e o deploy da api é descartado, sem rodar
+        let waits = state.deploy_queue.take_waits(&dep_api);
+        assert_eq!(waits, vec![dep_db.clone()], "a api espera o deploy do db");
+        let motivo = crate::features::deploy::tree::failed_dependency(&state.db, &waits)
+            .await
+            .expect("a dependência falhou");
+        assert!(motivo.contains("db"), "{motivo}");
+        crate::features::deploy::tree::skip_for_dependency(&state.deploy_ctx(), &dep_api, &motivo)
+            .await;
+
+        let dep = crate::store::deployments::get(&state.db, &dep_api)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(dep.state, shared::DeployState::Failed);
+        let svc = crate::store::services::get(&state.db, &api)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            matches!(svc.status, shared::ServiceStatus::Error(ref m) if m.contains("db")),
+            "{:?}",
+            svc.status
+        );
+    }
+
+    // ── Dependências impossíveis de resolver ──────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn dependencia_impossivel_e_erro_ao_salvar() {
+        use serde_json::json;
+        let state = estado_de_teste().await;
+        let proj = como_mestra(
+            &state,
+            json!({"ProjectCreate":{"name":"p","description":null}}),
+        )
+        .await;
+        let pid = proj["Project"]["id"].as_str().unwrap().to_owned();
+        let outro = como_mestra(
+            &state,
+            json!({"ProjectCreate":{"name":"q","description":null}}),
+        )
+        .await;
+        let qid = outro["Project"]["id"].as_str().unwrap().to_owned();
+        let a = cria_servico(&state, &pid, "a", &[]).await;
+        let b = cria_servico(&state, &pid, "b", &[&a]).await;
+        let de_outro = cria_servico(&state, &qid, "de-outro", &[]).await;
+
+        let atualiza = |id: &str, deps: Vec<&str>| {
+            let state = state.clone();
+            let id = id.to_owned();
+            let deps: Vec<String> = deps.into_iter().map(String::from).collect();
+            async move {
+                let svc = como_mestra(&state, json!({"ServiceGet":{"id": id}})).await;
+                let mut spec = svc["Service"]["spec"].clone();
+                spec["depends_on"] = json!(deps);
+                como_mestra(&state, json!({"ServiceUpdate":{"id": id, "spec": spec}})).await
+            }
+        };
+        let codigo = |r: &serde_json::Value| r["Err"]["code"].as_str().map(str::to_owned);
+
+        // de si mesmo, de um serviço que não existe, de outro projeto e ciclo: todos recusados
+        assert_eq!(
+            codigo(&atualiza(&a, vec![&a]).await).as_deref(),
+            Some("DependencyCycle")
+        );
+        assert_eq!(
+            codigo(&atualiza(&a, vec!["svc_fantasma"]).await).as_deref(),
+            Some("InvalidDependency")
+        );
+        assert_eq!(
+            codigo(&atualiza(&a, vec![&de_outro]).await).as_deref(),
+            Some("InvalidDependency")
+        );
+        assert_eq!(
+            codigo(&atualiza(&a, vec![&b]).await).as_deref(),
+            Some("DependencyCycle"),
+            "a→b→a"
+        );
+        // e uma dependência válida passa
+        assert!(codigo(&atualiza(&b, vec![&a]).await).is_none());
+    }
+
+    #[tokio::test]
+    async fn acesso_cruzado_a_bancos_compartilhados_que_cria_ciclo_e_recusado() {
+        use serde_json::json;
+        let state = estado_de_teste().await;
+        let p1 = como_mestra(
+            &state,
+            json!({"ProjectCreate":{"name":"p1","description":null}}),
+        )
+        .await;
+        let p1 = p1["Project"]["id"].as_str().unwrap().to_owned();
+        let p2 = como_mestra(
+            &state,
+            json!({"ProjectCreate":{"name":"p2","description":null}}),
+        )
+        .await;
+        let p2 = p2["Project"]["id"].as_str().unwrap().to_owned();
+        let s1 = cria_servico(&state, &p1, "srv1", &[]).await;
+        let s2 = cria_servico(&state, &p2, "srv2", &[]).await;
+        // dois servidores compartilhados, um em cada projeto
+        state
+            .db
+            .infra()
+            .update(|st| {
+                for svc in st.projects.iter_mut().flat_map(|p| p.services.iter_mut()) {
+                    svc.spec.shared = Some(shared::SharedServerConfig {});
+                }
+                Ok(())
+            })
+            .unwrap();
+
+        // o projeto 2 passa a esperar o servidor 1: tudo bem
+        let r = como_mestra(
+            &state,
+            json!({"SharedAccessGrant":{"server_service_id": s1, "project_id": p2}}),
+        )
+        .await;
+        assert!(r.get("Err").is_none(), "{r}");
+        // o projeto 1 esperar o servidor 2 fecharia o ciclo srv1 → srv2 → srv1: sem ordem possível
+        let r = como_mestra(
+            &state,
+            json!({"SharedAccessGrant":{"server_service_id": s2, "project_id": p1}}),
+        )
+        .await;
+        assert_eq!(r["Err"]["code"], "DependencyCycle", "{r}");
+        assert!(
+            r["Err"]["message"].as_str().unwrap().contains("srv"),
+            "a mensagem nomeia os serviços: {r}"
+        );
+    }
+
     /// As linhas que saem do SSE de logs de um job, na ordem em que chegaram.
     async fn linhas_do_sse(
         mut body: ApiBody,

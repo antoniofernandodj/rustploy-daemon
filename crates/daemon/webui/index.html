@@ -1092,6 +1092,30 @@
       <!-- Janela "Ações do job": todas as ações de uma linha de job, nas duas
            entradas (tela "Schedules" e aba "Jobs" do projeto). O estado
            quente/frio vem do `JobWarmStatus` do daemon, nunca deduzido aqui. -->
+      <!-- Modal "plano de deploy": ordem em que o lote entra na fila.
+           Serviço com dependências: Confirmar / Só o serviço / Rejeitar.
+           Projeto: Aceitar / Rejeitar. -->
+      <column class="modal__backdrop" x-show="$store.app.deployPlan">
+        <column class="modal__box" x-win="'deploy_plan'" data-w="420" data-h="420">
+          <row class="modal__head">
+            <text class="u-label-cap" x-text="$store.app.deployPlan?.kind === 'project' ? $t('Deploy do projeto') : $t('Deploy com dependências')"></text>
+          </row>
+          <column class="modal__body">
+            <text class="u-muted" x-t>Ordem em que entram na fila:</text>
+            <template x-for="(planItem, planIndex) in ($store.app.deployPlan?.items || [])" :key="planItem.service_id">
+              <text x-text="$store.app.deployPlanLine(planItem, planIndex)"></text>
+            </template>
+            <row class="dialog__actions">
+              <button class="btn btn--primary" type="button" @click="$store.app.confirmDeployPlan()"
+                      x-text="$store.app.deployPlan?.kind === 'project' ? $t('Aceitar') : $t('Confirmar')"></button>
+              <button class="btn btn--ghost" type="button" x-show="$store.app.deployPlan?.kind === 'service'"
+                      @click="$store.app.deployPlanOnlyService()" x-t>Só o serviço</button>
+              <button class="btn btn--ghost" type="button" @click="$store.app.closeDeployPlan()" x-t>Rejeitar</button>
+            </row>
+          </column>
+        </column>
+      </column>
+
       <column class="modal__backdrop" x-show="$store.app.jobActionsJobId !== ''">
         <column class="modal__box" x-win="'job_actions'" data-w="380" data-h="460">
           <row class="modal__head">
@@ -1914,6 +1938,7 @@
           <button class="btn btn--ghost" type="button" @click="store.nav('projects')" x-t>‹ Projetos</button>
           <column class="u-grow"></column>
           <row class="proj-bar__actions" x-show="!editing">
+            <button class="btn btn--sm-ghost" type="button" @click="store.requestProjectDeploy()" x-t>Deploy</button>
             <button class="btn btn--sm-primary" type="button" @click="store.openNewService()" x-t>+ Novo serviço</button>
             <button class="btn btn--sm-ghost" type="button" @click="store.openProjectWin(project)" x-t>Editar projeto</button>
             <button class="btn btn--sm-danger" type="button" x-show="canDelete"

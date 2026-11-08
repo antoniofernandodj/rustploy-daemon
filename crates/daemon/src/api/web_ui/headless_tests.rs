@@ -378,6 +378,65 @@ async fn project_detail_renders() {
     );
 }
 
+/// Modal "plano de deploy": serviço com dependências mostra a ordem e três
+/// botões (Confirmar / Só o serviço / Rejeitar); projeto mostra dois
+/// (Aceitar / Rejeitar). Rejeitar fecha sem enfileirar nada.
+#[tokio::test]
+async fn deploy_plan_modal_lists_order_and_buttons() {
+    let addr = spawn_static_server().await;
+    let (browser, _handler) = launch().await;
+    let page = open_page(&browser, addr).await;
+    seed_connected(&page).await;
+
+    let items = "[{service_id:'a',service_name:'db',wave:0,status:'Queued'},\
+                 {service_id:'b',service_name:'api',wave:1,status:'Queued'}]";
+    page.evaluate(format!(
+        "Alpine.store('app').deployPlan = {{kind:'service',id:'b',fromDetail:false,items:{items}}}"
+    ))
+    .await
+    .expect("abre o plano de serviço");
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    let text = eval_str(
+        &page,
+        "document.querySelector('[x-win=\"\\'deploy_plan\\'\"]')?.innerText || ''",
+    )
+    .await;
+    assert!(
+        text.contains("1. db") && text.contains("2. api"),
+        "ordem do plano: {text}"
+    );
+    assert!(
+        text.contains("Only the service"),
+        "botão só o serviço: {text}"
+    );
+
+    page.evaluate(format!(
+        "Alpine.store('app').deployPlan = {{kind:'project',id:'p',fromDetail:false,items:{items}}}"
+    ))
+    .await
+    .expect("abre o plano de projeto");
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    let text = eval_str(
+        &page,
+        "document.querySelector('[x-win=\"\\'deploy_plan\\'\"]')?.innerText || ''",
+    )
+    .await;
+    assert!(text.contains("Accept"), "botão aceitar: {text}");
+    assert!(
+        !text.contains("Only the service"),
+        "projeto não oferece só o serviço: {text}"
+    );
+
+    page.evaluate("Alpine.store('app').closeDeployPlan()")
+        .await
+        .expect("rejeita");
+    assert_eq!(
+        eval_str(&page, "String(Alpine.store('app').deployPlan)").await,
+        "null"
+    );
+    assert_eq!(errors(&page).await, Vec::<String>::new(), "sem erros de JS");
+}
+
 /// Detalhe de serviço + a aba General (edição de origem — Compose / Git
 /// / conta conectada / Zip), implementada nesta sessão. `serviceDetail`
 /// não é derivado de `snap` (o real vem de `fetchServiceDetail`), então

@@ -36,6 +36,10 @@ struct QueueInner {
     running: Option<String>,
     /// Fila pausada — o worker não puxa o próximo até retomar.
     paused: bool,
+    /// Deploys de um lote (`DeployWithDependencies`/`ProjectDeploy`): `deployment_id` → os deployments
+    /// de que ele depende. Se algum deles não terminou bem, este **não roda** (ver `run_one`). Só em
+    /// memória: depois de um reinício do daemon o deploy pendente roda sem essa trava.
+    waits: std::collections::HashMap<String, Vec<String>>,
 }
 
 /// Handle compartilhado da fila (fica no `DeployContext`). Sem `DeployContext` dentro,
@@ -66,6 +70,19 @@ impl DeployQueue {
     /// segue-se com o que havia em vez de propagar o pânico para todo deploy seguinte.
     fn lock(&self) -> std::sync::MutexGuard<'_, QueueInner> {
         self.inner.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Registra de quais deployments `dep_id` depende (um lote). Chamar **antes** de `enqueue`: o worker
+    /// pode puxá-lo assim que entrar na fila.
+    pub fn set_waits(&self, dep_id: &str, waits: Vec<String>) {
+        if !waits.is_empty() {
+            self.lock().waits.insert(dep_id.to_string(), waits);
+        }
+    }
+
+    /// Tira (e devolve) os deployments de que `dep_id` depende.
+    pub fn take_waits(&self, dep_id: &str) -> Vec<String> {
+        self.lock().waits.remove(dep_id).unwrap_or_default()
     }
 
     /// Enfileira um deployment e acorda o worker. Idempotente: ignora se o id já
@@ -246,6 +263,17 @@ pub async fn run_worker(state: DeployContext) {
 /// task (guardando o `AbortHandle` em `active_deploys` para o `deploy_abort`) e
 /// aguarda terminar.
 async fn run_one(state: &DeployContext, dep_id: &str) {
+    // Deploy de um lote: se uma dependência dele não terminou bem, ele não roda (nem faz sentido: a
+    // aplicação subiria sem o banco que ela espera). Ver `features::deploy::tree`.
+    let waits = state.deploy_queue.take_waits(dep_id);
+    if !waits.is_empty()
+        && let Some(motivo) =
+            crate::features::deploy::tree::failed_dependency(&state.db, &waits).await
+    {
+        crate::features::deploy::tree::skip_for_dependency(state, dep_id, &motivo).await;
+        return;
+    }
+
     // Marca o serviço como Deploying (deploy_start deixou em Queued).
     if let Ok(Some(dep)) = crate::store::deployments::get(&state.db, dep_id).await {
         let _ = crate::store::services::update_status(

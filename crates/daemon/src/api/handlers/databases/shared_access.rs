@@ -59,6 +59,11 @@ pub async fn grant(state: AppState, server_service_id: String, project_id: Strin
             "o servidor já está na rede deste projeto; use o nome interno dele",
         );
     }
+    // Autorizar o projeto faz todo serviço dele passar a esperar este servidor no deploy e no boot. Se o
+    // servidor (direta ou indiretamente) espera algum serviço desse projeto, não haveria ordem possível.
+    if let Err(resp) = refuse_cycle(&state, &svc.id, &project_id).await {
+        return resp;
+    }
     // Conecta agora, se o servidor estiver no ar. Se não estiver, o acesso fica
     // gravado e o deploy/reconcile conecta depois. Falha de alias em uso aborta
     // antes de gravar o acesso.
@@ -84,4 +89,33 @@ pub async fn revoke(state: AppState, server_service_id: String, project_id: Stri
     }
     let _ = shared_net::disconnect_from_project(&state.db, &state.docker, &svc, &project_id).await;
     RpResponse::SharedAccessList(view(&state, &svc).await)
+}
+
+/// `Err` (já como resposta) se conceder `project_id` acesso a `server_id` criaria um ciclo de dependências.
+async fn refuse_cycle(
+    state: &AppState,
+    server_id: &str,
+    project_id: &str,
+) -> Result<(), RpResponse> {
+    let all = store::services::list_all(&state.db)
+        .await
+        .map_err(|e| RpResponse::err("DatabaseError", e.to_string()))?;
+    let mut access = store::shared_access::all(&state.db)
+        .await
+        .unwrap_or_default();
+    access.push((server_id.to_string(), project_id.to_string()));
+    let implicit = crate::features::deploy::autostart::implicit_edges(&access, &all);
+    let tuples: Vec<(String, String, Vec<String>)> = all
+        .into_iter()
+        .map(|s| (s.id, s.spec.name, s.spec.depends_on))
+        .collect();
+    crate::features::deploy::deps::shared_cycle(&tuples, &implicit, None, &[]).map_err(|nomes| {
+        RpResponse::err(
+            "DependencyCycle",
+            format!(
+                "autorizar este projeto criaria um ciclo de dependências (o servidor espera serviços dele e ele espera o servidor): {}",
+                nomes.join(", ")
+            ),
+        )
+    })
 }

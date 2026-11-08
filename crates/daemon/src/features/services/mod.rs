@@ -32,5 +32,32 @@ pub(crate) async fn check_depends_on(
         .await
         .map_err(|e| shared::Response::err("DatabaseError", e.to_string()))?;
     crate::features::deploy::deps::validate(&others, self_id, &spec.depends_on)
-        .map_err(|e| shared::Response::err(e.code, e.message))
+        .map_err(|e| shared::Response::err(e.code, e.message))?;
+
+    // Um ciclo que passa pelo banco compartilhado (entre projetos) só aparece no grafo completo.
+    let all = crate::store::services::list_all(db)
+        .await
+        .map_err(|e| shared::Response::err("DatabaseError", e.to_string()))?;
+    let access = crate::store::shared_access::all(db)
+        .await
+        .unwrap_or_default();
+    let implicit = crate::features::deploy::autostart::implicit_edges(&access, &all);
+    let tuples: Vec<(String, String, Vec<String>)> = all
+        .into_iter()
+        .map(|s| (s.id, s.spec.name, s.spec.depends_on))
+        .collect();
+    crate::features::deploy::deps::shared_cycle(&tuples, &implicit, self_id, &spec.depends_on)
+        .map_err(|nomes| {
+            shared::Response::err(
+                "DependencyCycle",
+                format!(
+                    "essa dependência cria um ciclo que passa por um banco compartilhado entre: {}",
+                    if nomes.is_empty() {
+                        "(o serviço novo)".to_string()
+                    } else {
+                        nomes.join(", ")
+                    }
+                ),
+            )
+        })
 }

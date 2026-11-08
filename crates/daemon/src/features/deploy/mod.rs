@@ -12,5 +12,6 @@ pub mod recovery;
 pub mod shared_net;
 pub mod start;
 pub mod stop;
+pub mod tree;
 
 pub use context::{ActiveDeploys, DeployContext};

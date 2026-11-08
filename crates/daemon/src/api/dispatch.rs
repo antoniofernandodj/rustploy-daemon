@@ -30,6 +30,10 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         Command::ServiceUpdate { .. } => "ServiceUpdate",
         Command::ServiceDelete { .. } => "ServiceDelete",
         Command::DeployStart { .. } => "DeployStart",
+        Command::DeployWithDependencies { .. } => "DeployWithDependencies",
+        Command::ProjectDeploy { .. } => "ProjectDeploy",
+        Command::DeployWithDependenciesPlan { .. } => "DeployWithDependenciesPlan",
+        Command::ProjectDeployPlan { .. } => "ProjectDeployPlan",
         Command::DeployAbort { .. } => "DeployAbort",
         Command::DeployDelete { .. } => "DeployDelete",
         Command::DeployHistory { .. } => "DeployHistory",
@@ -154,6 +158,10 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         | Command::MigrationDiscard { .. } => handlers::databases::dispatch(state, cmd).await,
         Command::DeployEngineStatus
         | Command::DeployStart { .. }
+        | Command::DeployWithDependencies { .. }
+        | Command::ProjectDeploy { .. }
+        | Command::DeployWithDependenciesPlan { .. }
+        | Command::ProjectDeployPlan { .. }
         | Command::DeployAbort { .. }
         | Command::DeployQueuePromote { .. }
         | Command::DeployQueueReorder { .. }

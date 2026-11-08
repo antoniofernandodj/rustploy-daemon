@@ -7,6 +7,16 @@ use shared::{Event, Response as RpResponse, ServiceSource, ServiceStatus};
 use tracing::{error, info, warn};
 
 pub async fn handle(state: DeployContext, service_id: String) -> RpResponse {
+    handle_with_waits(state, service_id, Vec::new()).await
+}
+
+/// Como [`handle`], para um deploy de **lote**: `waits` são os deployments de que este depende (a
+/// trava de `queue::run_one`). Registrados antes de enfileirar, senão o worker poderia puxá-lo antes.
+pub async fn handle_with_waits(
+    state: DeployContext,
+    service_id: String,
+    waits: Vec<String>,
+) -> RpResponse {
     info!(service_id = %service_id, "deploy_start: solicitação recebida");
 
     let svc = match services::get(&state.db, &service_id).await {
@@ -158,6 +168,7 @@ pub async fn handle(state: DeployContext, service_id: String) -> RpResponse {
     // (`crate::features::deploy::queue::run_worker`) puxa serialmente, marca o serviço
     // como `Deploying` e roda o `DeployExecutor`.
     info!(deployment_id = %dep.id, "deploy_start: enfileirando deploy");
+    state.deploy_queue.set_waits(&dep.id, waits);
     state.deploy_queue.enqueue(dep.id.clone());
     state.bus.publish(Event::DeployQueueChanged);
 

@@ -21,6 +21,50 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         Command::DeployStart { service_id } => {
             crate::features::deploy::start::handle(state.deploy_ctx(), service_id).await
         }
+        Command::DeployWithDependencies {
+            service_id,
+            skip_running,
+        } => {
+            crate::features::deploy::tree::deploy_with_dependencies(
+                state.deploy_ctx(),
+                service_id,
+                skip_running,
+            )
+            .await
+        }
+        Command::ProjectDeploy {
+            project_id,
+            skip_running,
+        } => {
+            crate::features::deploy::tree::project_deploy(
+                state.deploy_ctx(),
+                project_id,
+                skip_running,
+            )
+            .await
+        }
+        Command::DeployWithDependenciesPlan {
+            service_id,
+            skip_running,
+        } => {
+            crate::features::deploy::tree::plan_for_service(
+                state.deploy_ctx(),
+                service_id,
+                skip_running,
+            )
+            .await
+        }
+        Command::ProjectDeployPlan {
+            project_id,
+            skip_running,
+        } => {
+            crate::features::deploy::tree::plan_for_project(
+                state.deploy_ctx(),
+                project_id,
+                skip_running,
+            )
+            .await
+        }
         Command::DeployAbort { deployment_id } => deploy_abort::handle(state, deployment_id).await,
         Command::DeployQueuePromote { deployment_id } => {
             deploy_queue_promote::handle(state, deployment_id).await

@@ -124,8 +124,12 @@ pub fn required_level(cmd: &Command) -> Level {
         | Command::LogsSubscribe { .. }
         | Command::LogsUnsubscribe { .. }
         | Command::MetricsSubscribe { .. }
-        | Command::MetricsUnsubscribe { .. } => Level::Observer,
+        | Command::MetricsUnsubscribe { .. }
+        | Command::DeployWithDependenciesPlan { .. }
+        | Command::ProjectDeployPlan { .. } => Level::Observer,
         Command::DeployStart { .. }
+        | Command::DeployWithDependencies { .. }
+        | Command::ProjectDeploy { .. }
         | Command::DeployAbort { .. }
         | Command::DeployDelete { .. }
         | Command::DeployRollback { .. }

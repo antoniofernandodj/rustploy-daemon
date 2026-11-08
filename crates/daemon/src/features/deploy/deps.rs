@@ -81,6 +81,68 @@ pub struct DepError {
     pub message: String,
 }
 
+/// Ciclo no grafo **completo**: o `depends_on` de todos os serviços (de todos os projetos) mais as arestas
+/// implícitas do banco compartilhado. Devolve os nomes dos serviços envolvidos.
+///
+/// `validate` só enxerga o `depends_on` **do projeto**; um ciclo que passa por um banco compartilhado
+/// (um serviço do projeto A espera o servidor do B, e o servidor do B espera algo do A) só aparece aqui,
+/// e sem esta checagem travaria o deploy e o religamento do boot ("não tem ordem possível").
+///
+/// - `all`: `(id, nome, depends_on)` de **todos** os serviços;
+/// - `implicit`: `(dependente, dependência)` derivadas de `shared_access`;
+/// - `self_id`/`depends_on`: a mudança a validar (`self_id: None` = serviço novo).
+pub fn shared_cycle(
+    all: &[(String, String, Vec<String>)],
+    implicit: &[(String, String)],
+    self_id: Option<&str>,
+    depends_on: &[String],
+) -> Result<(), Vec<String>> {
+    let ids: BTreeSet<&str> = all.iter().map(|(i, _, _)| i.as_str()).collect();
+    let mut graph: Graph = all
+        .iter()
+        .map(|(id, _, deps)| {
+            (
+                id.clone(),
+                deps.iter()
+                    .filter(|d| ids.contains(d.as_str()))
+                    .cloned()
+                    .collect(),
+            )
+        })
+        .collect();
+    let node = self_id.unwrap_or("\u{0}novo").to_string();
+    graph.insert(
+        node,
+        depends_on
+            .iter()
+            .filter(|d| ids.contains(d.as_str()))
+            .cloned()
+            .collect(),
+    );
+    for (dependent, dependency) in implicit {
+        if dependent != dependency
+            && graph.contains_key(dependent)
+            && graph.contains_key(dependency)
+        {
+            graph
+                .entry(dependent.clone())
+                .or_default()
+                .insert(dependency.clone());
+        }
+    }
+    waves(&graph).map(|_| ()).map_err(|cycle| {
+        cycle
+            .iter()
+            .filter(|id| id.as_str() != "\u{0}novo")
+            .map(|id| {
+                all.iter()
+                    .find(|(i, _, _)| i == id)
+                    .map_or_else(|| id.clone(), |(_, n, _)| n.clone())
+            })
+            .collect()
+    })
+}
+
 /// Valida o `depends_on` de um serviço (novo ou editado) contra os do projeto.
 /// - `project_services`: `(id, nome, depends_on atual)` de **todos** os serviços do projeto;
 /// - `self_id`: `None` na criação (o serviço ainda não tem id);
@@ -307,5 +369,34 @@ mod tests {
         let d = direct_dependents(&s, "db");
         assert_eq!(d.len(), 2);
         assert!(direct_dependents(&s, "x").is_empty());
+    }
+
+    #[test]
+    fn ciclo_pelo_banco_compartilhado_so_aparece_no_grafo_completo() {
+        // p1: srv1; p2: srv2. Cada projeto está autorizado ao servidor do outro.
+        let all = vec![
+            ("srv1".to_string(), "srv1".to_string(), vec![]),
+            ("srv2".to_string(), "srv2".to_string(), vec![]),
+        ];
+        let um_so = vec![("srv2".to_string(), "srv1".to_string())];
+        assert!(shared_cycle(&all, &um_so, None, &[]).is_ok());
+        let cruzado = vec![
+            ("srv2".to_string(), "srv1".to_string()),
+            ("srv1".to_string(), "srv2".to_string()),
+        ];
+        let nomes = shared_cycle(&all, &cruzado, None, &[]).unwrap_err();
+        assert_eq!(nomes.len(), 2);
+    }
+
+    #[test]
+    fn dependencia_explicita_que_fecha_ciclo_com_aresta_implicita() {
+        // x depende (explícito) de srv; srv depende (implícito, por shared_access) de x.
+        let all = vec![
+            ("x".to_string(), "x".to_string(), vec![]),
+            ("srv".to_string(), "srv".to_string(), vec![]),
+        ];
+        let implicito = vec![("srv".to_string(), "x".to_string())];
+        assert!(shared_cycle(&all, &implicito, Some("x"), &["srv".to_string()]).is_err());
+        assert!(shared_cycle(&all, &implicito, Some("x"), &[]).is_ok());
     }
 }
