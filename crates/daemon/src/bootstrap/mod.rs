@@ -78,6 +78,17 @@ pub async fn run() -> Result<()> {
         RustployConfig::global_path(),
     )?);
     info!(public_key = %secrets.public_key(), "identidade age dos segredos");
+    // O que a migração SQL → YAML deixou em claro (token de webhook, client_secret) é cifrado
+    // aqui, sem mudar o valor. Sem isso o sync com o git recusa ligar (`PlaintextFound`). Falhar
+    // não impede o boot: o daemon funciona com o legado em claro, só o sync segue bloqueado.
+    match store::infra::seal::seal_plaintext(db.infra(), &secrets) {
+        Ok(0) => {}
+        Ok(n) => info!(
+            valores = n,
+            "infra: valores em claro do legado cifrados no lugar"
+        ),
+        Err(e) => warn!(error = %e, "infra: não consegui cifrar os valores em claro do legado"),
+    }
     if config
         .secrets
         .recovery_recipient

@@ -10,10 +10,12 @@
 //! - [`model`]: o estado tipado e seu layout em arquivos.
 //! - [`repo`]: o estado em memória + `update()` transacional; é o que `Db::infra()` entrega.
 //! - [`migrate`]: a migração única SQL → YAML, que roda no `connect`.
+//! - [`seal`]: cifra no lugar o que a migração deixou em claro (token de webhook, client_secret).
 
 pub mod audit;
 pub mod migrate;
 pub mod model;
 pub mod repo;
+pub mod seal;
 pub mod txn;
 pub mod yaml;
