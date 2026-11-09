@@ -9,7 +9,6 @@ use crate::features::databases::shared_db::{self, Engine};
 use anyhow::{Result, anyhow, bail};
 use shared::Service;
 use std::path::Path;
-use std::process::Stdio;
 
 /// Um banco que sabemos despejar e restaurar.
 #[derive(Debug, Clone, PartialEq)]
@@ -60,7 +59,9 @@ pub fn dump_script(e: Engine) -> &'static str {
 pub fn restore_script(e: Engine) -> &'static str {
     match e {
         Engine::Postgres => {
-            r#"PGPASSWORD="$POSTGRES_PASSWORD" exec pg_restore -U "$POSTGRES_USER" -d "${POSTGRES_DB:-$POSTGRES_USER}" --clean --if-exists --no-owner --no-acl --exit-on-error"#
+            // Recria o database (nada que não esteja no pacote sobra) e restaura. O stdin é o dump:
+            // o `psql -c` não lê dele.
+            r#"export PGPASSWORD="$POSTGRES_PASSWORD"; D="${POSTGRES_DB:-$POSTGRES_USER}"; psql -U "$POSTGRES_USER" -d postgres -q -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS \"$D\" WITH (FORCE)" -c "CREATE DATABASE \"$D\"" || exit 1; exec pg_restore -U "$POSTGRES_USER" -d "$D" --no-owner --no-acl --exit-on-error"#
         }
         // o dump já traz DROP DATABASE / CREATE DATABASE (`--add-drop-database`)
         Engine::MySql | Engine::MariaDb => {
@@ -99,56 +100,34 @@ pub async fn target(docker: &crate::engine::DockerClient, svc: &Service) -> Resu
 
 /// Despeja o database em `out`.
 pub async fn dump_to(t: &DbTarget, out: &Path) -> Result<()> {
-    let file = std::fs::File::create(out)?;
-    let res = crate::engine::cli()
-        .args([
-            "exec",
-            "-i",
-            &t.container,
-            "sh",
-            "-c",
-            dump_script(t.engine),
-        ])
-        .stdin(Stdio::null())
-        .stdout(Stdio::from(file))
-        .stderr(Stdio::piped())
-        .output()
+    let mut cmd = crate::engine::cli();
+    cmd.args([
+        "exec",
+        "-i",
+        &t.container,
+        "sh",
+        "-c",
+        dump_script(t.engine),
+    ]);
+    super::stream::run(cmd, None, Some(out))
         .await
-        .map_err(|e| anyhow!("falha ao executar o motor de containers: {e}"))?;
-    if !res.status.success() {
-        bail!(
-            "o dump do banco falhou: {}",
-            String::from_utf8_lossy(&res.stderr).trim()
-        );
-    }
-    Ok(())
+        .map_err(|e| anyhow!("o dump do banco falhou: {e}"))
 }
 
 /// Restaura o dump `from` no database.
 pub async fn restore_from(t: &DbTarget, from: &Path) -> Result<()> {
-    let file = std::fs::File::open(from)?;
-    let res = crate::engine::cli()
-        .args([
-            "exec",
-            "-i",
-            &t.container,
-            "sh",
-            "-c",
-            restore_script(t.engine),
-        ])
-        .stdin(Stdio::from(file))
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .output()
+    let mut cmd = crate::engine::cli();
+    cmd.args([
+        "exec",
+        "-i",
+        &t.container,
+        "sh",
+        "-c",
+        restore_script(t.engine),
+    ]);
+    super::stream::run(cmd, Some(from), None)
         .await
-        .map_err(|e| anyhow!("falha ao executar o motor de containers: {e}"))?;
-    if !res.status.success() {
-        bail!(
-            "restaurar o banco falhou: {}",
-            String::from_utf8_lossy(&res.stderr).trim()
-        );
-    }
-    Ok(())
+        .map_err(|e| anyhow!("restaurar o banco falhou: {e}"))
 }
 
 /// `tabela|contagem` por linha; `None` para MongoDB (a instância inteira, sem conferência).
@@ -298,5 +277,66 @@ mod tests {
         let d = diff_counts("a|1\nb|2", "a|1\nb|3\nc|0");
         assert_eq!(d.len(), 2, "{d:?}");
         assert!(d[0].contains("b: 2 → 3") && d[1].contains("c: apareceu"));
+    }
+
+    /// Contra um Postgres de verdade (Docker/Podman + rede para puxar a imagem):
+    /// `RP_TEST_SOCKET=/run/user/1000/podman/podman.sock cargo test -p rustploy postgres_dump -- --ignored`
+    #[tokio::test]
+    #[ignore = "precisa de um engine Docker/Podman rodando"]
+    async fn postgres_dump_e_restore_de_verdade() {
+        let socket =
+            std::env::var("RP_TEST_SOCKET").unwrap_or_else(|_| "/var/run/docker.sock".into());
+        crate::engine::DockerClient::connect(&socket).expect("engine");
+        let name = format!(
+            "rp_test_pg_{}",
+            ulid::Ulid::new().to_string().to_lowercase()
+        );
+        async fn run(args: &[&str]) -> std::process::Output {
+            crate::engine::cli().args(args).output().await.unwrap()
+        }
+        let up = run(&[
+            "run",
+            "-d",
+            "--rm",
+            "--name",
+            &name,
+            "-e",
+            "POSTGRES_USER=u",
+            "-e",
+            "POSTGRES_PASSWORD=p",
+            "-e",
+            "POSTGRES_DB=appdb",
+            "docker.io/library/postgres:16-alpine",
+        ])
+        .await;
+        assert!(
+            up.status.success(),
+            "{}",
+            String::from_utf8_lossy(&up.stderr)
+        );
+        let result = async {
+            let t = DbTarget { engine: Engine::Postgres, container: name.clone(), db: "appdb".into() };
+            shared_db::wait_ready(t.engine, &t.container, 60).await?;
+            let sql = |q: &str| {
+                let q = q.to_string();
+                let t = t.clone();
+                async move { shared_db::exec_sh(t.engine, &t.container, r#"exec psql -U u -d appdb -At -v ON_ERROR_STOP=1"#, &q).await }
+            };
+            sql("create table a(id int); insert into a select generate_series(1,5); create table b(x text); insert into b values ('oi');").await?;
+            let before = counts(&t).await?.unwrap_or_default();
+            let d = tempfile::tempdir()?;
+            let f = d.path().join("db.dump");
+            dump_to(&t, &f).await?;
+            assert!(std::fs::metadata(&f)?.len() > 100, "dump vazio");
+            sql("drop table a; delete from b; create table lixo(z int);").await?;
+            restore_from(&t, &f).await?;
+            let after = counts(&t).await?.unwrap_or_default();
+            assert!(diff_counts(&before, &after).is_empty(), "antes {before:?} depois {after:?}");
+            assert!(before.contains("public.a|5") && before.contains("public.b|1"), "{before}");
+            anyhow::Ok(())
+        }
+        .await;
+        let _ = run(&["rm", "-f", &name]).await;
+        result.unwrap();
     }
 }

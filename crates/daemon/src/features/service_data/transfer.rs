@@ -10,7 +10,6 @@ use anyhow::{Result, anyhow, bail};
 use serde::Serialize;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
 use std::sync::{Mutex, OnceLock};
 use tracing::{info, warn};
 
@@ -94,55 +93,33 @@ async fn write_part(source: &Source, from: &Path) -> Result<()> {
 
 /// Grava em `out` o tar do conteúdo do volume.
 async fn tar_out(source: &Source, out: &Path) -> Result<()> {
-    let file = std::fs::File::create(out)?;
-    let res = crate::engine::cli()
-        .args(["run", "--rm", "-v", &mount_arg(source, true), HELPER_IMAGE])
-        .args(["tar", "cf", "-", "-C", "/data", "."])
-        .stdin(Stdio::null())
-        .stdout(Stdio::from(file))
-        .stderr(Stdio::piped())
-        .output()
+    let mut cmd = crate::engine::cli();
+    cmd.args(["run", "--rm", "-v", &mount_arg(source, true), HELPER_IMAGE])
+        .args(["tar", "cf", "-", "-C", "/data", "."]);
+    super::stream::run(cmd, None, Some(out))
         .await
-        .map_err(|e| anyhow!("falha ao executar o motor de containers: {e}"))?;
-    if !res.status.success() {
-        bail!(
-            "copiar o volume falhou: {}",
-            String::from_utf8_lossy(&res.stderr).trim()
-        );
-    }
-    Ok(())
+        .map_err(|e| anyhow!("copiar o volume falhou: {e}"))
 }
 
 /// Esvazia o volume e extrai o tar `from` nele.
 async fn tar_in(source: &Source, from: &Path) -> Result<()> {
-    let file = std::fs::File::open(from)?;
-    let res = crate::engine::cli()
-        .args([
-            "run",
-            "--rm",
-            "-i",
-            "-v",
-            &mount_arg(source, false),
-            HELPER_IMAGE,
-        ])
-        .args([
-            "sh",
-            "-c",
-            "rm -rf /data/* /data/.[!.]* /data/..?* 2>/dev/null; tar xf - -C /data",
-        ])
-        .stdin(Stdio::from(file))
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .output()
+    let mut cmd = crate::engine::cli();
+    cmd.args([
+        "run",
+        "--rm",
+        "-i",
+        "-v",
+        &mount_arg(source, false),
+        HELPER_IMAGE,
+    ])
+    .args([
+        "sh",
+        "-c",
+        "rm -rf /data/* /data/.[!.]* /data/..?* 2>/dev/null; tar xf - -C /data",
+    ]);
+    super::stream::run(cmd, Some(from), None)
         .await
-        .map_err(|e| anyhow!("falha ao executar o motor de containers: {e}"))?;
-    if !res.status.success() {
-        bail!(
-            "gravar no volume falhou: {}",
-            String::from_utf8_lossy(&res.stderr).trim()
-        );
-    }
-    Ok(())
+        .map_err(|e| anyhow!("gravar no volume falhou: {e}"))
 }
 
 // ── parar e religar o serviço ───────────────────────────────────────────────
@@ -515,29 +492,35 @@ mod tests {
         assert!(match_parts(&m(&[]), &found, None).is_err());
     }
 
-    /// Precisa de Docker/Podman e de rede (puxa o busybox): `cargo test -- --ignored volume_`.
+    /// Precisa de Docker/Podman e de rede (puxa o busybox):
+    /// `RP_TEST_SOCKET=/run/user/1000/podman/podman.sock cargo test -p rustploy volume_vai -- --ignored`
+    /// (sem `RP_TEST_SOCKET`, `/var/run/docker.sock`).
     #[tokio::test]
-    #[ignore]
+    #[ignore = "precisa de um engine Docker/Podman rodando"]
     async fn volume_vai_e_volta_pelo_tar() {
+        let socket =
+            std::env::var("RP_TEST_SOCKET").unwrap_or_else(|_| "/var/run/docker.sock".into());
+        // grava o engine (Docker × Podman) que `crate::engine::cli()` usa
+        crate::engine::DockerClient::connect(&socket).expect("engine");
         let name = format!("rp_test_{}", ulid::Ulid::new().to_string().to_lowercase());
         let src = Source::Named(name.clone());
         let d = tempfile::tempdir().unwrap();
-        let run = |args: &[&str]| {
-            let mut c = std::process::Command::new(crate::engine::engine().binary());
-            c.args(args);
-            c.output().unwrap()
-        };
+        async fn run(args: &[&str]) -> std::process::Output {
+            crate::engine::cli().args(args).output().await.unwrap()
+        }
+        let vol = format!("{name}:/data");
         // enche o volume
         let seed = run(&[
             "run",
             "--rm",
             "-v",
-            &format!("{name}:/data"),
+            &vol,
             HELPER_IMAGE,
             "sh",
             "-c",
             "mkdir -p /data/a && echo oi > /data/a/f && echo oculto > /data/.h",
-        ]);
+        ])
+        .await;
         assert!(
             seed.status.success(),
             "{}",
@@ -551,29 +534,29 @@ mod tests {
             "run",
             "--rm",
             "-v",
-            &format!("{name}:/data"),
+            &vol,
             HELPER_IMAGE,
             "sh",
             "-c",
             "rm -rf /data/* /data/.h; echo lixo > /data/outro",
-        ]);
+        ])
+        .await;
         assert!(wipe.status.success());
         tar_in(&src, &t1).await.unwrap();
 
-        let t2 = d.path().join("2.tar");
-        tar_out(&src, &t2).await.unwrap();
         let ls = run(&[
             "run",
             "--rm",
             "-v",
-            &format!("{name}:/data"),
+            &vol,
             HELPER_IMAGE,
             "sh",
             "-c",
-            "cat /data/a/f /data/.h; ls /data | tr '\\n' ' '",
-        ]);
+            "cat /data/a/f /data/.h; ls /data",
+        ])
+        .await;
         let out = String::from_utf8_lossy(&ls.stdout).to_string();
-        let _ = run(&["volume", "rm", "-f", &name]);
+        let _ = run(&["volume", "rm", "-f", &name]).await;
         assert!(out.contains("oi") && out.contains("oculto"), "{out}");
         assert!(
             !out.contains("outro"),

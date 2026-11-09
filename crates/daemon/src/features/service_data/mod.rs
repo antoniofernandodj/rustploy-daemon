@@ -8,6 +8,7 @@
 pub mod database;
 pub mod pack;
 pub mod parts;
+pub mod stream;
 pub mod transfer;
 
 use crate::features::deploy::DeployContext;
