@@ -89,6 +89,16 @@ pub async fn run() -> Result<()> {
         ),
         Err(e) => warn!(error = %e, "infra: não consegui cifrar os valores em claro do legado"),
     }
+    // Os tokens de login dos providers Git ficam no SQLite (fora do YAML e do InfraAudit); em claro,
+    // `usable_token` os recusa e o sync com o git falha com "valor não está no formato ENC[age:…]".
+    match store::infra::seal::seal_provider_tokens(&db, &secrets).await {
+        Ok(0) => {}
+        Ok(n) => info!(
+            valores = n,
+            "git: tokens de login em claro do legado cifrados no lugar"
+        ),
+        Err(e) => warn!(error = %e, "git: não consegui cifrar os tokens de login do legado"),
+    }
     if config
         .secrets
         .recovery_recipient

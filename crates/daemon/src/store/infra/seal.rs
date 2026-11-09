@@ -12,6 +12,7 @@
 use super::model::InfraState;
 use super::repo::Repo;
 use crate::platform::secrets::{SecretsManager, is_enc};
+use crate::store::Db;
 use anyhow::Result;
 
 /// Cifra os tokens de webhook e os `client_secret` de provider que estão em claro. Devolve
@@ -48,6 +49,46 @@ pub fn seal_plaintext(repo: &Repo, secrets: &SecretsManager) -> Result<usize> {
         }
         Ok(sealed)
     })
+}
+
+/// Cifra os tokens de login dos providers Git (`access_token_enc` e `refresh_token_enc`) que estão
+/// em claro. Eles ficam no SQLite (`git_provider_token`), não no YAML, então o `InfraAudit` não
+/// os vê — mas `usable_token` os decifra e, em claro, recusa com "valor não está no formato
+/// ENC[age:…]", o que quebra o sync com o git (e a listagem de repositórios). O valor não muda.
+/// Devolve quantos tokens foram cifrados.
+pub async fn seal_provider_tokens(db: &Db, secrets: &SecretsManager) -> Result<usize> {
+    let rows: Vec<(String, Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT provider_id, access_token_enc, refresh_token_enc FROM git_provider_token",
+    )
+    .fetch_all(db.pool())
+    .await?;
+    let seal = |v: Option<String>| -> Result<(Option<String>, usize)> {
+        match v {
+            Some(v) if !is_enc(&v) => Ok((Some(secrets.encrypt(&v)?), 1)),
+            other => Ok((other, 0)),
+        }
+    };
+    let mut sealed = 0;
+    let mut tx = db.pool().begin().await?;
+    for (id, access, refresh) in rows {
+        let (access, a) = seal(access)?;
+        let (refresh, r) = seal(refresh)?;
+        if a + r == 0 {
+            continue;
+        }
+        sqlx::query(
+            "UPDATE git_provider_token SET access_token_enc = ?, refresh_token_enc = ? \
+             WHERE provider_id = ?",
+        )
+        .bind(access)
+        .bind(refresh)
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+        sealed += a + r;
+    }
+    tx.commit().await?;
+    Ok(sealed)
 }
 
 fn count_plaintext(st: &InfraState) -> usize {
@@ -181,5 +222,59 @@ mod tests {
         let st = db.infra().snapshot();
         assert!(st.providers[0].oauth_client_secret_enc.is_none());
         assert!(st.projects[0].services[0].webhook_token.is_none());
+    }
+
+    async fn token_row(db: &Db, id: &str) -> (Option<String>, Option<String>) {
+        sqlx::query_as(
+            "SELECT access_token_enc, refresh_token_enc FROM git_provider_token WHERE provider_id = ?",
+        )
+        .bind(id)
+        .fetch_one(db.pool())
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn cifra_os_tokens_de_login_do_provider_sem_mudar_o_valor() {
+        let db = Arc::new(Db::memory_for_test().await);
+        let secrets = SecretsManager::new(db.clone()).unwrap();
+        let ja_cifrado = secrets.encrypt("pat-ok").unwrap();
+        for (id, a, r) in [
+            ("gp1", Some("gho_abc"), Some("ghr_def")),
+            ("gp2", Some("so-acesso"), None),
+            ("gp3", Some(ja_cifrado.as_str()), None),
+        ] {
+            sqlx::query("INSERT INTO git_provider_token VALUES (?, ?, ?)")
+                .bind(id)
+                .bind(a)
+                .bind(r)
+                .execute(db.pool())
+                .await
+                .unwrap();
+        }
+
+        assert_eq!(seal_provider_tokens(&db, &secrets).await.unwrap(), 3);
+
+        let (a, r) = token_row(&db, "gp1").await;
+        assert_eq!(secrets.decrypt(&a.unwrap()).unwrap(), "gho_abc");
+        assert_eq!(secrets.decrypt(&r.unwrap()).unwrap(), "ghr_def");
+        let (a, r) = token_row(&db, "gp2").await;
+        assert_eq!(secrets.decrypt(&a.unwrap()).unwrap(), "so-acesso");
+        assert!(r.is_none(), "sem refresh continua sem refresh");
+        // o que já estava cifrado não é regravado
+        assert_eq!(
+            token_row(&db, "gp3").await.0.as_deref(),
+            Some(ja_cifrado.as_str())
+        );
+
+        // idempotente
+        assert_eq!(seal_provider_tokens(&db, &secrets).await.unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn sem_tokens_de_provider_nao_faz_nada() {
+        let db = Arc::new(Db::memory_for_test().await);
+        let secrets = SecretsManager::new(db.clone()).unwrap();
+        assert_eq!(seal_provider_tokens(&db, &secrets).await.unwrap(), 0);
     }
 }
