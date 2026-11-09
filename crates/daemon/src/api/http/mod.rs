@@ -281,6 +281,32 @@ async fn handle(
         }
     };
 
+    // Dados do serviço (volumes): `GET .../data/export?stop=` e `POST .../data/import?confirm=`.
+    // Um pacote leva tudo o que um agente nunca pode ver: só a chave mestra, em nenhum nível de visitante.
+    {
+        let path = req.uri().path().to_owned();
+        if let Some(rest) = path.strip_prefix("/api/services/")
+            && let Some((id, op)) = rest.split_once("/data/")
+            && !id.is_empty()
+            && !id.contains('/')
+            && matches!(
+                (req.method(), op),
+                (&Method::GET, "export") | (&Method::POST, "import")
+            )
+        {
+            if let Caller::Visitor(l) = caller {
+                return Ok(visitor_forbidden(
+                    "exportar ou importar os dados de um serviço",
+                    l,
+                ));
+            }
+            let query = req.uri().query().unwrap_or("").to_owned();
+            return Ok(
+                service_data_transfer(req, state, id.to_string(), op == "export", &query).await,
+            );
+        }
+    }
+
     // Upload de zip: `POST /api/services/<id>/archive`. Tratado antes do `match`
     // porque o handler **move** `req` (lê o corpo binário), o que colide com o
     // borrow que o discriminante do `match` mantém sobre `req.uri().path()`.
@@ -438,6 +464,101 @@ fn json_value(status: StatusCode, body: &serde_json::Value) -> Response<ApiBody>
             .boxed(),
         )
         .unwrap()
+}
+
+fn query_flag(query: &str, key: &str) -> bool {
+    query
+        .split('&')
+        .filter_map(|kv| kv.split_once('='))
+        .any(|(k, v)| k == key && matches!(v, "1" | "true"))
+}
+
+/// Exporta (GET, em stream) ou importa (POST, o corpo vai para um arquivo temporário, sem ficar
+/// inteiro na memória) os dados de um serviço. Ver `features::service_data`.
+async fn service_data_transfer(
+    req: Request<Incoming>,
+    state: AppState,
+    service_id: String,
+    export: bool,
+    query: &str,
+) -> Response<ApiBody> {
+    use crate::features::service_data::transfer;
+    let ctx = state.deploy_ctx();
+    let fail = |status: StatusCode, e: anyhow::Error| text(status, e.to_string());
+    if export {
+        let stop = query_flag(query, "stop");
+        // `encrypt=` ausente = o padrão do servidor (cifra se há chave de recuperação)
+        let encrypt = query
+            .split('&')
+            .filter_map(|kv| kv.split_once('='))
+            .find(|(k, _)| *k == "encrypt")
+            .map(|(_, v)| matches!(v, "1" | "true"));
+        let done = match transfer::export(ctx, &service_id, stop, encrypt).await {
+            Ok(d) => d,
+            Err(e) => return fail(StatusCode::BAD_REQUEST, e),
+        };
+        let file = match tokio::fs::File::open(&done.file).await {
+            Ok(f) => f,
+            Err(e) => return fail(StatusCode::INTERNAL_SERVER_ERROR, e.into()),
+        };
+        let len = file.metadata().await.map(|m| m.len()).unwrap_or(0);
+        let filename = done.filename.clone();
+        // A pasta de trabalho vive enquanto o stream vive. Erro de leitura encerra o corpo: o
+        // cliente recebe um pacote truncado, que a importação recusa pelo SHA-256.
+        let stream = futures::stream::unfold((file, done), |(mut f, d)| async move {
+            use tokio::io::AsyncReadExt;
+            let mut buf = vec![0u8; 256 * 1024];
+            match f.read(&mut buf).await {
+                Ok(0) | Err(_) => None,
+                Ok(n) => {
+                    buf.truncate(n);
+                    Some((Ok::<_, Infallible>(Frame::data(Bytes::from(buf))), (f, d)))
+                }
+            }
+        });
+        return Response::builder()
+            .status(StatusCode::OK)
+            .header(hyper::header::CONTENT_TYPE, "application/octet-stream")
+            .header(hyper::header::CONTENT_LENGTH, len)
+            .header(
+                hyper::header::CONTENT_DISPOSITION,
+                format!("attachment; filename=\"{filename}\""),
+            )
+            .body(StreamBody::new(stream).boxed())
+            .unwrap();
+    }
+
+    // Importar: grava o corpo em arquivo, depois confere e (com `confirm`) aplica.
+    let work = match transfer::Workdir::create(&ctx) {
+        Ok(w) => w,
+        Err(e) => return fail(StatusCode::INTERNAL_SERVER_ERROR, e),
+    };
+    let file = work.path().join("upload.rpdata");
+    {
+        use tokio::io::AsyncWriteExt;
+        let mut out = match tokio::fs::File::create(&file).await {
+            Ok(f) => f,
+            Err(e) => return fail(StatusCode::INTERNAL_SERVER_ERROR, e.into()),
+        };
+        let mut body = req.into_body();
+        while let Some(frame) = body.frame().await {
+            let Ok(frame) = frame else {
+                return text(StatusCode::BAD_REQUEST, "erro ao ler o corpo");
+            };
+            if let Some(data) = frame.data_ref()
+                && let Err(e) = out.write_all(data).await
+            {
+                return fail(StatusCode::INTERNAL_SERVER_ERROR, e.into());
+            }
+        }
+        if let Err(e) = out.flush().await {
+            return fail(StatusCode::INTERNAL_SERVER_ERROR, e.into());
+        }
+    }
+    match transfer::import(ctx, &service_id, &file, query_flag(query, "confirm")).await {
+        Ok(report) => json_ok(serde_json::to_vec(&report).unwrap_or_default()),
+        Err(e) => fail(StatusCode::BAD_REQUEST, e),
+    }
 }
 
 async fn service_archive_upload(

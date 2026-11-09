@@ -1,6 +1,20 @@
 // locales/en.js — catálogo em inglês, por texto de origem (ver i18n.js).
 // Chave = o texto como está escrito no HTML/JS; `{{n}}` = o n-ésimo `${{}}` de um template. Sem entrada, o texto aparece como foi escrito.
 export default {
+  "Cifrar o pacote (age). Só abre num servidor com a mesma identidade ou a chave de recuperação.": "Encrypt the package (age). It only opens on a server with the same identity or the recovery key.",
+  "Dados": "Data",
+  "DADOS DO SERVIÇO": "SERVICE DATA",
+  "Leva os dados deste serviço para um arquivo (.rpdata) e os traz de volta em outro serviço do mesmo tipo, aqui ou em outro servidor. A configuração do serviço vai à parte (Exportar serviço). Exige a chave mestra.": "Takes this service's data to a file (.rpdata) and brings it back into another service of the same kind, here or on another server. The service configuration goes separately (Export service). Requires the master key.",
+  "Parar o serviço durante a cópia (recomendado)": "Stop the service during the copy (recommended)",
+  "Exportar dados": "Export data",
+  "IMPORTAR DADOS": "IMPORT DATA",
+  "Conferir pacote": "Check package",
+  "VAI SUBSTITUIR": "WILL REPLACE",
+  "Substituir os dados": "Replace the data",
+  "IMPORTADO": "IMPORTED",
+  "pacote de dados baixado": "data package downloaded",
+  "dados importados": "data imported",
+  "Isto SUBSTITUI os dados atuais do serviço. Continuar?": "This REPLACES the service's current data. Continue?",
   "Carregar anteriores": "Load earlier",
   "— outro container: ": "— other container: ",
   "BAIXAR A INFRA": "DOWNLOAD THE INFRA",

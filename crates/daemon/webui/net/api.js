@@ -145,6 +145,44 @@ export class Api {
     return rpcResponse;
   }
 
+  /** `GET /api/services/<id>/data/export` — baixa o pacote `.rpdata` (binário). Só a chave mestra.
+   * Retorna { ok: true, blob, filename } ou { ok: false, error }. */
+  async downloadServiceData(serviceId, stop, encrypt) {
+    try {
+      const headers = {};
+      if (this.token) headers["Authorization"] = "Bearer " + this.token;
+      const httpResponse = await fetchTimeout(
+        `${this.baseUrl}/api/services/${serviceId}/data/export?stop=${stop ? "true" : "false"}&encrypt=${encrypt ? "true" : "false"}`,
+        { method: "GET", headers },
+        UPLOAD_TIMEOUT_MS,
+      );
+      if (!httpResponse.ok) return { ok: false, error: (await httpResponse.text()) || "HTTP " + httpResponse.status };
+      const disposition = httpResponse.headers.get("Content-Disposition") || "";
+      const filename = (/filename="([^"]+)"/.exec(disposition) || [])[1] || "dados.rpdata";
+      return { ok: true, blob: await httpResponse.blob(), filename };
+    } catch (error) {
+      return { ok: false, error: error && error.message ? error.message : t("falha de rede") };
+    }
+  }
+
+  /** `POST /api/services/<id>/data/import` — envia o pacote. Sem `confirm` só confere (devolve o que seria
+   * substituído); com `confirm` aplica. Retorna { ok: true, value: { parts, applied, checks, … } }. */
+  async uploadServiceData(serviceId, file, confirm) {
+    try {
+      const headers = { "Content-Type": "application/octet-stream" };
+      if (this.token) headers["Authorization"] = "Bearer " + this.token;
+      const httpResponse = await fetchTimeout(
+        `${this.baseUrl}/api/services/${serviceId}/data/import?confirm=${confirm ? "true" : "false"}`,
+        { method: "POST", headers, body: file },
+        UPLOAD_TIMEOUT_MS,
+      );
+      if (!httpResponse.ok) return { ok: false, error: (await httpResponse.text()) || "HTTP " + httpResponse.status };
+      return { ok: true, value: await httpResponse.json() };
+    } catch (error) {
+      return { ok: false, error: error && error.message ? error.message : t("falha de rede") };
+    }
+  }
+
   /** `POST /api/services/<id>/archive` — corpo binário cru (não é RPC JSON).
    * Porta de net/api.luau::upload_archive; aqui o `File` já traz os bytes
    * (sem o round-trip por base64 que o Luau precisa pro `fetch("file://…")`). */

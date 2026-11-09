@@ -114,6 +114,18 @@ impl SecretsManager {
         age_format::encrypt(plaintext, &recipients)
     }
 
+    /// Cifra um arquivo para a identidade do servidor (e a de recuperação, se houver).
+    pub fn encrypt_file(&self, src: &std::path::Path, dst: &std::path::Path) -> Result<()> {
+        let mut recipients = vec![self.identity.to_public()];
+        recipients.extend(self.recovery.clone());
+        age_format::encrypt_file(src, dst, &recipients)
+    }
+
+    /// Decifra um arquivo age com a identidade deste servidor.
+    pub fn decrypt_file(&self, src: &std::path::Path, dst: &std::path::Path) -> Result<()> {
+        age_format::decrypt_file(src, dst, &self.identity)
+    }
+
     /// Decifra um valor `ENC[age:…]` com a identidade deste servidor.
     pub fn decrypt(&self, value: &str) -> Result<String> {
         if !is_enc(value) {

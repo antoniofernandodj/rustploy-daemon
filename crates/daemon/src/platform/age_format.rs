@@ -54,6 +54,60 @@ pub fn decrypt(value: &str, identity: &x25519::Identity) -> Result<String> {
     Ok(String::from_utf8(out)?)
 }
 
+/// Cabeçalho de todo arquivo age (binário).
+#[allow(dead_code)] // o rustploy-cli inclui este arquivo por #[path] e não cifra arquivos
+const AGE_MAGIC: &[u8] = b"age-encryption.org/v1";
+
+/// O arquivo `path` é um arquivo age? (Só olha os primeiros bytes.)
+#[allow(dead_code)] // idem: só o daemon usa
+pub fn is_age_file(path: &std::path::Path) -> bool {
+    let mut head = vec![0u8; AGE_MAGIC.len()];
+    std::fs::File::open(path)
+        .and_then(|mut f| f.read_exact(&mut head))
+        .is_ok()
+        && head == AGE_MAGIC
+}
+
+/// Cifra o arquivo `src` em `dst` (em fluxo: não carrega o arquivo na memória).
+#[allow(dead_code)] // idem: só o daemon usa
+pub fn encrypt_file(
+    src: &std::path::Path,
+    dst: &std::path::Path,
+    recipients: &[x25519::Recipient],
+) -> Result<()> {
+    let boxed: Vec<Box<dyn Recipient + Send>> = recipients
+        .iter()
+        .cloned()
+        .map(|r| Box::new(r) as Box<dyn Recipient + Send>)
+        .collect();
+    let encryptor = age::Encryptor::with_recipients(boxed)
+        .ok_or_else(|| anyhow!("nenhum destinatário para cifrar"))?;
+    let mut input = std::fs::File::open(src)?;
+    let mut writer = encryptor.wrap_output(std::fs::File::create(dst)?)?;
+    std::io::copy(&mut input, &mut writer)?;
+    writer.finish()?;
+    Ok(())
+}
+
+/// Decifra o arquivo age `src` em `dst` com a identidade (em fluxo).
+#[allow(dead_code)] // idem: só o daemon usa
+pub fn decrypt_file(
+    src: &std::path::Path,
+    dst: &std::path::Path,
+    identity: &x25519::Identity,
+) -> Result<()> {
+    let decryptor = match Decryptor::new(std::fs::File::open(src)?)? {
+        Decryptor::Recipients(d) => d,
+        _ => bail!("arquivo cifrado com passphrase onde se esperava uma identidade"),
+    };
+    let mut reader = decryptor
+        .decrypt(std::iter::once(identity as &dyn age::Identity))
+        .map_err(|e| anyhow!("não consegui decifrar com a identidade deste servidor: {e}"))?;
+    let mut out = std::fs::File::create(dst)?;
+    std::io::copy(&mut reader, &mut out)?;
+    Ok(())
+}
+
 pub fn parse_identity(text: &str) -> Result<x25519::Identity> {
     text.trim()
         .parse::<x25519::Identity>()
@@ -78,6 +132,23 @@ mod tests {
         assert_eq!(decrypt(&c, &a).unwrap(), "segredo");
         assert_eq!(decrypt(&c, &b).unwrap(), "segredo");
         assert!(decrypt(&c, &x25519::Identity::generate()).is_err());
+    }
+
+    #[test]
+    fn arquivo_ida_e_volta_so_com_a_identidade_certa() {
+        let d = tempfile::tempdir().unwrap();
+        let (src, enc, dec) = (
+            d.path().join("a"),
+            d.path().join("a.age"),
+            d.path().join("b"),
+        );
+        std::fs::write(&src, vec![7u8; 300_000]).unwrap();
+        let (a, b) = (x25519::Identity::generate(), x25519::Identity::generate());
+        encrypt_file(&src, &enc, &[a.to_public()]).unwrap();
+        assert!(is_age_file(&enc) && !is_age_file(&src));
+        assert!(decrypt_file(&enc, &dec, &b).is_err());
+        decrypt_file(&enc, &dec, &a).unwrap();
+        assert_eq!(std::fs::read(&dec).unwrap(), std::fs::read(&src).unwrap());
     }
 
     #[test]

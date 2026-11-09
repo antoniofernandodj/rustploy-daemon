@@ -237,7 +237,7 @@ pub fn image_version(image: &str) -> Option<(u32, u32)> {
     Some((major, minor))
 }
 
-fn source_image(svc: &Service) -> Option<String> {
+pub fn source_image(svc: &Service) -> Option<String> {
     let shared::ServiceSource::Compose(c) = &svc.spec.source else {
         return None;
     };

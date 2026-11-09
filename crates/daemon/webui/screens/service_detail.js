@@ -103,6 +103,83 @@ document.addEventListener("alpine:init", () => {
       }
     },
 
+    // ── Dados do serviço (aba Dados) ─────────────────────────────────────────
+    // Exportar/importar os volumes (ou o dump do banco) do serviço. Os bytes vão pelas rotas
+    // `/data/export` e `/data/import` (só a chave mestra); o plano é o `ServiceDataPlan`.
+    dataPlan: null,
+    dataBusy: false,
+    dataStop: true,
+    dataEncrypt: false,
+    dataFile: null,
+    dataPreview: null,
+    dataResult: null,
+    async loadData() {
+      this.dataPlan = null;
+      this.dataPreview = null;
+      this.dataResult = null;
+      this.dataFile = null;
+      const serviceId = this.store.selectedServiceId;
+      if (!serviceId) return;
+      const planResponse = await this.store.api.rpcChecked({ ServiceDataPlan: { service_id: serviceId } });
+      if (planResponse.ok && planResponse.value?.ServiceDataPlan) {
+        this.dataPlan = planResponse.value.ServiceDataPlan;
+        this.dataEncrypt = !!this.dataPlan.encrypt_default;
+      }
+      else this.store.toastError(planResponse.error || t("resposta inesperada do daemon"));
+    },
+    get dataIsDatabase() {
+      return (this.dataPlan?.parts || []).some((part) => part.kind === "database");
+    },
+    async exportData() {
+      this.dataBusy = true;
+      this.dataResult = null;
+      const downloadResponse = await this.store.api.downloadServiceData(this.store.selectedServiceId, this.dataStop && !this.dataIsDatabase, this.dataEncrypt);
+      this.dataBusy = false;
+      if (!downloadResponse.ok) {
+        this.store.toastError(downloadResponse.error);
+        return;
+      }
+      const url = URL.createObjectURL(downloadResponse.blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = downloadResponse.filename;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      this.store.toastOk(t("pacote de dados baixado"));
+    },
+    pickDataFile(event) {
+      this.dataFile = event.target.files?.[0] || null;
+      this.dataPreview = null;
+      this.dataResult = null;
+    },
+    // 1º passo: o daemon confere o pacote e diz o que será substituído (nada muda).
+    async previewImportData() {
+      if (!this.dataFile) return;
+      this.dataBusy = true;
+      const previewResponse = await this.store.api.uploadServiceData(this.store.selectedServiceId, this.dataFile, false);
+      this.dataBusy = false;
+      if (!previewResponse.ok) {
+        this.store.toastError(previewResponse.error);
+        return;
+      }
+      this.dataPreview = previewResponse.value;
+    },
+    // 2º passo: confirmado, envia de novo e aplica.
+    async confirmImportData() {
+      if (!this.dataFile || !this.dataPreview) return;
+      if (!confirm(t("Isto SUBSTITUI os dados atuais do serviço. Continuar?"))) return;
+      this.dataBusy = true;
+      const importResponse = await this.store.api.uploadServiceData(this.store.selectedServiceId, this.dataFile, true);
+      this.dataBusy = false;
+      if (!importResponse.ok) {
+        this.store.toastError(importResponse.error);
+        return;
+      }
+      this.dataResult = importResponse.value;
+      this.dataPreview = null;
+      this.store.toastOk(t("dados importados"));
+    },
+
     // ── Migração para banco compartilhado (aba Migrar) ─────────────────────
     // Porta de handlers/services.luau (load_migration_state, mig_*). O daemon
     // roda os passos em segundo plano; enquanto `Running`, repolla a cada 3 s.

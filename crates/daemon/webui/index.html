@@ -2838,6 +2838,8 @@
                       @click="store.setServiceTab('deployments')">Deployments</button>
               <button type="button" x-show="canMigrate" :class="store.serviceTab === 'migrar' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'"
                       @click="store.setServiceTab('migrar')" x-t>Migrar</button>
+              <button type="button" :class="store.serviceTab === 'dados' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'"
+                      @click="loadData(); store.setServiceTab('dados')" x-t>Dados</button>
               <button type="button" x-show="isShared" :class="store.serviceTab === 'databases' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'"
                       @click="store.setServiceTab('databases')">Databases</button>
               <button type="button" :class="store.serviceTab === 'healthcheck' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'"
@@ -3229,6 +3231,57 @@
                   Nenhum domínio configurado.
                 </text>
               </column>
+            </column>
+
+            <!-- Dados -->
+            <column class="form-panel" x-show="store.serviceTab === 'dados'">
+              <text class="u-label-cap" x-t>DADOS DO SERVIÇO</text>
+              <text class="u-muted" x-t>Leva os dados deste serviço para um arquivo (.rpdata) e os traz de volta em outro serviço do mesmo tipo, aqui ou em outro servidor. A configuração do serviço vai à parte (Exportar serviço). Exige a chave mestra.</text>
+              <template x-if="dataPlan">
+                <column>
+                  <text class="u-muted" x-show="dataPlan.blocked" x-text="dataPlan.blocked"></text>
+                  <column class="kv-list" x-show="!dataPlan.blocked">
+                    <template x-for="dataPart in dataPlan.parts" :key="dataPart.name">
+                      <row class="kv-list__row">
+                        <text class="env__key" x-text="dataPart.kind === 'database' ? 'BD' : 'VOL'"></text>
+                        <text class="kv-list__val kv-list__val--compact" x-text="dataPart.name"></text>
+                      </row>
+                    </template>
+                  </column>
+                  <template x-for="dataNote in dataPlan.notes" :key="dataNote"><text class="u-muted" x-text="dataNote"></text></template>
+                  <row class="env__add" x-show="!dataPlan.blocked && dataPlan.running && !dataIsDatabase">
+                    <input type="checkbox" x-model="dataStop" />
+                    <text x-t>Parar o serviço durante a cópia (recomendado)</text>
+                  </row>
+                  <row class="env__add" x-show="!dataPlan.blocked">
+                    <input type="checkbox" x-model="dataEncrypt" />
+                    <text x-t>Cifrar o pacote (age). Só abre num servidor com a mesma identidade ou a chave de recuperação.</text>
+                  </row>
+                  <row class="env__add" x-show="!dataPlan.blocked">
+                    <button class="btn btn--primary" type="button" :disabled="dataBusy" @click="exportData()" x-t>Exportar dados</button>
+                  </row>
+                </column>
+              </template>
+              <text class="u-label-cap" x-t>IMPORTAR DADOS</text>
+              <input class="field__input" type="file" accept=".rpdata,.age" @change="pickDataFile($event)" />
+              <row class="env__add">
+                <button class="btn btn--ghost" type="button" :disabled="dataBusy || !dataFile" @click="previewImportData()" x-t>Conferir pacote</button>
+              </row>
+              <template x-if="dataPreview">
+                <column>
+                  <text class="u-label-cap" x-t>VAI SUBSTITUIR</text>
+                  <template x-for="previewPart in dataPreview.parts" :key="previewPart"><text class="kv-list__val kv-list__val--compact" x-text="previewPart"></text></template>
+                  <row class="env__add">
+                    <button class="btn btn--primary" type="button" :disabled="dataBusy" @click="confirmImportData()" x-t>Substituir os dados</button>
+                  </row>
+                </column>
+              </template>
+              <template x-if="dataResult">
+                <column>
+                  <text class="u-label-cap" x-t>IMPORTADO</text>
+                  <template x-for="dataCheck in dataResult.checks" :key="dataCheck"><text class="u-muted" x-text="dataCheck"></text></template>
+                </column>
+              </template>
             </column>
 
             <!-- Deployments -->

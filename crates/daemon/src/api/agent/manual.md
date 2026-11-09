@@ -199,6 +199,9 @@ Comandos, por área (campos entre chaves):
   os secrets como `ENC[age:…]`; recusado enquanto houver valor em claro — veja `InfraAudit`) ·
   `ServiceExportPlan{service_id}` · `ServiceExport{service_id, include_values, project_env_keys}` ·
   `ServiceImport(…)`
+- **Dados do serviço (volumes)**: `ServiceDataPlan{service_id}` (só metadados: quais volumes
+  e se está no ar). Exportar e importar os bytes (`GET /api/services/<id>/data/export?stop=`,
+  `POST /api/services/<id>/data/import?confirm=`) é **só da chave mestra**, nunca do agente.
 - **Jobs one-shot**: `JobListAll` · `JobList{project_id}` · `JobCreate{…}` ·
   `JobUpdate{…}` · `JobDelete{id}` · `JobRunNow{id}` · `JobRunCancel{job_run_id}` ·
   `JobRunHistory{job_id, limit}` · `GetJobLogs{job_run_id}` ·

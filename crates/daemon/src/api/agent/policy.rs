@@ -80,6 +80,7 @@ pub fn required_level(cmd: &Command) -> Level {
         | Command::DeployEngineStatus
         | Command::ProjectList
         | Command::ServiceExportPlan { .. }
+        | Command::ServiceDataPlan { .. }
         | Command::ServiceList { .. }
         | Command::ServiceGet { .. }
         | Command::DeployHistory { .. }

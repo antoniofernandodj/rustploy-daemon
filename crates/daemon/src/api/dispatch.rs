@@ -25,6 +25,7 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         Command::ServiceCreate(_) => "ServiceCreate",
         Command::ServiceExportPlan { .. } => "ServiceExportPlan",
         Command::ServiceExport { .. } => "ServiceExport",
+        Command::ServiceDataPlan { .. } => "ServiceDataPlan",
         Command::ServiceImport(_) => "ServiceImport",
         Command::ServiceList { .. } => "ServiceList",
         Command::ServiceGet { .. } => "ServiceGet",
@@ -201,6 +202,9 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         Command::ServiceExportPlan { .. }
         | Command::ServiceExport { .. }
         | Command::ServiceImport(_) => handlers::iac::dispatch(state, cmd).await,
+        Command::ServiceDataPlan { service_id } => {
+            crate::features::service_data::plan(state.deploy_ctx(), service_id.clone()).await
+        }
         Command::JobCreate { .. }
         | Command::JobUpdate { .. }
         | Command::JobDelete { .. }
