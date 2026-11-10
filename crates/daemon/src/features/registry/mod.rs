@@ -8,4 +8,5 @@ pub mod http;
 pub mod internal_token;
 pub mod name;
 pub mod push_deploy;
+pub mod retention;
 pub mod storage;

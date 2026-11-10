@@ -56,6 +56,28 @@ document.addEventListener("alpine:init", () => {
       return registryStatus.enabled ? t`ativo em ${this.registryHost}` : "desabilitado";
     },
 
+    // ── Retenção de tags ─────────────────────────────────────────────────
+    // O formulário parte do que o daemon tem gravado, uma vez só (depois é do usuário), para o
+    // snapshot de 2 s não sobrescrever o que está sendo digitado.
+    retentionEnabled: false,
+    retentionKeepLast: "10",
+    retentionLoaded: false,
+    syncRetention() {
+      const retention = this.store.snap?.registry_status?.retention;
+      if (!retention || this.retentionLoaded) return;
+      this.retentionEnabled = !!retention.enabled;
+      this.retentionKeepLast = String(retention.keep_last ?? 10);
+      this.retentionLoaded = true;
+    },
+    async saveRetention() {
+      const keepLast = Math.floor(Number(this.retentionKeepLast));
+      if (!Number.isFinite(keepLast) || keepLast < 1) {
+        this.store.toastWarn(t("informe quantas tags manter (mínimo 1)"));
+        return;
+      }
+      await this.store.registryRetentionSet({ enabled: this.retentionEnabled, keep_last: keepLast });
+    },
+
     // ── Modal "novo token" ───────────────────────────────────────────────
     showTokenModal: false,
     newRegistryTokenStep: "form", // "form" | "reveal"

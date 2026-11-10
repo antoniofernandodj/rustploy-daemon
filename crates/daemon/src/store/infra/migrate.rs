@@ -52,6 +52,8 @@ pub async fn read_sql(db: &Db) -> Result<(InfraState, Vec<String>)> {
         acme_email: daemon_settings::sql_get(db, "acme_email").await?,
         registry_domain: daemon_settings::sql_get(db, "registry_domain").await?,
         docker_cleanup_config,
+        // chave nova: não existia no SQL, então nada a migrar
+        registry_retention: None,
     };
 
     // --- providers --------------------------------------------------------------------------

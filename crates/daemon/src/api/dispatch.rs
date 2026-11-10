@@ -132,6 +132,7 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         Command::RegistryTagDelete { .. } => "RegistryTagDelete",
         Command::RegistryRepoDelete { .. } => "RegistryRepoDelete",
         Command::RegistryGc => "RegistryGc",
+        Command::RegistryRetentionSet { .. } => "RegistryRetentionSet",
         Command::RegistryTokenCreate { .. } => "RegistryTokenCreate",
         Command::RegistryTokenList => "RegistryTokenList",
         Command::RegistryTokenRevoke { .. } => "RegistryTokenRevoke",
@@ -242,6 +243,7 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         | Command::RegistryTagDelete { .. }
         | Command::RegistryRepoDelete { .. }
         | Command::RegistryGc
+        | Command::RegistryRetentionSet { .. }
         | Command::RegistryTokenCreate { .. }
         | Command::RegistryTokenList
         | Command::RegistryTokenRevoke { .. } => handlers::registry::dispatch(state, cmd).await,

@@ -5,27 +5,29 @@ use anyhow::Result;
 
 use super::Db;
 
-/// As três chaves de **configuração** moram no YAML de infra (`settings.yml`); as demais
+/// As quatro chaves de **configuração** moram no YAML de infra (`settings.yml`); as demais
 /// (`*_last_run`, `job_warm:*`, `service_warm:*`…) são runtime e continuam no SQL.
 /// Plano: `docs/plano-backup-estado-em-git.md`, R2.1.
 fn is_infra_key(key: &str) -> bool {
     matches!(
         key,
-        KEY_ACME_EMAIL | KEY_REGISTRY_DOMAIN | KEY_DOCKER_CLEANUP_CONFIG
+        KEY_ACME_EMAIL | KEY_REGISTRY_DOMAIN | KEY_DOCKER_CLEANUP_CONFIG | KEY_REGISTRY_RETENTION
     )
 }
 
 pub async fn get(db: &Db, key: &str) -> Result<Option<String>> {
     if is_infra_key(key) {
         let st = db.infra().snapshot();
+        // o valor que não era JSON válido foi guardado como texto: devolve como veio
+        let as_text = |v: &serde_json::Value| match v {
+            serde_json::Value::String(s) => s.clone(),
+            other => other.to_string(),
+        };
         return Ok(match key {
             KEY_ACME_EMAIL => st.settings.acme_email.clone(),
             KEY_REGISTRY_DOMAIN => st.settings.registry_domain.clone(),
-            _ => st.settings.docker_cleanup_config.as_ref().map(|v| match v {
-                // o valor que não era JSON válido foi guardado como texto: devolve como veio
-                serde_json::Value::String(s) => s.clone(),
-                other => other.to_string(),
-            }),
+            KEY_REGISTRY_RETENTION => st.settings.registry_retention.as_ref().map(as_text),
+            _ => st.settings.docker_cleanup_config.as_ref().map(as_text),
         });
     }
     sql_get(db, key).await
@@ -38,6 +40,12 @@ pub async fn set(db: &Db, key: &str, value: &str) -> Result<()> {
             match key {
                 KEY_ACME_EMAIL => st.settings.acme_email = Some(value),
                 KEY_REGISTRY_DOMAIN => st.settings.registry_domain = Some(value),
+                KEY_REGISTRY_RETENTION => {
+                    st.settings.registry_retention = Some(
+                        serde_json::from_str(&value)
+                            .unwrap_or(serde_json::Value::String(value.clone())),
+                    )
+                }
                 _ => {
                     st.settings.docker_cleanup_config = Some(
                         serde_json::from_str(&value)
@@ -65,6 +73,7 @@ pub async fn delete(db: &Db, key: &str) -> Result<()> {
             match key {
                 KEY_ACME_EMAIL => st.settings.acme_email = None,
                 KEY_REGISTRY_DOMAIN => st.settings.registry_domain = None,
+                KEY_REGISTRY_RETENTION => st.settings.registry_retention = None,
                 _ => st.settings.docker_cleanup_config = None,
             }
             Ok(())
@@ -96,6 +105,8 @@ pub const KEY_ACME_EMAIL: &str = "acme_email";
 pub const KEY_REGISTRY_DOMAIN: &str = "registry_domain";
 /// JSON de `shared::DockerCleanupConfig` — ver `crate::features::maintenance`.
 pub const KEY_DOCKER_CLEANUP_CONFIG: &str = "docker_cleanup_config";
+/// JSON de `shared::RegistryRetentionConfig` — ver `crate::features::registry::retention`.
+pub const KEY_REGISTRY_RETENTION: &str = "registry_retention";
 /// JSON de `shared::DockerCleanupLastRun`, ausente até a primeira execução.
 pub const KEY_DOCKER_CLEANUP_LAST_RUN: &str = "docker_cleanup_last_run";
 /// JSON de `BuildCachePrune`: quando o cache de build foi limpo pela última vez
@@ -145,5 +156,35 @@ mod tests {
 
         delete(&db, KEY_ACME_EMAIL).await.unwrap();
         assert!(get(&db, KEY_ACME_EMAIL).await.unwrap().is_none());
+    }
+
+    /// A retenção de tags é configuração: vai para o YAML de infra (entra no sync com o git).
+    #[tokio::test]
+    async fn retencao_do_registry_mora_no_yaml() {
+        let dir =
+            std::env::temp_dir().join(format!("rustploy_test_ret_yaml_{}", ulid::Ulid::new()));
+        let db = crate::store::connect(&dir).await.unwrap();
+        set(
+            &db,
+            KEY_REGISTRY_RETENTION,
+            r#"{"enabled":true,"keep_last":7}"#,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            get(&db, KEY_REGISTRY_RETENTION).await.unwrap().as_deref(),
+            Some(r#"{"enabled":true,"keep_last":7}"#)
+        );
+        assert!(
+            sql_get(&db, KEY_REGISTRY_RETENTION)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        let yaml =
+            String::from_utf8(db.infra().tree().read("settings.yml").unwrap().unwrap()).unwrap();
+        assert!(yaml.contains("registry_retention") && yaml.contains("keep_last"));
+        delete(&db, KEY_REGISTRY_RETENTION).await.unwrap();
+        assert!(get(&db, KEY_REGISTRY_RETENTION).await.unwrap().is_none());
     }
 }

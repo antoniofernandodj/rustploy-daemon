@@ -1218,6 +1218,11 @@ document.addEventListener("alpine:init", () => {
         this.toastError("erro: " + registryGcResponse.error);
       }
     },
+    async registryRetentionSet(config) {
+      const registryRetentionSetResponse = await this.api.rpcChecked({ RegistryRetentionSet: { config } });
+      this.toastResult(registryRetentionSetResponse, t("retenção salva"));
+      if (registryRetentionSetResponse.ok) await this.refreshNow();
+    },
     async registryRemoveToken(name) {
       const registryTokenRevokeResponse = await this.api.rpcChecked({ RegistryTokenRevoke: { name } });
       this.toastResult(registryTokenRevokeResponse, t`token ${name} revogado`);

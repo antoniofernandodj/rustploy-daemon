@@ -353,6 +353,20 @@ pub async fn delete_manifest(db: &Db, repo_id: &str, digest: &str) -> Result<boo
     Ok(true)
 }
 
+/// Remove **só a linha da tag**, sem tocar no manifest nem em outras tags que apontem para o mesmo
+/// digest (ao contrário de [`delete_manifest`], que é por digest, como o DELETE da OCI spec). O
+/// manifest que ficar sem tag sai no próximo GC. Usada pela retenção, que não pode levar junto uma
+/// tag que ainda vale (um rebuild idêntico dá o mesmo digest a duas tags).
+pub async fn delete_tag_only(db: &Db, repo_id: &str, tag: &str) -> Result<bool> {
+    let n = sqlx::query("DELETE FROM registry_tags WHERE repo_id = ? AND tag = ?")
+        .bind(repo_id)
+        .bind(tag)
+        .execute(db.pool())
+        .await?
+        .rows_affected();
+    Ok(n > 0)
+}
+
 /// Fase de metadados do GC (`crate::features::registry::gc`), numa transação só:
 ///
 /// 1. apaga manifests **pendurados** — sem nenhuma tag no próprio repo e não

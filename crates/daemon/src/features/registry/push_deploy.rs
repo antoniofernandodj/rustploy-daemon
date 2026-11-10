@@ -31,6 +31,44 @@ fn repo_and_tag(image: &str, is_embedded: bool) -> Option<(String, String)> {
     }
 }
 
+/// O domínio público do registry: o configurado em `[registry]`, ou o gravado pela UI
+/// (`registry_domain`), que prevalece quando não está vazio.
+pub async fn embedded_domain(db: &crate::store::Db) -> Option<String> {
+    let mut domain = crate::platform::config::RustployConfig::global()
+        .registry
+        .domain
+        .clone();
+    if let Ok(Some(d)) =
+        crate::store::daemon_settings::get(db, crate::store::daemon_settings::KEY_REGISTRY_DOMAIN)
+            .await
+        && !d.trim().is_empty()
+    {
+        domain = Some(d);
+    }
+    domain
+}
+
+/// Pares `(repo, tag)` do registry embutido que algum serviço de fonte `Registry` usa, com ou sem
+/// push-to-deploy. É o que a retenção de tags nunca apaga.
+pub fn tags_in_use(
+    services: &[Service],
+    port: u16,
+    domain: Option<&str>,
+) -> std::collections::HashSet<(String, String)> {
+    services
+        .iter()
+        .filter_map(|s| match &s.spec.source {
+            ServiceSource::Registry { image } => {
+                let embedded = crate::features::deploy::executor::is_embedded_registry_image(
+                    image, port, domain,
+                );
+                repo_and_tag(image, embedded)
+            }
+            _ => None,
+        })
+        .collect()
+}
+
 /// Os serviços que devem redeployar com este push: opt-in ligado, fonte `Registry` apontando para
 /// o registry embutido e casando repo **e** tag.
 pub fn services_to_redeploy<'a>(
@@ -74,19 +112,7 @@ pub async fn run(state: AppState, mut rx: UnboundedReceiver<PushedTag>) {
         let port = crate::platform::config::RustployConfig::global()
             .registry
             .port;
-        let mut domain = crate::platform::config::RustployConfig::global()
-            .registry
-            .domain
-            .clone();
-        if let Ok(Some(d)) = crate::store::daemon_settings::get(
-            &state.db,
-            crate::store::daemon_settings::KEY_REGISTRY_DOMAIN,
-        )
-        .await
-            && !d.trim().is_empty()
-        {
-            domain = Some(d);
-        }
+        let domain = embedded_domain(&state.db).await;
 
         for svc in services_to_redeploy(&services, &push, port, domain.as_deref()) {
             info!(
@@ -187,5 +213,22 @@ mod tests {
         );
         assert_eq!(repo_and_tag("127.0.0.1:5100/api@sha256:aa", true), None);
         assert_eq!(repo_and_tag("docker.io/library/nginx:1", false), None);
+    }
+
+    /// A retenção nunca apaga o que um serviço usa: pega Registry embutido, com ou sem
+    /// push-to-deploy, e ignora imagem de fora do registry.
+    #[test]
+    fn tags_em_uso_inclui_so_o_registry_embutido_com_ou_sem_auto_deploy() {
+        let servicos = vec![
+            svc("127.0.0.1:5100/app:staging", true),
+            svc("127.0.0.1:5100/app:v1", false),
+            svc("127.0.0.1:5100/solto", false),
+            svc("nginx:latest", false),
+        ];
+        let em_uso = tags_in_use(&servicos, 5100, None);
+        assert!(em_uso.contains(&("app".to_string(), "staging".to_string())));
+        assert!(em_uso.contains(&("app".to_string(), "v1".to_string())));
+        assert!(em_uso.contains(&("solto".to_string(), "latest".to_string())));
+        assert_eq!(em_uso.len(), 3);
     }
 }

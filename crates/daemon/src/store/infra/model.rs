@@ -47,6 +47,9 @@ pub struct SettingsInfra {
     /// O JSON de `docker_cleanup_config`, como valor estruturado (fica legível no YAML).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub docker_cleanup_config: Option<serde_json::Value>,
+    /// O JSON de `shared::RegistryRetentionConfig` (retenção de tags do registry embutido).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub registry_retention: Option<serde_json::Value>,
 }
 
 /// Config de um git provider. `oauth_client_secret_enc` já é cifrado hoje; os tokens de login
@@ -488,6 +491,7 @@ mod tests {
                 acme_email: Some("a@b.c".into()),
                 registry_domain: None,
                 docker_cleanup_config: Some(serde_json::json!({"enabled": true, "days": 7})),
+                registry_retention: Some(serde_json::json!({"enabled": true, "keep_last": 5})),
             },
             providers: vec![],
             projects: vec![project("p2", "Segundo App"), project("p1", "Primeiro")],

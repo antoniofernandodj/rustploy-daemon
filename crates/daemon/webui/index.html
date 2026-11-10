@@ -872,6 +872,17 @@
                     @click="store.registryGc()" x-t>Executar GC</button>
           </row>
 
+          <!-- Retenção de tags: antes de cada GC, mantém só as últimas N tags de cada repositório. -->
+          <column class="form-panel" x-show="store.snap?.registry_status?.enabled" x-effect="syncRetention()" style="gap:8px">
+            <row class="env__head">
+              <label class="check-row"><input type="checkbox" x-model="retentionEnabled" /><span x-t>Manter só as últimas tags de cada repositório</span></label>
+              <text class="u-label-cap" x-t>TAGS A MANTER</text>
+              <input class="field__input" type="text" x-model="retentionKeepLast" placeholder="10" style="max-width:80px" />
+              <button class="btn btn--primary" type="button" @click="saveRetention()" x-t>Save</button>
+            </row>
+            <text class="u-muted" x-t>Roda antes de cada GC (o diário ou o botão). Nunca apaga a tag que um serviço usa. As imagens que ficarem sem tag saem do disco no GC.</text>
+          </column>
+
           <!-- Lista de repositórios -->
           <column x-show="!store.registrySelectedRepo">
             <row class="table__head">

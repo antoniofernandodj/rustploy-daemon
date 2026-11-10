@@ -237,7 +237,11 @@ Comandos, por área (campos entre chaves):
 - **Registry embutido**: `RegistryStatus` · `RegistryRepoList` ·
   `RegistryTagList{repo}` · `RegistryTagDelete{repo, tag}` ·
   `RegistryRepoDelete{repo}` · `RegistryGc` · `RegistryTokenList` ·
-  `RegistryTokenCreate{name, scope}` · `RegistryTokenRevoke{name}`
+  `RegistryTokenCreate{name, scope}` · `RegistryTokenRevoke{name}` ·
+  `RegistryRetentionSet{config:{enabled, keep_last}}` (retenção de tags: antes de cada
+  GC apaga as tags mais antigas de cada repositório e deixa as `keep_last` mais recentes;
+  nunca apaga a tag que um serviço usa; desligada por padrão; a leitura vem em
+  `RegistryStatus.retention`)
 - **Provedores git**: `GitProviderList` · `GitProviderCreate{…}` ·
   `GitProviderDelete{id}` · `GitRepoList{provider_id}` ·
   `GitBranchList{provider_id, repo_full_name}`

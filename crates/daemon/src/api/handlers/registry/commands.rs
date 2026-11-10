@@ -24,6 +24,7 @@ pub async fn status(state: AppState) -> RpResponse {
             repo_count: s.repo_count,
             blob_count: s.blob_count,
             storage_bytes: s.storage_bytes,
+            retention: crate::features::registry::retention::load(&state.db).await,
         }),
         Err(e) => RpResponse::err("DatabaseError", e.to_string()),
     }
@@ -105,12 +106,28 @@ pub async fn gc(state: AppState) -> RpResponse {
             "registry desabilitado na config ([registry] enabled = true)",
         );
     };
+    // a retenção (se ligada) solta as tags velhas antes; o GC leva o que ficar órfão
+    if let Err(e) = crate::features::registry::retention::apply_configured(&state.db).await {
+        return RpResponse::err("RetentionError", e.to_string());
+    }
     match crate::features::registry::gc::run(&state.db, &storage).await {
         Ok(r) => RpResponse::RegistryGcResult {
             blobs_removed: r.blobs_removed,
             bytes_freed: r.bytes_freed,
         },
         Err(e) => RpResponse::err("GcError", e.to_string()),
+    }
+}
+
+pub async fn retention_set(
+    state: AppState,
+    mut config: shared::RegistryRetentionConfig,
+) -> RpResponse {
+    // zero apagaria tudo o que não está em uso: grava o mínimo que vale
+    config.keep_last = config.effective_keep_last();
+    match crate::features::registry::retention::save(&state.db, &config).await {
+        Ok(()) => RpResponse::Ok,
+        Err(e) => RpResponse::err("DatabaseError", e.to_string()),
     }
 }
 

@@ -1,6 +1,11 @@
 // locales/en.js — catálogo em inglês, por texto de origem (ver i18n.js).
 // Chave = o texto como está escrito no HTML/JS; `{{n}}` = o n-ésimo `${{}}` de um template. Sem entrada, o texto aparece como foi escrito.
 export default {
+  "retenção salva": "retention saved",
+  "informe quantas tags manter (mínimo 1)": "enter how many tags to keep (minimum 1)",
+  "Roda antes de cada GC (o diário ou o botão). Nunca apaga a tag que um serviço usa. As imagens que ficarem sem tag saem do disco no GC.": "Runs before every GC (the daily one or the button). Never deletes a tag that a service uses. Images left without a tag are freed from disk by the GC.",
+  "TAGS A MANTER": "TAGS TO KEEP",
+  "Manter só as últimas tags de cada repositório": "Keep only the latest tags of each repository",
   "Imagem": "Image",
   "escolha o repositório e a tag": "pick a repository and a tag",
   "erro ao listar tags": "error listing tags",

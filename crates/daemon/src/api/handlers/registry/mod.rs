@@ -13,6 +13,7 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         Command::RegistryTagDelete { repo, tag } => commands::tag_delete(state, repo, tag).await,
         Command::RegistryRepoDelete { repo } => commands::repo_delete(state, repo).await,
         Command::RegistryGc => commands::gc(state).await,
+        Command::RegistryRetentionSet { config } => commands::retention_set(state, config).await,
         Command::RegistryTokenCreate { name, scope } => {
             commands::token_create(state, name, scope).await
         }

@@ -204,6 +204,7 @@ pub fn required_level(cmd: &Command) -> Level {
         | Command::RegistryTagDelete { .. }
         | Command::RegistryRepoDelete { .. }
         | Command::RegistryGc
+        | Command::RegistryRetentionSet { .. }
         | Command::RegistryTokenCreate { .. }
         | Command::RegistryTokenRevoke { .. } => Level::Admin,
     }

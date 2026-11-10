@@ -82,6 +82,10 @@ pub fn spawn_stateful(
             loop {
                 interval.tick().await;
                 if let Some(storage) = &gc_storage {
+                    // retenção de tags (se ligada) antes do GC, para o GC levar o que ficar órfão
+                    if let Err(e) = registry::retention::apply_configured(&db2).await {
+                        tracing::warn!(error = %e, "registry: falha na retenção de tags");
+                    }
                     match registry::gc::run(&db2, storage).await {
                         Ok(r) if r.blobs_removed > 0 => tracing::info!(
                             blobs = r.blobs_removed,
