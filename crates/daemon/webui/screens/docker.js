@@ -70,7 +70,7 @@ document.addEventListener("alpine:init", () => {
       this.retentionLoaded = true;
     },
     async saveRetention() {
-      const keepLast = Math.floor(Number(this.retentionKeepLast));
+      const keepLast = Math.min(1000, Math.floor(Number(this.retentionKeepLast)));
       if (!Number.isFinite(keepLast) || keepLast < 1) {
         this.store.toastWarn(t("informe quantas tags manter (mínimo 1)"));
         return;
