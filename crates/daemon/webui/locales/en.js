@@ -1,6 +1,12 @@
 // locales/en.js — catálogo em inglês, por texto de origem (ver i18n.js).
 // Chave = o texto como está escrito no HTML/JS; `{{n}}` = o n-ésimo `${{}}` de um template. Sem entrada, o texto aparece como foi escrito.
 export default {
+  "Imagem": "Image",
+  "escolha o repositório e a tag": "pick a repository and a tag",
+  "erro ao listar tags": "error listing tags",
+  "carregando tags…": "loading tags…",
+  "selecione a tag": "select the tag",
+  "Escolha uma imagem já publicada no registry embutido deste servidor. Com o push-to-deploy ligado, cada novo push dessa tag redeploya o serviço.": "Pick an image already published to this server's embedded registry. With push-to-deploy on, every new push of that tag redeploys the service.",
   "Cifrar o pacote (age). Só abre num servidor com a mesma identidade ou a chave de recuperação.": "Encrypt the package (age). It only opens on a server with the same identity or the recovery key.",
   "Dados": "Data",
   "DADOS DO SERVIÇO": "SERVICE DATA",

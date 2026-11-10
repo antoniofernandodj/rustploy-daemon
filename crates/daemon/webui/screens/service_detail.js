@@ -402,7 +402,11 @@ document.addEventListener("alpine:init", () => {
     composeOriginal: "",
     // Renomear (aba General). Porta de save_service_name em handlers/services.luau.
     editName: "",
-    providerTab: "git", // "git" | "gitea" | "zip"
+    providerTab: "git", // "git" | "gitea" | "registry" | "zip"
+    registryPickerRepo: "",
+    registryPickerTag: "",
+    registryPickerTags: [],
+    registryPickerMessage: "",
     serviceFormRepoUrl: "",
     serviceFormBranch: "",
     serviceFormGeneralPort: "",
@@ -468,7 +472,59 @@ document.addEventListener("alpine:init", () => {
         this.serviceFormContextPath = ".";
         this.serviceFormBuildStage = "";
         this.giteaProviderId = "";
-        this.providerTab = "git";
+        this.providerTab = spec.source.Registry ? "registry" : "git";
+        if (spec.source.Registry) await this.registryPickerLoad(spec.source.Registry.image || "");
+      }
+    },
+
+    /** Repositórios do registry embutido (snapshot), sem filtro de busca. */
+    get registryPickerRepos() {
+      return this.store.snap?.registry_repos || [];
+    },
+
+    /** Loopback do registry embutido: o endereço que o deploy reconhece sem DNS/ACME. */
+    get registryLoopback() {
+      const registryStatus = this.store.snap?.registry_status;
+      return `127.0.0.1:${registryStatus ? registryStatus.port : 5100}`;
+    },
+
+    /** Imagem montada pela seleção; vazia até haver repositório E tag. */
+    get registryPickerImage() {
+      if (!this.registryPickerRepo || !this.registryPickerTag) return "";
+      return `${this.registryLoopback}/${this.registryPickerRepo}:${this.registryPickerTag}`;
+    },
+
+    /** Porta de registry_picker_load (GUI): separa `host/repo:tag`; o host é descartado. */
+    async registryPickerLoad(image) {
+      let rest = image;
+      const slash = rest.indexOf("/");
+      if (slash > 0) {
+        const first = rest.slice(0, slash);
+        if (/[.:]/.test(first) || first === "localhost") rest = rest.slice(slash + 1);
+      }
+      const match = rest.match(/^(.+):([^:/]+)$/);
+      this.registryPickerRepo = match ? match[1] : rest;
+      this.registryPickerTag = match ? match[2] : "";
+      await this.registryPickerFetchTags();
+    },
+
+    async registryPickerRepoPick(repo) {
+      this.registryPickerRepo = repo || "";
+      this.registryPickerTag = "";
+      await this.registryPickerFetchTags();
+    },
+
+    async registryPickerFetchTags() {
+      this.registryPickerTags = [];
+      this.registryPickerMessage = "";
+      if (!this.registryPickerRepo) return;
+      this.registryPickerMessage = t("carregando tags…");
+      const registryTagListResponse = await this.store.api.rpc({ RegistryTagList: { repo: this.registryPickerRepo } });
+      this.registryPickerMessage = "";
+      if (registryTagListResponse.ok && registryTagListResponse.value?.RegistryTags) {
+        this.registryPickerTags = registryTagListResponse.value.RegistryTags;
+      } else {
+        this.store.toastError(t("erro ao listar tags"));
       }
     },
 
@@ -582,7 +638,14 @@ document.addEventListener("alpine:init", () => {
           provider_id: this.giteaProviderId || null,
         },
       };
-      if (spec.source.Git || looksLikeGitUrl(repo)) {
+      if (this.providerTab === "registry") {
+        const image = this.registryPickerImage;
+        if (!image) {
+          this.store.toastWarn(t("escolha o repositório e a tag"));
+          return;
+        }
+        spec.source = { Registry: { image } };
+      } else if (spec.source.Git || looksLikeGitUrl(repo)) {
         spec.source = git;
       } else {
         spec.source = { Registry: { image: repo } };

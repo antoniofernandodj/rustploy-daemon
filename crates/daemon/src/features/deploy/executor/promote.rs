@@ -170,6 +170,19 @@ impl DeployExecutor {
             }
         }
 
+        // Garante a rota depois do rename. O `SwappingIn` já a registrou, mas
+        // qualquer coisa que a tenha removido durante o drain (reconcile,
+        // edição do serviço) deixaria o domínio em 404 com o deploy Live. A
+        // chamada é idempotente.
+        if !svc.spec.domain_routes().is_empty() {
+            let net = self.network_name(&svc.spec.project_id).await?;
+            let ips =
+                containers::live_replica_ips(&self.docker.inner, &svc.id, &net, replicas).await;
+            if !ips.is_empty() {
+                self.ingress.register_domains(&svc.spec, &ips, &svc.id);
+            }
+        }
+
         info!(
             deployment_id = %dep.id,
             service_id = %svc.id,

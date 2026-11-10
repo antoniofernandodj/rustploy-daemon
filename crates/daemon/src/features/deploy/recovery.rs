@@ -218,7 +218,22 @@ pub async fn reconcile(
         }
     };
 
+    // Serviços com deploy em andamento ficam de fora: entre o `SwappingIn`
+    // (para o container antigo) e o `Promoting` (renomeia o novo para live) não
+    // há container live com IP, e o reconcile leria isso como "serviço caído" —
+    // marcaria Stopped e apagaria a rota que o deploy acabou de registrar.
+    let in_flight = match services_with_deploy_in_flight(db).await {
+        Ok(v) => v,
+        Err(e) => {
+            warn!(error = %e, "reconcile: falha ao listar deploys em andamento");
+            return;
+        }
+    };
+
     for svc in services {
+        if in_flight.contains(&svc.id) {
+            continue;
+        }
         // Servidor de banco compartilhado: re-liga às redes autorizadas (a
         // recriação do container, ou o restart do dockerd, desfaz). Barato
         // quando já está tudo conectado.
@@ -421,5 +436,37 @@ async fn restore_routes(
             // regra da porta volta sozinha junto com a rota.
             crate::features::ingress::firewall::ensure_allowed_bg(host_port);
         }
+    }
+}
+
+/// IDs dos serviços que têm um deploy fora de estado terminal.
+async fn services_with_deploy_in_flight(
+    db: &Db,
+) -> anyhow::Result<std::collections::HashSet<String>> {
+    Ok(crate::store::deployments::get_non_terminal(db)
+        .await?
+        .into_iter()
+        .map(|d| d.service_id)
+        .collect())
+}
+
+#[cfg(test)]
+mod in_flight_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn deploy_pendente_marca_o_servico_em_andamento() {
+        let db = Db::memory_for_test().await;
+        assert!(
+            services_with_deploy_in_flight(&db)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        crate::store::deployments::create(&db, "svc_x", "img:1")
+            .await
+            .unwrap();
+        let s = services_with_deploy_in_flight(&db).await.unwrap();
+        assert!(s.contains("svc_x"));
     }
 }

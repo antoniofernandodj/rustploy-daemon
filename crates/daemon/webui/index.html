@@ -2898,6 +2898,8 @@
                             @click="setProviderTab('git')">Git</button>
                     <button type="button" :class="providerTab === 'gitea' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'"
                             @click="setProviderTab('gitea')">Gitea/GitHub</button>
+                    <button type="button" :class="providerTab === 'registry' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'"
+                            @click="setProviderTab('registry')">Registry</button>
                     <button type="button" :class="providerTab === 'zip' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'"
                             @click="setProviderTab('zip')">Zip</button>
                   </row>
@@ -2979,6 +2981,39 @@
                       </row>
                       <row class="env__add">
                         <button class="btn btn--primary" type="button" @click="uploadArchive()" x-t>Enviar zip</button>
+                      </row>
+                    </column>
+                  </template>
+
+                  <!-- Sub-aba Registry: select de repositório/tag do registry embutido. -->
+                  <template x-if="providerTab === 'registry'">
+                    <column style="gap:8px">
+                      <text class="u-muted" x-t>Escolha uma imagem já publicada no registry embutido deste servidor. Com o push-to-deploy ligado, cada novo push dessa tag redeploya o serviço.</text>
+                      <text class="u-muted" x-show="registryPickerMessage" x-text="registryPickerMessage"></text>
+                      <text class="u-label-cap" x-t>REPOSITÓRIO</text>
+                      <select class="field__input" x-model="registryPickerRepo" @change="registryPickerRepoPick($event.target.value)">
+                        <option value="" x-t>selecione o repositório</option>
+                        <template x-for="registryRepo in registryPickerRepos" :key="registryRepo.name">
+                          <option :value="registryRepo.name" x-text="registryRepo.name"></option>
+                        </template>
+                      </select>
+                      <text class="u-label-cap">TAG</text>
+                      <select class="field__input" x-model="registryPickerTag">
+                        <option value="" x-t>selecione a tag</option>
+                        <template x-for="registryTag in registryPickerTags" :key="registryTag.tag">
+                          <option :value="registryTag.tag" x-text="registryTag.tag"></option>
+                        </template>
+                      </select>
+                      <text class="u-label-cap" x-t>SELEÇÃO ATUAL</text>
+                      <row class="kv-list__row">
+                        <text class="kv-list__key" x-t>Imagem</text>
+                        <text class="kv-list__val kv-list__val--compact" x-text="registryPickerImage"></text>
+                      </row>
+                      <text class="u-label-cap">PORT</text>
+                      <input class="field__input" type="text" x-model="serviceFormGeneralPort" placeholder="80" />
+                      <row class="env__add">
+                        <button class="btn btn--primary" type="button" @click="saveSource()" x-t>Save</button>
+                        <text class="u-muted" x-text="store.serviceMessage"></text>
                       </row>
                     </column>
                   </template>
