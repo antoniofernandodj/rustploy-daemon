@@ -691,11 +691,19 @@ export function deployDetailRows(info) {
 }
 
 /** Deploy Engine: "Executando agora". */
+/** A fila tem deploys, execuções de job e aquecimentos de job; os dois últimos levam um selo antes do nome. */
+function itemLabel(info) {
+  if (info.kind === "Job") return `[${t`job`}] ${info.service_name}`;
+  if (info.kind === "Warm") return `[${t`aquecimento`}] ${info.service_name}`;
+  return info.service_name;
+}
+
 export function deployEngineActiveRows(active) {
   return (active || []).map((info) => {
     const [label, kind] = stateLabelKind(info.state);
     return {
-      service: info.service_name,
+      service: itemLabel(info),
+      isDeploy: !info.kind || info.kind === "Deploy",
       project: info.project_name,
       stateLabel: label,
       stateKind: kind,
@@ -715,7 +723,7 @@ export function deployEngineQueuedRows(queued) {
     deploymentId: info.deployment_id,
     pos: index + 1,
     serviceId: info.service_id,
-    service: info.service_name,
+    service: itemLabel(info),
     project: info.project_name,
   }));
 }
@@ -1067,7 +1075,7 @@ export function deployEngineRecentRows(recent) {
     return {
       icon,
       serviceId: info.service_id,
-      service: info.service_name,
+      service: itemLabel(info),
       project: info.project_name,
       stateLabel: label,
       stateKind: kind,

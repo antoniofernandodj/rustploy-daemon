@@ -12,6 +12,7 @@
 
 use crate::engine::compose::{self, ComposeImages};
 use crate::engine::networks;
+use crate::features::deploy::queue::{QueueTaskFn, QueueTaskInfo};
 use crate::features::jobs::JobsContext;
 use crate::features::maintenance::prune::{self as docker_prune, BuildCachePrune};
 use crate::store::{self, Db, daemon_settings};
@@ -19,7 +20,7 @@ use anyhow::{Result, anyhow};
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use shared::{Event, Job, JobWarmStatus};
+use shared::{Event, Job, JobWarmStatus, QueueItemKind};
 use std::time::Duration;
 use tracing::{info, warn};
 
@@ -222,32 +223,61 @@ pub async fn request(state: &JobsContext, job: Job, force: bool) -> Result<bool,
         error: None,
     });
 
-    let state = state.clone();
-    tokio::spawn(async move {
-        let permit = state.deploy_queue.acquire_job_slot().await;
-        let outcome = tokio::time::timeout(WARM_TIMEOUT, warm_once(&state, &job, force)).await;
-        drop(permit);
-        let result = outcome.unwrap_or_else(|_| {
-            Err(anyhow!(
-                "o aquecimento passou de {}s e foi interrompido",
-                WARM_TIMEOUT.as_secs()
-            ))
-        });
-
-        if let Ok(mut jobs) = state.warming_jobs.lock() {
-            jobs.remove(&job.id);
-        }
-        if let Err(e) = &result {
-            warn!(job_id = %job.id, error = %e, "job_warm: falha ao aquecer");
-        }
-        state.bus.publish(Event::JobWarmChanged {
-            job_id: job.id.clone(),
-            warming: false,
-            success: Some(result.is_ok()),
-            error: result.err().map(|e| e.to_string()),
-        });
-    });
+    // O aquecimento é um item da fila de deploys (kind `Warm`): espera a vez na ordem da fila,
+    // aparece em "Na fila" e "Executando" e pode ser tirado da fila. Não tem linha de histórico.
+    let queue = state.deploy_queue.clone();
+    let id = format!("jwarm_{}", ulid::Ulid::new());
+    let info = QueueTaskInfo {
+        kind: QueueItemKind::Warm,
+        job_id: job.id.clone(),
+    };
+    let run: QueueTaskFn = {
+        let (state, job) = (state.clone(), job.clone());
+        Box::new(move || {
+            Box::pin(async move {
+                let outcome =
+                    tokio::time::timeout(WARM_TIMEOUT, warm_once(&state, &job, force)).await;
+                let result = outcome.unwrap_or_else(|_| {
+                    Err(anyhow!(
+                        "o aquecimento passou de {}s e foi interrompido",
+                        WARM_TIMEOUT.as_secs()
+                    ))
+                });
+                finish(&state, &job, result);
+            })
+        })
+    };
+    let on_cancel: QueueTaskFn = {
+        let (state, job) = (state.clone(), job);
+        Box::new(move || {
+            Box::pin(async move {
+                finish(
+                    &state,
+                    &job,
+                    Err(anyhow!("o aquecimento foi tirado da fila antes de começar")),
+                );
+            })
+        })
+    };
+    queue.enqueue_task(id, info, run, on_cancel);
+    state.bus.publish(Event::DeployQueueChanged);
     Ok(false)
+}
+
+/// Fecha um aquecimento (feito, falho ou tirado da fila): solta o "aquecendo" e avisa as telas.
+fn finish(state: &JobsContext, job: &Job, result: Result<()>) {
+    if let Ok(mut jobs) = state.warming_jobs.lock() {
+        jobs.remove(&job.id);
+    }
+    if let Err(e) = &result {
+        warn!(job_id = %job.id, error = %e, "job_warm: falha ao aquecer");
+    }
+    state.bus.publish(Event::JobWarmChanged {
+        job_id: job.id.clone(),
+        warming: false,
+        success: Some(result.is_ok()),
+        error: result.err().map(|e| e.to_string()),
+    });
 }
 
 /// Aquece com a vaga já em mãos. Reconfere o status primeiro: uma execução pode

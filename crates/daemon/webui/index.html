@@ -423,7 +423,7 @@
                     <text class="u-muted table__col-dur" x-text="activeDeployment.total"></text>
                     <text class="u-muted table__col-start" x-text="activeDeployment.phase"></text>
                     <row class="table__col-act">
-                      <button class="btn btn--sm-ghost" type="button" @click="openDetail(activeDeployment.serviceId)" x-t>Detalhes</button>
+                      <button class="btn btn--sm-ghost" type="button" x-show="activeDeployment.isDeploy" @click="openDetail(activeDeployment.serviceId)" x-t>Detalhes</button>
                       <button class="env__del" type="button" title="Abortar deploy" x-t:title
                               @click="store.queueCancel(activeDeployment.deploymentId)">■</button>
                     </row>

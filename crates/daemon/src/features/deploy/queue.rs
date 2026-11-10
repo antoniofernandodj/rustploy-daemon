@@ -18,18 +18,45 @@
 //! (`recovery::recover`). O worker roda o executor como *task* (não `await`
 //! inline) para preservar o mecanismo de abort via `active_deploys`.
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
-use shared::{Event, ServiceStatus};
+use shared::{Event, QueueItemKind, ServiceStatus};
 use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore, watch};
 use tracing::{info, warn};
 
 use crate::features::deploy::DeployContext;
 use crate::features::deploy::executor::DeployExecutor;
 
+/// O que roda quando a vez de um item que **não é deploy** chega (a execução de um job ou o
+/// aquecimento de um). Fica na fila até o worker o puxar; o worker o executa com a vaga em mãos.
+pub type QueueTaskFuture = Pin<Box<dyn Future<Output = ()> + Send>>;
+pub type QueueTaskFn = Box<dyn FnOnce() -> QueueTaskFuture + Send>;
+
+/// Para a tela (Deploy Engine) saber o que é cada item que não é deploy.
+#[derive(Debug, Clone)]
+pub struct QueueTaskInfo {
+    pub kind: QueueItemKind,
+    pub job_id: String,
+}
+
+/// Um item da fila que não é deploy: o que rodar na vez dele e o que fazer se for tirado da fila
+/// antes (`on_cancel`: fecha a execução como cancelada, solta o "aquecendo", etc.).
+pub struct QueueTask {
+    pub run: QueueTaskFn,
+    pub on_cancel: QueueTaskFn,
+}
+
 #[derive(Default)]
 struct QueueInner {
+    /// Itens que não são deploy (jobs, aquecimentos), por id. O id também está em `queued` (ou em
+    /// `running`); aqui mora o que fazer com ele.
+    tasks: HashMap<String, QueueTask>,
+    /// O que cada item que não é deploy é, **até terminar** (inclusive enquanto roda: o `tasks`
+    /// já foi esvaziado pelo worker, mas a tela ainda precisa saber o que está rodando).
+    infos: HashMap<String, QueueTaskInfo>,
     /// deployment_ids esperando, em ordem de execução (frente = próximo).
     queued: VecDeque<String>,
     /// deployment_id rodando agora (ou `None`).
@@ -98,12 +125,62 @@ impl DeployQueue {
         self.notify.notify_one();
     }
 
+    /// Enfileira um item que **não é deploy** (a execução de um job, o aquecimento de um): entra na
+    /// mesma lista dos deploys, na mesma ordem de execução, e pode ser promovido, reordenado ou
+    /// tirado da fila como eles. `run` roda com a vaga única em mãos; `on_cancel` roda se o item
+    /// for tirado da fila antes de a vez chegar ([`DeployQueue::cancel_queued`]).
+    pub fn enqueue_task(
+        &self,
+        id: String,
+        info: QueueTaskInfo,
+        run: QueueTaskFn,
+        on_cancel: QueueTaskFn,
+    ) {
+        {
+            let mut g = self.lock();
+            g.tasks.insert(id.clone(), QueueTask { run, on_cancel });
+            g.infos.insert(id.clone(), info);
+        }
+        self.enqueue(id);
+    }
+
+    /// Tira (e devolve) o que rodar do item `id`, se ele é um que não é deploy. O worker chama
+    /// depois de pegar a vaga: `None` quer dizer que é um deploy.
+    pub fn take_task(&self, id: &str) -> Option<QueueTask> {
+        self.lock().tasks.remove(id)
+    }
+
+    /// Os itens que não são deploy e ainda não terminaram (esperando ou rodando), por id.
+    pub fn task_infos(&self) -> HashMap<String, QueueTaskInfo> {
+        self.lock().infos.clone()
+    }
+
+    /// Tira da fila um item que não é deploy **e ainda não começou**. Devolve o `on_cancel` dele
+    /// (quem chamou o roda e fecha a execução como cancelada); `None` se o id não está esperando
+    /// (já rodando, já terminado ou é um deploy).
+    pub fn cancel_queued(&self, id: &str) -> Option<QueueTaskFuture> {
+        let task = {
+            let mut g = self.lock();
+            // Só item que não é deploy: um deploy não pode sair da fila por aqui (tem o caminho dele).
+            if !g.tasks.contains_key(id) {
+                return None;
+            }
+            let pos = g.queued.iter().position(|d| d == id)?;
+            g.queued.remove(pos);
+            g.infos.remove(id);
+            g.tasks.remove(id)?
+        };
+        Some((task.on_cancel)())
+    }
+
     /// Remove um deployment **enfileirado** (não afeta o que está rodando —
     /// abortar o running é papel do `active_deploys`). Retorna `true` se removeu.
     pub fn remove_queued(&self, dep_id: &str) -> bool {
         let mut g = self.lock();
         if let Some(pos) = g.queued.iter().position(|d| d == dep_id) {
             g.queued.remove(pos);
+            g.tasks.remove(dep_id);
+            g.infos.remove(dep_id);
             true
         } else {
             false
@@ -157,6 +234,12 @@ impl DeployQueue {
             g.queued.iter().cloned().collect(),
             g.paused,
         )
+    }
+
+    /// Nada rodando, nada esperando e a fila não está pausada: um item novo começa na hora.
+    pub fn is_idle(&self) -> bool {
+        let g = self.lock();
+        g.running.is_none() && g.queued.is_empty() && !g.paused
     }
 
     /// Há algo na fila e ela não está pausada?
@@ -229,7 +312,10 @@ impl DeployQueue {
     }
 
     fn clear_running(&self) {
-        self.lock().running = None;
+        let mut g = self.lock();
+        if let Some(id) = g.running.take() {
+            g.infos.remove(&id);
+        }
     }
 
     async fn wait(&self) {
@@ -250,7 +336,11 @@ pub async fn run_worker(state: DeployContext) {
 
         // running mudou → avisa a GUI.
         state.bus.publish(Event::DeployQueueChanged);
-        run_one(&state, &dep_id).await;
+        match queue.take_task(&dep_id) {
+            // Job ou aquecimento: roda com a vaga que o worker já tem.
+            Some(task) => (task.run)().await,
+            None => run_one(&state, &dep_id).await,
+        }
         queue.clear_running();
         // Solta a vaga só depois de limpar `running`: quem entra em seguida (um
         // job esperando) não enxerga um deploy "rodando" que já terminou.
@@ -549,5 +639,98 @@ mod tests {
             "vaga livre: jobs não podem ficar presos"
         );
         worker.abort();
+    }
+
+    // ── itens que não são deploy (jobs, aquecimentos) ────────────────────────────────────────
+
+    fn tarefa(
+        q: &DeployQueue,
+        id: &str,
+        kind: QueueItemKind,
+        rodou: Arc<std::sync::atomic::AtomicU32>,
+    ) {
+        let (r, c) = (rodou.clone(), rodou);
+        q.enqueue_task(
+            id.into(),
+            QueueTaskInfo {
+                kind,
+                job_id: "job_1".into(),
+            },
+            Box::new(move || {
+                Box::pin(async move {
+                    r.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                })
+            }),
+            Box::new(move || {
+                Box::pin(async move {
+                    c.fetch_add(100, std::sync::atomic::Ordering::SeqCst);
+                })
+            }),
+        );
+    }
+
+    #[test]
+    fn job_entra_na_mesma_ordem_do_deploy_e_pode_ser_promovido() {
+        let q = DeployQueue::new();
+        let n = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        q.enqueue("dep_1".into());
+        tarefa(&q, "jrun_1", QueueItemKind::Job, n.clone());
+        q.enqueue("dep_2".into());
+        assert_eq!(queued(&q), ["dep_1", "jrun_1", "dep_2"]);
+        q.promote("jrun_1");
+        assert_eq!(queued(&q), ["jrun_1", "dep_1", "dep_2"]);
+        q.reorder(&["dep_2".into(), "jrun_1".into()]);
+        assert_eq!(queued(&q), ["dep_2", "jrun_1", "dep_1"]);
+        let infos = q.task_infos();
+        assert_eq!(infos.len(), 1, "só o job é item que não é deploy");
+        assert_eq!(infos["jrun_1"].kind, QueueItemKind::Job);
+    }
+
+    #[tokio::test]
+    async fn worker_acha_a_tarefa_do_job_e_ela_roda_uma_vez() {
+        let q = DeployQueue::new();
+        let n = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        tarefa(&q, "jrun_1", QueueItemKind::Job, n.clone());
+        let (_vaga, id) = timeout(LIMITE, q.acquire_next()).await.unwrap();
+        assert_eq!(id, "jrun_1");
+        assert_eq!(
+            q.snapshot().0.as_deref(),
+            Some("jrun_1"),
+            "aparece como rodando"
+        );
+        let task = q.take_task(&id).expect("é um job, não um deploy");
+        (task.run)().await;
+        assert_eq!(n.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert!(q.take_task(&id).is_none(), "não roda duas vezes");
+        assert!(
+            q.task_infos().contains_key("jrun_1"),
+            "enquanto roda, a tela ainda sabe o que é"
+        );
+        q.clear_running();
+        assert!(q.task_infos().is_empty(), "terminou: some");
+    }
+
+    #[tokio::test]
+    async fn tirar_o_job_da_fila_roda_o_on_cancel_e_nao_o_run() {
+        let q = DeployQueue::new();
+        let n = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        tarefa(&q, "jrun_1", QueueItemKind::Job, n.clone());
+        let cancelar = q.cancel_queued("jrun_1").expect("estava esperando");
+        cancelar.await;
+        assert_eq!(n.load(std::sync::atomic::Ordering::SeqCst), 100);
+        assert!(queued(&q).is_empty());
+        assert!(q.task_infos().is_empty());
+        assert!(q.cancel_queued("jrun_1").is_none(), "já saiu");
+    }
+
+    #[test]
+    fn cancel_queued_ignora_deploy_e_o_que_ja_esta_rodando() {
+        let q = DeployQueue::new();
+        q.enqueue("dep_1".into());
+        assert!(
+            q.cancel_queued("dep_1").is_none(),
+            "deploy tem o caminho dele"
+        );
+        assert_eq!(queued(&q), ["dep_1"], "e continua na fila");
     }
 }

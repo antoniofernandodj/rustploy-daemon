@@ -175,6 +175,8 @@ export default {
   "EDITAR JOB": "EDIT JOB",
   "EDITAR PROJETO": "EDIT PROJECT",
   "EM USO": "IN USE",
+  "aquecimento": "warm-up",
+  "job": "job",
   "ENV VAR A TROCAR": "ENV VAR TO REPLACE",
   "ESCOLHA O BANCO DE DADOS": "CHOOSE THE DATABASE",
   "ESCOLHA O BROKER": "CHOOSE THE BROKER",

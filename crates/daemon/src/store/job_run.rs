@@ -94,6 +94,22 @@ pub async fn list_unfinished(db: &Db) -> Result<Vec<JobRun>> {
     Ok(rows.into_iter().map(row_to_job_run).collect())
 }
 
+/// Execuções terminadas nas últimas 24 h, das mais novas para as mais antigas (o "Histórico 24h"
+/// do Deploy Engine mostra jobs e deploys juntos).
+pub async fn list_finished_last_24h(db: &Db, limit: usize) -> Result<Vec<JobRun>> {
+    let since = Utc::now() - chrono::Duration::hours(24);
+    let rows = sqlx::query_as::<_, JobRunRow>(&format!(
+        "SELECT {SELECT_COLS} FROM job_run
+         WHERE finished_at IS NOT NULL AND started_at > ?
+         ORDER BY started_at DESC LIMIT ?"
+    ))
+    .bind(since)
+    .bind(limit as i64)
+    .fetch_all(db.pool())
+    .await?;
+    Ok(rows.into_iter().map(row_to_job_run).collect())
+}
+
 pub async fn get(db: &Db, id: &str) -> Result<Option<JobRun>> {
     let row =
         sqlx::query_as::<_, JobRunRow>(&format!("SELECT {SELECT_COLS} FROM job_run WHERE id = ?"))
@@ -149,6 +165,18 @@ mod tests {
 
         let all = list_for_job(&db, "job_1", 10).await.unwrap();
         assert_eq!(all.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn historico_24h_so_traz_as_terminadas() {
+        let db = mem_db().await;
+        let aberta = create(&db, "j").await.unwrap();
+        let feita = create(&db, "j").await.unwrap();
+        finish(&db, &feita.id, 0).await.unwrap();
+        let lista = list_finished_last_24h(&db, 10).await.unwrap();
+        assert_eq!(lista.len(), 1);
+        assert_eq!(lista[0].id, feita.id);
+        assert_ne!(lista[0].id, aberta.id);
     }
 
     #[tokio::test]

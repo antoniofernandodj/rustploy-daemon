@@ -6,6 +6,12 @@ use crate::bootstrap::state::AppState;
 use shared::{Event, Response as RpResponse, ServiceStatus};
 
 pub async fn handle(state: AppState, deployment_id: String) -> RpResponse {
+    // A fila tem jobs e aquecimentos além de deploys; o botão de tirar da fila é o mesmo.
+    if let Some(resposta) =
+        crate::api::handlers::jobs::job_run_cancel::abort_item(&state, &deployment_id).await
+    {
+        return resposta;
+    }
     let dep = match crate::store::deployments::get(&state.db, &deployment_id).await {
         Ok(Some(d)) => d,
         Ok(None) => return RpResponse::err("NotFound", "deployment not found"),

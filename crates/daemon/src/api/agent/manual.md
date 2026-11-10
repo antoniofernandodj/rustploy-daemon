@@ -171,7 +171,10 @@ Comandos, por área (campos entre chaves):
   `DeployDelete{deployment_id}` · `RecentDeployments{limit}` ·
   `GetBuildLogs{deployment_id}` · `DeployEngineStatus` ·
   `DeployQueuePromote{deployment_id}` · `DeployQueueReorder{order}` ·
-  `DeployQueuePause{paused}`
+  `DeployQueuePause{paused}`. A fila também leva **execuções de job** (`jrun_…`) e **aquecimentos**
+  (`jwarm_…`): em `DeployEngineStatus` cada item traz `kind` (`Deploy`, `Job` ou `Warm`) e o `deployment_id`
+  é o id do item, que serve a `DeployQueuePromote`/`Reorder` e a `DeployAbort` (cancela o job, na fila ou
+  rodando; `jwarm_…` só sai da fila antes de começar).
 - **Logs de container**: `LogsGet{service_id, tail}` (ao vivo; para acompanhar,
   use o SSE `/api/services/<id>/logs`) · `LogsHistory{service_id, before?, limit,
   container_id?, container_ids?}` (o log **persistido**, que atravessa deploys e
