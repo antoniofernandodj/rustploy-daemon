@@ -4,7 +4,7 @@ use crate::bootstrap::state::AppState;
 use crate::engine::DockerClient;
 use crate::features::ingress::TlsManager;
 use crate::features::registry::storage::RegistryStorage;
-use crate::features::{deploy, jobs, maintenance, observability, registry};
+use crate::features::{data_backup, deploy, jobs, maintenance, observability, registry};
 use crate::platform::config::RustployConfig;
 use crate::platform::event_bus::EventBus;
 use crate::store::Db;
@@ -132,6 +132,15 @@ pub fn spawn_stateful(
         let state2 = state.clone();
         tokio::spawn(async move {
             jobs::scheduler::scheduler_loop(state2.jobs_ctx()).await;
+        });
+    }
+
+    // Agendador dos backups de dados para o S3 (docs/plano-backup-de-dados-para-s3.md, Fase 3): a cada
+    // minuto dispara os serviços cuja política venceu.
+    {
+        let state2 = state.clone();
+        tokio::spawn(async move {
+            data_backup::scheduler::scheduler_loop(state2.deploy_ctx()).await;
         });
     }
 

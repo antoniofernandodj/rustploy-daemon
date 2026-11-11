@@ -293,9 +293,27 @@ pub async fn import(
     pack_file: &Path,
     confirm: bool,
 ) -> Result<ImportReport> {
+    import_with(state, service_id, pack_file, confirm, false).await
+}
+
+/// Como [`import`]. `precreate` (recuperação de um servidor): as partes de **volume** que o pacote traz e
+/// o serviço ainda não tem (porque nunca subiu aqui) são criadas a partir do spec do serviço
+/// ([`parts::synthesize`]); as de banco continuam exigindo o banco no ar.
+pub async fn import_with(
+    state: DeployContext,
+    service_id: &str,
+    pack_file: &Path,
+    confirm: bool,
+    precreate: bool,
+) -> Result<ImportReport> {
     let _busy = Busy::take(service_id)?;
     let svc = load(&state, service_id).await?;
-    let found = parts::resolve(&state.docker, &svc).await?;
+    let mut found = match parts::resolve(&state.docker, &svc).await {
+        Ok(f) => f,
+        // sem o banco no ar não há partes a resolver; na recuperação o volume ainda pode ser criado
+        Err(_) if precreate => Vec::new(),
+        Err(e) => return Err(e),
+    };
     let was_running = is_running(&svc.status);
 
     // Pacote cifrado (age): abre para um arquivo temporário com a identidade deste servidor.
@@ -319,6 +337,19 @@ pub async fn import(
     let pack_file = pack_file.as_path();
     let pf = pack_file.to_path_buf();
     let manifest = tokio::task::spawn_blocking(move || pack::read_manifest(&pf)).await??;
+    if precreate {
+        for mp in manifest.parts.iter().filter(|m| m.kind == "volume") {
+            if found.iter().any(|p| p.name == mp.name) {
+                continue;
+            }
+            if let Some(part) = parts::synthesize(&svc, &mp.name) {
+                if let Source::Bind(dir) = &part.source {
+                    let _ = std::fs::create_dir_all(dir);
+                }
+                found.push(part);
+            }
+        }
+    }
     let plan = match_parts(&manifest, &found, database::version_of(&svc).as_deref())?;
     let names: Vec<String> = plan.iter().map(|(m, _)| m.name.clone()).collect();
     if !confirm {

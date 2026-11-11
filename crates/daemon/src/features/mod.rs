@@ -1,6 +1,7 @@
 //! Um diretório por assunto de produto; a camada `api` só adapta pedidos para estas funcionalidades.
 
 pub mod backup;
+pub mod data_backup;
 pub mod databases;
 pub mod deploy;
 pub mod git_providers;

@@ -54,6 +54,7 @@ pub async fn read_sql(db: &Db) -> Result<(InfraState, Vec<String>)> {
         docker_cleanup_config,
         // chave nova: não existia no SQL, então nada a migrar
         registry_retention: None,
+        backup_destination: None,
     };
 
     // --- providers --------------------------------------------------------------------------
@@ -172,6 +173,7 @@ pub async fn read_sql(db: &Db) -> Result<(InfraState, Vec<String>)> {
             compose_project,
             created_at,
             secrets: vec![],
+            backup: None,
         });
     }
 

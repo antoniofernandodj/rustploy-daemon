@@ -127,7 +127,8 @@ pub fn required_level(cmd: &Command) -> Level {
         | Command::MetricsSubscribe { .. }
         | Command::MetricsUnsubscribe { .. }
         | Command::DeployWithDependenciesPlan { .. }
-        | Command::ProjectDeployPlan { .. } => Level::Observer,
+        | Command::ProjectDeployPlan { .. }
+        | Command::ServiceBackupList { .. } => Level::Observer,
         Command::DeployStart { .. }
         | Command::DeployWithDependencies { .. }
         | Command::ProjectDeploy { .. }
@@ -161,7 +162,8 @@ pub fn required_level(cmd: &Command) -> Level {
         | Command::StateGitSyncNow
         | Command::StateGitResume
         | Command::StateGitDismissRemoval { .. }
-        | Command::JobUpdate { .. } => Level::Operator,
+        | Command::JobUpdate { .. }
+        | Command::ServiceBackupNow { .. } => Level::Operator,
         Command::ProjectCreate { .. }
         | Command::ProjectDelete { .. }
         | Command::ServiceCreate(_)
@@ -206,7 +208,18 @@ pub fn required_level(cmd: &Command) -> Level {
         | Command::RegistryGc
         | Command::RegistryRetentionSet { .. }
         | Command::RegistryTokenCreate { .. }
-        | Command::RegistryTokenRevoke { .. } => Level::Admin,
+        | Command::RegistryTokenRevoke { .. }
+        | Command::BackupDestinationGet
+        | Command::BackupDestinationSet { .. }
+        | Command::BackupDestinationClear
+        | Command::BackupDestinationTest { .. }
+        | Command::ServerRecoverStart { .. }
+        | Command::ServerRecoverStatus
+        | Command::ServerRecoverRun
+        | Command::ServerRecoverCancel
+        | Command::ServiceBackupPolicySet { .. }
+        | Command::ServiceBackupRestore { .. }
+        | Command::ServiceBackupDelete { .. } => Level::Admin,
     }
 }
 

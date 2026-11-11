@@ -1731,3 +1731,285 @@ async fn git_sync_screens_render_from_the_snapshot() {
         "sem erros de JS no console"
     );
 }
+
+/// Settings → Backups (docs/plano-backup-de-dados-para-s3.md, Fase 1): abrir Settings lê o destino S3
+/// gravado, o formulário o recebe **sem** chave secreta, e salvar manda a chave só quando digitada.
+#[tokio::test]
+async fn backups_tab_loads_and_saves_the_s3_destination() {
+    let addr = spawn_static_server().await;
+    let (browser, _handler) = launch().await;
+    let page = open_page(&browser, addr).await;
+    seed_connected(&page).await;
+
+    let out = eval_str(
+        &page,
+        r#"(async () => {
+            const s = Alpine.store('app');
+            const sent = [];
+            const view = { configured: true, endpoint: 'http://rp_s3:9000', region: 'us-east-1', bucket: 'bk',
+                           prefix: 'rustploy', path_style: true, access_key: 'AK', secret_set: true,
+                           recovery_configured: false };
+            s.api = { rpc: async (c) => {
+                const name = typeof c === 'string' ? c : Object.keys(c)[0];
+                sent.push(c);
+                if (name === 'BackupDestinationGet' || name === 'BackupDestinationSet')
+                    return { ok: true, value: { BackupDestination: view } };
+                return { ok: true, value: 'Ok' };
+            } };
+            s.api.rpcChecked = s.api.rpc;
+            s.nav('settings');
+            await new Promise(r => setTimeout(r, 100));
+            const loaded = [s.backupDestBucket, s.backupDestAccessKey, s.backupDestSecretSet,
+                            s.backupDestRecoveryMissing, s.backupDestSecretKey];
+            // salvar sem digitar a chave: manda `secret_key: null` (mantém a gravada)
+            await s.backupDestinationSave();
+            const semChave = sent.find(c => c.BackupDestinationSet).BackupDestinationSet.destination.secret_key;
+            // digitando a chave: ela vai, e some do campo depois
+            s.backupDestSecretKey = 'nova-chave';
+            await s.backupDestinationSave();
+            const sets = sent.filter(c => c.BackupDestinationSet);
+            const comChave = sets[1].BackupDestinationSet.destination.secret_key;
+            return JSON.stringify({ loaded, semChave, comChave, depois: s.backupDestSecretKey });
+        })()"#,
+    )
+    .await;
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["loaded"], serde_json::json!(["bk", "AK", true, true, ""]));
+    assert_eq!(
+        v["semChave"],
+        serde_json::Value::Null,
+        "sem digitar, mantém a chave gravada"
+    );
+    assert_eq!(v["comChave"], "nova-chave");
+    assert_eq!(v["depois"], "", "a chave digitada não fica no formulário");
+}
+
+/// Aba Dados → "Backup no S3" (docs/plano-backup-de-dados-para-s3.md, Fase 2): abrir a aba lista os
+/// backups e a última operação; "Fazer backup agora" e "Restaurar" mandam o comando certo (restaurar com
+/// `confirm: true`); sem destino configurado a tela mostra o motivo e esconde o botão.
+#[tokio::test]
+async fn data_tab_shows_s3_backups_and_sends_the_commands() {
+    let addr = spawn_static_server().await;
+    let (browser, _handler) = launch().await;
+    let page = open_page(&browser, addr).await;
+    seed_connected(&page).await;
+
+    let out = eval_str(
+        &page,
+        r#"(async () => {
+            const s = Alpine.store('app');
+            s.view = 'service';
+            s.selectedServiceId = 'svc_1';
+            s.serviceTab = 'dados';
+            s.serviceLoading = false;
+            s.serviceDeployments = [];
+            s.serviceDetail = { id: 'svc_1', status: 'Running', live_container_id: 'x',
+                spec: { name: 'db', port: 5432, replicas: 1, project_id: 'prj_1', env_vars: [], domains: [],
+                    source: { Registry: { image: 'busybox' } },
+                    healthcheck: { kind: 'None', interval_secs: 5, timeout_secs: 3, retries: 10, start_period_secs: 5 } } };
+            const sent = [];
+            let blocked = null;
+            const lista = () => ({ ServiceBackups: {
+                entries: [{ key: 'p/prj_1/svc_1/20261111-100000.rpdata.age', last_modified: '2026-11-11T10:00:00Z', size_bytes: 3008554 }],
+                last_run: { op: 'backup', state: 'ok', started_at: 'a', finished_at: '2026-11-11T10:00:05Z', size_bytes: 3008554, key: 'k', error: null, checks: [] },
+                blocked, list_error: null } });
+            const rpc = async (c) => {
+                const name = typeof c === 'string' ? c : Object.keys(c)[0];
+                sent.push(c);
+                if (name === 'ServiceDataPlan') return { ok: true, value: { ServiceDataPlan: { service_name: 'db', parts: [], running: true, blocked: null, notes: [], encrypt_default: true } } };
+                if (name === 'ServiceBackupList') return { ok: true, value: lista() };
+                return { ok: true, value: 'Ok' };
+            };
+            s.api = { rpc, rpcChecked: rpc };
+            const el = document.querySelector('[x-data="serviceDetail"]');
+            const d = Alpine.$data(el);
+            await d.loadData();
+            await new Promise(r => setTimeout(r, 100));
+            const texto = el.innerText;
+            const listado = [d.backups.entries.length, d.backupRunLabel.includes('3 MB'), texto.includes('Fazer backup agora') || texto.includes('Back up now')];
+            // restaurar manda confirm:true (o confirm do navegador é aceito aqui)
+            window.confirm = () => true;
+            await d.backupNow();
+            await d.restoreBackup(d.backups.entries[0]);
+            const restore = sent.find(c => c.ServiceBackupRestore).ServiceBackupRestore;
+            const now = sent.find(c => c.ServiceBackupNow).ServiceBackupNow;
+            // sem destino: o motivo aparece e o botão some
+            blocked = 'nenhum destino S3 configurado';
+            await d.loadBackups();
+            await new Promise(r => setTimeout(r, 100));
+            const semDestino = [el.innerText.includes('nenhum destino S3 configurado'),
+                !!Array.from(el.querySelectorAll('button')).find(b => /Fazer backup agora|Back up now/.test(b.innerText) && b.offsetParent !== null)];
+            return JSON.stringify({ listado, restore, now, semDestino });
+        })()"#,
+    )
+    .await;
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["listado"], serde_json::json!([1, true, true]), "{out}");
+    assert_eq!(v["restore"]["confirm"], true, "{out}");
+    assert_eq!(v["restore"]["service_id"], "svc_1", "{out}");
+    assert_eq!(v["now"]["service_id"], "svc_1", "{out}");
+    assert_eq!(v["semDestino"], serde_json::json!([true, false]), "{out}");
+}
+
+/// Aba Dados → política do backup automático (Fase 3): o formulário nasce da política gravada (semanal,
+/// 04:30 UTC), editar e salvar manda o `Recurrence` certo para as três frequências, e o repoll não apaga
+/// o que a pessoa está digitando.
+#[tokio::test]
+async fn data_tab_backup_policy_form_roundtrips() {
+    let addr = spawn_static_server().await;
+    let (browser, _handler) = launch().await;
+    let page = open_page(&browser, addr).await;
+    seed_connected(&page).await;
+
+    let out = eval_str(
+        &page,
+        r#"(async () => {
+            const s = Alpine.store('app');
+            s.view = 'service'; s.selectedServiceId = 'svc_1'; s.serviceTab = 'dados';
+            s.serviceLoading = false; s.serviceDeployments = [];
+            s.serviceDetail = { id: 'svc_1', status: 'Running', live_container_id: 'x',
+                spec: { name: 'db', port: 5432, replicas: 1, project_id: 'prj_1', env_vars: [], domains: [],
+                    source: { Registry: { image: 'busybox' } },
+                    healthcheck: { kind: 'None', interval_secs: 5, timeout_secs: 3, retries: 10, start_period_secs: 5 } } };
+            const sent = [];
+            const policy = { enabled: true, recurrence: { Weekly: { weekday: 2, hour: 4, minute: 30 } }, keep: 5, stop: false };
+            const lista = (p) => ({ ServiceBackups: { entries: [], last_run: null, blocked: null, list_error: null,
+                policy: p, next_run_at: p && p.enabled ? '2026-11-12T04:30:00+00:00' : null } });
+            const rpc = async (c) => {
+                const name = typeof c === 'string' ? c : Object.keys(c)[0];
+                sent.push(c);
+                if (name === 'ServiceDataPlan') return { ok: true, value: { ServiceDataPlan: { service_name: 'db', parts: [], running: false, blocked: null, notes: [], encrypt_default: true } } };
+                if (name === 'ServiceBackupList') return { ok: true, value: lista(policy) };
+                if (name === 'ServiceBackupPolicySet') return { ok: true, value: lista(c.ServiceBackupPolicySet.policy) };
+                return { ok: true, value: 'Ok' };
+            };
+            s.api = { rpc, rpcChecked: rpc };
+            const el = document.querySelector('[x-data="serviceDetail"]');
+            const d = Alpine.$data(el);
+            await d.loadData();
+            await new Promise(r => setTimeout(r, 100));
+            const f = d.backupForm;
+            const lido = [f.enabled, f.kind, f.weekday, f.time, f.keep, f.stop];
+            // o repoll (loadBackups sem preencher) não apaga uma edição em andamento
+            d.backupForm.keep = 9;
+            await d.loadBackups(false);
+            const mantido = d.backupForm.keep;
+            const enviar = async (patch) => {
+                Object.assign(d.backupForm, patch);
+                await d.saveBackupPolicy();
+                return sent.filter(c => c.ServiceBackupPolicySet).pop().ServiceBackupPolicySet.policy;
+            };
+            const diario = await enviar({ kind: 'daily', time: '03:15', keep: 7, stop: true });
+            const horas = await enviar({ kind: 'interval', hours: 6 });
+            const semanal = await enviar({ kind: 'weekly', weekday: 6, time: '23:00' });
+            const desligado = await enviar({ enabled: false });
+            return JSON.stringify({ lido, mantido, diario, horas, semanal, desligado: desligado.enabled,
+                proximo: el.innerText.includes('2026-11-12') });
+        })()"#,
+    )
+    .await;
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(
+        v["lido"],
+        serde_json::json!([true, "weekly", 2, "04:30", 5, false]),
+        "{out}"
+    );
+    assert_eq!(v["mantido"], 9, "{out}");
+    assert_eq!(
+        v["diario"]["recurrence"],
+        serde_json::json!({"Daily": {"hour": 3, "minute": 15}}),
+        "{out}"
+    );
+    assert_eq!(v["diario"]["keep"], 7);
+    assert_eq!(
+        v["horas"]["recurrence"],
+        serde_json::json!({"IntervalHours": 6}),
+        "{out}"
+    );
+    assert_eq!(
+        v["semanal"]["recurrence"],
+        serde_json::json!({"Weekly": {"weekday": 6, "hour": 23, "minute": 0}}),
+        "{out}"
+    );
+    assert_eq!(v["desligado"], false, "{out}");
+}
+
+/// Settings → Recuperar (Fase 4): o formulário manda o repositório, o token e a chave; **a chave e o token
+/// somem dos campos** deem certo ou não; o resumo mostra cada serviço com o backup achado; confirmar manda
+/// `ServerRecoverRun` e cancelar volta ao começo.
+#[tokio::test]
+async fn recover_tab_sends_the_fields_and_forgets_the_secrets() {
+    let addr = spawn_static_server().await;
+    let (browser, _handler) = launch().await;
+    let page = open_page(&browser, addr).await;
+    seed_connected(&page).await;
+
+    let out = eval_str(
+        &page,
+        r#"(async () => {
+            const s = Alpine.store('app');
+            s.view = 'settings'; s.settingsTab = 'recover';
+            const sent = [];
+            let fail = true;
+            const ready = { phase: 'ready', projects: 1, destination_configured: true, destination_error: null,
+                services: [
+                  { service_id: 'svc_db', name: 'banco', project: 'loja', kind: 'database', latest_backup: '2026-11-11T13:44:06Z', step: 'pending', error: null },
+                  { service_id: 'svc_web', name: 'web', project: 'loja', kind: 'volume', latest_backup: null, step: 'pending', error: null } ] };
+            const rpc = async (c) => {
+                const name = typeof c === 'string' ? c : Object.keys(c)[0];
+                sent.push(c);
+                if (name === 'ServerRecoverStatus') return { ok: true, value: { ServerRecover: { phase: 'idle', projects: 0, services: [] } } };
+                if (name === 'ServerRecoverStart') return fail ? { ok: false, error: 'token inválido' } : { ok: true, value: { ServerRecover: ready } };
+                if (name === 'ServerRecoverCancel') return { ok: true, value: { ServerRecover: { phase: 'idle', projects: 0, services: [], message: 'cancelada' } } };
+                return { ok: true, value: 'Ok' };
+            };
+            s.api = { rpc, rpcChecked: rpc };
+            window.confirm = () => true;
+            await s.recoverStatusLoad();
+            s.recoverRemote = ' https://github.com/org/estado.git ';
+            s.recoverToken = 'ghp_segredo';
+            s.recoverKey = 'AGE-SECRET-KEY-1ABC';
+            // 1ª tentativa falha: mesmo assim os segredos saem dos campos
+            await s.recoverStart();
+            const aposErro = [s.recoverKey, s.recoverToken, s.recoverRemote.trim()];
+            // 2ª dá certo
+            fail = false;
+            s.recoverKey = 'AGE-SECRET-KEY-1ABC'; s.recoverToken = 'tok';
+            await s.recoverStart();
+            await new Promise(r => setTimeout(r, 100));
+            const start = sent.filter(c => c.ServerRecoverStart).pop().ServerRecoverStart;
+            const texto = document.body.innerText;
+            const resumo = [s.recoverInfo.phase, texto.includes('banco'), texto.includes('sem backup') || texto.includes('no backup')];
+            await s.recoverRun();
+            const rodou = sent.includes('ServerRecoverRun');
+            await s.recoverCancel();
+            return JSON.stringify({ aposErro, start, resumo, rodou, fase: s.recoverInfo.phase,
+                chaveNoEstado: JSON.stringify(s).includes('AGE-SECRET-KEY') });
+        })()"#,
+    )
+    .await;
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(
+        v["aposErro"],
+        serde_json::json!(["", "", "https://github.com/org/estado.git"]),
+        "{out}"
+    );
+    assert_eq!(
+        v["start"]["remote"], "https://github.com/org/estado.git",
+        "{out}"
+    );
+    assert_eq!(v["start"]["recovery_key"], "AGE-SECRET-KEY-1ABC", "{out}");
+    assert_eq!(v["start"]["token"], "tok");
+    assert_eq!(v["start"]["branch"], serde_json::Value::Null);
+    assert_eq!(
+        v["resumo"],
+        serde_json::json!(["ready", true, true]),
+        "{out}"
+    );
+    assert_eq!(v["rodou"], true, "{out}");
+    assert_eq!(v["fase"], "idle", "{out}");
+    assert_eq!(
+        v["chaveNoEstado"], false,
+        "a chave não pode ficar no estado do app: {out}"
+    );
+}

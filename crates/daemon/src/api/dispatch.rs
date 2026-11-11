@@ -26,6 +26,19 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         Command::ServiceExportPlan { .. } => "ServiceExportPlan",
         Command::ServiceExport { .. } => "ServiceExport",
         Command::ServiceDataPlan { .. } => "ServiceDataPlan",
+        Command::BackupDestinationGet => "BackupDestinationGet",
+        Command::BackupDestinationSet { .. } => "BackupDestinationSet",
+        Command::BackupDestinationClear => "BackupDestinationClear",
+        Command::BackupDestinationTest { .. } => "BackupDestinationTest",
+        Command::ServerRecoverStart { .. } => "ServerRecoverStart",
+        Command::ServerRecoverStatus => "ServerRecoverStatus",
+        Command::ServerRecoverRun => "ServerRecoverRun",
+        Command::ServerRecoverCancel => "ServerRecoverCancel",
+        Command::ServiceBackupList { .. } => "ServiceBackupList",
+        Command::ServiceBackupNow { .. } => "ServiceBackupNow",
+        Command::ServiceBackupPolicySet { .. } => "ServiceBackupPolicySet",
+        Command::ServiceBackupRestore { .. } => "ServiceBackupRestore",
+        Command::ServiceBackupDelete { .. } => "ServiceBackupDelete",
         Command::ServiceImport(_) => "ServiceImport",
         Command::ServiceList { .. } => "ServiceList",
         Command::ServiceGet { .. } => "ServiceGet",
@@ -203,6 +216,19 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         Command::ServiceExportPlan { .. }
         | Command::ServiceExport { .. }
         | Command::ServiceImport(_) => handlers::iac::dispatch(state, cmd).await,
+        Command::BackupDestinationGet
+        | Command::BackupDestinationSet { .. }
+        | Command::BackupDestinationClear
+        | Command::BackupDestinationTest { .. }
+        | Command::ServerRecoverStart { .. }
+        | Command::ServerRecoverStatus
+        | Command::ServerRecoverRun
+        | Command::ServerRecoverCancel
+        | Command::ServiceBackupList { .. }
+        | Command::ServiceBackupNow { .. }
+        | Command::ServiceBackupPolicySet { .. }
+        | Command::ServiceBackupRestore { .. }
+        | Command::ServiceBackupDelete { .. } => handlers::data_backup::dispatch(state, cmd).await,
         Command::ServiceDataPlan { service_id } => {
             crate::features::service_data::plan(state.deploy_ctx(), service_id.clone()).await
         }

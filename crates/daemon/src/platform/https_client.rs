@@ -64,7 +64,7 @@ fn split_https_url(url: &str) -> Result<UrlParts> {
     })
 }
 
-fn tls_connector() -> Result<TlsConnector> {
+pub(crate) fn tls_connector() -> Result<TlsConnector> {
     let roots = RootCertStore {
         roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
     };

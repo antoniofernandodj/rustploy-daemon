@@ -224,6 +224,21 @@ fn proibido_ao_agente(cmd: &Command) -> Option<&'static str> {
         Command::InfraAuditAllow { .. } => Some(
             "liberar uma suspeita da auditoria (\"isto não é segredo\") é decisão de uma pessoa na GUI/webui",
         ),
+        // A chave secreta do S3 viajaria pela conversa; e o teste/rascunho a traz também.
+        Command::BackupDestinationSet { .. } | Command::BackupDestinationTest { .. } => Some(
+            "configurar o destino S3 leva a chave secreta: é ação de uma pessoa na GUI/webui (Settings → Backups)",
+        ),
+        // Leva a chave privada de recuperação e um token de git, e restaura/sobe um servidor inteiro.
+        Command::ServerRecoverStart { .. }
+        | Command::ServerRecoverStatus
+        | Command::ServerRecoverRun
+        | Command::ServerRecoverCancel => Some(
+            "recuperar um servidor leva a chave de recuperação e um token: é ação de uma pessoa na GUI/webui (Settings → Recuperar)",
+        ),
+        // Substitui os dados atuais (restaurar) ou apaga o único backup (apagar): decisão de uma pessoa.
+        Command::ServiceBackupRestore { .. } | Command::ServiceBackupDelete { .. } => Some(
+            "restaurar substitui os dados do serviço e apagar remove um backup: é decisão de uma pessoa na GUI/webui (aba Dados)",
+        ),
         _ => None,
     }
 }

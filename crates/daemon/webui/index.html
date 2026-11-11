@@ -1415,6 +1415,10 @@
                   @click="store.settingsTab = 'maintenance'" x-t>Manutenção</button>
           <button type="button" :class="store.settingsTab === 'gitsync' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'"
                   @click="store.settingsTab = 'gitsync'; store.stateGitFormLoad()"><span x-t>Sincronização</span><span class="nav-item__badge" x-show="store.stateGitAlertMessage" x-text="' ●'"></span></button>
+          <button type="button" :class="store.settingsTab === 'backups' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'"
+                  @click="store.settingsTab = 'backups'; store.backupDestinationLoad()" x-t>Backups</button>
+          <button type="button" :class="store.settingsTab === 'recover' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'"
+                  @click="store.settingsTab = 'recover'; store.recoverStatusLoad()" x-t>Recuperar</button>
           <button type="button" :class="store.settingsTab === 'updates' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'"
                   @click="store.settingsTab = 'updates'"><span x-t>Atualizações</span><span class="nav-item__badge" x-show="store.updateIsAvailable" x-text="' ●'"></span></button>
         </row>
@@ -1879,6 +1883,107 @@
         </column>
 
         <!-- Atualizações: Command::CheckUpdate (só consulta; instalar é manual por enquanto) -->
+        <column class="u-fill-all" x-show="store.settingsTab === 'backups'">
+          <column class="form-panel">
+            <text class="u-label-cap" x-t>DESTINO S3 DOS BACKUPS</text>
+            <text class="u-muted" x-t>
+              Para onde os dados dos seus serviços são copiados. Qualquer armazenamento compatível com S3 serve
+              (AWS, Backblaze, Cloudflare R2, MinIO, RustFS). Um destino por servidor; cada serviço escolhe o
+              próprio agendamento na aba Dados.
+            </text>
+            <text class="banner banner--warn" x-show="store.backupDestRecoveryMissing" x-t>
+              Não há chave de recuperação configurada. Os backups são cifrados: sem ela, só este servidor os abriria e eles não restaurariam um servidor novo. Configure antes [secrets] recovery_recipient no config.toml.
+            </text>
+
+            <text class="u-label-cap" style="margin-top:10px" x-t>ENDEREÇO (ENDPOINT)</text>
+            <input class="field__input" type="text" x-model="store.backupDestEndpoint" placeholder="https://s3.us-east-005.backblazeb2.com" />
+
+            <row class="healthcheck__grid">
+              <column class="healthcheck__field">
+                <text class="u-label-cap" x-t>BUCKET</text>
+                <input class="field__input" type="text" x-model="store.backupDestBucket" placeholder="meu-bucket" />
+              </column>
+              <column class="healthcheck__field">
+                <text class="u-label-cap" x-t>REGIÃO</text>
+                <input class="field__input" type="text" x-model="store.backupDestRegion" placeholder="us-east-1" />
+              </column>
+            </row>
+
+            <text class="u-label-cap" x-t>PASTA NO BUCKET (OPCIONAL)</text>
+            <input class="field__input" type="text" x-model="store.backupDestPrefix" placeholder="rustploy/meu-servidor" />
+
+            <label class="check-row">
+              <input type="checkbox" x-model="store.backupDestPathStyle" />
+              <span x-t>Endereçamento path-style</span>
+            </label>
+            <text class="u-muted" x-t>Ligado para MinIO, RustFS, R2 e Backblaze (host/bucket/chave). Desligado para AWS S3 (bucket.host/chave).</text>
+
+            <text class="u-label-cap" x-t>CHAVE DE ACESSO</text>
+            <input class="field__input" type="text" x-model="store.backupDestAccessKey" autocomplete="off" />
+
+            <text class="u-label-cap" x-t>CHAVE SECRETA</text>
+            <input class="field__input" type="password" x-model="store.backupDestSecretKey" autocomplete="new-password"
+                   placeholder="Deixe vazio para manter a chave gravada" x-t:placeholder />
+            <text class="u-muted" x-show="store.backupDestSecretSet" x-t>Há uma chave secreta gravada no servidor. Ela nunca é mostrada de novo.</text>
+
+            <row style="gap:8px; margin-top:6px">
+              <button class="btn btn--primary" type="button" @click="store.backupDestinationSave()" x-t>Salvar</button>
+              <button class="btn btn--copy" type="button" @click="store.backupDestinationTest()" x-t>Testar conexão</button>
+              <button class="btn btn--danger" type="button" x-show="store.backupDestConfigured" @click="store.backupDestinationClear()" x-t>Remover</button>
+              <text class="u-muted" x-text="store.backupDestMessage"></text>
+            </row>
+          </column>
+        </column>
+
+        <column class="u-fill-all" x-show="store.settingsTab === 'recover'">
+          <column class="form-panel">
+            <text class="u-label-cap" x-t>RECUPERAR ESTE SERVIDOR</text>
+            <text class="u-muted" x-t>
+              Num servidor novo e limpo: traz a infraestrutura do repositório git, restaura os dados dos
+              backups no S3 e sobe tudo na ordem das dependências. Só funciona num servidor sem projetos.
+            </text>
+
+            <column style="gap:10px" x-show="store.recoverInfo.phase === 'idle' || store.recoverInfo.phase === 'failed'">
+              <text class="u-muted" x-show="store.recoverInfo.message" x-text="store.recoverInfo.message"></text>
+              <text class="u-label-cap" x-t>REPOSITÓRIO DA INFRA</text>
+              <input class="field__input" type="text" x-model="store.recoverRemote" placeholder="https://github.com/org/rustploy-estado.git" />
+              <text class="u-label-cap" x-t>TOKEN DE ACESSO AO REPOSITÓRIO</text>
+              <input class="field__input" type="password" autocomplete="new-password" x-model="store.recoverToken" />
+              <text class="u-label-cap" x-t>BRANCH (OPCIONAL)</text>
+              <input class="field__input" type="text" x-model="store.recoverBranch" placeholder="main" />
+              <text class="u-label-cap" x-t>CHAVE DE RECUPERAÇÃO (PRIVADA)</text>
+              <input class="field__input" type="password" autocomplete="new-password" x-model="store.recoverKey" placeholder="AGE-SECRET-KEY-1…" />
+              <text class="u-muted" x-t>A chave privada só fica na memória do servidor durante a recuperação e é descartada ao fim. Só a chave pública vai para o config.toml.</text>
+              <row style="gap:8px; margin-top:6px">
+                <button class="btn btn--primary" type="button" @click="store.recoverStart()" x-t>Restaurar a infraestrutura</button>
+              </row>
+            </column>
+
+            <column style="gap:10px" x-show="store.recoverInfo.phase !== 'idle' && store.recoverInfo.phase !== 'failed' || (store.recoverInfo.phase === 'failed' && store.recoverInfo.services.length)">
+              <text class="u-label-cap" x-text="$t('ACHADO NO REPOSITÓRIO — ') + store.recoverInfo.projects + $t(' projeto(s)')"></text>
+              <text class="banner banner--warn" x-show="store.recoverInfo.destination_error" x-text="store.recoverInfo.destination_error"></text>
+              <column class="kv-list">
+                <template x-for="recoverService in store.recoverInfo.services" :key="recoverService.service_id">
+                  <row class="kv-list__row">
+                    <text class="env__key" x-text="recoverService.kind === 'database' ? 'BD' : 'VOL'"></text>
+                    <text class="kv-list__val kv-list__val--compact" x-text="recoverService.project + ' / ' + recoverService.name"></text>
+                    <text class="u-muted" x-text="recoverService.latest_backup ? $t('backup de ') + recoverService.latest_backup : $t('sem backup: sobe vazio')"></text>
+                    <text class="u-muted" x-text="store.recoverStepLabel(recoverService.step) + (recoverService.error ? ': ' + recoverService.error : '')"></text>
+                  </row>
+                </template>
+              </column>
+              <text class="u-muted" x-show="store.recoverInfo.phase === 'ready'" x-t>Nada foi iniciado ainda. Ao confirmar, cada serviço tem os dados restaurados (volumes antes de subir, bancos depois) e sobe na ordem das dependências.</text>
+              <text class="u-muted" x-show="store.recoverInfo.phase === 'running'" x-t>Recuperação em andamento…</text>
+              <text class="u-muted" x-show="store.recoverInfo.phase === 'done'" x-t>Recuperação concluída: tudo no ar.</text>
+              <text class="banner banner--warn" x-show="store.recoverInfo.phase === 'failed' && store.recoverInfo.message" x-text="store.recoverInfo.message"></text>
+              <row style="gap:8px; margin-top:6px" x-show="store.recoverInfo.phase === 'ready'">
+                <button class="btn btn--primary" type="button" @click="store.recoverRun()" x-t>Restaurar os dados e subir</button>
+                <button class="btn btn--ghost" type="button" @click="store.recoverCancel()" x-t>Cancelar</button>
+              </row>
+            </column>
+          </column>
+        </column>
+
         <column class="u-fill-all" x-show="store.settingsTab === 'updates'">
           <column class="form-panel">
             <text class="u-label-cap">DAEMON</text>
@@ -3306,6 +3411,72 @@
                   <row class="env__add" x-show="!dataPlan.blocked">
                     <button class="btn btn--primary" type="button" :disabled="dataBusy" @click="exportData()" x-t>Exportar dados</button>
                   </row>
+                </column>
+              </template>
+              <text class="u-label-cap" x-t>BACKUP NO S3</text>
+              <text class="u-muted" x-t>Copia os dados deste serviço (cifrados) para o destino S3 configurado em Settings → Backups, e os traz de volta num clique. Nunca sobe nada em claro.</text>
+              <template x-if="backups">
+                <column>
+                  <text class="u-muted" x-show="backups.blocked" x-text="backups.blocked"></text>
+                  <text class="u-error" x-show="backups.list_error" x-text="backups.list_error"></text>
+                  <row class="env__add" x-show="!backups.blocked">
+                    <button class="btn btn--primary" type="button" :disabled="backupRunning" @click="backupNow()" x-t>Fazer backup agora</button>
+                    <button class="btn btn--ghost" type="button" @click="loadBackups()" x-t>Atualizar</button>
+                  </row>
+                  <column class="kv-list" style="gap:8px; margin-top:8px">
+                    <text class="u-label-cap" x-t>BACKUP AUTOMÁTICO</text>
+                    <label class="check-row">
+                      <input type="checkbox" x-model="backupForm.enabled" />
+                      <span x-t>Ligar o backup automático deste serviço</span>
+                    </label>
+                    <row class="tabs" x-show="backupForm.enabled">
+                      <button type="button" :class="backupForm.kind === 'interval' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'" @click="backupForm.kind = 'interval'" x-t>A cada N horas</button>
+                      <button type="button" :class="backupForm.kind === 'daily' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'" @click="backupForm.kind = 'daily'" x-t>Todo dia</button>
+                      <button type="button" :class="backupForm.kind === 'weekly' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'" @click="backupForm.kind = 'weekly'" x-t>Toda semana</button>
+                    </row>
+                    <row class="env__add" x-show="backupForm.enabled && backupForm.kind === 'interval'">
+                      <text x-t>A cada</text>
+                      <input class="field__input" type="number" min="1" max="168" style="width:90px" x-model="backupForm.hours" />
+                      <text x-t>hora(s)</text>
+                    </row>
+                    <row class="env__add" x-show="backupForm.enabled && backupForm.kind === 'weekly'">
+                      <select class="form-select" x-model.number="backupForm.weekday">
+                        <option value="0" x-t>Segunda</option><option value="1" x-t>Terça</option><option value="2" x-t>Quarta</option>
+                        <option value="3" x-t>Quinta</option><option value="4" x-t>Sexta</option><option value="5" x-t>Sábado</option>
+                        <option value="6" x-t>Domingo</option>
+                      </select>
+                    </row>
+                    <row class="env__add" x-show="backupForm.enabled && backupForm.kind !== 'interval'">
+                      <text x-t>Às (UTC)</text>
+                      <input class="field__input" type="time" style="width:120px" x-model="backupForm.time" />
+                    </row>
+                    <row class="env__add" x-show="backupForm.enabled">
+                      <text x-t>Manter os últimos</text>
+                      <input class="field__input" type="number" min="1" max="365" style="width:90px" x-model="backupForm.keep" />
+                      <text x-t>backups</text>
+                    </row>
+                    <label class="check-row" x-show="backupForm.enabled && !dataIsDatabase">
+                      <input type="checkbox" x-model="backupForm.stop" />
+                      <span x-t>Parar o serviço durante a cópia (recomendado)</span>
+                    </label>
+                    <text class="u-muted" x-show="backups.policy && backups.policy.enabled && backups.next_run_at" x-text="$t('Próximo backup: ') + backups.next_run_at"></text>
+                    <row class="env__add">
+                      <button class="btn btn--primary" type="button" @click="saveBackupPolicy()" x-t>Salvar política</button>
+                    </row>
+                  </column>
+                  <text class="u-muted" x-show="backupRunLabel" x-text="backupRunLabel"></text>
+                  <template x-for="backupCheck in (backups.last_run?.checks || [])" :key="backupCheck"><text class="u-muted" x-text="backupCheck"></text></template>
+                  <column class="kv-list" x-show="backups.entries.length">
+                    <template x-for="backupEntry in backups.entries" :key="backupEntry.key">
+                      <row class="kv-list__row">
+                        <button class="env__del" type="button" :disabled="backupRunning" @click="deleteBackup(backupEntry)">✕</button>
+                        <text class="kv-list__val kv-list__val--compact" x-text="backupEntry.last_modified"></text>
+                        <text class="u-muted" x-text="formatSize(backupEntry.size_bytes)"></text>
+                        <button class="btn btn--ghost" type="button" :disabled="backupRunning" @click="restoreBackup(backupEntry)" x-t>Restaurar</button>
+                      </row>
+                    </template>
+                  </column>
+                  <text class="u-muted" x-show="!backups.blocked && !backups.list_error && !backups.entries.length" x-t>Nenhum backup ainda.</text>
                 </column>
               </template>
               <text class="u-label-cap" x-t>IMPORTAR DADOS</text>

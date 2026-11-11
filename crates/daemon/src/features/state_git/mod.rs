@@ -144,6 +144,10 @@ pub struct StateGit {
     /// Chamado depois de uma restauração num servidor limpo: sobe o que foi restaurado, na ordem
     /// das dependências (o bootstrap liga isto ao religamento do boot).
     after_restore: std::sync::OnceLock<Box<dyn Fn() + Send + Sync>>,
+    /// Enquanto ligado, a restauração de um servidor limpo traz a infra mas **não** marca os serviços como
+    /// "no ar" nem dispara o religamento: a recuperação de dados (`data_backup::recover`) faz isso depois,
+    /// serviço a serviço, com os dados já no lugar.
+    hold_restore: std::sync::atomic::AtomicBool,
 }
 
 fn fingerprint(project: &str, scope: &str, what: &str) -> String {
@@ -383,10 +387,17 @@ impl StateGit {
             wake: tokio::sync::Notify::new(),
             cycle_lock: tokio::sync::Mutex::new(()),
             after_restore: std::sync::OnceLock::new(),
+            hold_restore: std::sync::atomic::AtomicBool::new(false),
         })
     }
 
     /// Define o que fazer depois de uma restauração (uma vez só, no bootstrap).
+    /// Liga/desliga a trava `hold_restore` (ver o campo).
+    pub fn set_hold_restore(&self, hold: bool) {
+        self.hold_restore
+            .store(hold, std::sync::atomic::Ordering::SeqCst);
+    }
+
     pub fn set_after_restore(&self, f: impl Fn() + Send + Sync + 'static) {
         let _ = self.after_restore.set(Box::new(f));
     }
@@ -700,6 +711,12 @@ impl StateGit {
             }
             // O servidor é novo: o que veio do git é para estar no ar. Marca a intenção e religa
             // na ordem das dependências (as imagens são baixadas/construídas; dados não voltam).
+            if self.hold_restore.load(std::sync::atomic::Ordering::SeqCst) {
+                info!(
+                    "state_git: restauração segurada: a recuperação de dados religa os serviços depois"
+                );
+                return Ok(());
+            }
             let services = crate::store::services::list_all(&self.db).await?;
             for svc in services.iter().filter(|s| s.spec.autostart) {
                 crate::store::services::set_desired_state(

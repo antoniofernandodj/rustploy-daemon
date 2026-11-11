@@ -245,6 +245,27 @@ Comandos, por área (campos entre chaves):
   GC apaga as tags mais antigas de cada repositório e deixa as `keep_last` mais recentes;
   nunca apaga a tag que um serviço usa; desligada por padrão; a leitura vem em
   `RegistryStatus.retention`)
+- **Backup de dados para S3** (destino único por servidor; plano em `docs/plano-backup-de-dados-para-s3.md`):
+  `BackupDestinationGet` (o destino **sem** a chave secreta: `configured`, `endpoint`, `bucket`,
+  `secret_set`, `recovery_configured`) · `BackupDestinationSet{destination}` · `BackupDestinationClear` ·
+  `BackupDestinationTest{destination?}` (grava, lê e apaga um objeto pequeno). Só o `Get` é seu: o
+  `Set` e o `Test` levam a chave secreta e são **proibidos ao agente** (peça a uma pessoa em Settings → Backups).
+  Todos exigem o nível `admin`.
+  **Backup dos dados de um serviço** (volumes e bancos, sempre cifrado com a chave de recuperação):
+  `ServiceBackupList{service_id}` (os backups no S3, a última operação em `last_run` e, se não dá para
+  fazer, `blocked`) · `ServiceBackupNow{service_id, stop?, keep?}` (começa **em segundo plano** e responde
+  `Ok`; consulte `ServiceBackupList.last_run`: `running`/`ok`/`failed`; `stop` padrão `true` para volume,
+  banco não para; `keep` mantém só os N mais novos depois de enviar) · `ServiceBackupRestore{service_id,
+  key, confirm}` e `ServiceBackupDelete{service_id, key}`, **proibidos ao agente** (substituem dados /
+  apagam o backup) · `ServiceBackupPolicySet{service_id, policy}` (`policy`: `{enabled, recurrence:
+  {IntervalHours:N}|{Daily:{hour,minute}}|{Weekly:{weekday,hour,minute}} (UTC), keep (1–365, padrão 7), stop}`;
+  `null` apaga; ligar exige o destino S3 e a chave de recuperação; a resposta é o `ServiceBackupList` já com
+  `policy` e `next_run_at`). O agendador roda a cada minuto, um backup por vez (na fila de deploy). Níveis:
+  `List` observador, `Now` operador, `PolicySet`/`Restore`/`Delete` admin.
+  **Recuperar um servidor limpo** (`ServerRecoverStart{remote, token, branch?, recovery_key}` → `ServerRecoverRun` →
+  `ServerRecoverStatus` / `ServerRecoverCancel`): traz a infra do git, recifra os segredos para o servidor e
+  restaura os dados do S3 subindo na ordem das dependências. **Proibidos ao agente** (levam a chave de
+  recuperação e um token): é ação de uma pessoa em Settings → Recuperar.
 - **Provedores git**: `GitProviderList` · `GitProviderCreate{…}` ·
   `GitProviderDelete{id}` · `GitRepoList{provider_id}` ·
   `GitBranchList{provider_id, repo_full_name}`

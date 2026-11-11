@@ -21,7 +21,15 @@ pub use crate::platform::age_format::is_enc;
 
 pub struct SecretsManager {
     identity: x25519::Identity,
-    recovery: Option<x25519::Recipient>,
+    /// A chave **pública** de recuperação. Muda em tempo de execução só pela recuperação de um servidor
+    /// (`begin_recovery`), que também a grava no `config.toml`.
+    recovery: std::sync::RwLock<Option<x25519::Recipient>>,
+    /// A identidade **privada** de recuperação, **só na memória**, enquanto uma recuperação está em curso
+    /// (`begin_recovery` … `end_recovery`): serve só para abrir o que foi cifrado para o servidor antigo.
+    /// Nunca é gravada em disco nem entra em log.
+    transient: std::sync::RwLock<Option<x25519::Identity>>,
+    /// Onde gravar `recovery_recipient` (o `config.toml` em uso), se houver.
+    config_path: Option<std::path::PathBuf>,
     db: Arc<Db>,
 }
 
@@ -68,7 +76,9 @@ impl SecretsManager {
             .transpose()?;
         Ok(Self {
             identity,
-            recovery,
+            recovery: std::sync::RwLock::new(recovery),
+            transient: std::sync::RwLock::new(None),
+            config_path: config_path.map(Path::to_path_buf),
             db,
         })
     }
@@ -78,7 +88,9 @@ impl SecretsManager {
     pub fn new(db: Arc<Db>) -> Result<Self> {
         Ok(Self {
             identity: x25519::Identity::generate(),
-            recovery: None,
+            recovery: std::sync::RwLock::new(None),
+            transient: std::sync::RwLock::new(None),
+            config_path: None,
             db,
         })
     }
@@ -92,14 +104,23 @@ impl SecretsManager {
     ) -> Result<Self> {
         Ok(Self {
             identity,
-            recovery,
+            recovery: std::sync::RwLock::new(recovery),
+            transient: std::sync::RwLock::new(None),
+            config_path: None,
             db,
         })
     }
 
     /// Há uma chave de recuperação (`[secrets] recovery_recipient`) configurada?
     pub fn has_recovery(&self) -> bool {
-        self.recovery.is_some()
+        self.recovery().is_some()
+    }
+
+    fn recovery(&self) -> Option<x25519::Recipient> {
+        self.recovery
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     /// A chave pública do servidor (`age1…`).
@@ -110,28 +131,95 @@ impl SecretsManager {
     /// Cifra para a identidade do servidor (e a de recuperação, se houver).
     pub fn encrypt(&self, plaintext: &str) -> Result<String> {
         let mut recipients = vec![self.identity.to_public()];
-        recipients.extend(self.recovery.clone());
+        recipients.extend(self.recovery());
         age_format::encrypt(plaintext, &recipients)
     }
 
     /// Cifra um arquivo para a identidade do servidor (e a de recuperação, se houver).
     pub fn encrypt_file(&self, src: &std::path::Path, dst: &std::path::Path) -> Result<()> {
         let mut recipients = vec![self.identity.to_public()];
-        recipients.extend(self.recovery.clone());
+        recipients.extend(self.recovery());
         age_format::encrypt_file(src, dst, &recipients)
     }
 
-    /// Decifra um arquivo age com a identidade deste servidor.
+    /// Decifra um arquivo age com a identidade deste servidor (ou, durante uma recuperação, com a
+    /// identidade de recuperação em memória).
     pub fn decrypt_file(&self, src: &std::path::Path, dst: &std::path::Path) -> Result<()> {
-        age_format::decrypt_file(src, dst, &self.identity)
+        match age_format::decrypt_file(src, dst, &self.identity) {
+            Ok(()) => Ok(()),
+            Err(own) => match self
+                .transient
+                .read()
+                .unwrap_or_else(|e| e.into_inner())
+                .as_ref()
+            {
+                Some(t) => age_format::decrypt_file(src, dst, t).map_err(|_| own),
+                None => Err(own),
+            },
+        }
     }
 
-    /// Decifra um valor `ENC[age:…]` com a identidade deste servidor.
+    /// Decifra um valor `ENC[age:…]` com a identidade deste servidor (ou, durante uma recuperação, com a
+    /// de recuperação em memória).
     pub fn decrypt(&self, value: &str) -> Result<String> {
         if !is_enc(value) {
             bail!("valor não está no formato ENC[age:…]");
         }
-        age_format::decrypt(value, &self.identity).context("com a identidade deste servidor")
+        match age_format::decrypt(value, &self.identity) {
+            Ok(v) => Ok(v),
+            Err(own) => match self
+                .transient
+                .read()
+                .unwrap_or_else(|e| e.into_inner())
+                .as_ref()
+            {
+                Some(t) => age_format::decrypt(value, t).map_err(|_| own),
+                None => Err(own).context("com a identidade deste servidor"),
+            },
+        }
+    }
+
+    // ── recuperação de um servidor (docs/plano-backup-de-dados-para-s3.md, Fase 4) ──
+
+    /// Começa uma recuperação: guarda a identidade **privada** de recuperação só na memória (para abrir
+    /// o que foi cifrado para o servidor antigo) e passa a cifrar também para a chave **pública** dela,
+    /// que é gravada no `config.toml` (só a pública). Devolve a chave pública (`age1…`).
+    pub fn begin_recovery(&self, secret_key: &str) -> Result<String> {
+        let identity = parse_identity(secret_key.trim()).context(
+            "a chave de recuperação não é uma chave privada age válida (AGE-SECRET-KEY-1…)",
+        )?;
+        let public = identity.to_public();
+        if let Some(path) = &self.config_path
+            && let Err(e) =
+                set_secrets_key_in_config(path, "recovery_recipient", &public.to_string())
+        {
+            // sem gravar, o servidor perderia a chave pública no próximo boot: não vale seguir em silêncio
+            bail!("não consegui gravar recovery_recipient no config.toml: {e:#}");
+        }
+        *self.recovery.write().unwrap_or_else(|e| e.into_inner()) = Some(public.clone());
+        *self.transient.write().unwrap_or_else(|e| e.into_inner()) = Some(identity);
+        Ok(public.to_string())
+    }
+
+    /// Há uma recuperação em curso (a identidade de recuperação está na memória)?
+    #[cfg(test)]
+    pub fn recovery_in_progress(&self) -> bool {
+        self.transient
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_some()
+    }
+
+    /// Termina a recuperação: descarta a identidade privada de recuperação da memória.
+    pub fn end_recovery(&self) {
+        *self.transient.write().unwrap_or_else(|e| e.into_inner()) = None;
+    }
+
+    /// Recifra um valor `ENC[age:…]` para a identidade **deste** servidor e a chave pública de
+    /// recuperação (abre com a identidade do servidor ou com a de recuperação em memória).
+    pub fn rekey(&self, value: &str) -> Result<String> {
+        let plain = self.decrypt(value)?;
+        self.encrypt(&plain)
     }
 
     // Os secrets (já cifrados) moram no YAML de infra: os de projeto em `ProjectInfra.secrets`, os de
@@ -771,6 +859,47 @@ fn write_identity_into_config(path: &Path, line: &str) -> Result<()> {
         out.push('\n');
     }
     // O resultado tem de continuar sendo uma config válida, senão o próximo boot cairia nos defaults.
+    toml::from_str::<crate::platform::config::RustployConfig>(&out)
+        .context("a config resultante não seria válida")?;
+    let tmp = path.with_extension("toml.tmp");
+    write_private(&tmp, &out)?;
+    std::fs::rename(&tmp, path)?;
+    Ok(())
+}
+
+/// Define `key = "value"` em `[secrets]` do `config.toml` (troca a linha se já existe, senão insere logo
+/// abaixo do cabeçalho), preservando o resto e os comentários; troca o arquivo por rename (0600).
+fn set_secrets_key_in_config(path: &Path, key: &str, value: &str) -> Result<()> {
+    let text = std::fs::read_to_string(path)?;
+    let new_line = format!("{key} = \"{value}\"");
+    let mut out = String::with_capacity(text.len() + new_line.len() + 64);
+    let (mut in_secrets, mut done) = (false, false);
+    for l in text.lines() {
+        let t = l.trim();
+        if t.starts_with('[') {
+            in_secrets = t == "[secrets]";
+        }
+        let is_key = in_secrets && t.split('=').next().map(str::trim) == Some(key);
+        if is_key && !done {
+            out.push_str(&new_line);
+            done = true;
+        } else if !is_key {
+            out.push_str(l);
+        } else {
+            continue; // linha repetida da mesma chave
+        }
+        out.push('\n');
+        if !done && t == "[secrets]" {
+            out.push_str(&new_line);
+            out.push('\n');
+            done = true;
+        }
+    }
+    if !done {
+        out.push_str("\n[secrets]\n");
+        out.push_str(&new_line);
+        out.push('\n');
+    }
     toml::from_str::<crate::platform::config::RustployConfig>(&out)
         .context("a config resultante não seria válida")?;
     let tmp = path.with_extension("toml.tmp");
@@ -1708,5 +1837,115 @@ interval_secs = 60000
             .err()
             .unwrap();
         assert!(e.to_string().contains("recovery_recipient"), "{e}");
+    }
+}
+
+#[cfg(test)]
+mod recovery_tests {
+    use super::*;
+
+    fn lazy_db() -> Arc<Db> {
+        Arc::new(Db::lazy_for_test())
+    }
+
+    /// Servidor antigo A (cifra para A + recuperação R) e servidor novo B (outra identidade, sem R).
+    fn cenario() -> (SecretsManager, String, SecretsManager, String) {
+        let r = x25519::Identity::generate();
+        let r_secret = r.to_string().expose_secret().to_string();
+        let a =
+            SecretsManager::with_keys(lazy_db(), x25519::Identity::generate(), Some(r.to_public()))
+                .unwrap();
+        let cifrado_por_a = a.encrypt("senha-do-banco").unwrap();
+        let b = SecretsManager::with_keys(lazy_db(), x25519::Identity::generate(), None).unwrap();
+        (a, cifrado_por_a, b, r_secret)
+    }
+
+    #[tokio::test]
+    async fn servidor_novo_so_abre_o_antigo_durante_a_recuperacao() {
+        let (_a, cifrado, b, r_secret) = cenario();
+        assert!(b.decrypt(&cifrado).is_err(), "B não é destinatário");
+        assert!(!b.has_recovery() && !b.recovery_in_progress());
+
+        let publica = b.begin_recovery(&r_secret).unwrap();
+        assert!(publica.starts_with("age1"));
+        assert!(b.has_recovery() && b.recovery_in_progress());
+        assert_eq!(b.decrypt(&cifrado).unwrap(), "senha-do-banco");
+
+        b.end_recovery();
+        assert!(!b.recovery_in_progress());
+        assert!(
+            b.decrypt(&cifrado).is_err(),
+            "a chave privada foi descartada"
+        );
+        // a pública continua: o que B cifrar daqui em diante também abre com a recuperação
+        assert!(b.has_recovery());
+    }
+
+    #[tokio::test]
+    async fn recifrar_passa_a_abrir_com_a_identidade_do_servidor_novo_sem_a_chave_privada() {
+        let (_a, cifrado, b, r_secret) = cenario();
+        b.begin_recovery(&r_secret).unwrap();
+        let novo = b.rekey(&cifrado).unwrap();
+        b.end_recovery();
+        assert_eq!(b.decrypt(&novo).unwrap(), "senha-do-banco");
+        // e ainda abre com a chave de recuperação (outro servidor, no futuro)
+        let r = parse_identity(&r_secret).unwrap();
+        assert_eq!(age_format::decrypt(&novo, &r).unwrap(), "senha-do-banco");
+    }
+
+    #[tokio::test]
+    async fn arquivo_cifrado_para_o_servidor_antigo_abre_so_durante_a_recuperacao() {
+        let (a, _c, b, r_secret) = cenario();
+        let d = tempfile::tempdir().unwrap();
+        let (src, enc, out) = (d.path().join("s"), d.path().join("e"), d.path().join("o"));
+        std::fs::write(&src, b"dados do volume").unwrap();
+        a.encrypt_file(&src, &enc).unwrap();
+        assert!(b.decrypt_file(&enc, &out).is_err());
+        b.begin_recovery(&r_secret).unwrap();
+        b.decrypt_file(&enc, &out).unwrap();
+        assert_eq!(std::fs::read(&out).unwrap(), b"dados do volume");
+    }
+
+    #[tokio::test]
+    async fn chave_invalida_e_recusada_sem_mudar_nada() {
+        let (_a, _c, b, _r) = cenario();
+        assert!(b.begin_recovery("isto-nao-e-uma-chave").is_err());
+        assert!(!b.has_recovery() && !b.recovery_in_progress());
+        // uma chave PÚBLICA não serve: é preciso a privada
+        let publica = x25519::Identity::generate().to_public().to_string();
+        assert!(b.begin_recovery(&publica).is_err());
+    }
+
+    #[tokio::test]
+    async fn grava_so_a_chave_publica_no_config() {
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("config.toml");
+        let base = toml::to_string(&crate::platform::config::RustployConfig::default()).unwrap();
+        std::fs::write(&path, format!("# meu comentário\n{base}")).unwrap();
+        let (_a, _c, mut b, r_secret) = cenario();
+        b.config_path = Some(path.clone());
+        let publica = b.begin_recovery(&r_secret).unwrap();
+        let texto = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            texto.contains(&format!("recovery_recipient = \"{publica}\"")),
+            "{texto}"
+        );
+        assert!(texto.contains("# meu comentário"));
+        assert!(
+            !texto.contains("AGE-SECRET-KEY"),
+            "a privada nunca vai para o disco"
+        );
+        // continua uma config válida e a chave volta a ser lida
+        let cfg: crate::platform::config::RustployConfig = toml::from_str(&texto).unwrap();
+        assert_eq!(
+            cfg.secrets.recovery_recipient.as_deref(),
+            Some(publica.as_str())
+        );
+
+        // trocar de novo substitui a linha em vez de duplicá-la
+        let outra = x25519::Identity::generate();
+        b.begin_recovery(outra.to_string().expose_secret()).unwrap();
+        let texto = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(texto.matches("recovery_recipient").count(), 1, "{texto}");
     }
 }

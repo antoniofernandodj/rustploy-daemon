@@ -15,6 +15,7 @@
 pub mod audit;
 pub mod migrate;
 pub mod model;
+pub mod rekey;
 pub mod repo;
 pub mod seal;
 pub mod txn;

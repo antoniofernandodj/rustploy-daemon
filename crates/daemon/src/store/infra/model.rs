@@ -50,6 +50,9 @@ pub struct SettingsInfra {
     /// O JSON de `shared::RegistryRetentionConfig` (retenção de tags do registry embutido).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub registry_retention: Option<serde_json::Value>,
+    /// O destino S3 dos backups de dados (JSON; a chave secreta vai como `ENC[age:…]`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backup_destination: Option<serde_json::Value>,
 }
 
 /// Config de um git provider. `oauth_client_secret_enc` já é cifrado hoje; os tokens de login
@@ -138,6 +141,18 @@ pub struct ServiceInfra {
     /// Secrets **deste serviço** (escopo de serviço, R5). Valor sempre `ENC[age:…]`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub secrets: Vec<SecretInfra>,
+    /// Política de backup automático dos dados (Fase 3 de `docs/plano-backup-de-dados-para-s3.md`).
+    /// Fora do `ServiceSpec` de propósito: é decisão do servidor, não viaja no "Exportar serviço".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backup: Option<BackupInfra>,
+}
+
+/// A política de backup e **desde quando** vale (referência do primeiro disparo: um `Daily 03:00`
+/// ligado às 10h roda às 03:00 do dia seguinte, não na hora).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BackupInfra {
+    pub policy: shared::BackupPolicy,
+    pub since: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -492,6 +507,7 @@ mod tests {
                 registry_domain: None,
                 docker_cleanup_config: Some(serde_json::json!({"enabled": true, "days": 7})),
                 registry_retention: Some(serde_json::json!({"enabled": true, "keep_last": 5})),
+                backup_destination: None,
             },
             providers: vec![],
             projects: vec![project("p2", "Segundo App"), project("p1", "Primeiro")],
@@ -576,6 +592,7 @@ mod schema_v1_tests {
             created_at: Utc::now(),
             webhook_token: None,
             secrets: vec![],
+            backup: None,
         };
         let st = InfraState {
             settings: SettingsInfra::default(),

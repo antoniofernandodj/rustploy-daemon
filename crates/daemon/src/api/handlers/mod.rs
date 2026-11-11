@@ -1,6 +1,7 @@
 //! Handlers agrupados por assunto: um arquivo por `Command` dentro de cada pasta, e o `dispatch` da pasta
 //! escolhe o handler. O primeiro nível do `match` fica em `api/routes.rs`.
 
+pub mod data_backup;
 pub mod databases;
 pub mod deploys;
 pub mod docker;

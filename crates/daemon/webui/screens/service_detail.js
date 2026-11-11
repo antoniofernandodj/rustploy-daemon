@@ -26,6 +26,7 @@ import {
   composeHost,
   externalUrl,
   envRowsWithComments,
+  formatBytes,
 } from "../format.js";
 import { t } from "../i18n.js";
 
@@ -126,6 +127,105 @@ document.addEventListener("alpine:init", () => {
         this.dataEncrypt = !!this.dataPlan.encrypt_default;
       }
       else this.store.toastError(planResponse.error || t("resposta inesperada do daemon"));
+      this.loadBackups(true);
+    },
+    // ── Backup no S3 (docs/plano-backup-de-dados-para-s3.md, Fase 2) ────────
+    // O destino é um só por servidor (Settings → Backups). O backup e a restauração rodam em segundo
+    // plano no daemon; aqui só se dispara e se acompanha `ServiceBackupList(.last_run)` a cada 3 s.
+    backups: null,
+    backupTimer: null,
+    // Política do backup automático (docs/plano-backup-de-dados-para-s3.md, Fase 3). O formulário só é
+    // preenchido ao abrir a aba e depois de salvar: o repoll de 3 s não pode apagar o que se digita.
+    backupForm: { enabled: false, kind: "daily", hours: 6, time: "03:00", weekday: 0, keep: 7, stop: true },
+    backupFormFromPolicy(policy) {
+      const form = { enabled: false, kind: "daily", hours: 6, time: "03:00", weekday: 0, keep: 7, stop: true };
+      if (policy) {
+        form.enabled = !!policy.enabled;
+        form.keep = policy.keep ?? 7;
+        form.stop = policy.stop !== false;
+        const two = (n) => String(n).padStart(2, "0");
+        const rec = policy.recurrence || {};
+        if (rec.IntervalHours != null) {
+          form.kind = "interval";
+          form.hours = rec.IntervalHours;
+        } else if (rec.Daily) {
+          form.kind = "daily";
+          form.time = two(rec.Daily.hour) + ":" + two(rec.Daily.minute);
+        } else if (rec.Weekly) {
+          form.kind = "weekly";
+          form.weekday = rec.Weekly.weekday;
+          form.time = two(rec.Weekly.hour) + ":" + two(rec.Weekly.minute);
+        }
+      }
+      return form;
+    },
+    backupPolicyFromForm() {
+      const form = this.backupForm;
+      const [hour, minute] = String(form.time || "03:00").split(":").map((n) => parseInt(n, 10) || 0);
+      let recurrence;
+      if (form.kind === "interval") recurrence = { IntervalHours: parseInt(form.hours, 10) || 1 };
+      else if (form.kind === "weekly") recurrence = { Weekly: { weekday: parseInt(form.weekday, 10) || 0, hour, minute } };
+      else recurrence = { Daily: { hour, minute } };
+      return { enabled: !!form.enabled, recurrence, keep: parseInt(form.keep, 10) || 7, stop: !!form.stop };
+    },
+    async saveBackupPolicy() {
+      const policyResponse = await this.store.api.rpcChecked({
+        ServiceBackupPolicySet: { service_id: this.store.selectedServiceId, policy: this.backupPolicyFromForm() },
+      });
+      if (policyResponse.ok && policyResponse.value?.ServiceBackups) {
+        this.backups = policyResponse.value.ServiceBackups;
+        this.backupForm = this.backupFormFromPolicy(this.backups.policy);
+      }
+      this.store.toastResult(policyResponse, t("política de backup salva"));
+    },
+    formatSize(bytes) {
+      return formatBytes(bytes || 0);
+    },
+    get backupRunning() {
+      return this.backups?.last_run?.state === "running";
+    },
+    async loadBackups(fillForm = false) {
+      clearTimeout(this.backupTimer);
+      const serviceId = this.store.selectedServiceId;
+      if (!serviceId) return;
+      const listResponse = await this.store.api.rpc({ ServiceBackupList: { service_id: serviceId } });
+      if (listResponse.ok && listResponse.value?.ServiceBackups) {
+        this.backups = listResponse.value.ServiceBackups;
+        if (fillForm) this.backupForm = this.backupFormFromPolicy(this.backups.policy);
+      }
+      // enquanto roda (e a aba está aberta), repolla
+      if (this.backupRunning && this.store.serviceTab === "dados") {
+        this.backupTimer = setTimeout(() => this.loadBackups(false), 3000);
+      }
+    },
+    async backupNow() {
+      const serviceId = this.store.selectedServiceId;
+      const nowResponse = await this.store.api.rpcChecked({ ServiceBackupNow: { service_id: serviceId } });
+      if (this.store.toastResult(nowResponse, t("backup iniciado"))) await this.loadBackups();
+    },
+    async restoreBackup(entry) {
+      if (!confirm(t("Isto SUBSTITUI os dados atuais do serviço pelo backup de {0}. Continuar?").replace("{0}", entry.last_modified))) return;
+      const restoreResponse = await this.store.api.rpcChecked({
+        ServiceBackupRestore: { service_id: this.store.selectedServiceId, key: entry.key, confirm: true },
+      });
+      if (this.store.toastResult(restoreResponse, t("restauração iniciada"))) await this.loadBackups();
+    },
+    async deleteBackup(entry) {
+      if (!confirm(t("Apagar este backup ({0})? Ação irreversível.").replace("{0}", entry.last_modified))) return;
+      const deleteResponse = await this.store.api.rpcChecked({
+        ServiceBackupDelete: { service_id: this.store.selectedServiceId, key: entry.key },
+      });
+      if (this.store.toastResult(deleteResponse, t("backup apagado"))) await this.loadBackups();
+    },
+    /** Uma linha para a última operação: "backup concluído em … (3,0 MB)" / "falhou: …". */
+    get backupRunLabel() {
+      const run = this.backups?.last_run;
+      if (!run) return "";
+      const what = run.op === "restore" ? t("restauração") : t("backup");
+      if (run.state === "running") return what + " · " + t("em andamento…");
+      if (run.state === "failed") return what + " · " + t("falhou: ") + (run.error || "");
+      const size = run.size_bytes != null ? " (" + formatBytes(run.size_bytes) + ")" : "";
+      return what + " · " + t("concluído") + " " + (run.finished_at || "") + size;
     },
     get dataIsDatabase() {
       return (this.dataPlan?.parts || []).some((part) => part.kind === "database");

@@ -5,13 +5,17 @@ use anyhow::Result;
 
 use super::Db;
 
-/// As quatro chaves de **configuração** moram no YAML de infra (`settings.yml`); as demais
+/// As cinco chaves de **configuração** moram no YAML de infra (`settings.yml`); as demais
 /// (`*_last_run`, `job_warm:*`, `service_warm:*`…) são runtime e continuam no SQL.
 /// Plano: `docs/plano-backup-estado-em-git.md`, R2.1.
 fn is_infra_key(key: &str) -> bool {
     matches!(
         key,
-        KEY_ACME_EMAIL | KEY_REGISTRY_DOMAIN | KEY_DOCKER_CLEANUP_CONFIG | KEY_REGISTRY_RETENTION
+        KEY_ACME_EMAIL
+            | KEY_REGISTRY_DOMAIN
+            | KEY_DOCKER_CLEANUP_CONFIG
+            | KEY_REGISTRY_RETENTION
+            | KEY_BACKUP_DESTINATION
     )
 }
 
@@ -27,6 +31,7 @@ pub async fn get(db: &Db, key: &str) -> Result<Option<String>> {
             KEY_ACME_EMAIL => st.settings.acme_email.clone(),
             KEY_REGISTRY_DOMAIN => st.settings.registry_domain.clone(),
             KEY_REGISTRY_RETENTION => st.settings.registry_retention.as_ref().map(as_text),
+            KEY_BACKUP_DESTINATION => st.settings.backup_destination.as_ref().map(as_text),
             _ => st.settings.docker_cleanup_config.as_ref().map(as_text),
         });
     }
@@ -42,6 +47,12 @@ pub async fn set(db: &Db, key: &str, value: &str) -> Result<()> {
                 KEY_REGISTRY_DOMAIN => st.settings.registry_domain = Some(value),
                 KEY_REGISTRY_RETENTION => {
                     st.settings.registry_retention = Some(
+                        serde_json::from_str(&value)
+                            .unwrap_or(serde_json::Value::String(value.clone())),
+                    )
+                }
+                KEY_BACKUP_DESTINATION => {
+                    st.settings.backup_destination = Some(
                         serde_json::from_str(&value)
                             .unwrap_or(serde_json::Value::String(value.clone())),
                     )
@@ -74,6 +85,7 @@ pub async fn delete(db: &Db, key: &str) -> Result<()> {
                 KEY_ACME_EMAIL => st.settings.acme_email = None,
                 KEY_REGISTRY_DOMAIN => st.settings.registry_domain = None,
                 KEY_REGISTRY_RETENTION => st.settings.registry_retention = None,
+                KEY_BACKUP_DESTINATION => st.settings.backup_destination = None,
                 _ => st.settings.docker_cleanup_config = None,
             }
             Ok(())
@@ -107,6 +119,9 @@ pub const KEY_REGISTRY_DOMAIN: &str = "registry_domain";
 pub const KEY_DOCKER_CLEANUP_CONFIG: &str = "docker_cleanup_config";
 /// JSON de `shared::RegistryRetentionConfig` — ver `crate::features::registry::retention`.
 pub const KEY_REGISTRY_RETENTION: &str = "registry_retention";
+/// JSON do destino S3 dos backups de dados (chave secreta cifrada) — ver
+/// `crate::features::data_backup::destination`.
+pub const KEY_BACKUP_DESTINATION: &str = "backup_destination";
 /// JSON de `shared::DockerCleanupLastRun`, ausente até a primeira execução.
 pub const KEY_DOCKER_CLEANUP_LAST_RUN: &str = "docker_cleanup_last_run";
 /// JSON de `BuildCachePrune`: quando o cache de build foi limpo pela última vez

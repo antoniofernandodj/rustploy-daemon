@@ -218,6 +218,28 @@ document.addEventListener("alpine:init", () => {
     stateGitRemote: "",
     stateGitBranch: "main",
     stateGitProviderId: "",
+    // ── Backups: destino S3 dos backups de dados (docs/plano-backup-de-dados-para-s3.md, Fase 1) ──
+    // Mesmos nomes de campo da GUI (handlers/data_backup.luau). A chave secreta nunca volta do daemon:
+    // o campo fica vazio e, vazio, mantém a que já está gravada.
+    backupDestEndpoint: "",
+    backupDestRegion: "us-east-1",
+    backupDestBucket: "",
+    backupDestPrefix: "",
+    backupDestPathStyle: true,
+    backupDestAccessKey: "",
+    backupDestSecretKey: "",
+    backupDestConfigured: false,
+    backupDestSecretSet: false,
+    backupDestRecoveryMissing: false,
+    backupDestMessage: "",
+    // ── Recuperar este servidor (docs/plano-backup-de-dados-para-s3.md, Fase 4) ──
+    // Mesmos nomes da GUI (handlers/recover.luau). A chave e o token só vivem no campo: somem ao enviar.
+    recoverRemote: "",
+    recoverToken: "",
+    recoverBranch: "",
+    recoverKey: "",
+    recoverInfo: { phase: "idle", services: [], projects: 0 },
+    recoverTimer: null,
     serverSettingsPublicBase: "",
     serverSettingsEmail: "",
     serverSettingsRegistryDomain: "",
@@ -371,7 +393,11 @@ document.addEventListener("alpine:init", () => {
       this.view = view;
       // Settings já carrega a lista de contas Git, como o botão "Refresh git list": a aba Sync
       // depende dela e não pode ficar vazia só porque a pessoa não passou pela aba Git antes.
-      if (view === "settings") this.gitProviderRefresh();
+      if (view === "settings") {
+        this.gitProviderRefresh();
+        this.backupDestinationLoad();
+        this.recoverStatusLoad();
+      }
     },
 
     persistPrefs() {
@@ -1911,6 +1937,136 @@ document.addEventListener("alpine:init", () => {
       this.nav("settings");
       this.settingsTab = "gitsync";
       this.stateGitFormLoad();
+    },
+
+    // ── Recuperar este servidor ──────────────────────────────────────────
+
+    /** Lê em que ponto a recuperação está e, enquanto roda, repolla a cada 3 s. */
+    async recoverStatusLoad() {
+      clearTimeout(this.recoverTimer);
+      const statusResponse = await this.api?.rpc("ServerRecoverStatus");
+      const info = statusResponse?.ok ? statusResponse.value?.ServerRecover : null;
+      if (info) this.recoverInfo = info;
+      if (this.recoverInfo.phase === "running" && this.settingsTab === "recover") {
+        this.recoverTimer = setTimeout(() => this.recoverStatusLoad(), 3000);
+      }
+    },
+
+    /** Passo 1: traz a infra do git, recifra os segredos e lista o que foi achado. Não toca em dado. */
+    async recoverStart() {
+      const startResponse = await this.api.rpcChecked({
+        ServerRecoverStart: {
+          remote: this.recoverRemote.trim(),
+          token: this.recoverToken.trim(),
+          branch: this.recoverBranch.trim() || null,
+          recovery_key: this.recoverKey.trim(),
+        },
+      });
+      // a chave e o token saem da tela e da memória do navegador, deu certo ou não
+      this.recoverKey = "";
+      this.recoverToken = "";
+      if (startResponse.ok && startResponse.value?.ServerRecover) {
+        this.recoverInfo = startResponse.value.ServerRecover;
+        this.toastOk(t("infraestrutura restaurada; confira o resumo"));
+      } else {
+        this.toastError("erro: " + startResponse.error);
+      }
+    },
+
+    /** Passo 2: restaura os dados e sobe os serviços na ordem das dependências (em segundo plano). */
+    async recoverRun() {
+      if (!confirm(t("Restaurar os dados do S3 e subir os serviços agora?"))) return;
+      const runResponse = await this.api.rpcChecked("ServerRecoverRun");
+      if (this.toastResult(runResponse, t("recuperação iniciada"))) await this.recoverStatusLoad();
+    },
+
+    async recoverCancel() {
+      const cancelResponse = await this.api.rpcChecked("ServerRecoverCancel");
+      if (cancelResponse.ok && cancelResponse.value?.ServerRecover) this.recoverInfo = cancelResponse.value.ServerRecover;
+      this.toastResult(cancelResponse, t("recuperação cancelada"));
+    },
+
+    /** Rótulo de cada etapa de um serviço. */
+    recoverStepLabel(step) {
+      const labels = {
+        pending: t("aguardando"),
+        restoring: t("restaurando dados"),
+        starting: t("subindo"),
+        ready: t("pronto"),
+        blocked: t("bloqueado"),
+        failed: t("falhou"),
+      };
+      return labels[step] || step;
+    },
+
+    // ── Backups: destino S3 ──────────────────────────────────────────────
+
+    /** O que a tela digitou, no formato do `BackupDestination` do protocolo. */
+    backupDestinationDraft() {
+      return {
+        endpoint: this.backupDestEndpoint.trim(),
+        region: this.backupDestRegion.trim(),
+        bucket: this.backupDestBucket.trim(),
+        prefix: this.backupDestPrefix.trim(),
+        path_style: this.backupDestPathStyle,
+        access_key: this.backupDestAccessKey.trim(),
+        secret_key: this.backupDestSecretKey || null,
+      };
+    },
+
+    /** Espalha o que o daemon devolveu (sem a chave secreta) no formulário. */
+    backupDestinationApply(view) {
+      this.backupDestConfigured = view.configured === true;
+      this.backupDestSecretSet = view.secret_set === true;
+      this.backupDestRecoveryMissing = view.recovery_configured !== true;
+      this.backupDestSecretKey = "";
+      if (view.configured) {
+        this.backupDestEndpoint = view.endpoint || "";
+        this.backupDestRegion = view.region || "";
+        this.backupDestBucket = view.bucket || "";
+        this.backupDestPrefix = view.prefix || "";
+        this.backupDestPathStyle = view.path_style === true;
+        this.backupDestAccessKey = view.access_key || "";
+      }
+    },
+
+    async backupDestinationLoad() {
+      const getResponse = await this.api?.rpc("BackupDestinationGet");
+      const view = getResponse?.ok ? getResponse.value?.BackupDestination : null;
+      if (view) this.backupDestinationApply(view);
+    },
+
+    async backupDestinationSave() {
+      this.backupDestMessage = t("salvando…");
+      const setResponse = await this.api.rpcChecked({ BackupDestinationSet: { destination: this.backupDestinationDraft() } });
+      if (setResponse.ok && setResponse.value?.BackupDestination) {
+        this.backupDestinationApply(setResponse.value.BackupDestination);
+        this.backupDestMessage = t("destino salvo");
+        this.toastOk(t("Destino de backup salvo"));
+      } else {
+        this.backupDestMessage = "erro: " + setResponse.error;
+        this.toastError("erro: " + setResponse.error);
+      }
+    },
+
+    /** Grava, lê e apaga um objeto pequeno no S3, com o que está na tela (não precisa salvar antes). */
+    async backupDestinationTest() {
+      this.backupDestMessage = t("testando a conexão…");
+      const testResponse = await this.api.rpcChecked({ BackupDestinationTest: { destination: this.backupDestinationDraft() } });
+      this.backupDestMessage = testResponse.ok ? t("conexão funcionando") : "erro: " + testResponse.error;
+      this.toastResult(testResponse, t("Conexão com o S3 funcionando"));
+    },
+
+    async backupDestinationClear() {
+      if (!confirm(t("Remover o destino de backup? Os backups que já estão no S3 continuam lá. Os próximos não serão enviados até você configurar outro destino."))) return;
+      const clearResponse = await this.api.rpcChecked("BackupDestinationClear");
+      if (clearResponse.ok) {
+        this.backupDestConfigured = false;
+        this.backupDestSecretSet = false;
+        this.backupDestSecretKey = "";
+        this.backupDestMessage = t("destino removido");
+      }
+      this.toastResult(clearResponse, t("Destino de backup removido"));
     },
 
     stateGitFormLoad() {

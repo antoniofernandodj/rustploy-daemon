@@ -97,6 +97,7 @@ impl Db {
                         created_at: chrono::Utc::now(),
                         webhook_token: None,
                         secrets: vec![],
+                        backup: None,
                     });
                 }
                 Ok(())

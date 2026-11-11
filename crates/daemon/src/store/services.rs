@@ -151,6 +151,7 @@ pub async fn create(db: &Db, spec: ServiceSpec) -> Result<Service> {
             created_at: now,
             webhook_token: None,
             secrets: vec![],
+            backup: None,
         };
         project.services.push(rec.clone());
         Ok(rec)
