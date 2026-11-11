@@ -189,6 +189,7 @@ export default {
   "Editar projeto": "Edit project",
   "Ele reinicia (os containers dos serviços continuam rodando) e esta tela fica sem resposta por ": "It restarts (the services' containers keep running) and this screen goes unresponsive for ",
   "Em execução": "Running",
+  "EXECUTANDO": "RUNNING",
   "Enviar zip": "Upload zip",
   "Escolha o database de destino e informe o de origem": "Choose the destination database and enter the source one",
   "Escolha o tipo e configure o serviço antes de criar.": "Choose the type and configure the service before creating it.",

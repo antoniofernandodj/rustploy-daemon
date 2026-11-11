@@ -700,14 +700,16 @@ function itemLabel(info) {
 
 export function deployEngineActiveRows(active) {
   return (active || []).map((info) => {
-    const [label, kind] = stateLabelKind(info.state);
+    const isDeploy = !info.kind || info.kind === "Deploy";
+    // Job e aquecimento não passam pelas etapas do deploy: "Executando", sem a faixa.
+    const [label, kind] = isDeploy ? stateLabelKind(info.state) : [t("EXECUTANDO"), "info"];
     return {
       service: itemLabel(info),
-      isDeploy: !info.kind || info.kind === "Deploy",
+      isDeploy,
       project: info.project_name,
       stateLabel: label,
       stateKind: kind,
-      steps: deployStepper(info),
+      steps: isDeploy ? deployStepper(info) : [],
       detail: deployDetailRows(info),
       total: formatSeconds(info.elapsed_secs),
       phase: formatSeconds(info.current_state_secs),

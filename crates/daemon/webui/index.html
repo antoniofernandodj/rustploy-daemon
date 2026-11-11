@@ -428,7 +428,7 @@
                               @click="store.queueCancel(activeDeployment.deploymentId)">■</button>
                     </row>
                   </row>
-                  <row class="stepper">
+                  <row class="stepper" x-show="activeDeployment.isDeploy">
                     <template x-for="(activeStep, index) in activeDeployment.steps" :key="activeStep.label">
                       <row class="stepper__item">
                         <text class="stepper__sep" x-show="index > 0">›</text>
