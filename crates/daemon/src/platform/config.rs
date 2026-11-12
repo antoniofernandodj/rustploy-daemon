@@ -41,6 +41,7 @@ fn default_env_backup_interval() -> u64 {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RustployConfig {
+    #[serde(default)]
     pub daemon: DaemonConfig,
     pub ingress: IngressConfig,
     pub docker: DockerConfig,
@@ -337,8 +338,21 @@ impl Default for RegistryConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DaemonConfig {
+    /// Sob systemd o unit fixa o caminho por `RUSTPLOY_DB_PATH`; o campo só importa fora dele.
+    #[serde(default = "default_db_path")]
     pub db_path: String,
+    #[serde(default = "default_log_level")]
     pub log_level: String,
+}
+
+// Antes eram obrigatórios: um `[daemon]` sem eles (só comentários, como já aconteceu num servidor
+// real) derrubava o arquivo INTEIRO e o daemon subia com os defaults — API em loopback, sem token.
+fn default_db_path() -> String {
+    "/var/lib/rustploy/db".into()
+}
+
+fn default_log_level() -> String {
+    "info".into()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -388,6 +402,15 @@ pub struct SecretsConfig {
     /// tem a chave privada correspondente (guardada fora do servidor).
     #[serde(default)]
     pub recovery_recipient: Option<String>,
+}
+
+impl Default for DaemonConfig {
+    fn default() -> Self {
+        Self {
+            db_path: default_db_path(),
+            log_level: default_log_level(),
+        }
+    }
 }
 
 impl Default for RustployConfig {
@@ -639,5 +662,63 @@ enabled = true
         assert!(!cfg.allow_agent_apply);
         let cfg: UpdateConfig = toml::from_str("allow_agent_apply = true").unwrap();
         assert!(cfg.allow_agent_apply);
+    }
+
+    /// O `config.toml` de um servidor real tinha o `[daemon]` vazio (só comentários): faltavam
+    /// `db_path`/`log_level`, o parse falhava e o daemon ignorava o arquivo todo (API em loopback,
+    /// sem token). Agora o resto da config vale.
+    #[test]
+    fn daemon_vazio_nao_derruba_o_arquivo() {
+        let toml = r#"
+[daemon]
+# só comentário
+
+[api]
+bind_address = "0.0.0.0"
+port = 9797
+token = "t"
+domain = "x.example.com"
+
+[ingress]
+http_port = 80
+https_port = 443
+bind_address = "0.0.0.0"
+
+[ingress.acme]
+enabled = true
+email = "a@b.c"
+directory = "https://acme-v02.api.letsencrypt.org/directory"
+
+[docker]
+socket_path = "/run/podman/podman.sock"
+
+[deploy]
+drain_secs = 10
+image_cache = 2
+
+[metrics]
+interval_secs = 2
+history_points = 60
+
+[secrets]
+age_key_path = "/etc/rustploy/age.key"
+recovery_recipient = "age1x"
+
+[external_ports]
+range_start = 20000
+range_end = 20999
+
+[registry]
+enabled = true
+port = 5100
+
+[env_backup]
+interval_secs = 60
+"#;
+        let cfg: RustployConfig = toml::from_str(toml).expect("o arquivo precisa fazer parse");
+        assert_eq!(cfg.api.bind_address, "0.0.0.0");
+        assert_eq!(cfg.api.token.as_deref(), Some("t"));
+        assert_eq!(cfg.daemon.db_path, "/var/lib/rustploy/db");
+        assert_eq!(cfg.daemon.log_level, "info");
     }
 }
