@@ -949,4 +949,5 @@ export default {
   "VARIÁVEIS E SECRETS": "VARIABLES AND SECRETS",
   "Gerencie as variáveis e os secrets (cifrados) deste job, com os mesmos botões de um serviço.": "Manage this job's variables and secrets (encrypted), with the same buttons as a service.",
   "Depois de criar o job, abre-se a janela para adicionar as variáveis e os secrets dele, com os mesmos botões de um serviço.": "After you create the job, a window opens to add its variables and secrets, with the same buttons as a service.",
+  "Esta conta é usada por {0} item(ns): {1}. Sem ela, eles deixam de conseguir clonar o repositório até serem reapontados para outra conta (aba General → Git de cada serviço). Remover mesmo assim?": "This account is used by {0} item(s): {1}. Without it they can no longer clone the repository until they are pointed to another account (each service's General → Git tab). Remove anyway?",
 };

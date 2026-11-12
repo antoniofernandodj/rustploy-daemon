@@ -270,7 +270,7 @@ Comandos, por área (campos entre chaves):
   restaura os dados do S3 subindo na ordem das dependências. **Proibidos ao agente** (levam a chave de
   recuperação e um token): é ação de uma pessoa em Settings → Recuperar.
 - **Provedores git**: `GitProviderList` · `GitProviderCreate{…}` ·
-  `GitProviderDelete{id}` · `GitRepoList{provider_id}` ·
+  `GitProviderDelete{id, force?}` (**recusa** com `InUse` e a lista enquanto serviços ou jobs ainda usam a conta; `force: true` remove mesmo assim — eles deixam de clonar até serem reapontados) · `GitRepoList{provider_id}` ·
   `GitBranchList{provider_id, repo_full_name}`
 - **Daemon**: `Ping` · `DaemonStatus` · `CheckUpdate{force?}` (há release nova? só
   consulta, nunca instala; cache de horas) · `Snapshot` (o painel inteiro, JSON

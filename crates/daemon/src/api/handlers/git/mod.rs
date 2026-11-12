@@ -34,7 +34,9 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
             )
             .await
         }
-        Command::GitProviderDelete { id } => git_provider_delete::handle(state, id).await,
+        Command::GitProviderDelete { id, force } => {
+            git_provider_delete::handle(state, id, force).await
+        }
         Command::GitOAuthStart { provider_id } => git_oauth_start::handle(state, provider_id).await,
         Command::GitRepoList { provider_id } => git_repo_list::handle(state, provider_id).await,
         Command::GitBranchList {

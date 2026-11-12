@@ -2255,8 +2255,28 @@ document.addEventListener("alpine:init", () => {
       await this.gitProviderRefresh();
     },
 
+    /** Quem (serviço ou job) ainda clona com esta conta, como "projeto/nome" — do snapshot. Sem a conta,
+     * o próximo deploy deles falha no clone. O daemon também recusa a remoção (`InUse`) sem `force`. */
+    gitProviderUsers(providerId) {
+      const services = (this.snap?.services || [])
+        .filter((entry) => entry.service?.spec?.source?.Git?.provider_id === providerId)
+        .map((entry) => `${entry.project_name}/${entry.service.spec.name}`);
+      const projectNames = Object.fromEntries((this.snap?.projects || []).map((project) => [project.id, project.name]));
+      const jobs = (this.snap?.jobs || [])
+        .map((summary) => summary.job)
+        .filter((job) => job?.git_source?.provider_id === providerId)
+        .map((job) => `${projectNames[job.project_id] || job.project_id}/${job.name} (job)`);
+      return [...services, ...jobs].sort();
+    },
+
     async gitProviderDelete(providerId) {
-      const gitProviderDeleteResponse = await this.api.rpcChecked({ GitProviderDelete: { id: providerId } });
+      const users = this.gitProviderUsers(providerId);
+      if (users.length) {
+        const count = users.length;
+        const list = users.join(", ");
+        if (!confirm(t`Esta conta é usada por ${count} item(ns): ${list}. Sem ela, eles deixam de conseguir clonar o repositório até serem reapontados para outra conta (aba General → Git de cada serviço). Remover mesmo assim?`)) return;
+      }
+      const gitProviderDeleteResponse = await this.api.rpcChecked({ GitProviderDelete: { id: providerId, force: users.length > 0 } });
       this.gitProviderMessage = "";
       this.toastResult(gitProviderDeleteResponse, t("provider removido"));
       await this.gitProviderRefresh();
