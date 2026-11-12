@@ -1762,6 +1762,8 @@
               <button class="btn btn--primary" type="button" @click="store.stateGitConfigure()" x-t>Salvar e aplicar</button>
               <button class="btn btn--copy" type="button" x-show="store.stateGitStatus && store.stateGitStatus.mode === 'sync'"
                       @click="store.stateGitSyncNow()" x-t>Sincronizar agora</button>
+              <button class="btn btn--danger" type="button" x-show="store.stateGitConfigured"
+                      @click="store.stateGitClear()" x-t>Limpar configuração</button>
             </row>
           </column>
 
@@ -2096,7 +2098,7 @@
               <text class="u-muted" x-show="store.recoverInfo.phase === 'ready'" x-t>Nada foi iniciado ainda. Ao confirmar, cada serviço tem os dados restaurados (volumes antes de subir, bancos depois) e sobe na ordem das dependências.</text>
               <text class="u-muted" x-show="store.recoverInfo.phase === 'running'" x-t>Recuperação em andamento…</text>
               <text class="u-muted" x-show="store.recoverInfo.phase === 'done'" x-t>Recuperação concluída: tudo no ar.</text>
-              <text class="banner banner--warn" x-show="store.recoverInfo.phase === 'failed' && store.recoverInfo.message" x-text="store.recoverInfo.message"></text>
+              <text class="banner banner--warn" x-show="(store.recoverInfo.phase === 'failed' || store.recoverInfo.phase === 'ready') && store.recoverInfo.message" x-text="store.recoverInfo.message"></text>
               <row style="gap:8px; margin-top:6px" x-show="store.recoverInfo.phase === 'ready'">
                 <button class="btn btn--primary" type="button" @click="store.recoverRun()" x-t>Restaurar os dados e subir</button>
                 <button class="btn btn--ghost" type="button" @click="store.recoverCancel()" x-t>Cancelar</button>

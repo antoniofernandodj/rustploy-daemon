@@ -189,6 +189,28 @@ async fn summarize(ctx: &DeployContext, public: String) -> ServerRecoverInfo {
     info.services.sort_by(|a, b| {
         (a.project.as_str(), a.name.as_str()).cmp(&(b.project.as_str(), b.name.as_str()))
     });
+    // Os tokens de login dos providers git nunca vão ao git (ficam só no SQL do servidor antigo): os
+    // providers voltam sem credencial e todo clone privado falha depois (jobs/serviços `git_source`).
+    if let Ok(providers) = crate::store::git_providers::list(&ctx.db).await {
+        let names: Vec<String> = providers
+            .iter()
+            .filter(|p| p.access_token_enc.is_none())
+            .map(|p| p.name.clone())
+            .collect();
+        if !names.is_empty() {
+            info.message = Some(format!(
+                "reconecte {} em Settings → Git providers (token/PAT ou OAuth): os tokens de login \
+                 não vão para o git, então {} sem credencial e os clones de repositório privado \
+                 (jobs de pré-deploy, serviços Git) vão falhar até lá",
+                names.join(", "),
+                if names.len() == 1 {
+                    "ele voltou"
+                } else {
+                    "eles voltaram"
+                },
+            ));
+        }
+    }
     if !destination.configured {
         info.destination_error.get_or_insert_with(|| {
             "o repositório não trouxe o destino S3: os serviços sobem vazios".into()

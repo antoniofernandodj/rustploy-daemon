@@ -79,9 +79,11 @@ impl DeployExecutor {
                 .run_inner_mirrored(&job, &run.id, Some((dep.id.clone(), svc.id.clone())), None)
                 .await;
 
+            let mut failure_cause: Option<String> = None;
             let (exit_code, success) = match &result {
                 Ok(code) => (*code, *code == 0),
                 Err(e) => {
+                    failure_cause = Some(format!("{e:#}"));
                     warn!(
                         deployment_id = %dep.id,
                         job_id = %job.id,
@@ -101,10 +103,31 @@ impl DeployExecutor {
             });
 
             if !success {
+                // A causa de verdade (clone recusado, imagem que não sobe…) fica no log do job; sem
+                // trazê-la para cá o erro do deploy era só "exit code -1".
+                let tail: Vec<String> = crate::store::job_log::get_for_run(&self.db, &run.id)
+                    .await
+                    .unwrap_or_default()
+                    .into_iter()
+                    .rev()
+                    .take(5)
+                    .map(|l| l.line)
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .rev()
+                    .collect();
+                for line in &tail {
+                    self.log_step(&dep.id, &svc.id, &format!("    [{}] {line}", job.name))
+                        .await;
+                }
+                let detail = failure_cause
+                    .or_else(|| tail.last().cloned())
+                    .map(|c| format!(": {c}"))
+                    .unwrap_or_default();
                 // Primeira falha interrompe a fila inteira — os checks
                 // seguintes não rodam.
                 return Err(anyhow!(
-                    "pré-deploy check {}/{} ({}) falhou (exit code {exit_code})",
+                    "pré-deploy check {}/{} ({}) falhou (exit code {exit_code}){detail}",
                     idx + 1,
                     total,
                     job.name

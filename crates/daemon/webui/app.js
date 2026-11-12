@@ -2104,6 +2104,35 @@ document.addEventListener("alpine:init", () => {
       await this.stateGitAuditRefresh();
     },
 
+    /** Limpa a configuração do sync (modo off, sem repositório/branch/conta). O remoto e o histórico não são apagados. */
+    async stateGitClear() {
+      if (
+        !confirm(
+          t(
+            "Limpar a configuração da sincronização? O servidor deixa de commitar e de empurrar o estado. O repositório remoto e o histórico já gravado não são apagados; dá para configurar de novo depois.",
+          ),
+        )
+      ) {
+        return;
+      }
+      const clearResponse = await this.api.rpcChecked({ StateGitConfigure: { mode: "off" } });
+      if (clearResponse.ok) {
+        this.stateGitMode = "off";
+        this.stateGitRemote = "";
+        this.stateGitBranch = "main";
+        this.stateGitProviderId = "";
+      }
+      this.toastResult(clearResponse, t("configuração da sincronização limpa"));
+      await this.refreshNow();
+      await this.stateGitAuditRefresh();
+    },
+
+    /** Há algo gravado para limpar: modo ligado, repositório ou conta. */
+    get stateGitConfigured() {
+      const status = this.stateGitStatus;
+      return !!status && (status.mode !== "off" || !!status.remote || !!status.provider_id);
+    },
+
     async stateGitSyncNow() {
       const syncResponse = await this.api.rpcChecked("StateGitSyncNow");
       this.toastResult(syncResponse, t("sincronizado"));
