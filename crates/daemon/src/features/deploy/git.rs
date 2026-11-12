@@ -79,6 +79,8 @@ pub async fn clone(
         "git::clone: iniciando"
     );
 
+    // O log mostra a URL SEM a credencial (`effective_url` leva o token): um token no journal vaza
+    // para quem colar o log num chamado.
     let msg = format!(
         "{:?}",
         [
@@ -87,7 +89,7 @@ pub async fn clone(
             opts.branch,
             "--progress",
             "--",
-            &effective_url,
+            &redact_url(opts.url),
             ".",
         ]
     );
