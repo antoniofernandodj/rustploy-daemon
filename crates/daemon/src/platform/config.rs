@@ -469,10 +469,21 @@ impl RustployConfig {
         ];
 
         for path in paths.into_iter().flatten() {
-            if let Ok(contents) = std::fs::read_to_string(&path)
-                && let Ok(cfg) = toml::from_str(&contents)
-            {
-                return (Self::apply_env_overrides(cfg), Some(path));
+            let Ok(contents) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            match toml::from_str(&contents) {
+                Ok(cfg) => return (Self::apply_env_overrides(cfg), Some(path)),
+                // O parse é tudo-ou-nada: uma linha inválida derruba o arquivo inteiro e o daemon
+                // cai nos defaults (API em loopback, sem token, motor padrão). Sem este aviso isso
+                // era silencioso e parecia "o daemon ignora o meu config.toml". O logger ainda não
+                // subiu aqui, então vai direto para o stderr (journal).
+                Err(e) => eprintln!(
+                    "rustployd: AVISO: {} não é uma configuração válida e foi IGNORADA ({}); \
+                     seguindo com os valores padrão (API só em 127.0.0.1, sem token).",
+                    path.display(),
+                    e.message()
+                ),
             }
         }
 
