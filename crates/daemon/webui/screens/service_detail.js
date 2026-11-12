@@ -927,6 +927,7 @@ document.addEventListener("alpine:init", () => {
     /** "🔒" numa variável em claro: o valor passa a ser guardado cifrado e a variável vira uma
      * referência ao secret de mesmo nome (o valor não muda). */
     async envToSecret(key) {
+      if (!confirm(t`Mover a variável "${key}" para secret? O valor passa a ser guardado cifrado.`)) return;
       const secretMoveResponse = await this.store.api.rpcChecked({
         SecretMove: { project_id: this.svc.spec.project_id, service_id: this.svc.id, name: key, op: "EnvToSecret" },
       });
@@ -1022,6 +1023,7 @@ document.addEventListener("alpine:init", () => {
     },
 
     async deleteEnvVar(key) {
+      if (!confirm(t`Remover a variável "${key}" deste serviço?`)) return;
       // JSON round-trip (não structuredClone): this.svc.spec é um Proxy
       // reativo do Alpine — o clonador estrutural nativo do browser não
       // sabe copiá-lo (DataCloneError). O JSON round-trip descarta a
@@ -1053,6 +1055,7 @@ document.addEventListener("alpine:init", () => {
       // sabe copiá-lo (DataCloneError). O JSON round-trip descarta a
       // reatividade de forma segura, já que o ServiceSpec é sempre dados
       // planos (sem funções/Date/referências circulares).
+      if (!confirm(t("Substituir todas as variáveis deste serviço pelo texto do editor?"))) return;
       const spec = JSON.parse(JSON.stringify(this.svc.spec));
       spec.env_vars = vars;
       spec.env_comments = comments;

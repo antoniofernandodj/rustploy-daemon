@@ -824,6 +824,7 @@ mod tests {
             Command::SecretMove {
                 project_id: "p".into(),
                 service_id: None,
+                job_id: None,
                 name: "K".into(),
                 op: shared::SecretMoveOp::SecretToEnv,
             },
@@ -848,6 +849,7 @@ mod tests {
             Command::SecretMove {
                 project_id: "p".into(),
                 service_id: None,
+                job_id: None,
                 name: "K".into(),
                 op: shared::SecretMoveOp::EnvToSecret,
             },
@@ -860,6 +862,7 @@ mod tests {
             Command::EnvValueSet {
                 project_id: "p".into(),
                 service_id: None,
+                job_id: None,
                 key: "K".into(),
                 value: shared::EnvVarValue::Plain("v".into()),
             },
@@ -877,6 +880,7 @@ mod tests {
         let reveal = Command::SecretReveal {
             project_id: "p".into(),
             service_id: None,
+            job_id: None,
             name: "K".into(),
         };
         assert!(proibido_ao_agente(&reveal).is_some());
@@ -884,10 +888,12 @@ mod tests {
             Command::SecretList {
                 project_id: "p".into(),
                 service_id: None,
+                job_id: None,
             },
             Command::SecretSet {
                 project_id: "p".into(),
                 service_id: None,
+                job_id: None,
                 name: "K".into(),
                 value: "v".into(),
             },

@@ -169,15 +169,23 @@ pub async fn resolve_job(
             EnvVarValue::Plain(v) => v.clone(),
             EnvVarValue::Secret(name) => {
                 debug!(job_id = %job.id, secret = %name, "resolve_env: desencriptando secret do job");
-                secret_value(
-                    secrets,
-                    &job.project_id,
-                    job.trigger_service_id.as_deref(),
-                    name,
-                    &ev.key,
-                    "job",
-                )
-                .await?
+                secrets
+                    .resolve_for_job(
+                        &job.project_id,
+                        &job.id,
+                        job.trigger_service_id.as_deref(),
+                        name,
+                    )
+                    .await
+                    .map_err(|e| {
+                        anyhow::anyhow!(
+                            "a env '{}' (job) aponta para o secret '{name}', que não pôde ser resolvido \
+                             (procurado nos secrets do job '{}', do serviço gatilho e do projeto '{}'): {e}",
+                            ev.key,
+                            job.id,
+                            job.project_id
+                        )
+                    })?
             }
         };
         env_map.insert(ev.key.clone(), value);

@@ -1014,7 +1014,7 @@ async fn job_actions_window_lists_actions_and_warm_status() {
     )
     .await;
     assert_eq!(
-        items, r#"["▶ Run now","◐ Warm","‖ Pause","✎ Edit","✕ Remove"]"#,
+        items, r#"["▶ Run now","◐ Warm","‖ Pause","🔑 Variables and secrets","✎ Edit","✕ Remove"]"#,
         "job parado e sem execução: sem cancelar nem logs"
     );
     assert!(
@@ -1092,7 +1092,7 @@ async fn job_actions_window_lists_actions_and_warm_status() {
     .await;
     assert_eq!(
         items,
-        r#"["■ Cancel run","◐ Warm","↻ Rebuild (no cache)","≡ View logs","‖ Pause","✎ Edit","✕ Remove"]"#
+        r#"["■ Cancel run","◐ Warm","↻ Rebuild (no cache)","≡ View logs","‖ Pause","🔑 Variables and secrets","✎ Edit","✕ Remove"]"#
     );
 
     assert_eq!(

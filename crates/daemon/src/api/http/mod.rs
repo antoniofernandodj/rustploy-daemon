@@ -1100,6 +1100,7 @@ pub(crate) async fn snapshot(state: &AppState) -> String {
                 Command::SecretList {
                     project_id: p.id.clone(),
                     service_id: None,
+                    job_id: None,
                 },
             )
             .await

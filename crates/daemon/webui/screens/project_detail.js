@@ -155,6 +155,7 @@ document.addEventListener("alpine:init", () => {
       }
     },
     async deleteEnvVar(key) {
+      if (!confirm(t`Remover a variável "${key}" do projeto? Os serviços e jobs deixam de herdá-la.`)) return;
       const project = this.project;
       const vars = (project.env_vars || []).filter((envVar) => envVar.key !== key);
       const comments = (project.env_comments || []).filter((envComment) => envComment.before_key !== key);
@@ -175,6 +176,7 @@ document.addEventListener("alpine:init", () => {
         this.store.toastError(dotenvErrorsMessage(errors));
         return;
       }
+      if (!confirm(t("Substituir todas as variáveis do projeto pelo texto do editor?"))) return;
       const saveProjectEnvResult = await this.store.saveProjectEnv(vars, comments);
       if (saveProjectEnvResult.ok) this.envTextOpen = false;
     },
@@ -279,6 +281,7 @@ document.addEventListener("alpine:init", () => {
       return null;
     },
     projectEnvToSecret(key) {
+      if (!confirm(t`Mover a variável "${key}" para secret? O valor passa a ser guardado cifrado.`)) return;
       return this.projectMove("EnvToSecret", key, null, t`variável ${key} movida para secret`);
     },
     projectSecretToEnv(name) {
@@ -287,11 +290,11 @@ document.addEventListener("alpine:init", () => {
     },
     projectSecretToService(name) {
       const serviceId = this.targetService();
-      if (serviceId) return this.projectMove("ProjectSecretToService", name, serviceId, t`secret ${name} movido para o serviço`);
+      if (serviceId && confirm(t`Mover o secret "${name}" para o serviço escolhido? Os outros serviços e jobs deixam de enxergá-lo.`)) return this.projectMove("ProjectSecretToService", name, serviceId, t`secret ${name} movido para o serviço`);
     },
     projectEnvToService(key) {
       const serviceId = this.targetService();
-      if (serviceId) return this.projectMove("EnvProjectToService", key, serviceId, t`variável ${key} movida para o serviço`);
+      if (serviceId && confirm(t`Mover a variável "${key}" para o serviço escolhido? Os outros serviços e jobs deixam de herdá-la.`)) return this.projectMove("EnvProjectToService", key, serviceId, t`variável ${key} movida para o serviço`);
     },
 
     async submitSecret() {

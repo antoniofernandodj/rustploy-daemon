@@ -25,6 +25,7 @@ import "./screens/project_detail.js";
 import "./screens/new_service.js";
 import "./screens/service_detail.js";
 import "./screens/service_bundle.js";
+import "./screens/job_env.js";
 import Alpine from "https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/module.esm.js";
 import { Api, decodeAccessKey, encodeAccessKey } from "./net/api.js";
 import { openStream } from "./net/sse.js";
@@ -155,6 +156,7 @@ document.addEventListener("alpine:init", () => {
     // Janela "Ações do job" (wm.js): todas as ações de uma linha de job num só
     // lugar, porque a lista de botões não cabia na linha. "" = fechada.
     jobActionsJobId: "",
+    jobEnvJobId: "", // janela "Variáveis do job" (screens/job_env.js): id do job aberto, "" = fechada
     /** Plano de deploy em lote aguardando decisão: { kind: "service"|"project", id, fromDetail, items } ou null. */
     deployPlan: null,
     /** Modal "reordenar serviços": { projectId, ids: [id…] } (ordem em edição) ou null. */
@@ -1363,6 +1365,12 @@ document.addEventListener("alpine:init", () => {
     },
     closeJobActions() {
       this.jobActionsJobId = "";
+    },
+    openJobEnv(jobId) {
+      this.jobEnvJobId = jobId;
+    },
+    closeJobEnv() {
+      this.jobEnvJobId = "";
     },
     /** A linha do job aberto em "Ações do job", sempre a do snapshot atual (o
      * estado quente/frio muda sem a janela fechar). */

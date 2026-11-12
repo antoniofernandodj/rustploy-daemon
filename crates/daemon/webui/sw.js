@@ -25,6 +25,7 @@ const APP_SHELL = [
   "/net/sse.js",
   "/screens/login.js",
   "/screens/service_bundle.js",
+  "/screens/job_env.js",
   "/screens/dashboard.js",
   "/screens/running.js",
   "/screens/projects.js",

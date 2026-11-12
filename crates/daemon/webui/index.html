@@ -1196,9 +1196,124 @@
                     @click="$store.app.jobToggle($store.app.jobActionsRow.id); $store.app.closeJobActions()"
                     x-text="$store.app.jobActionsRow?.enabled ? $t('‖ Pausar') : $t('▶ Ativar')"></button>
             <button class="btn btn--ghost job-actions__item" type="button"
+                    @click="$store.app.openJobEnv($store.app.jobActionsRow.id); $store.app.closeJobActions()" x-t>🔑 Variáveis e secrets</button>
+            <button class="btn btn--ghost job-actions__item" type="button"
                     @click="$store.app.openEditJob($store.app.jobActionsRow.id); $store.app.closeJobActions()" x-t>✎ Editar</button>
             <button class="btn btn--ghost job-actions__item job-actions__item--danger" type="button"
                     @click="$store.app.jobDelete($store.app.jobActionsRow.id); $store.app.closeJobActions()" x-t>✕ Remover</button>
+          </column>
+        </column>
+      </column>
+
+      <!-- Janela "Variáveis do job": envs + secrets de UM job (screens/job_env.js), com os mesmos
+           botões e espaçamento da aba Environment do serviço e das variáveis do projeto. -->
+      <column class="modal__backdrop" x-data="jobEnv" x-show="$store.app.jobEnvJobId !== ''">
+        <column class="modal__box" x-win="'job_env'" data-w="760" data-h="640">
+          <row class="modal__head">
+            <text class="u-label-cap" x-text="job ? ($t('VARIÁVEIS DO JOB') + ' · ' + job.name) : $t('VARIÁVEIS DO JOB')"></text>
+            <button class="btn btn--ghost" type="button" @click="$store.app.closeJobEnv()" x-t>Fechar</button>
+          </row>
+          <column class="modal__body" x-show="job">
+            <column class="env">
+              <row class="env__head">
+                <text class="u-muted-grow" x-text="envCount + $t(' variável(eis)')"></text>
+                <button class="btn btn--export" type="button" @click="openEnvText()" x-show="!envTextOpen">.env</button>
+                <button class="btn btn--export-on" type="button" @click="closeEnvText()" x-show="envTextOpen" x-t>Fechar</button>
+              </row>
+              <template x-if="!envTextOpen">
+                <column style="gap:10px">
+                  <row class="env__add">
+                    <input class="env__input" type="text" placeholder="KEY" x-model="newEnvKey" />
+                    <input class="env__input" type="text" placeholder="value" x-model="newEnvValue" />
+                    <button class="btn btn--primary" type="button" @click="addEnvVar()" x-t>Adicionar</button>
+                  </row>
+                  <text class="u-muted-grow">
+                    <span x-t>Para um valor sensível, use um secret: escreva</span> &lt;secret:NOME&gt; <span x-t>ou
+                    secret:NOME como valor, ou use o 🔒 numa variável. O job enxerga os secrets dele, depois os do serviço gatilho e os do projeto.</span>
+                  </text>
+                  <column class="kv-list">
+                    <template x-for="envVar in envVars" :key="envVar.key">
+                      <column style="width:100%">
+                        <row class="kv-list__row" x-show="envVar.isComment">
+                          <text class="u-muted" x-text="envVar.text"></text>
+                        </row>
+                        <row class="kv-list__row" x-show="!envVar.isComment">
+                          <button class="env__del" type="button" @click="deleteEnvVar(envVar.key)">✕</button>
+                          <button class="btn btn--ghost btn--sm" type="button" @click="startEnvEdit(envVar, 'key')"
+                            :title="$t('Renomear (o valor não muda)')">✏️</button>
+                          <button class="btn btn--ghost btn--sm" type="button" @click="startEnvEdit(envVar, 'value')"
+                            :title="$t('Editar o valor no lugar')">✎</button>
+                          <button class="btn btn--ghost btn--sm" type="button" x-show="!envVar.isSecret" @click="envToSecret(envVar.key)"
+                            :title="$t('Mover para secret (o valor passa a ser guardado cifrado)')">🔒</button>
+                          <button class="btn btn--ghost btn--sm" type="button" x-show="!envVar.isSecret" @click="envToProject(envVar.key)"
+                            :title="$t('Subir para o projeto (todos os serviços e jobs do projeto herdam)')">↑</button>
+                          <button class="btn btn--ghost btn--sm" type="button" x-show="envVar.isSecret" @click="secretToEnv(envVar.secretName)"
+                            :title="$t('Voltar para variável em claro (o valor deixa de ser cifrado)')">🔓</button>
+                          <text class="env__sep"></text>
+                          <template x-if="isEnvEditing(envVar.key, 'key')">
+                            <input class="env__inline env__key" type="text" x-model="envEdit.draft" x-init="$nextTick(() => { $el.focus(); $el.select(); })"
+                                   @keydown.enter.prevent="commitEnvEdit(envVar)" @keydown.escape.prevent="cancelEnvEdit()" @blur="commitEnvEdit(envVar)" />
+                          </template>
+                          <template x-if="!isEnvEditing(envVar.key, 'key')">
+                            <text class="env__key" x-text="envVar.key"></text>
+                          </template>
+                          <template x-if="isEnvEditing(envVar.key, 'value')">
+                            <input class="env__inline kv-list__val kv-list__val--compact" type="text" x-model="envEdit.draft" x-init="$nextTick(() => { $el.focus(); $el.select(); })"
+                                   :placeholder="envVar.isSecret ? $t('nome do secret') : ''"
+                                   @keydown.enter.prevent="commitEnvEdit(envVar)" @keydown.escape.prevent="cancelEnvEdit()" @blur="commitEnvEdit(envVar)" />
+                          </template>
+                          <template x-if="!isEnvEditing(envVar.key, 'value')">
+                            <text class="kv-list__val kv-list__val--compact" x-text="envVar.isSecret ? '(secret)' : envVar.value"></text>
+                          </template>
+                        </row>
+                      </column>
+                    </template>
+                    <text class="u-muted" x-fallback="envVars" style="padding:12px" x-t>Nenhuma variável.</text>
+                  </column>
+                  <text class="u-label-cap" x-text="$t('SECRETS DO JOB (') + jobSecrets.length + ')'"></text>
+                  <text class="u-muted-grow" x-t>Valores cifrados usados só por este job (valem antes de um secret do serviço gatilho ou do projeto com o mesmo nome). O valor real nunca volta para cá: salvar com um nome existente substitui, e vale na próxima execução.</text>
+                  <row class="env__add">
+                    <input class="env__input" type="text" placeholder="NOME" x-t:placeholder x-model="newSecretName" />
+                    <input class="env__input" type="password" placeholder="valor (cifrado ao salvar)" x-t:placeholder x-model="newSecretValue" />
+                    <button class="btn btn--primary" type="button" @click="addSecret()" x-t>Salvar secret</button>
+                  </row>
+                  <column class="kv-list">
+                    <template x-for="secretName in jobSecrets" :key="secretName">
+                      <row class="kv-list__row">
+                        <button class="env__del" type="button" @click="deleteSecret(secretName)">✕</button>
+                        <button class="btn btn--ghost btn--sm" type="button" @click="rename('secret', secretName)"
+                          :title="$t('Renomear (o valor não muda)')">✏️</button>
+                        <button class="btn btn--ghost btn--sm" type="button" @click="secretToEnv(secretName)"
+                          :title="$t('Voltar para variável em claro (o valor deixa de ser cifrado)')">🔓</button>
+                        <button class="btn btn--ghost btn--sm" type="button" @click="secretToProject(secretName)"
+                          :title="$t('Subir para o projeto (todos os serviços e jobs do projeto podem usar)')">↑</button>
+                        <button class="btn btn--ghost btn--sm" type="button" x-show="revealedSecrets[secretName] === undefined" @click="revealSecret(secretName)"
+                          :title="$t('Ver o valor (o acesso fica registrado na auditoria do servidor)')">👁</button>
+                        <button class="btn btn--ghost btn--sm" type="button" x-show="revealedSecrets[secretName] !== undefined" @click="hideSecret(secretName)"
+                          :title="$t('Esconder o valor')">🙈</button>
+                        <button class="btn btn--ghost btn--sm" type="button" x-show="revealedSecrets[secretName] !== undefined" @click="copySecret(secretName)"
+                          :title="$t('Copiar o valor')">📋</button>
+                        <text class="env__sep"></text>
+                        <text class="env__key" x-text="secretName"></text>
+                        <text class="kv-list__val kv-list__val--compact" x-show="revealedSecrets[secretName] === undefined" x-t>cifrado</text>
+                        <text class="kv-list__val kv-list__val--compact" x-show="revealedSecrets[secretName] !== undefined" x-text="revealedSecrets[secretName]"></text>
+                      </row>
+                    </template>
+                    <text class="u-muted" x-fallback="jobSecrets" style="padding:12px" x-t>Nenhum secret neste job ainda.</text>
+                  </column>
+                </column>
+              </template>
+              <template x-if="envTextOpen">
+                <column style="gap:8px">
+                  <text class="u-muted" x-t>Cole/edite no formato KEY=VALUE (# comentário).</text>
+                  <textarea class="env__editor" x-model="envText" placeholder="KEY=VALUE   (# comentário)" x-t:placeholder></textarea>
+                  <row class="env__add">
+                    <button class="btn btn--primary" type="button" @click="saveEnvText()" x-t>Salvar</button>
+                    <button class="btn btn--ghost" type="button" @click="closeEnvText()" x-t>Cancelar</button>
+                  </row>
+                </column>
+              </template>
+            </column>
           </column>
         </column>
       </column>

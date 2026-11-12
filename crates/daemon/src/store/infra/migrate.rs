@@ -255,6 +255,7 @@ pub async fn read_sql(db: &Db) -> Result<(InfraState, Vec<String>)> {
             main_service,
             env_vars: serde_json::from_str(&env_vars)?,
             env_comments: serde_json::from_str(&env_comments)?,
+            secrets: vec![],
             enabled,
             recurrence,
             created_at,

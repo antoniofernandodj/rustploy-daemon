@@ -170,6 +170,10 @@ pub struct JobInfra {
     pub env_vars: Vec<EnvVar>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub env_comments: Vec<EnvComment>,
+    /// Secrets **deste job** (escopo de job). Valor sempre `ENC[age:…]`; valem antes dos do serviço
+    /// gatilho e dos do projeto.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub secrets: Vec<SecretInfra>,
     pub enabled: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recurrence: Option<Recurrence>,
@@ -263,6 +267,9 @@ impl InfraState {
                 .retain(|id| existing.contains(id.as_str()) && seen.insert(id.clone()));
             for s in &mut p.services {
                 s.secrets.sort_by(|a, b| a.key.cmp(&b.key));
+            }
+            for j in &mut p.jobs {
+                j.secrets.sort_by(|a, b| a.key.cmp(&b.key));
             }
             p.managed_databases.sort_by(|a, b| {
                 (&a.server_service_id, &a.name).cmp(&(&b.server_service_id, &b.name))

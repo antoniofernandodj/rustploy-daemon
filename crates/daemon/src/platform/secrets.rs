@@ -13,7 +13,7 @@ use ulid::Ulid;
 
 use crate::platform::config::SecretsConfig;
 use crate::store::Db;
-use crate::store::infra::model::{InfraState, ProjectInfra, SecretInfra, ServiceInfra};
+use crate::store::infra::model::{InfraState, JobInfra, ProjectInfra, SecretInfra, ServiceInfra};
 use shared::{EnvVar, EnvVarValue};
 
 use crate::platform::age_format;
@@ -231,28 +231,48 @@ impl SecretsManager {
         self.get_scoped(project_id, None, name).await
     }
 
-    /// Secret de um escopo: `service_id: Some` = só daquele serviço; `None` = só do projeto.
-    pub async fn get_scoped(
+    /// Secret de um escopo: serviço = só daquele serviço; job = só daquele job; projeto = só do
+    /// projeto. (`Option<&str>` vira `Scope` — `Some` é serviço —, então quem só fala de serviço
+    /// continua passando `service_id` direto.)
+    pub async fn get_scoped<'a>(
         &self,
         project_id: &str,
-        service_id: Option<&str>,
+        scope: impl Into<Scope<'a>>,
         name: &str,
     ) -> Result<String> {
+        let scope = scope.into();
         let st = self.db.infra().snapshot();
         let project = st.projects.iter().find(|p| p.id == project_id);
-        let found = match service_id {
-            None => project.and_then(|p| p.secrets.iter().find(|s| s.key == name)),
-            Some(sid) => project
+        let found = match scope {
+            Scope::Project => project.and_then(|p| p.secrets.iter().find(|s| s.key == name)),
+            Scope::Service(sid) => project
                 .and_then(|p| p.services.iter().find(|s| s.id == sid))
                 .and_then(|s| s.secrets.iter().find(|x| x.key == name)),
+            Scope::Job(jid) => project
+                .and_then(|p| p.jobs.iter().find(|j| j.id == jid))
+                .and_then(|j| j.secrets.iter().find(|x| x.key == name)),
         };
-        let encrypted = found
-            .map(|s| s.value.clone())
-            .ok_or_else(|| match service_id {
-                None => anyhow!("secret '{name}' not found in project '{project_id}'"),
-                Some(sid) => anyhow!("secret '{name}' not found in service '{sid}'"),
-            })?;
+        let encrypted = found.map(|s| s.value.clone()).ok_or_else(|| match scope {
+            Scope::Project => anyhow!("secret '{name}' not found in project '{project_id}'"),
+            Scope::Service(sid) => anyhow!("secret '{name}' not found in service '{sid}'"),
+            Scope::Job(jid) => anyhow!("secret '{name}' not found in job '{jid}'"),
+        })?;
         self.decrypt(&encrypted)
+    }
+
+    /// Resolução de uma env `Secret(name)` **de um job**: o secret do **job** primeiro, depois o do
+    /// serviço gatilho (se houver), depois o do projeto.
+    pub async fn resolve_for_job(
+        &self,
+        project_id: &str,
+        job_id: &str,
+        trigger_service_id: Option<&str>,
+        name: &str,
+    ) -> Result<String> {
+        if let Ok(v) = self.get_scoped(project_id, Scope::Job(job_id), name).await {
+            return Ok(v);
+        }
+        self.resolve(project_id, trigger_service_id, name).await
     }
 
     /// Resolução de uma env `Secret(name)`: o escopo do **serviço** primeiro, depois o do projeto.
@@ -275,16 +295,17 @@ impl SecretsManager {
         self.set_scoped(project_id, None, name, value).await
     }
 
-    pub async fn set_scoped(
+    pub async fn set_scoped<'a>(
         &self,
         project_id: &str,
-        service_id: Option<&str>,
+        scope: impl Into<Scope<'a>>,
         name: &str,
         value: &str,
     ) -> Result<()> {
+        let scope = scope.into();
         let encrypted = self.encrypt(value)?;
         self.db.infra().update(|st| {
-            let list = secret_list_mut(st, project_id, service_id)?;
+            let list = secret_list_mut(st, project_id, scope)?;
             match list.iter_mut().find(|s| s.key == name) {
                 Some(s) => s.value = encrypted,
                 None => list.push(new_secret(name, encrypted)),
@@ -293,15 +314,16 @@ impl SecretsManager {
         })
     }
 
-    pub async fn delete_scoped(
+    pub async fn delete_scoped<'a>(
         &self,
         project_id: &str,
-        service_id: Option<&str>,
+        scope: impl Into<Scope<'a>>,
         name: &str,
     ) -> Result<()> {
+        let scope = scope.into();
         self.db.infra().update(|st| {
             // Apagar de um escopo que não existe é inofensivo (igual ao SQL de antes).
-            if let Ok(list) = secret_list_mut(st, project_id, service_id) {
+            if let Ok(list) = secret_list_mut(st, project_id, scope) {
                 list.retain(|s| s.key != name);
             }
             Ok(())
@@ -312,20 +334,24 @@ impl SecretsManager {
         self.list_names_scoped(project_id, None).await
     }
 
-    pub async fn list_names_scoped(
+    pub async fn list_names_scoped<'a>(
         &self,
         project_id: &str,
-        service_id: Option<&str>,
+        scope: impl Into<Scope<'a>>,
     ) -> Result<Vec<String>> {
         let st = self.db.infra().snapshot();
         let project = st.projects.iter().find(|p| p.id == project_id);
-        let mut names: Vec<String> = match service_id {
-            None => project
+        let mut names: Vec<String> = match scope.into() {
+            Scope::Project => project
                 .map(|p| p.secrets.iter().map(|s| s.key.clone()).collect())
                 .unwrap_or_default(),
-            Some(sid) => project
+            Scope::Service(sid) => project
                 .and_then(|p| p.services.iter().find(|s| s.id == sid))
                 .map(|s| s.secrets.iter().map(|x| x.key.clone()).collect())
+                .unwrap_or_default(),
+            Scope::Job(jid) => project
+                .and_then(|p| p.jobs.iter().find(|j| j.id == jid))
+                .map(|j| j.secrets.iter().map(|x| x.key.clone()).collect())
                 .unwrap_or_default(),
         };
         names.sort();
@@ -333,13 +359,21 @@ impl SecretsManager {
     }
 
     /// "Ver valor": decifra e **grava uma linha de auditoria** (quem/qual/quando — nunca o valor).
-    pub async fn reveal(
+    pub async fn reveal<'a>(
         &self,
         project_id: &str,
-        service_id: Option<&str>,
+        scope: impl Into<Scope<'a>>,
         name: &str,
     ) -> Result<String> {
-        let value = self.get_scoped(project_id, service_id, name).await?;
+        let scope = scope.into();
+        // A tabela de auditoria só tem a coluna `service_id`: o job entra como `job:<id>`.
+        let service_id: Option<String> = match scope {
+            Scope::Project => None,
+            Scope::Service(sid) => Some(sid.to_string()),
+            Scope::Job(jid) => Some(format!("job:{jid}")),
+        };
+        let service_id = service_id.as_deref();
+        let value = self.get_scoped(project_id, scope, name).await?;
         // A auditoria é parte do contrato: se não der para gravar, o valor não sai.
         sqlx::query(
             "INSERT INTO secret_audit (at, action, project_id, service_id, name) VALUES (?, 'reveal', ?, ?, ?)",
@@ -357,19 +391,20 @@ impl SecretsManager {
 
     /// As quatro movimentações manuais da R5, cada uma **atômica** (uma transação do repositório):
     /// ou o secret e a env mudam juntos, ou nada muda. Falha se o destino já tem o nome.
-    pub async fn move_secret(
+    pub async fn move_secret<'a>(
         &self,
         project_id: &str,
-        service_id: Option<&str>,
+        scope: impl Into<Scope<'a>>,
         name: &str,
         op: shared::SecretMoveOp,
     ) -> Result<()> {
         use shared::SecretMoveOp::*;
+        let scope = scope.into();
         // Os valores são decifrados/cifrados fora da closure só quando a operação precisa.
         self.db.infra().update(|st| {
             let p = project_mut(st, project_id)?;
-            match (op, service_id) {
-                (EnvToSecret, None) => {
+            match (op, scope) {
+                (EnvToSecret, Scope::Project) => {
                     let value = take_plain_env(&mut p.env_vars, name, "o projeto")?;
                     if p.secrets.iter().any(|s| s.key == name) {
                         bail!("o projeto já tem um secret chamado '{name}'");
@@ -377,7 +412,7 @@ impl SecretsManager {
                     p.secrets.push(new_secret(name, self.encrypt(&value)?));
                     set_env(&mut p.env_vars, name, EnvVarValue::Secret(name.to_string()));
                 }
-                (EnvToSecret, Some(sid)) => {
+                (EnvToSecret, Scope::Service(sid)) => {
                     let svc = service_mut(p, sid)?;
                     let value = take_plain_env(&mut svc.spec.env_vars, name, "o serviço")?;
                     if svc.secrets.iter().any(|s| s.key == name) {
@@ -390,7 +425,7 @@ impl SecretsManager {
                         EnvVarValue::Secret(name.to_string()),
                     );
                 }
-                (SecretToEnv, None) => {
+                (SecretToEnv, Scope::Project) => {
                     let pos = p
                         .secrets
                         .iter()
@@ -400,7 +435,7 @@ impl SecretsManager {
                     secret_into_env(&mut p.env_vars, name, plain, "o projeto")?;
                     p.secrets.remove(pos);
                 }
-                (SecretToEnv, Some(sid)) => {
+                (SecretToEnv, Scope::Service(sid)) => {
                     let svc = service_mut(p, sid)?;
                     let pos = svc
                         .secrets
@@ -411,7 +446,7 @@ impl SecretsManager {
                     secret_into_env(&mut svc.spec.env_vars, name, plain, "o serviço")?;
                     svc.secrets.remove(pos);
                 }
-                (ServiceSecretToProject, Some(sid)) => {
+                (ServiceSecretToProject, Scope::Service(sid)) => {
                     let ProjectInfra {
                         services, secrets, ..
                     } = p;
@@ -429,7 +464,7 @@ impl SecretsManager {
                     }
                     secrets.push(svc.secrets.remove(pos));
                 }
-                (ProjectSecretToService, Some(sid)) => {
+                (ProjectSecretToService, Scope::Service(sid)) => {
                     let ProjectInfra {
                         services, secrets, ..
                     } = p;
@@ -446,7 +481,7 @@ impl SecretsManager {
                     }
                     svc.secrets.push(secrets.remove(pos));
                 }
-                (EnvServiceToProject, Some(sid)) => {
+                (EnvServiceToProject, Scope::Service(sid)) => {
                     let ProjectInfra {
                         services, env_vars, ..
                     } = p;
@@ -464,7 +499,7 @@ impl SecretsManager {
                         value: EnvVarValue::Plain(value),
                     });
                 }
-                (EnvProjectToService, Some(sid)) => {
+                (EnvProjectToService, Scope::Service(sid)) => {
                     let ProjectInfra {
                         services, env_vars, ..
                     } = p;
@@ -482,14 +517,73 @@ impl SecretsManager {
                         value: EnvVarValue::Plain(value),
                     });
                 }
+                (EnvToSecret, Scope::Job(jid)) => {
+                    let job = job_mut(p, jid)?;
+                    let value = take_plain_env(&mut job.env_vars, name, "o job")?;
+                    if job.secrets.iter().any(|s| s.key == name) {
+                        bail!("o job já tem um secret chamado '{name}'");
+                    }
+                    job.secrets.push(new_secret(name, self.encrypt(&value)?));
+                    set_env(
+                        &mut job.env_vars,
+                        name,
+                        EnvVarValue::Secret(name.to_string()),
+                    );
+                }
+                (SecretToEnv, Scope::Job(jid)) => {
+                    let job = job_mut(p, jid)?;
+                    let pos = job
+                        .secrets
+                        .iter()
+                        .position(|s| s.key == name)
+                        .ok_or_else(|| anyhow!("o job não tem um secret chamado '{name}'"))?;
+                    let plain = self.decrypt(&job.secrets[pos].value)?;
+                    secret_into_env(&mut job.env_vars, name, plain, "o job")?;
+                    job.secrets.remove(pos);
+                }
+                (JobSecretToProject, Scope::Job(jid)) => {
+                    let ProjectInfra { jobs, secrets, .. } = p;
+                    let job = jobs
+                        .iter_mut()
+                        .find(|j| j.id == jid)
+                        .ok_or_else(|| anyhow!("job {jid} não pertence ao projeto"))?;
+                    let pos = job
+                        .secrets
+                        .iter()
+                        .position(|s| s.key == name)
+                        .ok_or_else(|| anyhow!("o job não tem um secret chamado '{name}'"))?;
+                    if secrets.iter().any(|s| s.key == name) {
+                        bail!("o projeto já tem um secret chamado '{name}'");
+                    }
+                    secrets.push(job.secrets.remove(pos));
+                }
+                (EnvJobToProject, Scope::Job(jid)) => {
+                    let ProjectInfra { jobs, env_vars, .. } = p;
+                    let job = jobs
+                        .iter_mut()
+                        .find(|j| j.id == jid)
+                        .ok_or_else(|| anyhow!("job {jid} não pertence ao projeto"))?;
+                    let value = take_plain_env(&mut job.env_vars, name, "o job")?;
+                    if env_vars.iter().any(|v| v.key == name) {
+                        bail!("o projeto já tem uma env chamada '{name}'");
+                    }
+                    job.env_vars.retain(|v| v.key != name);
+                    env_vars.push(EnvVar {
+                        key: name.to_string(),
+                        value: EnvVarValue::Plain(value),
+                    });
+                }
                 (
                     ServiceSecretToProject
                     | ProjectSecretToService
                     | EnvServiceToProject
                     | EnvProjectToService,
-                    None,
+                    Scope::Project | Scope::Job(_),
                 ) => {
                     bail!("esta operação precisa do id do serviço")
+                }
+                (JobSecretToProject | EnvJobToProject, Scope::Project | Scope::Service(_)) => {
+                    bail!("esta operação precisa do id do job")
                 }
             }
             Ok(())
@@ -500,25 +594,30 @@ impl SecretsManager {
     /// no valor (`Plain` ou `Secret`) — ele nunca passa pelo chamador. Os comentários do editor
     /// `.env` ancorados na chave antiga acompanham. Atômico; falha se `from` não existe ou `to` já
     /// existe no escopo.
-    pub async fn rename_env_key(
+    pub async fn rename_env_key<'a>(
         &self,
         project_id: &str,
-        service_id: Option<&str>,
+        scope: impl Into<Scope<'a>>,
         from: &str,
         to: &str,
     ) -> Result<()> {
         valid_env_key(to)?;
+        let scope = scope.into();
         self.db.infra().update(|st| {
             let p = project_mut(st, project_id)?;
-            let (vars, comments, onde) = match service_id {
-                None => (&mut p.env_vars, &mut p.env_comments, "o projeto"),
-                Some(sid) => {
+            let (vars, comments, onde) = match scope {
+                Scope::Project => (&mut p.env_vars, &mut p.env_comments, "o projeto"),
+                Scope::Service(sid) => {
                     let svc = service_mut(p, sid)?;
                     (
                         &mut svc.spec.env_vars,
                         &mut svc.spec.env_comments,
                         "o serviço",
                     )
+                }
+                Scope::Job(jid) => {
+                    let job = job_mut(p, jid)?;
+                    (&mut job.env_vars, &mut job.env_comments, "o job")
                 }
             };
             if from == to {
@@ -548,13 +647,14 @@ impl SecretsManager {
     /// do projeto (a resolução é "serviço primeiro, depois projeto", ver [`Self::resolve`]); numa
     /// env do projeto, só o do projeto. A máscara `***` (o que uma tela mostra no lugar de um
     /// segredo) é recusada: gravá-la apagaria o valor real sem aviso.
-    pub async fn set_env_value(
+    pub async fn set_env_value<'a>(
         &self,
         project_id: &str,
-        service_id: Option<&str>,
+        scope: impl Into<Scope<'a>>,
         key: &str,
         value: EnvVarValue,
     ) -> Result<()> {
+        let scope = scope.into();
         match &value {
             EnvVarValue::Plain(v) if v == "***" => {
                 bail!("o valor `***` é a máscara de um segredo, não um valor: nada foi gravado")
@@ -566,19 +666,32 @@ impl SecretsManager {
             let p = project_mut(st, project_id)?;
             if let EnvVarValue::Secret(name) = &value {
                 let no_projeto = p.secrets.iter().any(|s| &s.key == name);
-                let existe = match service_id {
-                    None => no_projeto,
-                    Some(sid) => {
+                let existe = match scope {
+                    Scope::Project => no_projeto,
+                    Scope::Service(sid) => {
                         no_projeto || service_mut(p, sid)?.secrets.iter().any(|s| &s.key == name)
+                    }
+                    // job: o dele, o do serviço gatilho ou o do projeto (a ordem da resolução)
+                    Scope::Job(jid) => {
+                        let job = job_mut(p, jid)?;
+                        let no_job = job.secrets.iter().any(|s| &s.key == name);
+                        let gatilho = job.trigger_service_id.clone();
+                        let no_gatilho = gatilho.is_some_and(|tid| {
+                            p.services
+                                .iter()
+                                .any(|s| s.id == tid && s.secrets.iter().any(|x| &x.key == name))
+                        });
+                        no_job || no_gatilho || no_projeto
                     }
                 };
                 if !existe {
                     bail!("não existe um secret chamado '{name}' neste escopo");
                 }
             }
-            let (vars, onde) = match service_id {
-                None => (&mut p.env_vars, "o projeto"),
-                Some(sid) => (&mut service_mut(p, sid)?.spec.env_vars, "o serviço"),
+            let (vars, onde) = match scope {
+                Scope::Project => (&mut p.env_vars, "o projeto"),
+                Scope::Service(sid) => (&mut service_mut(p, sid)?.spec.env_vars, "o serviço"),
+                Scope::Job(jid) => (&mut job_mut(p, jid)?.env_vars, "o job"),
             };
             let var = vars
                 .iter_mut()
@@ -595,26 +708,32 @@ impl SecretsManager {
     /// A resolução é "serviço primeiro, depois projeto" ([`Self::resolve`]), então renomear um
     /// secret do **projeto** não mexe nos serviços (nem nos jobs deles) que têm um secret próprio
     /// com o mesmo nome: nesses, `Secret(from)` aponta para o do serviço e continua valendo.
-    pub async fn rename_secret(
+    pub async fn rename_secret<'a>(
         &self,
         project_id: &str,
-        service_id: Option<&str>,
+        scope: impl Into<Scope<'a>>,
         from: &str,
         to: &str,
     ) -> Result<()> {
         valid_secret_name(to)?;
+        let scope = scope.into();
         self.db.infra().update(|st| {
             let p = project_mut(st, project_id)?;
             if from == to {
                 bail!("o nome novo é igual ao atual ('{from}')");
             }
-            match service_id {
-                Some(sid) => {
+            match scope {
+                Scope::Job(jid) => {
+                    let job = job_mut(p, jid)?;
+                    rename_in_list(&mut job.secrets, from, to, "o job")?;
+                    repoint_secret_refs(&mut job.env_vars, from, to);
+                }
+                Scope::Service(sid) => {
                     let svc = service_mut(p, sid)?;
                     rename_in_list(&mut svc.secrets, from, to, "o serviço")?;
                     repoint_secret_refs(&mut svc.spec.env_vars, from, to);
                 }
-                None => {
+                Scope::Project => {
                     let ProjectInfra {
                         env_vars,
                         services,
@@ -630,11 +749,12 @@ impl SecretsManager {
                         }
                     }
                     for job in jobs.iter_mut() {
-                        let sombreado = job.trigger_service_id.as_deref().is_some_and(|tid| {
-                            services
-                                .iter()
-                                .any(|s| s.id == tid && s.secrets.iter().any(|x| x.key == from))
-                        });
+                        let sombreado = job.secrets.iter().any(|x| x.key == from)
+                            || job.trigger_service_id.as_deref().is_some_and(|tid| {
+                                services
+                                    .iter()
+                                    .any(|s| s.id == tid && s.secrets.iter().any(|x| x.key == from))
+                            });
                         if !sombreado {
                             repoint_secret_refs(&mut job.env_vars, from, to);
                         }
@@ -718,16 +838,49 @@ fn service_mut<'a>(p: &'a mut ProjectInfra, service_id: &str) -> Result<&'a mut 
         .ok_or_else(|| anyhow!("serviço {service_id} não pertence ao projeto"))
 }
 
-/// A lista de secrets do escopo pedido (projeto, ou um serviço dele).
+fn job_mut<'a>(p: &'a mut ProjectInfra, job_id: &str) -> Result<&'a mut JobInfra> {
+    p.jobs
+        .iter_mut()
+        .find(|j| j.id == job_id)
+        .ok_or_else(|| anyhow!("job {job_id} não pertence ao projeto"))
+}
+
+/// A lista de secrets do escopo pedido (projeto, um serviço ou um job dele).
 fn secret_list_mut<'a>(
     st: &'a mut InfraState,
     project_id: &str,
-    service_id: Option<&str>,
+    scope: Scope<'_>,
 ) -> Result<&'a mut Vec<SecretInfra>> {
     let p = project_mut(st, project_id)?;
-    match service_id {
-        None => Ok(&mut p.secrets),
-        Some(sid) => Ok(&mut service_mut(p, sid)?.secrets),
+    match scope {
+        Scope::Project => Ok(&mut p.secrets),
+        Scope::Service(sid) => Ok(&mut service_mut(p, sid)?.secrets),
+        Scope::Job(jid) => Ok(&mut job_mut(p, jid)?.secrets),
+    }
+}
+
+/// De quem é um secret/env: do projeto, de um serviço ou de um job.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Scope<'a> {
+    Project,
+    Service(&'a str),
+    Job(&'a str),
+}
+
+impl<'a> From<Option<&'a str>> for Scope<'a> {
+    fn from(service_id: Option<&'a str>) -> Self {
+        service_id.map_or(Scope::Project, Scope::Service)
+    }
+}
+
+impl<'a> Scope<'a> {
+    /// O escopo pedido por um `Command` (`service_id` e `job_id` são exclusivos).
+    pub fn from_ids(service_id: Option<&'a str>, job_id: Option<&'a str>) -> Result<Self> {
+        match (service_id, job_id) {
+            (Some(_), Some(_)) => bail!("informe service_id ou job_id, não os dois"),
+            (_, Some(jid)) => Ok(Scope::Job(jid)),
+            (sid, None) => Ok(sid.into()),
+        }
     }
 }
 
@@ -975,6 +1128,85 @@ mod tests {
             m.get_raw("p1", "DB_PASSWORD").await.unwrap(),
             "hunter2-muito-secreto"
         );
+    }
+
+    // ---- escopo de job -------------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn secret_de_job_vale_antes_do_do_projeto_e_move_e_renomeia() {
+        let db = Arc::new(Db::memory_for_test().await);
+        db.seed_project_for_test("p1");
+        let m = SecretsManager::new(db.clone()).unwrap();
+        let job =
+            crate::store::job::create(&db, "p1", None, "j", "x", None, "main", &[], &[], None)
+                .await
+                .unwrap();
+        let j = job.id.as_str();
+
+        m.set("p1", "TOKEN", "do-projeto").await.unwrap();
+        m.set_scoped("p1", Scope::Job(j), "TOKEN", "do-job")
+            .await
+            .unwrap();
+        assert_eq!(
+            m.resolve_for_job("p1", j, None, "TOKEN").await.unwrap(),
+            "do-job"
+        );
+        assert_eq!(m.get_raw("p1", "TOKEN").await.unwrap(), "do-projeto");
+        assert_eq!(
+            m.list_names_scoped("p1", Scope::Job(j)).await.unwrap(),
+            ["TOKEN"]
+        );
+        // o valor nunca fica em claro no estado
+        assert!(
+            db.infra().snapshot().projects[0].jobs[0].secrets[0]
+                .value
+                .starts_with("ENC[age:")
+        );
+
+        // env do job que aponta para um secret que só existe no projeto também vale
+        crate::store::job::update(
+            &db,
+            j,
+            "j",
+            "x",
+            None,
+            "main",
+            &[EnvVar {
+                key: "A".into(),
+                value: EnvVarValue::Plain("1".into()),
+            }],
+            &[],
+            true,
+            None,
+        )
+        .await
+        .unwrap();
+        m.move_secret("p1", Scope::Job(j), "A", shared::SecretMoveOp::EnvToSecret)
+            .await
+            .unwrap();
+        assert_eq!(m.get_scoped("p1", Scope::Job(j), "A").await.unwrap(), "1");
+        m.rename_secret("p1", Scope::Job(j), "A", "B")
+            .await
+            .unwrap();
+        let envs = db.infra().snapshot().projects[0].jobs[0].env_vars.clone();
+        assert_eq!(envs[0].value, EnvVarValue::Secret("B".into()));
+        m.move_secret("p1", Scope::Job(j), "B", shared::SecretMoveOp::SecretToEnv)
+            .await
+            .unwrap();
+        let envs = db.infra().snapshot().projects[0].jobs[0].env_vars.clone();
+        assert_eq!(envs[0].value, EnvVarValue::Plain("1".into()));
+        m.rename_env_key("p1", Scope::Job(j), "A", "C")
+            .await
+            .unwrap();
+        m.set_env_value(
+            "p1",
+            Scope::Job(j),
+            "C",
+            EnvVarValue::Secret("TOKEN".into()),
+        )
+        .await
+        .unwrap();
+        assert!(Scope::from_ids(Some("s"), Some(j)).is_err());
     }
 
     // ---- escopos de serviço e projeto, mover, ver valor (Fase 5) -----------------------------------

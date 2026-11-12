@@ -197,7 +197,10 @@ Comandos, por área (campos entre chaves):
   `SecretRename{project_id, service_id?, from, to}` — renomeia o secret e reaponta
   as variáveis que o usam. Use estes dois para alinhar nomes entre serviços (ex.:
   `RABBITMQ_DEFAULT_PASS` do broker × `RABBITMQ_PASS` do código) sem tocar em senha.
-  `service_id` omitido = escopo do projeto.
+  `service_id` omitido = escopo do projeto. Todos esses comandos (`SecretSet/Delete/List/Reveal/Move/Rename`,
+  `EnvKeyRename`, `EnvValueSet`) aceitam também `job_id` (no lugar de `service_id`, não os dois) = escopo
+  **de um job**: as envs do job (`Job.env_vars`) e os secrets dele, que valem antes dos do serviço gatilho e
+  dos do projeto. Moves extras de job: `EnvJobToProject`, `JobSecretToProject`.
 - **Infra as code**: `InfraDownload` (os arquivos que o `state_git` grava no repositório, com
   os secrets como `ENC[age:…]`; recusado enquanto houver valor em claro — veja `InfraAudit`) ·
   `ServiceExportPlan{service_id}` · `ServiceExport{service_id, include_values, project_env_keys}` ·

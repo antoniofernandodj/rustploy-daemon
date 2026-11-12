@@ -75,7 +75,7 @@ async fn secure_credentials(
             .secrets
             .move_secret(
                 &svc.spec.project_id,
-                Some(&svc.id),
+                Some(svc.id.as_str()),
                 key,
                 shared::SecretMoveOp::EnvToSecret,
             )
@@ -169,7 +169,7 @@ mod tests {
         assert_eq!(
             state
                 .secrets
-                .get_scoped(&project.id, Some(&svc.id), "MYSQL_PASSWORD")
+                .get_scoped(&project.id, Some(svc.id.as_str()), "MYSQL_PASSWORD")
                 .await
                 .unwrap(),
             "senha-do-banco-123"
@@ -250,7 +250,7 @@ mod tests {
             // o valor gerado existe, é forte e só vive no cofre
             let gerada = state
                 .secrets
-                .get_scoped(&project.id, Some(&svc.id), secret_key)
+                .get_scoped(&project.id, Some(svc.id.as_str()), secret_key)
                 .await
                 .unwrap();
             assert_eq!(gerada.len(), 24, "{id}");
@@ -282,7 +282,7 @@ mod tests {
         assert!(
             state
                 .secrets
-                .list_names_scoped(&project.id, Some(&svc.id))
+                .list_names_scoped(&project.id, Some(svc.id.as_str()))
                 .await
                 .unwrap()
                 .is_empty()

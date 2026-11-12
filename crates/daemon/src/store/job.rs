@@ -101,6 +101,7 @@ pub async fn create(
         main_service: main_service.to_string(),
         env_vars: env_vars.to_vec(),
         env_comments: env_comments.to_vec(),
+        secrets: vec![],
         enabled: true,
         recurrence,
         created_at: now,

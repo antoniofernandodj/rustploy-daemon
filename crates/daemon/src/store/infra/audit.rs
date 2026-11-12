@@ -200,6 +200,16 @@ fn audit_project(out: &mut Vec<Finding>, p: &ProjectInfra) {
     for j in &p.jobs {
         let scope = format!("job {}", j.name);
         check_env(out, name, &scope, &j.env_vars);
+        for sec in &j.secrets {
+            if !is_enc(&sec.value) {
+                push(
+                    out,
+                    Certainty::Definite,
+                    &scope,
+                    format!("secret {} sem cifra", sec.key),
+                );
+            }
+        }
         for k in compose_suspect_lines(&j.compose) {
             push(out, Certainty::Suspect, &scope, format!("compose: {k}"));
         }

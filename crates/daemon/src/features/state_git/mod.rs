@@ -236,6 +236,14 @@ fn validate_incoming(
                 decifra(format!("o webhook do serviço '{}'", svc.spec.name), t)?;
             }
         }
+        for job in &p.jobs {
+            for sec in &job.secrets {
+                decifra(
+                    format!("o secret '{}' do job '{}'", sec.key, job.name),
+                    &sec.value,
+                )?;
+            }
+        }
     }
     for prov in &new.providers {
         if let Some(v) = &prov.oauth_client_secret_enc {
