@@ -1,9 +1,11 @@
 //! Tabela `managed_database`: databases criados em servidores compartilhados.
-//! A senha fica aqui (é a mesma que o projeto consumidor guarda na env var
-//! `Plain`) para a migração poder usá-la como destino.
+//! A senha fica aqui **cifrada** (`ENC[age:…]`, como os demais segredos do estado) para a migração
+//! poder usá-la como destino: quem precisa do valor chama [`open`]. Um registro antigo, em claro,
+//! passa como está e é cifrado no boot (`infra::seal`).
 
 use super::Db;
 use super::infra::model::ManagedDatabaseInfra;
+use crate::platform::secrets::{SecretsManager, is_enc};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use ulid::Ulid;
@@ -24,6 +26,17 @@ pub struct Row {
 // Os bancos gerenciados moram no YAML de infra, dentro do projeto **consumidor**
 // (`ProjectInfra.managed_databases`). A tabela antiga `managed_database` não é mais lida nem
 // escrita. Atenção: `password` está em claro até a Fase 5 (ver `infra::model`).
+
+/// A linha com a senha **aberta** (em claro, em memória). O que está no estado é `ENC[age:…]`;
+/// um valor em claro (legado, ainda não selado) passa como está.
+pub fn open(secrets: &SecretsManager, mut r: Row) -> Result<Row> {
+    if is_enc(&r.password) {
+        r.password = secrets
+            .decrypt(&r.password)
+            .map_err(|e| anyhow::anyhow!("senha do database '{}': {e}", r.name))?;
+    }
+    Ok(r)
+}
 
 fn to_row(project_id: &str, m: &ManagedDatabaseInfra) -> Row {
     Row {

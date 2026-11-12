@@ -47,6 +47,17 @@ pub fn seal_plaintext(repo: &Repo, secrets: &SecretsManager) -> Result<usize> {
                 sealed += 1;
             }
         }
+        // Senha dos databases dos servidores compartilhados: o valor não muda (o banco já a usa).
+        for m in st
+            .projects
+            .iter_mut()
+            .flat_map(|p| p.managed_databases.iter_mut())
+        {
+            if !is_enc(&m.password) {
+                m.password = secrets.encrypt(&m.password)?;
+                sealed += 1;
+            }
+        }
         Ok(sealed)
     })
 }
@@ -107,7 +118,13 @@ fn count_plaintext(st: &InfraState) -> usize {
         .flat_map(|p| p.services.iter())
         .filter(|s| s.webhook_token.as_deref().is_some_and(|t| !is_enc(t)))
         .count();
-    providers + webhooks
+    let databases = st
+        .projects
+        .iter()
+        .flat_map(|p| p.managed_databases.iter())
+        .filter(|m| !is_enc(&m.password))
+        .count();
+    providers + webhooks + databases
 }
 
 #[cfg(test)]
@@ -276,5 +293,48 @@ mod tests {
         let db = Arc::new(Db::memory_for_test().await);
         let secrets = SecretsManager::new(db.clone()).unwrap();
         assert_eq!(seal_provider_tokens(&db, &secrets).await.unwrap(), 0);
+    }
+
+    /// A senha de um database de servidor compartilhado, em claro no estado, é cifrada sem mudar o
+    /// valor — e o audit (que travava o git por "senha do banco") deixa de apontá-la.
+    #[tokio::test]
+    async fn cifra_a_senha_dos_databases_compartilhados() {
+        use crate::store::infra::model::ManagedDatabaseInfra;
+        let db = Arc::new(Db::lazy_for_test());
+        db.seed_project_for_test("p1");
+        db.seed_service_for_test("p1", "s1");
+        db.infra()
+            .update(|st| {
+                st.projects[0].managed_databases.push(ManagedDatabaseInfra {
+                    id: "m1".into(),
+                    server_service_id: "s1".into(),
+                    name: "loja".into(),
+                    password: "senha-do-banco".into(),
+                    env_var: "DATABASE_URL".into(),
+                    connection_limit: None,
+                    statement_timeout_ms: None,
+                    created_at: chrono::Utc::now(),
+                });
+                Ok(())
+            })
+            .unwrap();
+        let secrets = SecretsManager::new(db.clone()).unwrap();
+        assert!(
+            plaintext_findings(&db.infra().snapshot())
+                .iter()
+                .any(|f| f.what == "senha do banco loja")
+        );
+
+        assert_eq!(seal_plaintext(db.infra(), &secrets).unwrap(), 1);
+        assert_eq!(plaintext_findings(&db.infra().snapshot()), vec![]);
+
+        // o valor é o mesmo para quem usa (a migração e a connection URL abrem a senha)
+        let st = db.infra().snapshot();
+        let m = &st.projects[0].managed_databases[0];
+        assert!(is_enc(&m.password));
+        assert_eq!(secrets.decrypt(&m.password).unwrap(), "senha-do-banco");
+
+        // idempotente: segunda rodada não muda nada
+        assert_eq!(seal_plaintext(db.infra(), &secrets).unwrap(), 0);
     }
 }

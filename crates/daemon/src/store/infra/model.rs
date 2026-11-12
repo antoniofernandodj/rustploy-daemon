@@ -189,8 +189,9 @@ pub struct SecretInfra {
     pub value: String,
 }
 
-/// **Atenção:** `password` está em claro (é assim no SQL hoje). Por isso a sincronização com git
-/// não pode ser ligada antes da Fase 5, que a move para um secret cifrado.
+/// `password` é gravada **cifrada** (`ENC[age:…]`); quem precisa do valor abre com
+/// `store::managed_database::open`. Um registro antigo, em claro, é cifrado no boot (`infra::seal`)
+/// e até lá o `InfraAudit` o aponta como certeza.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ManagedDatabaseInfra {
     pub id: String,

@@ -162,13 +162,16 @@ fn audit_project(out: &mut Vec<Finding>, p: &ProjectInfra) {
         }
     }
     for m in &p.managed_databases {
-        // A senha nasce em claro hoje; só some quando o usuário a move para um secret (Fase 5).
-        push(
-            out,
-            Certainty::Definite,
-            "projeto",
-            format!("senha do banco {}", m.name),
-        );
+        // A senha é gravada cifrada (`ENC[age:…]`); um registro antigo em claro é cifrado no boot
+        // (`infra::seal`). Só o que ainda está em claro trava o git.
+        if !is_enc(&m.password) {
+            push(
+                out,
+                Certainty::Definite,
+                "projeto",
+                format!("senha do banco {}", m.name),
+            );
+        }
     }
     for svc in &p.services {
         let scope = format!("serviço {}", svc.spec.name);

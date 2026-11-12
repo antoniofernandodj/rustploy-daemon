@@ -44,9 +44,6 @@ import {
   dateDayMonthHourMinute,
   dateTimeFull,
   logExecutionRows,
-  parseDotenv,
-  dotenvErrorsMessage,
-  dotenvFromVars,
   dockerCleanupLastRunSummary,
   shortReason,
   hourMinuteJoin,
@@ -197,7 +194,6 @@ document.addEventListener("alpine:init", () => {
     newJobMainService: "",
     // Env vars próprias do job — maior precedência (por cima de projeto +
     // serviço gatilho). Blob .env colado, parseado em newJobCreate.
-    newJobEnvText: "",
     newJobKind: "manual", // "manual" | "interval" | "daily" | "weekly"
     newJobHours: "6",
     // Uma chave só, "HH:MM": quem edita agora é o <input type="time">.
@@ -1424,7 +1420,6 @@ document.addEventListener("alpine:init", () => {
       this.newJobComposePath = "docker-compose.yml";
       this.newJobGitMessage = "";
       this.newJobMainService = "";
-      this.newJobEnvText = "";
       this.newJobKind = "manual";
       this.newJobHours = "6";
       this.newJobTime = "03:00";
@@ -1569,12 +1564,11 @@ document.addEventListener("alpine:init", () => {
       }
       this.newJobError = "";
       this.newJobSubmitting = true;
-      const { vars: envVars, comments: envComments, errors: envErrors } = parseDotenv(this.newJobEnvText);
-      if (envErrors.length) {
-        this.newJobError = dotenvErrorsMessage(envErrors);
-        this.newJobSubmitting = false;
-        return;
-      }
+      // As envs e os secrets do job têm tela própria (screens/job_env.js), que grava direto no daemon:
+      // aqui a criação vai sem envs e a edição reenvia as atuais (não pode apagar o que ela gravou).
+      const current = this.newJobEditId ? this.jobsById[this.newJobEditId] : null;
+      const envVars = current?.env_vars ?? [];
+      const envComments = current?.env_comments ?? [];
       let saveResponse;
       if (this.newJobEditId) {
         saveResponse = await this.api.rpcChecked({
@@ -1610,7 +1604,10 @@ document.addEventListener("alpine:init", () => {
       this.newJobSubmitting = false;
       if (saveResponse.ok) {
         this.toastOk(this.newJobEditId ? t("job atualizado") : t("job criado"));
+        // Criado: segue para as variáveis e secrets do job (o `job_id` agora existe).
+        const createdJobId = this.newJobEditId ? "" : saveResponse.value?.Job?.id;
         this.closeNewJob();
+        if (createdJobId) this.openJobEnv(createdJobId);
       } else {
         this.newJobError = saveResponse.error;
       }
@@ -1634,7 +1631,6 @@ document.addEventListener("alpine:init", () => {
       this.newJobName = job.name || "";
       this.newJobMainService = job.main_service || "";
       this.newJobEnabled = !!job.enabled;
-      this.newJobEnvText = dotenvFromVars(job.env_vars, job.env_comments);
 
       const recurrence = job.recurrence;
       if (recurrence?.IntervalHours != null) {

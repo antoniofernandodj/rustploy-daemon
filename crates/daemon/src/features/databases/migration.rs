@@ -363,6 +363,8 @@ async fn run_inner(state: &MigrationContext, rec: &mut Record, cur: &mut usize) 
     let dest = store::managed_database::get(&state.db, &rec.m.dest_database_id)
         .await?
         .ok_or_else(|| anyhow!("database de destino não encontrado"))?;
+    // A senha do destino vem cifrada do estado; aqui é aberta, só em memória.
+    let dest = store::managed_database::open(&state.secrets, dest)?;
     let server = store::services::get(&state.db, &dest.server_service_id)
         .await?
         .ok_or_else(|| anyhow!("servidor de destino não encontrado"))?;

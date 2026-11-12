@@ -37,11 +37,27 @@ async fn server(state: &AppState, id: &str) -> Result<(Service, Engine), RpRespo
 
 async fn views(state: &AppState, svc: &Service, engine: Engine) -> RpResponse {
     match store::managed_database::list(&state.db, &svc.id).await {
-        Ok(rows) => {
-            RpResponse::ManagedDatabases(rows.iter().map(|r| to_view(svc, engine, r)).collect())
-        }
+        Ok(rows) => match open_views(state, svc, engine, rows) {
+            Ok(views) => RpResponse::ManagedDatabases(views),
+            Err(e) => RpResponse::err("DatabaseError", e.to_string()),
+        },
         Err(e) => RpResponse::err("DatabaseError", e.to_string()),
     }
+}
+
+/// As linhas viram visões (com a connection URL): a senha é aberta aqui, só em memória.
+fn open_views(
+    state: &AppState,
+    svc: &Service,
+    engine: Engine,
+    rows: Vec<Row>,
+) -> anyhow::Result<Vec<shared::ManagedDatabase>> {
+    rows.into_iter()
+        .map(|r| {
+            let r = store::managed_database::open(&state.secrets, r)?;
+            Ok(to_view(svc, engine, &r))
+        })
+        .collect()
 }
 
 pub async fn list(state: AppState, server_service_id: String) -> RpResponse {
@@ -137,12 +153,17 @@ pub async fn create(state: AppState, req: ManagedDatabaseCreateReq) -> RpRespons
     }
 
     // 3. Registro + env var do projeto.
+    // No estado a senha vai cifrada; a URL de conexão (abaixo) usa a em claro, só em memória.
+    let sealed_password = match state.secrets.encrypt(&password) {
+        Ok(v) => v,
+        Err(e) => return RpResponse::err("Internal", e.to_string()),
+    };
     let row = Row {
         id: String::new(),
         server_service_id: svc.id.clone(),
         project_id: req.project_id.clone(),
         name: req.name.clone(),
-        password,
+        password: sealed_password,
         env_var: env_var.clone(),
         connection_limit: req.connection_limit,
         statement_timeout_ms: req.statement_timeout_ms,
@@ -152,7 +173,15 @@ pub async fn create(state: AppState, req: ManagedDatabaseCreateReq) -> RpRespons
         Ok(r) => r,
         Err(e) => return RpResponse::err("DatabaseError", e.to_string()),
     };
-    let url = to_view(&svc, engine, &row).connection_url;
+    let url = to_view(
+        &svc,
+        engine,
+        &Row {
+            password,
+            ..row.clone()
+        },
+    )
+    .connection_url;
     if !req.skip_env
         && let Err(e) = env_switch::switch(&state.db, &req.project_id, &env_var, &url).await
     {
@@ -194,8 +223,10 @@ pub async fn list_all(state: AppState) -> RpResponse {
         let Some(engine) = Engine::from_kind(svc.spec.product.as_deref()) else {
             continue;
         };
-        if let Ok(rows) = store::managed_database::list(&state.db, &svc.id).await {
-            out.extend(rows.iter().map(|r| to_view(svc, engine, r)));
+        if let Ok(rows) = store::managed_database::list(&state.db, &svc.id).await
+            && let Ok(views) = open_views(&state, svc, engine, rows)
+        {
+            out.extend(views);
         }
     }
     RpResponse::ManagedDatabases(out)

@@ -946,4 +946,7 @@ export default {
   "Subir para o projeto (todos os serviços e jobs do projeto podem usar)": "Move up to the project (all services and jobs of the project can use it)",
   "Valores cifrados usados só por este job (valem antes de um secret do serviço gatilho ou do projeto com o mesmo nome). O valor real nunca volta para cá: salvar com um nome existente substitui, e vale na próxima execução.": "Encrypted values used only by this job (they win over a trigger-service or project secret with the same name). The real value never comes back here: saving with an existing name replaces it, and applies on the next run.",
   "Nenhum secret neste job ainda.": "No secrets in this job yet.",
+  "VARIÁVEIS E SECRETS": "VARIABLES AND SECRETS",
+  "Gerencie as variáveis e os secrets (cifrados) deste job, com os mesmos botões de um serviço.": "Manage this job's variables and secrets (encrypted), with the same buttons as a service.",
+  "Depois de criar o job, abre-se a janela para adicionar as variáveis e os secrets dele, com os mesmos botões de um serviço.": "After you create the job, a window opens to add its variables and secrets, with the same buttons as a service.",
 };

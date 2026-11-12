@@ -1432,12 +1432,18 @@
               <!-- Env vars próprias do job — maior precedência (por cima de
                    projeto + serviço gatilho). Formato .env colado, mesmo
                    parser de projeto/serviço (parseDotenv). -->
-              <text class="u-label-cap" style="margin-top:14px" x-t>VARIÁVEIS DE AMBIENTE (opcional)</text>
-              <text class="u-muted" x-t>
-                Sobrescrevem as do projeto/serviço gatilho por cima. Formato
-                KEY=VALUE, uma por linha (# comentário).
-              </text>
-              <textarea class="env__editor" x-model="$store.app.newJobEnvText" placeholder="FLOW_MYENV=test"></textarea>
+              <text class="u-label-cap" style="margin-top:14px" x-t>VARIÁVEIS E SECRETS</text>
+              <template x-if="$store.app.newJobEditId">
+                <column style="gap:8px">
+                  <text class="u-muted" x-t>Gerencie as variáveis e os secrets (cifrados) deste job, com os mesmos botões de um serviço.</text>
+                  <row class="env__add">
+                    <button class="btn btn--ghost" type="button" @click="$store.app.openJobEnv($store.app.newJobEditId)" x-t>🔑 Variáveis e secrets</button>
+                  </row>
+                </column>
+              </template>
+              <template x-if="!$store.app.newJobEditId">
+                <text class="u-muted" x-t>Depois de criar o job, abre-se a janela para adicionar as variáveis e os secrets dele, com os mesmos botões de um serviço.</text>
+              </template>
 
               <text class="u-label-cap" style="margin-top:14px" x-t>RECORRÊNCIA</text>
               <row class="tabs">
