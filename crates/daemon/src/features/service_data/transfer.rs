@@ -326,10 +326,18 @@ pub async fn import_with(
         tokio::task::spawn_blocking(move || secrets.decrypt_file(&src, &dst))
             .await?
             .map_err(|e| {
-                anyhow!(
-                    "o pacote está cifrado e este servidor não o abre ({e}). Importe num servidor \
-                     com a mesma identidade (ou a chave de recuperação) ou exporte sem cifrar."
-                )
+                if state.secrets.recovery_in_progress() {
+                    // numa recuperação a chave JÁ foi informada: dizer "use a chave de recuperação" confunde
+                    anyhow!(
+                        "a chave de recuperação informada não abre este backup ({e}): ele foi cifrado \
+                         para outra chave (a chave de recuperação foi trocada depois dele?)."
+                    )
+                } else {
+                    anyhow!(
+                        "o pacote está cifrado e este servidor não o abre ({e}). Importe num servidor \
+                         com a mesma identidade (ou a chave de recuperação) ou exporte sem cifrar."
+                    )
+                }
             })?;
         pack_file = plain;
         _opened = w;
@@ -345,6 +353,11 @@ pub async fn import_with(
             if let Some(part) = parts::synthesize(&svc, &mp.name) {
                 if let Source::Bind(dir) = &part.source {
                     let _ = std::fs::create_dir_all(dir);
+                }
+                // stack Compose: o volume nasce já com as etiquetas dela (ver `create_stack_volume`)
+                if matches!(svc.spec.source, shared::ServiceSource::Compose(_)) {
+                    parts::create_stack_volume(&svc.id, &svc.compose_project_name(), &mp.name)
+                        .await;
                 }
                 found.push(part);
             }

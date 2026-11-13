@@ -21,9 +21,9 @@ pub async fn handle(state: ServicesContext, id: String, mut spec: ServiceSpec) -
     {
         return RpResponse::err("PortAllocationError", e);
     }
-    let old_port = match crate::store::services::get(&state.db, &id).await {
-        Ok(Some(s)) => s.spec.host_port,
-        _ => None,
+    let old_ports = match crate::store::services::get(&state.db, &id).await {
+        Ok(Some(s)) => crate::features::ingress::external_ports::host_ports(&s.spec),
+        _ => Vec::new(),
     };
 
     for route in spec.domain_routes().into_iter().filter(|r| r.tls) {
@@ -38,7 +38,13 @@ pub async fn handle(state: ServicesContext, id: String, mut spec: ServiceSpec) -
 
     match crate::store::services::update_spec(&state.db, &id, spec).await {
         Ok(Some(s)) => {
-            sync_firewall(&state, &s.id, old_port, s.spec.host_port).await;
+            sync_firewall(
+                &state,
+                &s.id,
+                &old_ports,
+                &crate::features::ingress::external_ports::host_ports(&s.spec),
+            )
+            .await;
             RpResponse::Service(Box::new(s))
         }
         Ok(None) => RpResponse::err("NotFound", "service not found"),
@@ -46,16 +52,11 @@ pub async fn handle(state: ServicesContext, id: String, mut spec: ServiceSpec) -
     }
 }
 
-/// Porta mudou/removida → fecha a antiga (se mais ninguém a usa) e o listener
-/// do ingress; porta nova/mantida → garante a liberação. Reusado por
-/// `manifest_apply` (IaC import), que também atualiza specs fora deste handler.
-pub(crate) async fn sync_firewall(
-    state: &ServicesContext,
-    id: &str,
-    old: Option<u16>,
-    new: Option<u16>,
-) {
-    if let Some(old_port) = old.filter(|o| Some(*o) != new) {
+/// Portas que saíram da lista → fecha cada uma (se mais ninguém a usa) e o listener do ingress; portas
+/// que ficaram ou entraram → garante a liberação. Reusado por `manifest_apply` (IaC import), que também
+/// atualiza specs fora deste handler.
+pub(crate) async fn sync_firewall(state: &ServicesContext, id: &str, old: &[u16], new: &[u16]) {
+    for old_port in old.iter().copied().filter(|o| !new.contains(o)) {
         state.ingress.remove_port_route(old_port);
         if !crate::features::ingress::external_ports::port_in_use_by_other(
             &state.db,
@@ -67,7 +68,7 @@ pub(crate) async fn sync_firewall(
             crate::features::ingress::firewall::ensure_denied_bg(old_port);
         }
     }
-    if let Some(new_port) = new {
+    for new_port in new.iter().copied() {
         crate::features::ingress::firewall::ensure_allowed_bg(new_port);
     }
 }

@@ -108,6 +108,25 @@ pub fn decrypt_file(
     Ok(())
 }
 
+/// A `identity` abre o arquivo age cujo **início** é `head`? Só lê o cabeçalho (onde ficam as chaves de
+/// arquivo cifradas por destinatário), nunca o conteúdo: bastam os primeiros KB do arquivo, sem baixar um
+/// backup inteiro para saber se a chave serve.
+///
+/// `Ok(false)` = o arquivo é válido mas **não foi cifrado para esta chave**. `Err` = não deu para ler o
+/// cabeçalho (cortado curto demais, ou não é um arquivo age): aí não dá para afirmar nada.
+#[allow(dead_code)] // idem: só o daemon usa
+pub fn head_opens(head: &[u8], identity: &x25519::Identity) -> Result<bool> {
+    let decryptor = match Decryptor::new(head)? {
+        Decryptor::Recipients(d) => d,
+        _ => bail!("arquivo cifrado com passphrase onde se esperava uma identidade"),
+    };
+    match decryptor.decrypt(std::iter::once(identity as &dyn age::Identity)) {
+        Ok(_) => Ok(true),
+        Err(age::DecryptError::NoMatchingKeys) => Ok(false),
+        Err(e) => Err(anyhow!("não consegui verificar o cabeçalho: {e}")),
+    }
+}
+
 pub fn parse_identity(text: &str) -> Result<x25519::Identity> {
     text.trim()
         .parse::<x25519::Identity>()
@@ -168,5 +187,28 @@ mod tests {
         assert!(parse_recipient(&id.to_public().to_string()).is_ok());
         assert!(parse_identity("age1naoeprivada").is_err());
         assert!(parse_recipient("AGE-SECRET-KEY-1X").is_err());
+    }
+
+    /// O caso real: backup cifrado para a chave A; a pessoa só tem a B (a chave de recuperação foi trocada).
+    /// Tem de dar para saber isso lendo só o início do arquivo.
+    #[test]
+    fn head_opens_distingue_a_chave_certa_da_errada_so_pelo_cabecalho() {
+        let (certa, errada) = (x25519::Identity::generate(), x25519::Identity::generate());
+        let boxed: Vec<Box<dyn Recipient + Send>> = vec![Box::new(certa.to_public())];
+        let mut cifrado = Vec::new();
+        let mut w = age::Encryptor::with_recipients(boxed)
+            .unwrap()
+            .wrap_output(&mut cifrado)
+            .unwrap();
+        w.write_all(&vec![7u8; 100_000]).unwrap();
+        w.finish().unwrap();
+
+        let inicio = &cifrado[..2048]; // 2 KB de um arquivo de ~100 KB
+        assert!(head_opens(inicio, &certa).unwrap());
+        assert!(!head_opens(inicio, &errada).unwrap());
+        // cabeçalho cortado no meio: não dá para afirmar nada (erro, não "não abre")
+        assert!(head_opens(&cifrado[..10], &certa).is_err());
+        // não é um arquivo age
+        assert!(head_opens(b"isto nao e age", &certa).is_err());
     }
 }

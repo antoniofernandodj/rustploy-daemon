@@ -373,6 +373,28 @@ pub async fn latest(ctx: &DeployContext, service_id: &str) -> Result<Option<Back
     }))
 }
 
+/// Os primeiros bytes lidos de um backup para conferir a chave: cabe com folga o cabeçalho age (poucos
+/// destinatários, ~200 bytes cada).
+const HEAD_BYTES: usize = 16 * 1024;
+
+/// **Este servidor consegue abrir o backup `key`?** (com a identidade dele ou, durante uma recuperação, com a
+/// chave de recuperação informada). Lê só o início do objeto: confere a chave sem baixar o backup.
+///
+/// `Ok(false)` = o backup foi cifrado para **outra** chave (ex.: a chave de recuperação foi trocada depois
+/// dele). `Err` = não deu para ler (S3 fora, objeto cortado): não prova nada, quem chama decide.
+pub async fn opens_with_current_keys(
+    ctx: &DeployContext,
+    service_id: &str,
+    key: &str,
+) -> Result<bool> {
+    let r = ready(ctx, service_id).await?;
+    if !key_belongs(&r.prefix, key) {
+        bail!("esse backup não pertence a este serviço");
+    }
+    let head = s3::get_head(&r.cfg, key, HEAD_BYTES).await?;
+    ctx.secrets.can_open_file_head(&head)
+}
+
 /// Baixa um backup do serviço para `dest` (confere que a chave é da pasta do serviço).
 pub async fn fetch(
     ctx: &DeployContext,

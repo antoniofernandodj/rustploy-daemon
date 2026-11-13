@@ -16,6 +16,10 @@ pub struct ServiceManifest {
     pub port: u16,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub host_port: Option<u16>,
+    /// Portas TCP do host (várias, cada uma para uma porta do container — ver `ServiceSpec::tcp_ports`).
+    /// Convive com o `host_port` legado, copiados como estão, como `domains` e `domain`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tcp_ports: Vec<TcpPortRoute>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub domain: Option<String>,
     #[serde(default, skip_serializing_if = "is_false")]
@@ -141,6 +145,7 @@ impl ServiceManifest {
             source: self.source.to_source(provider_ids),
             port: self.port,
             host_port: self.host_port,
+            tcp_ports: self.tcp_ports.clone(),
             domain: self.domain.clone(),
             tls_enabled: self.tls,
             env_vars: env_map_to_vars(&self.env),
@@ -183,6 +188,7 @@ impl ServiceManifest {
             source: SourceManifest::from_source(&spec.source, providers),
             port: spec.port,
             host_port: spec.host_port,
+            tcp_ports: spec.tcp_ports.clone(),
             domain: spec.domain.clone(),
             tls: spec.tls_enabled,
             domains: spec.domains.clone(),

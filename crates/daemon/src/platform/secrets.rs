@@ -159,6 +159,23 @@ impl SecretsManager {
         }
     }
 
+    /// Este servidor (ou, durante uma recuperação, a chave de recuperação em memória) abre o arquivo age
+    /// cujo início é `head`? Só olha o cabeçalho (ver `age_format::head_opens`).
+    pub fn can_open_file_head(&self, head: &[u8]) -> Result<bool> {
+        if age_format::head_opens(head, &self.identity)? {
+            return Ok(true);
+        }
+        match self
+            .transient
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+        {
+            Some(t) => age_format::head_opens(head, t),
+            None => Ok(false),
+        }
+    }
+
     /// Decifra um valor `ENC[age:…]` com a identidade deste servidor (ou, durante uma recuperação, com a
     /// de recuperação em memória).
     pub fn decrypt(&self, value: &str) -> Result<String> {
@@ -230,7 +247,6 @@ impl SecretsManager {
     }
 
     /// Há uma recuperação em curso (a identidade de recuperação está na memória)?
-    #[cfg(test)]
     pub fn recovery_in_progress(&self) -> bool {
         self.transient
             .read()

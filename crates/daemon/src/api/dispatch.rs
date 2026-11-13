@@ -26,6 +26,7 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         Command::ServiceExportPlan { .. } => "ServiceExportPlan",
         Command::ServiceExport { .. } => "ServiceExport",
         Command::ServiceDataPlan { .. } => "ServiceDataPlan",
+        Command::ServicePortSuggestions { .. } => "ServicePortSuggestions",
         Command::BackupDestinationGet => "BackupDestinationGet",
         Command::BackupDestinationSet { .. } => "BackupDestinationSet",
         Command::BackupDestinationClear => "BackupDestinationClear",
@@ -235,6 +236,15 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         | Command::ServiceBackupDelete { .. } => handlers::data_backup::dispatch(state, cmd).await,
         Command::ServiceDataPlan { service_id } => {
             crate::features::service_data::plan(state.deploy_ctx(), service_id.clone()).await
+        }
+        Command::ServicePortSuggestions { service_id } => {
+            match crate::store::services::get(&state.db, service_id).await {
+                Ok(Some(svc)) => RpResponse::ServicePortSuggestions(
+                    crate::features::ingress::port_suggestions::suggest(&svc).await,
+                ),
+                Ok(None) => RpResponse::err("NotFound", "serviço não encontrado"),
+                Err(e) => RpResponse::err("DatabaseError", e.to_string()),
+            }
         }
         Command::JobCreate { .. }
         | Command::JobUpdate { .. }

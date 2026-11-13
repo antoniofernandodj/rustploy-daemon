@@ -140,11 +140,9 @@ impl DeployExecutor {
             ips[i as usize] = Some(ip);
             let active: Vec<String> = ips.iter().flatten().cloned().collect();
             self.ingress.register_domains(&svc.spec, &active, &svc.id);
-            if let Some(host_port) = svc.spec.host_port {
-                let backends: Vec<String> = active
-                    .iter()
-                    .map(|ip| format!("{ip}:{}", svc.spec.port))
-                    .collect();
+            for (host_port, backends) in
+                crate::features::ingress::external_ports::tcp_targets(&svc.spec, &active)
+            {
                 self.ingress.upsert_port_route(host_port, backends);
             }
 

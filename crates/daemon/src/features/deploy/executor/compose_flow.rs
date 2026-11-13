@@ -73,10 +73,11 @@ impl DeployExecutor {
                 info!(deployment_id = %dep.id, ?ips, "ComposingUp: registrando rotas de domínio");
                 self.ingress.register_domains(&svc.spec, &ips, &svc.id);
             }
-            if let Some(host_port) = svc.spec.host_port {
-                let backend = format!("{}:{}", ips[0], svc.spec.port);
-                info!(deployment_id = %dep.id, host_port, backend, "ComposingUp: registrando rota de porta");
-                self.ingress.upsert_port_route(host_port, vec![backend]);
+            for (host_port, backends) in
+                crate::features::ingress::external_ports::tcp_targets(&svc.spec, &ips)
+            {
+                info!(deployment_id = %dep.id, host_port, ?backends, "ComposingUp: registrando rota de porta");
+                self.ingress.upsert_port_route(host_port, backends);
                 self.ensure_firewall(&dep.id, &svc.id, host_port).await;
             }
         }

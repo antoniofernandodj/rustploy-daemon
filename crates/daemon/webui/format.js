@@ -584,19 +584,28 @@ export function ingressRows(pairs) {
   return rows;
 }
 
-/** Portas TCP de host: uma linha por serviço com `host_port` configurado. */
+/** Portas TCP efetivas de um spec: a lista `tcp_ports`, ou o `host_port` legado (uma porta para a
+ * `port` do serviço). Mesmo idioma de `ServiceSpec::tcp_routes` no lado Rust. */
+export function tcpRoutes(spec) {
+  if (spec.tcp_ports && spec.tcp_ports.length) return spec.tcp_ports;
+  if (spec.host_port != null) return [{ host_port: spec.host_port }];
+  return [];
+}
+
+/** Portas TCP de host: uma linha por porta TCP de cada serviço. */
 export function hostPortRows(pairs) {
   const rows = [];
   for (const pair of pairs) {
     const spec = pair.svc.spec;
-    if (spec.host_port != null) {
+    for (const route of tcpRoutes(spec)) {
+      const containerPort = route.container_port ?? spec.port;
       rows.push({
         service: spec.name,
         serviceId: pair.svc.id,
         project: pair.proj,
         projectId: spec.project_id,
-        hostPort: spec.host_port,
-        containerPort: spec.port,
+        hostPort: route.host_port,
+        containerPort: route.label ? `${containerPort} (${route.label})` : containerPort,
       });
     }
   }

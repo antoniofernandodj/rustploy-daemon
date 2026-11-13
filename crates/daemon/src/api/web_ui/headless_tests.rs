@@ -2013,3 +2013,137 @@ async fn recover_tab_sends_the_fields_and_forgets_the_secrets() {
         "a chave não pode ficar no estado do app: {out}"
     );
 }
+
+/// Portas TCP do host na aba Domains (`docs/plano-multiplas-portas-tcp.md`): a lista nova, o legado
+/// (`host_port` sozinho) virando a primeira linha, adicionar com a porta do container e o rótulo,
+/// apagar, e as sugestões preenchendo o formulário. A webui nunca tinha tido editor de porta TCP.
+#[tokio::test]
+async fn tcp_ports_editor_lists_adds_deletes_and_suggests() {
+    let addr = spawn_static_server().await;
+    let (browser, _handler) = launch().await;
+    let page = open_page(&browser, addr).await;
+    seed_connected(&page).await;
+
+    page.evaluate(
+        r#"(() => {
+            const s = Alpine.store('app');
+            s.view = 'service';
+            s.selectedServiceId = 'svc_s3';
+            s.serviceTab = 'domains';
+            s.serviceLoading = false;
+            s.serviceDeployments = [];
+            s.serviceDetail = {
+                id: 'svc_s3', status: 'Running', live_container_id: null,
+                spec: { name: 's3', port: 9000, replicas: 1, project_id: 'prj_1', product: 'rustfs',
+                    host_port: 20002, env_vars: [], domains: [],
+                    source: { Compose: { content: 'services:\n  rp_s3:\n    image: rustfs/rustfs\n' } },
+                    healthcheck: { kind: 'None', interval_secs: 5, timeout_secs: 3, retries: 10, start_period_secs: 5 } },
+            };
+            window.__saved = [];
+            s.saveServiceSpec = async (spec, msg) => { window.__saved.push({ spec, msg }); return { ok: true }; };
+            window.__toasts = [];
+            s.toastError = (m) => window.__toasts.push(m);
+            s.api.rpcChecked = async (cmd) => cmd.ServicePortSuggestions
+                ? { ok: true, value: { ServicePortSuggestions: [
+                    { port: 9001, label: 'console', sources: ['listening', 'product'], internal: false },
+                ] } }
+                : { ok: false, error: 'inesperado' };
+        })()"#,
+    )
+    .await
+    .expect("abre a aba Domains do s3");
+
+    let d = "Alpine.$data(document.querySelector('[x-data=\"serviceDetail\"]'))";
+
+    // O legado (`host_port` sozinho) aparece como uma porta para a porta do serviço.
+    assert_eq!(
+        eval_str(&page, &format!("(() => JSON.stringify({d}.tcpPorts))()")).await,
+        r#"[{"hostPort":20002,"containerPort":9000,"label":""}]"#
+    );
+    assert!(
+        visible(
+            &page,
+            "[x-data=\"serviceDetail\"] input[x-model=\"newTcpContainer\"]"
+        )
+        .await,
+        "a aba Domains deveria mostrar o formulário de porta TCP"
+    );
+
+    // Sugestões: o botão vem com nome e "escutando agora"; clicar preenche porta e rótulo.
+    let picked = eval_str(
+        &page,
+        &format!("(async () => {{ const d = {d}; await d.suggestPorts(); d.pickSuggestion(d.portSuggestions[0]); return JSON.stringify({{ text: d.portSuggestions[0].text, port: d.newTcpContainer, label: d.newTcpLabel }}); }})()"),
+    )
+    .await;
+    let p: serde_json::Value = serde_json::from_str(&picked).unwrap();
+    assert_eq!(p["text"], "9001 console (listening now)");
+    assert_eq!(p["port"], "9001");
+    assert_eq!(p["label"], "console");
+
+    // Adicionar (host vazio = automática): o legado vira lista, `host_port` vai nulo, e a nova entra.
+    let added = eval_str(
+        &page,
+        &format!("(async () => {{ const d = {d}; await d.addTcpPort(); const x = window.__saved[0]; return JSON.stringify({{ msg: x.msg, host_port: x.spec.host_port, tcp: x.spec.tcp_ports, cleared: d.newTcpContainer === '' && d.newTcpLabel === '' }}); }})()"),
+    )
+    .await;
+    let a: serde_json::Value = serde_json::from_str(&added).unwrap();
+    assert_eq!(a["msg"], "port added");
+    assert!(
+        a["host_port"].is_null(),
+        "o espelho é do daemon: o cliente manda null"
+    );
+    assert_eq!(
+        a["tcp"],
+        serde_json::json!([
+            { "host_port": 20002 },
+            { "host_port": 0, "container_port": 9001, "label": "console" }
+        ])
+    );
+    assert_eq!(a["cleared"], true, "o formulário zera depois de salvar");
+
+    // Porta inválida: só avisa, não salva.
+    let invalid = eval_str(
+        &page,
+        &format!("(async () => {{ const d = {d}; d.newTcpHost = '70000'; await d.addTcpPort(); d.newTcpHost = ''; return JSON.stringify({{ saved: window.__saved.length, toasts: window.__toasts.length }}); }})()"),
+    )
+    .await;
+    assert_eq!(invalid, r#"{"saved":1,"toasts":1}"#);
+
+    // Apagar: a lista volta sem a porta, também com `host_port` nulo.
+    let deleted = eval_str(
+        &page,
+        &format!("(async () => {{ const s = Alpine.store('app'); s.serviceDetail.spec.tcp_ports = [{{ host_port: 20002 }}, {{ host_port: 20003, container_port: 9001, label: 'console' }}]; s.serviceDetail.spec.host_port = 20002; await {d}.deleteTcpPort(20002); const x = window.__saved[window.__saved.length - 1]; return JSON.stringify({{ msg: x.msg, host_port: x.spec.host_port, tcp: x.spec.tcp_ports }}); }})()"),
+    )
+    .await;
+    let del: serde_json::Value = serde_json::from_str(&deleted).unwrap();
+    assert_eq!(del["msg"], "port removed");
+    assert!(del["host_port"].is_null());
+    assert_eq!(
+        del["tcp"],
+        serde_json::json!([{ "host_port": 20003, "container_port": 9001, "label": "console" }])
+    );
+
+    // Tela de Ingress: uma linha por porta, com a porta do container e o rótulo.
+    let rows = eval_str(
+        &page,
+        r#"(async () => {
+            const { hostPortRows } = await import('./format.js');
+            const spec = { name: 's3', project_id: 'prj_1', port: 9000,
+                tcp_ports: [{ host_port: 20003, container_port: 9001, label: 'console' }, { host_port: 20002 }] };
+            const legado = { name: 'db', project_id: 'prj_1', port: 5432, host_port: 20000 };
+            return JSON.stringify(hostPortRows([{ svc: { id: 'a', spec }, proj: 'p' }, { svc: { id: 'b', spec: legado }, proj: 'p' }])
+                .map((r) => [r.hostPort, r.containerPort]));
+        })()"#,
+    )
+    .await;
+    assert_eq!(
+        rows,
+        r#"[[20000,5432],[20002,9000],[20003,"9001 (console)"]]"#
+    );
+
+    assert_eq!(
+        errors(&page).await,
+        Vec::<String>::new(),
+        "sem erros de JS no console"
+    );
+}

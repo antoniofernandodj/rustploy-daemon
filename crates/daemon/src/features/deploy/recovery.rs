@@ -288,7 +288,7 @@ pub async fn reconcile(
                 )
                 .await;
                 ingress.remove_domains(&svc.spec);
-                if let Some(host_port) = svc.spec.host_port {
+                for host_port in crate::features::ingress::external_ports::host_ports(&svc.spec) {
                     ingress.remove_port_route(host_port);
                 }
             }
@@ -345,11 +345,9 @@ async fn reconcile_routes(
             }
         });
     }
-    if let Some(host_port) = svc.spec.host_port {
-        let backends: Vec<String> = ips
-            .iter()
-            .map(|ip| format!("{ip}:{}", svc.spec.port))
-            .collect();
+    for (host_port, backends) in
+        crate::features::ingress::external_ports::tcp_targets(&svc.spec, &ips)
+    {
         ingress.upsert_port_route(host_port, backends);
     }
 }
@@ -420,11 +418,9 @@ async fn restore_routes(
             }
         }
 
-        if let Some(host_port) = svc.spec.host_port {
-            let backends: Vec<String> = ips
-                .iter()
-                .map(|ip| format!("{ip}:{}", svc.spec.port))
-                .collect();
+        for (host_port, backends) in
+            crate::features::ingress::external_ports::tcp_targets(&svc.spec, &ips)
+        {
             ingress.upsert_port_route(host_port, backends.clone());
             info!(
                 service = svc.spec.name,

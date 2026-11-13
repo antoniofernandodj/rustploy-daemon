@@ -255,6 +255,7 @@ mod tests {
             },
             port: 80,
             host_port: None,
+            tcp_ports: vec![],
             domain: None,
             tls_enabled: false,
             env_vars: vec![],

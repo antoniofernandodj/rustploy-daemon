@@ -114,7 +114,7 @@ pub async fn resolve(docker: &crate::engine::DockerClient, svc: &Service) -> Res
     // Volumes nomeados da stack (Compose): o motor os etiqueta com o projeto.
     if matches!(svc.spec.source, ServiceSource::Compose(_)) {
         let project = svc.compose_project_name();
-        for vol in list_project_volumes(&project).await? {
+        for vol in list_project_volumes(&project, &svc.id).await? {
             parts.push(Part {
                 name: logical_name(&project, &vol),
                 source: Source::Named(vol),
@@ -144,21 +144,70 @@ pub async fn resolve(docker: &crate::engine::DockerClient, svc: &Service) -> Res
     Ok(parts)
 }
 
-async fn list_project_volumes(project: &str) -> Result<Vec<String>> {
-    let out = crate::engine::cli()
-        .args([
-            "volume",
-            "ls",
-            "-q",
-            "--filter",
-            &format!("label=com.docker.compose.project={project}"),
+/// Etiqueta que o Rustploy põe nos volumes que ele mesmo cria: o **ID do serviço** dono do volume.
+pub const SERVICE_LABEL: &str = "rustploy.service_id";
+
+/// Os volumes da stack, **só por etiqueta** (nunca por semelhança de nome): os que o Compose etiquetou
+/// com o projeto e os que o Rustploy criou com o ID do serviço ([`create_stack_volume`]). O segundo grupo
+/// existe porque um volume criado antes do primeiro `compose up` (a recuperação de um servidor restaura
+/// os dados antes de subir) não ganha a etiqueta do Compose sozinho: sem etiqueta nenhuma, um serviço
+/// recuperado aparecia como "não tem volumes" e nunca mais fazia backup.
+///
+/// Terceira fonte, para volumes que não têm etiqueta nenhuma (criados por uma recuperação anterior a
+/// esta versão): os volumes que os **containers da stack de fato montam**. O container é achado pela
+/// etiqueta do Compose; o volume, pelo que o próprio container declara usar. Nada é deduzido do nome.
+async fn list_project_volumes(project: &str, service_id: &str) -> Result<Vec<String>> {
+    let mut found = volume_ls(&format!("label=com.docker.compose.project={project}")).await?;
+    let extra = [
+        volume_ls(&format!("label={SERVICE_LABEL}={service_id}")).await?,
+        mounted_by_stack(project).await?,
+    ];
+    for vol in extra.into_iter().flatten() {
+        if !found.contains(&vol) {
+            found.push(vol);
+        }
+    }
+    Ok(found)
+}
+
+/// Volumes nomeados montados pelos containers da stack (parados também: `ps -a`).
+async fn mounted_by_stack(project: &str) -> Result<Vec<String>> {
+    let ids = engine_lines(&[
+        "ps",
+        "-a",
+        "-q",
+        "--filter",
+        &format!("label=com.docker.compose.project={project}"),
+    ])
+    .await?;
+    let mut out = Vec::new();
+    for id in ids {
+        let names = engine_lines(&[
+            "inspect",
+            "--format",
+            "{{range .Mounts}}{{if eq .Type \"volume\"}}{{.Name}}\n{{end}}{{end}}",
+            &id,
         ])
+        .await?;
+        for n in names {
+            if !out.contains(&n) {
+                out.push(n);
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Roda o CLI do motor e devolve as linhas não vazias da saída.
+async fn engine_lines(args: &[&str]) -> Result<Vec<String>> {
+    let out = crate::engine::cli()
+        .args(args)
         .output()
         .await
-        .map_err(|e| anyhow!("falha ao listar volumes: {e}"))?;
+        .map_err(|e| anyhow!("falha ao consultar o motor: {e}"))?;
     if !out.status.success() {
         return Err(anyhow!(
-            "listar volumes falhou: {}",
+            "consultar o motor falhou: {}",
             String::from_utf8_lossy(&out.stderr).trim()
         ));
     }
@@ -168,6 +217,32 @@ async fn list_project_volumes(project: &str) -> Result<Vec<String>> {
         .filter(|l| !l.is_empty())
         .map(String::from)
         .collect())
+}
+
+async fn volume_ls(filter: &str) -> Result<Vec<String>> {
+    engine_lines(&["volume", "ls", "-q", "--filter", filter]).await
+}
+
+/// Cria o volume `<projeto>_<nome>` de uma stack Compose com o **ID do serviço** ([`SERVICE_LABEL`]) e
+/// **as etiquetas que o Compose poria**, para que o `compose up` seguinte o reconheça como dele (sem o
+/// aviso de "volume não foi criado pelo Compose") e a listagem por etiqueta o ache. Já existir não é erro
+/// (mas um volume que já existe fica com as etiquetas que tinha: o motor não as altera depois).
+pub async fn create_stack_volume(service_id: &str, project: &str, logical: &str) {
+    let name = format!("{project}_{logical}");
+    let _ = crate::engine::cli()
+        .args([
+            "volume",
+            "create",
+            "--label",
+            &format!("{SERVICE_LABEL}={service_id}"),
+            "--label",
+            &format!("com.docker.compose.project={project}"),
+            "--label",
+            &format!("com.docker.compose.volume={logical}"),
+            &name,
+        ])
+        .output()
+        .await;
 }
 
 #[cfg(test)]

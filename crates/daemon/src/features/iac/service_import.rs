@@ -264,10 +264,10 @@ async fn analyze(state: &IacContext, req: &ServiceImportReq) -> Result<Analysis,
             "Só a configuração foi copiada: os DADOS (volumes, conteúdo do banco) não vêm junto.",
         ));
     }
-    if manifest.host_port.is_some() {
+    if manifest.host_port.is_some() || !manifest.tcp_ports.is_empty() {
         warnings.push(warn_item(
             "host_port_new",
-            "A porta externa do serviço será alocada de novo neste servidor.",
+            "As portas externas do serviço serão alocadas de novo neste servidor.",
         ));
     }
     if req.drop_domains {
@@ -582,6 +582,7 @@ mod e2e {
             },
             port: 8888,
             host_port: None,
+            tcp_ports: vec![],
             domain: None,
             tls_enabled: false,
             env_vars: vec![plain("CACHE", "${REDIS_URL}"), plain("OWN", "mine")],

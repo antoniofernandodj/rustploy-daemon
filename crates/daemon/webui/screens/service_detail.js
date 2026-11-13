@@ -27,6 +27,7 @@ import {
   externalUrl,
   envRowsWithComments,
   formatBytes,
+  tcpRoutes,
 } from "../format.js";
 import { t } from "../i18n.js";
 
@@ -47,6 +48,11 @@ document.addEventListener("alpine:init", () => {
     newDomain: "",
     newDomainPort: "",
     newDomainTls: false,
+    // Portas TCP do host (docs/plano-multiplas-portas-tcp.md). Host vazio = automática.
+    newTcpHost: "",
+    newTcpContainer: "",
+    newTcpLabel: "",
+    portSuggestions: null,
     buildLogText: "",
     buildLogFor: null,
     timeHms,
@@ -65,6 +71,7 @@ document.addEventListener("alpine:init", () => {
           if (this.revealedFor !== this.svc?.id) {
             this.revealedFor = this.svc?.id ?? null;
             this.revealedSecrets = {};
+            this.portSuggestions = null; // as sugestões são do serviço anterior
           }
           this.loadServiceSecrets();
           this.loadSharedState();
@@ -1104,6 +1111,93 @@ document.addEventListener("alpine:init", () => {
       const spec = JSON.parse(JSON.stringify(this.svc.spec));
       spec.domains = (spec.domains || []).filter((route) => route.domain !== domain);
       await this.store.saveServiceSpec(spec, t("domínio removido"));
+    },
+
+    // ── Portas TCP do host ────────────────────────────────────────────
+    // Cada porta liga uma porta do host a uma porta do container. Host vazio = "Automática" (0: o daemon
+    // escolhe uma livre e a libera no firewall); container vazio = a porta padrão do serviço.
+    get tcpPorts() {
+      const service = this.svc;
+      if (!service) return [];
+      return tcpRoutes(service.spec).map((route) => ({
+        hostPort: route.host_port,
+        containerPort: route.container_port ?? service.spec.port,
+        label: route.label || "",
+      }));
+    },
+
+    // Mesmo idioma de domains: move o `host_port` legado para a lista e manda `host_port: null` (o daemon
+    // recalcula o espelho; mandar o antigo junto faria uma lista esvaziada voltar por ele).
+    tcpSpec() {
+      // JSON round-trip: this.svc.spec é um Proxy reativo do Alpine (ver saveEnvText).
+      const spec = JSON.parse(JSON.stringify(this.svc.spec));
+      spec.tcp_ports = tcpRoutes(spec).map((route) => ({ ...route }));
+      spec.host_port = null;
+      return spec;
+    },
+
+    async addTcpPort() {
+      const parse = (text) => {
+        const value = Number(String(text).trim());
+        return Number.isInteger(value) && value >= 1 && value <= 65535 ? value : null;
+      };
+      const hostText = String(this.newTcpHost).trim();
+      const containerText = String(this.newTcpContainer).trim();
+      const hostPort = hostText === "" ? 0 : parse(hostText);
+      if (hostPort === null) {
+        this.store.toastError(t("porta do host inválida (1 a 65535, ou vazia para automática)"));
+        return;
+      }
+      const containerPort = containerText === "" ? null : parse(containerText);
+      if (containerText !== "" && containerPort === null) {
+        this.store.toastError(t("porta do container inválida (1 a 65535, ou vazia para a padrão)"));
+        return;
+      }
+      const route = { host_port: hostPort };
+      if (containerPort !== null) route.container_port = containerPort;
+      if (this.newTcpLabel.trim()) route.label = this.newTcpLabel.trim();
+      const spec = this.tcpSpec();
+      // mesma porta do host (manual) = editar a que existe
+      const existing = hostPort === 0 ? -1 : spec.tcp_ports.findIndex((r) => r.host_port === hostPort);
+      if (existing >= 0) spec.tcp_ports[existing] = route;
+      else spec.tcp_ports.push(route);
+      const result = await this.store.saveServiceSpec(spec, t("porta adicionada"));
+      if (result.ok) {
+        this.newTcpHost = "";
+        this.newTcpContainer = "";
+        this.newTcpLabel = "";
+      }
+    },
+
+    async deleteTcpPort(hostPort) {
+      const spec = this.tcpSpec();
+      spec.tcp_ports = spec.tcp_ports.filter((route) => route.host_port !== hostPort);
+      await this.store.saveServiceSpec(spec, t("porta removida"));
+    },
+
+    // "Sugerir portas": o que o container escuta, o que a imagem e o compose declaram, e a tabela do produto.
+    async suggestPorts() {
+      const serviceId = this.store.selectedServiceId;
+      if (!serviceId) return;
+      const response = await this.store.api.rpcChecked({ ServicePortSuggestions: { service_id: serviceId } });
+      if (!response.ok || !response.value?.ServicePortSuggestions) {
+        this.store.toastError(response.error || t("resposta inesperada do daemon"));
+        return;
+      }
+      this.portSuggestions = response.value.ServicePortSuggestions.map((suggestion) => {
+        const parts = [String(suggestion.port)];
+        if (suggestion.label) parts.push(t(suggestion.label));
+        if (suggestion.internal) parts.push(`(${t("interna")})`);
+        else if ((suggestion.sources || []).includes("listening")) parts.push(`(${t("escutando agora")})`);
+        return { port: suggestion.port, label: suggestion.label || "", text: parts.join(" "), internal: !!suggestion.internal };
+      });
+      if (!this.portSuggestions.length) this.store.toast(t("nenhuma outra porta encontrada no serviço"));
+    },
+
+    // Clicar numa sugestão preenche a porta do container (e o rótulo, se a porta tem nome).
+    pickSuggestion(suggestion) {
+      this.newTcpContainer = String(suggestion.port);
+      if (suggestion.label) this.newTcpLabel = suggestion.label;
     },
 
     // ── Healthcheck ───────────────────────────────────────────────────

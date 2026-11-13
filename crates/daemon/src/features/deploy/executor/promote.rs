@@ -50,11 +50,9 @@ impl DeployExecutor {
             );
             self.ingress.register_domains(&svc.spec, &ips, &svc.id);
         }
-        if let Some(host_port) = svc.spec.host_port {
-            let backends: Vec<String> = ips
-                .iter()
-                .map(|ip| format!("{ip}:{}", svc.spec.port))
-                .collect();
+        for (host_port, backends) in
+            crate::features::ingress::external_ports::tcp_targets(&svc.spec, &ips)
+        {
             info!(
                 deployment_id = %dep.id,
                 host_port,
@@ -64,7 +62,7 @@ impl DeployExecutor {
             self.ingress.upsert_port_route(host_port, backends);
             self.ensure_firewall(&dep.id, &svc.id, host_port).await;
         }
-        if svc.spec.domain_routes().is_empty() && svc.spec.host_port.is_none() {
+        if svc.spec.domain_routes().is_empty() && svc.spec.tcp_routes().is_empty() {
             info!(
                 deployment_id = %dep.id,
                 "step[SwappingIn]: sem domínio nem porta externa, ingress não atualizado"

@@ -229,6 +229,7 @@ mod tests {
                 source,
                 port: 8080,
                 host_port: None,
+                tcp_ports: vec![],
                 domain: Some("app.example.com".into()),
                 tls_enabled: true,
                 env_vars: vec![],

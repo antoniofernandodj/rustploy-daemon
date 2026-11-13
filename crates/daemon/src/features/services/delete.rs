@@ -55,12 +55,12 @@ pub async fn handle(state: ServicesContext, id: String) -> RpResponse {
     if let Err(e) = remove_containers(&state, &id).await {
         return e;
     }
-    let mut host_port = None;
+    let mut host_ports = Vec::new();
     if let Ok(Some(svc)) = crate::store::services::get(&state.db, &id).await {
         state.ingress.remove_domains(&svc.spec);
-        if let Some(port) = svc.spec.host_port {
-            state.ingress.remove_port_route(port);
-            host_port = Some(port);
+        host_ports = crate::features::ingress::external_ports::host_ports(&svc.spec);
+        for port in &host_ports {
+            state.ingress.remove_port_route(*port);
         }
     }
     match crate::store::services::delete(&state.db, &id).await {
@@ -71,15 +71,16 @@ pub async fn handle(state: ServicesContext, id: String) -> RpResponse {
             }
             // Sem regra órfã: com o serviço fora do DB, fecha a porta no
             // firewall (a menos que outro serviço compartilhe a mesma porta).
-            if let Some(port) = host_port
-                && !crate::features::ingress::external_ports::port_in_use_by_other(
+            for port in host_ports {
+                if !crate::features::ingress::external_ports::port_in_use_by_other(
                     &state.db,
                     port,
                     Some(&id),
                 )
                 .await
-            {
-                crate::features::ingress::firewall::ensure_denied_bg(port);
+                {
+                    crate::features::ingress::firewall::ensure_denied_bg(port);
+                }
             }
             // Jobs gatilhados por este serviço vão junto (senão ficariam
             // órfãos, falhando em loop a cada recorrência) — a GUI avisa no

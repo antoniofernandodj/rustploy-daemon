@@ -20,6 +20,7 @@ use anyhow::{Result, anyhow, bail};
 use async_trait::async_trait;
 use shared::{RecoverService, ServerRecoverInfo, Service};
 use std::collections::HashSet;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 use tracing::{info, warn};
@@ -59,6 +60,41 @@ fn is_database(svc: &Service) -> bool {
     database::engine_of(svc).is_some()
 }
 
+/// `true` durante a restauração da infra do [`start`] (a fase ainda é "idle" nessa janela).
+static STARTING: AtomicBool = AtomicBool::new(false);
+
+/// A infra deste servidor veio de uma recuperação cujos **dados ainda não foram tocados** (liga ao fim da
+/// restauração da infra; desliga quando o `run` começa). Enquanto ligado, dá para chamar `start` de novo
+/// com outra chave: o servidor "já tem projetos", mas são os desta recuperação. Só em memória: um reinício
+/// do daemon o esquece (aí é um servidor com projetos como outro qualquer).
+static INFRA_PENDING: AtomicBool = AtomicBool::new(false);
+
+/// Liga [`STARTING`] e desliga em qualquer saída de `start` (erro, `?` ou sucesso).
+struct StartingGuard;
+
+impl StartingGuard {
+    fn new() -> Self {
+        STARTING.store(true, Ordering::SeqCst);
+        Self
+    }
+}
+
+impl Drop for StartingGuard {
+    fn drop(&mut self) {
+        STARTING.store(false, Ordering::SeqCst);
+    }
+}
+
+/// Há uma recuperação em curso (restaurando a infra, esperando a confirmação ou restaurando dados)?
+///
+/// O agendador de backups **não pode rodar** enquanto isto for verdade. O `last_start` de cada serviço vive
+/// no SQL local e não vai para o git, então num servidor recuperado ele vem vazio e todo serviço cuja
+/// política é mais velha que um período aparece como "vencido" no primeiro minuto. Um backup nessa hora
+/// grava o serviço **ainda vazio** como o mais recente, e a próxima recuperação restauraria o vazio.
+pub fn in_progress() -> bool {
+    STARTING.load(Ordering::SeqCst) || matches!(status().phase.as_str(), "ready" | "running")
+}
+
 // ── passo 1: a infra ────────────────────────────────────────────────────────
 
 /// Restaura a infra e monta o resumo. `provider_id` é o provider git criado com o token (`None` num remoto
@@ -74,12 +110,18 @@ pub async fn start(
     if matches!(status().phase.as_str(), "running") {
         bail!("já há uma recuperação em andamento");
     }
-    if !ctx.db.infra().snapshot().projects.is_empty() {
+    // Os projetos que já estão aqui podem ser os desta mesma recuperação, ainda sem nenhum dado restaurado
+    // (a pessoa informou a chave errada, cancelou ou quer tentar de novo): nesse caso deixa informar outra
+    // chave em vez de obrigar a destruir o servidor. Depois do `run`, não.
+    let resuming = INFRA_PENDING.load(Ordering::SeqCst);
+    if !resuming && !ctx.db.infra().snapshot().projects.is_empty() {
         bail!(
             "este servidor já tem projetos: a recuperação só funciona num servidor **limpo** (para não \
              sobrescrever nada). Use um servidor novo, ou apague os projetos daqui antes."
         );
     }
+    // daqui até o retorno o agendador de backups fica parado (ver `in_progress`)
+    let _starting = StartingGuard::new();
     let public = ctx.secrets.begin_recovery(&recovery_key)?;
     state_git.set_hold_restore(true);
     let restored = restore_infra(&ctx, &state_git, remote, provider_id, branch).await;
@@ -88,6 +130,7 @@ pub async fn start(
         ctx.secrets.end_recovery();
         return Err(e);
     }
+    INFRA_PENDING.store(true, Ordering::SeqCst);
 
     let info = summarize(&ctx, public).await;
     update(|i| *i = info.clone());
@@ -159,9 +202,34 @@ async fn summarize(ctx: &DeployContext, public: String) -> ServerRecoverInfo {
             .find(|p| p.id == svc.spec.project_id)
             .map(|p| p.name.clone())
             .unwrap_or_default();
+        // Se a chave informada não abrir o backup mais recente, a pessoa precisa saber AGORA (com nada
+        // iniciado e nenhum dado tocado), não no meio da restauração, quando o serviço já falhou.
+        let mut key_error: Option<String> = None;
         let latest = if destination.configured {
             match service_backup::latest(ctx, &svc.id).await {
-                Ok(l) => l.map(|e| e.last_modified),
+                Ok(Some(entry)) => {
+                    match service_backup::opens_with_current_keys(ctx, &svc.id, &entry.key).await {
+                        Ok(true) => {}
+                        Ok(false) => {
+                            warn!(
+                                service = %svc.spec.name, service_id = %svc.id, key = %entry.key,
+                                "recuperação: a chave informada não abre o backup mais recente"
+                            );
+                            key_error = Some(
+                                "a chave de recuperação informada não abre o backup mais recente \
+                                 deste serviço (ele foi cifrado para outra chave)"
+                                    .into(),
+                            );
+                        }
+                        // não deu para ler o cabeçalho: não prova nada, a restauração tenta de qualquer jeito
+                        Err(e) => warn!(
+                            service = %svc.spec.name, service_id = %svc.id, error = %format!("{e:#}"),
+                            "recuperação: não consegui conferir a chave contra o backup"
+                        ),
+                    }
+                    Some(entry.last_modified)
+                }
+                Ok(None) => None,
                 Err(e) => {
                     info.destination_error
                         .get_or_insert_with(|| format!("{e:#}"));
@@ -183,7 +251,7 @@ async fn summarize(ctx: &DeployContext, public: String) -> ServerRecoverInfo {
             .into(),
             latest_backup: latest,
             step: "pending".into(),
-            error: None,
+            error: key_error,
         });
     }
     info.services.sort_by(|a, b| {
@@ -216,6 +284,26 @@ async fn summarize(ctx: &DeployContext, public: String) -> ServerRecoverInfo {
             "o repositório não trouxe o destino S3: os serviços sobem vazios".into()
         });
     }
+    let blind: Vec<String> = info
+        .services
+        .iter()
+        .filter(|s| s.error.is_some())
+        .map(|s| s.name.clone())
+        .collect();
+    if !blind.is_empty() {
+        let warning = format!(
+            "A chave de recuperação informada ({}) NÃO abre os backups de: {}. Eles foram cifrados para \
+             outra chave (a chave de recuperação foi trocada depois deles?). Informe a que estava \
+             configurada no servidor quando os backups foram feitos. Enquanto isso a restauração dos \
+             dados não será iniciada. Se essa chave se perdeu, cancele e suba os serviços à mão (vazios).",
+            info.recovery_public_key.as_deref().unwrap_or("?"),
+            blind.join(", "),
+        );
+        info.message = Some(match info.message.take() {
+            Some(other) => format!("{warning}\n\n{other}"),
+            None => warning,
+        });
+    }
     info
 }
 
@@ -226,6 +314,23 @@ pub async fn run(ctx: DeployContext) -> Result<()> {
     if status().phase != "ready" {
         bail!("não há uma recuperação pronta para confirmar (comece por `ServerRecoverStart`)");
     }
+    // Chave que não abre os backups: restaurar agora só produziria serviços que falham ou sobem vazios.
+    // A pessoa vê o motivo no resumo e pode informar outra chave (ver `INFRA_PENDING`).
+    let blind: Vec<String> = status()
+        .services
+        .iter()
+        .filter(|s| s.step == "pending" && s.error.is_some())
+        .map(|s| s.name.clone())
+        .collect();
+    if !blind.is_empty() {
+        bail!(
+            "a chave de recuperação informada não abre os backups de: {}. Informe a chave que estava \
+             configurada quando eles foram feitos (cancele e comece de novo com ela).",
+            blind.join(", ")
+        );
+    }
+    // daqui os dados são tocados: não dá mais para recomeçar com outra chave
+    INFRA_PENDING.store(false, Ordering::SeqCst);
     update(|i| {
         i.phase = "running".into();
         i.message = None;
@@ -304,23 +409,47 @@ impl RecoveryBringer {
         if !dest.configured {
             return Ok(None);
         }
-        service_backup::latest(&self.ctx, &svc.id)
+        let latest = service_backup::latest(&self.ctx, &svc.id)
             .await
             .map(|o| o.map(|e| e.key))
-            .map_err(|e| format!("não consegui consultar os backups no S3: {e:#}"))
+            .map_err(|e| format!("não consegui consultar os backups no S3: {e:#}"))?;
+        match &latest {
+            Some(key) => info!(
+                service = %svc.spec.name, service_id = %svc.id, key = %key,
+                "recuperação: backup mais recente achado"
+            ),
+            None => info!(
+                service = %svc.spec.name, service_id = %svc.id,
+                "recuperação: sem backup no S3, o serviço sobe vazio"
+            ),
+        }
+        Ok(latest)
     }
 
     async fn restore(&self, svc: &Service, key: &str, database: bool) -> Result<(), String> {
         let work = transfer::Workdir::create(&self.ctx).map_err(|e| e.to_string())?;
         let file = work.path().join("backup.rpdata.age");
+        info!(
+            service = %svc.spec.name, service_id = %svc.id, database,
+            "recuperação: baixando o backup"
+        );
         service_backup::fetch(&self.ctx, &svc.id, key, &file)
             .await
             .map_err(|e| format!("baixar o backup falhou: {e:#}"))?;
         // volume: cria o que ainda não existe (`precreate`); banco: já está no ar, usa o dele
+        info!(
+            service = %svc.spec.name, service_id = %svc.id, database,
+            "recuperação: restaurando os dados"
+        );
         transfer::import_with(self.ctx.clone(), &svc.id, &file, true, !database)
             .await
             .map(|_| ())
-            .map_err(|e| format!("restaurar os dados falhou: {e:#}"))
+            .map_err(|e| format!("restaurar os dados falhou: {e:#}"))?;
+        info!(
+            service = %svc.spec.name, service_id = %svc.id,
+            "recuperação: dados restaurados"
+        );
+        Ok(())
     }
 
     fn already(&self, id: &str) -> bool {
@@ -341,6 +470,40 @@ impl RecoveryBringer {
 #[async_trait]
 impl Bringer for RecoveryBringer {
     async fn bring_up(&self, svc: &Service) -> Result<(), String> {
+        let result = self.bring_up_steps(svc).await;
+        // O motivo só vivia na memória (e na tela): sem isto o journal não dizia por que um serviço
+        // ficou de fora, nem se os dados chegaram a voltar.
+        if let Err(e) = &result {
+            warn!(
+                service = %svc.spec.name, service_id = %svc.id, error = %e,
+                "recuperação: falhou ao restaurar/subir (nova tentativa conforme a política)"
+            );
+        }
+        result
+    }
+
+    async fn report(&self, svc: &Service, progress: Progress) {
+        match progress {
+            Progress::Starting => set_step(&svc.id, "starting", None),
+            Progress::Ready => {
+                info!(service = %svc.spec.name, service_id = %svc.id, "recuperação: serviço pronto");
+                set_step(&svc.id, "ready", None)
+            }
+            Progress::Failed(e) => {
+                warn!(service = %svc.spec.name, service_id = %svc.id, error = %e, "recuperação: serviço falhou");
+                set_step(&svc.id, "failed", Some(e))
+            }
+            Progress::Blocked(e) => {
+                warn!(service = %svc.spec.name, service_id = %svc.id, error = %e, "recuperação: serviço bloqueado");
+                set_step(&svc.id, "blocked", Some(e))
+            }
+        }
+    }
+}
+
+impl RecoveryBringer {
+    /// Os passos de [`Bringer::bring_up`]: achar o backup, restaurar (volume antes, banco depois) e subir.
+    async fn bring_up_steps(&self, svc: &Service) -> Result<(), String> {
         let database = is_database(svc);
         let key = if self.already(&svc.id) {
             None
@@ -362,15 +525,6 @@ impl Bringer for RecoveryBringer {
         }
         Ok(())
     }
-
-    async fn report(&self, svc: &Service, progress: Progress) {
-        match progress {
-            Progress::Starting => set_step(&svc.id, "starting", None),
-            Progress::Ready => set_step(&svc.id, "ready", None),
-            Progress::Failed(e) => set_step(&svc.id, "failed", Some(e)),
-            Progress::Blocked(e) => set_step(&svc.id, "blocked", Some(e)),
-        }
-    }
 }
 
 // ── cancelar ────────────────────────────────────────────────────────────────
@@ -391,4 +545,21 @@ pub fn cancel(ctx: &DeployContext) -> ServerRecoverInfo {
         }
     });
     status()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// O agendador de backups só pode voltar depois de `start` terminar, seja por onde sair.
+    #[test]
+    fn a_guarda_do_start_liga_e_sempre_desliga() {
+        assert!(!STARTING.load(Ordering::SeqCst));
+        {
+            let _g = StartingGuard::new();
+            assert!(STARTING.load(Ordering::SeqCst));
+            assert!(in_progress());
+        }
+        assert!(!STARTING.load(Ordering::SeqCst));
+    }
 }

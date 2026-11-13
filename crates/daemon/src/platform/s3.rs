@@ -561,6 +561,26 @@ pub async fn get_to_file(cfg: &S3Config, key: &str, dest: &Path) -> Result<u64> 
     }
 }
 
+/// Lê só o **início** de `key` (até `max` bytes) e larga a conexão: serve para olhar o cabeçalho de um
+/// arquivo age sem baixar o backup inteiro. Sem `Range` de propósito: o corpo já vem em fluxo, então
+/// basta parar de ler.
+pub async fn get_head(cfg: &S3Config, key: &str, max: usize) -> Result<Vec<u8>> {
+    let reply = send(cfg, "GET", key, &[], Bytes::new()).await?;
+    let mut reply = expect_ok(reply, "ler o início do objeto").await?;
+    let mut head = Vec::with_capacity(max.min(8192));
+    while head.len() < max {
+        let Some(frame) = reply.body.frame().await else {
+            break;
+        };
+        let frame = frame.context("download interrompido")?;
+        if let Some(chunk) = frame.data_ref() {
+            let room = max - head.len();
+            head.extend_from_slice(&chunk[..chunk.len().min(room)]);
+        }
+    }
+    Ok(head)
+}
+
 /// Lista os objetos sob `prefix` (segue a paginação).
 pub async fn list(cfg: &S3Config, prefix: &str) -> Result<Vec<Object>> {
     let mut out = Vec::new();

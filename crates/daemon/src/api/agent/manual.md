@@ -208,6 +208,11 @@ Comandos, por área (campos entre chaves):
 - **Dados do serviço (volumes)**: `ServiceDataPlan{service_id}` (só metadados: quais volumes
   e se está no ar). Exportar e importar os bytes (`GET /api/services/<id>/data/export?stop=`,
   `POST /api/services/<id>/data/import?confirm=`) é **só da chave mestra**, nunca do agente.
+- **Portas TCP do host**: no spec, `tcp_ports: [{host_port, container_port, label}]` — várias portas do
+  host, cada uma para uma porta do container (`container_port` vazio = a `port` do serviço; `host_port: 0`
+  = escolher uma livre ao salvar; no máximo 8). O `host_port` antigo é só espelho: ao editar a lista, mande
+  `host_port: null`. `ServicePortSuggestions{service_id}` diz quais portas o container provavelmente tem
+  (`sources`: `listening`, `image`, `compose`, `product`; `internal: true` = não exponha).
 - **Jobs one-shot**: `JobListAll` · `JobList{project_id}` · `JobCreate{…}` ·
   `JobUpdate{…}` · `JobDelete{id}` · `JobRunNow{id}` · `JobRunCancel{job_run_id}` ·
   `JobRunHistory{job_id, limit}` · `GetJobLogs{job_run_id}` ·

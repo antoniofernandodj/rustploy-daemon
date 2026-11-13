@@ -39,7 +39,7 @@ pub async fn handle(state: ServicesContext, mut spec: ServiceSpec) -> RpResponse
     match crate::store::services::create(&state.db, spec).await {
         Ok(s) => {
             info!(service_id = %s.id, name = %s.spec.name, "service_create: serviço criado no banco");
-            if let Some(port) = s.spec.host_port {
+            for port in crate::features::ingress::external_ports::host_ports(&s.spec) {
                 crate::features::ingress::firewall::ensure_allowed_bg(port);
             }
             RpResponse::Service(Box::new(s))

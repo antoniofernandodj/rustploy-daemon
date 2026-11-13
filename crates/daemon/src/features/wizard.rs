@@ -339,6 +339,7 @@ fn base_spec(
         source,
         port,
         host_port: None,
+        tcp_ports: vec![],
         domain: None,
         tls_enabled: false,
         env_vars,
@@ -522,9 +523,15 @@ fn broker_compose(broker: BrokerKind, svc: &str, img: &str, _f: &DbFormInput) ->
         BrokerKind::Kafka => format!(
             "services:\n  {svc}:\n    image: {img}\n    restart: unless-stopped\n    environment:\n      KAFKA_NODE_ID: 1\n      KAFKA_PROCESS_ROLES: broker,controller\n      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093\n      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://{svc}:9092\n      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER\n      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT\n      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@{svc}:9093\n      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1\n      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1\n      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1\n      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0\n    volumes:\n      - kafkadata:/var/lib/kafka/data\n\nvolumes:\n  kafkadata:\n"
         ),
-        BrokerKind::RabbitMq => format!(
-            "services:\n  {svc}:\n    image: {img}\n    restart: unless-stopped\n    environment:\n      RABBITMQ_DEFAULT_USER: ${{RABBITMQ_DEFAULT_USER}}\n      RABBITMQ_DEFAULT_PASS: ${{RABBITMQ_DEFAULT_PASS}}\n    volumes:\n      - rabbitmqdata:/var/lib/rabbitmq\n\nvolumes:\n  rabbitmqdata:\n"
-        ),
+        // `hostname` fixo é obrigatório: o RabbitMQ guarda os dados em `rabbit@<hostname>`, e sem ele cada
+        // container recriado (deploy, recuperação de servidor) ganha um nome aleatório, abre uma pasta nova
+        // e vazia e ignora filas e mensagens que estão no volume. `_` não vale em hostname: vira `-`.
+        BrokerKind::RabbitMq => {
+            let host = svc.replace('_', "-");
+            format!(
+                "services:\n  {svc}:\n    image: {img}\n    hostname: {host}\n    restart: unless-stopped\n    environment:\n      RABBITMQ_DEFAULT_USER: ${{RABBITMQ_DEFAULT_USER}}\n      RABBITMQ_DEFAULT_PASS: ${{RABBITMQ_DEFAULT_PASS}}\n    volumes:\n      - rabbitmqdata:/var/lib/rabbitmq\n\nvolumes:\n  rabbitmqdata:\n"
+            )
+        }
         BrokerKind::Nats => format!(
             "services:\n  {svc}:\n    image: {img}\n    restart: unless-stopped\n    command: [\"-js\", \"-sd\", \"/data\"]\n    volumes:\n      - natsdata:/data\n\nvolumes:\n  natsdata:\n"
         ),
@@ -797,6 +804,19 @@ fn build_spec_inner(req: &WizardCreateReq) -> Result<ServiceSpec, String> {
 #[cfg(test)]
 mod senhas_tests {
     use super::*;
+
+    /// Sem `hostname` fixo o RabbitMQ abre uma pasta vazia a cada container recriado (e a recuperação
+    /// de um servidor "volta" sem filas nem mensagens).
+    #[test]
+    fn rabbitmq_nasce_com_hostname_fixo_e_valido() {
+        let c = broker_compose(
+            BrokerKind::RabbitMq,
+            "rp_broker",
+            "rabbitmq:4-management",
+            &DbFormInput::default(),
+        );
+        assert!(c.contains("\n    hostname: rp-broker\n"), "{c}");
+    }
 
     #[test]
     fn senha_gerada_tem_o_tamanho_e_o_alfabeto_e_nao_se_repete() {

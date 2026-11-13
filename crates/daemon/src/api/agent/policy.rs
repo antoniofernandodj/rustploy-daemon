@@ -81,6 +81,7 @@ pub fn required_level(cmd: &Command) -> Level {
         | Command::ProjectList
         | Command::ServiceExportPlan { .. }
         | Command::ServiceDataPlan { .. }
+        | Command::ServicePortSuggestions { .. }
         | Command::ServiceList { .. }
         | Command::ServiceGet { .. }
         | Command::DeployHistory { .. }

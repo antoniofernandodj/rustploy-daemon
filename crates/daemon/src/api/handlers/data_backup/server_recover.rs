@@ -42,35 +42,91 @@ pub async fn start(
         if token.trim().is_empty() {
             return Response::err("InvalidInput", "informe o token de acesso ao repositório");
         }
-        let (kind, base_url) = provider_for(&remote);
-        let created = crate::api::handlers::git::git_provider_create::handle(
-            state.clone(),
-            kind,
-            "Recuperação".into(),
-            base_url,
-            GitAuthMode::Pat,
-            None,
-            None,
-            Some(token),
-        )
-        .await;
-        match created {
-            Response::GitProviderInfo(p) => Some(p.id.clone()),
-            other => return other, // o erro do provedor (token inválido…) sobe como veio
+        match create_recovery_provider(&state, &remote, token.clone()).await {
+            Ok(id) => Some(id),
+            Err(resp) => return resp, // o erro do provedor (token inválido…) sobe como veio
         }
     };
+    let (kept_remote, kept_branch) = (remote.clone(), branch.clone());
     match recover::start(
         state.deploy_ctx(),
         state.state_git.clone(),
         remote,
-        provider_id,
+        provider_id.clone(),
         branch,
         recovery_key,
     )
     .await
     {
-        Ok(info) => Response::ServerRecover(Box::new(info)),
+        Ok(info) => {
+            if let Some(pid) = provider_id {
+                keep_sync_credential(&state, &pid, token, kept_remote, kept_branch).await;
+            }
+            Response::ServerRecover(Box::new(info))
+        }
         Err(e) => Response::err("RecoverFailed", format!("{e:#}")),
+    }
+}
+
+/// Cria a conta Git "Recuperação" com o token informado (a chamada valida o token no provedor).
+async fn create_recovery_provider(
+    state: &AppState,
+    remote: &str,
+    token: String,
+) -> Result<String, Response> {
+    let (kind, base_url) = provider_for(remote);
+    let created = crate::api::handlers::git::git_provider_create::handle(
+        state.clone(),
+        kind,
+        "Recuperação".into(),
+        base_url,
+        GitAuthMode::Pat,
+        None,
+        None,
+        Some(token),
+    )
+    .await;
+    match created {
+        Response::GitProviderInfo(p) => Ok(p.id.clone()),
+        other => Err(other),
+    }
+}
+
+/// Restaurar a infra do git **substitui** os providers pelos que estão no repositório, e leva embora a conta
+/// "Recuperação" que o sync usava (o token de login não vai ao git). Sem isto o sync fica apontado para um
+/// provider que não existe mais: todo fetch/push falha (`provider … não encontrado`) e as mudanças do servidor
+/// recuperado nunca chegam ao git. Se a conta sumiu, recria com o mesmo token e reaponta o sync.
+async fn keep_sync_credential(
+    state: &AppState,
+    provider_id: &str,
+    token: String,
+    remote: String,
+    branch: Option<String>,
+) {
+    let still_there = matches!(
+        crate::store::git_providers::get(&state.db, provider_id).await,
+        Ok(Some(_))
+    );
+    if still_there {
+        return;
+    }
+    tracing::warn!(
+        provider_id,
+        "recuperação: a conta Git usada pelo sync sumiu na restauração da infra; recriando"
+    );
+    let new_id = match create_recovery_provider(state, &remote, token).await {
+        Ok(id) => id,
+        Err(_) => {
+            tracing::warn!("recuperação: não consegui recriar a conta Git do sync");
+            return;
+        }
+    };
+    if let Err(e) = state
+        .state_git
+        .configure("sync", Some(remote), branch, Some(new_id))
+        .await
+    {
+        tracing::warn!(error = %e, "recuperação: não consegui reapontar o sync para a conta recriada");
     }
 }
 

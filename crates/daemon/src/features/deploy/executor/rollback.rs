@@ -71,21 +71,19 @@ impl DeployExecutor {
                 );
                 self.ingress.register_domains(&svc.spec, &live_ips, &svc.id);
             }
-            if let Some(host_port) = svc.spec.host_port {
+            for (host_port, backends) in
+                crate::features::ingress::external_ports::tcp_targets(&svc.spec, &live_ips)
+            {
                 info!(
                     deployment_id = %dep.id,
                     host_port,
                     "step[RollingBack]: restaurando rota de porta para lives anteriores"
                 );
-                let backends: Vec<String> = live_ips
-                    .iter()
-                    .map(|ip| format!("{ip}:{}", svc.spec.port))
-                    .collect();
                 self.ingress.upsert_port_route(host_port, backends);
             }
         } else {
             info!(deployment_id = %dep.id, "step[RollingBack]: nenhum live anterior para restaurar");
-            if let Some(host_port) = svc.spec.host_port {
+            for host_port in crate::features::ingress::external_ports::host_ports(&svc.spec) {
                 self.ingress.remove_port_route(host_port);
             }
         }

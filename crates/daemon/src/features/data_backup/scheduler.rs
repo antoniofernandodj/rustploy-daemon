@@ -6,7 +6,7 @@
 //! "último resultado" do serviço e a próxima tentativa é no horário seguinte da política: o agendador
 //! não martela.
 
-use super::{policy, service_backup};
+use super::{policy, recover, service_backup};
 use crate::features::deploy::DeployContext;
 use chrono::Utc;
 use std::time::Duration;
@@ -20,6 +20,12 @@ pub async fn scheduler_loop(ctx: DeployContext) {
     ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
     loop {
         ticker.tick().await;
+        // Recuperando o servidor: o `last_start` não veio do git, então tudo pareceria vencido e um
+        // backup do serviço ainda vazio viraria o mais recente (ver `recover::in_progress`).
+        if recover::in_progress() {
+            debug!("backup automático adiado: há uma recuperação do servidor em andamento");
+            continue;
+        }
         let now = Utc::now();
         for (service_id, b) in policy::enabled(&ctx.db) {
             let last = service_backup::last_start(&ctx, &service_id).await;

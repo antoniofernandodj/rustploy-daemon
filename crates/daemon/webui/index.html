@@ -2084,8 +2084,9 @@
 
             <column x-show="store.recoveryKeyConfigured &amp;&amp; !store.recoveryKeyGenerated" style="gap:6px; margin-top:6px">
               <text class="banner banner--warn" x-t>
-                Gerar outra chave troca a atual: o que for exportado daqui em diante só abre com a nova. Backups e
-                commits antigos continuam abrindo só com a chave antiga — guarde-a até não precisar mais.
+                Gerar outra chave troca a atual. Os segredos de hoje são recifrados para a nova, mas os backups de
+                dados que já estão no S3 e o histórico do git NÃO mudam: continuam abrindo só com a chave antiga.
+                Guarde a antiga enquanto precisar deles, ou refaça os backups logo depois da troca.
               </text>
               <label class="check-row">
                 <input type="checkbox" x-model="store.recoveryKeyConfirmReplace" />
@@ -3563,6 +3564,35 @@
                   Nenhum domínio configurado.
                 </text>
               </column>
+
+              <!-- Portas TCP do host (docs/plano-multiplas-portas-tcp.md) -->
+              <text class="u-label-cap" x-text="$t('PORTAS TCP DO HOST (') + tcpPorts.length + ')'"></text>
+              <text class="u-muted" x-t>Cada porta do host leva a uma porta do container, sem HTTP (ex.: a API e o console de um storage).</text>
+              <column class="kv-list">
+                <template x-for="tcpPort in tcpPorts" :key="tcpPort.hostPort">
+                  <row class="kv-list__row">
+                    <button class="env__del" type="button" @click="deleteTcpPort(tcpPort.hostPort)">✕</button>
+                    <text class="env__sep"></text>
+                    <text class="env__key" x-text="tcpPort.hostPort"></text>
+                    <text class="kv-list__val kv-list__val--compact" x-text="'→ :' + tcpPort.containerPort"></text>
+                    <text class="u-muted" x-text="tcpPort.label"></text>
+                  </row>
+                </template>
+                <text class="u-muted" x-fallback="tcpPorts" style="padding:12px" x-t>Nenhuma porta TCP configurada.</text>
+              </column>
+              <row class="env__add">
+                <input class="env__input" type="text" placeholder="porta do host (automática)" x-t:placeholder x-model="newTcpHost" />
+                <input class="env__input" type="text" placeholder="porta do container (padrão do serviço)" x-t:placeholder x-model="newTcpContainer" />
+                <input class="env__input" type="text" placeholder="rótulo (opcional)" x-t:placeholder x-model="newTcpLabel" />
+                <button class="btn btn--primary" type="button" @click="addTcpPort()" x-t>Adicionar porta</button>
+              </row>
+              <row class="env__add">
+                <button class="btn btn--ghost" type="button" @click="suggestPorts()" x-t>Sugerir portas do container</button>
+                <template x-for="suggestion in (portSuggestions || [])" :key="suggestion.port">
+                  <button class="btn btn--ghost btn--sm" type="button" @click="pickSuggestion(suggestion)" x-text="suggestion.text"></button>
+                </template>
+              </row>
+              <text class="u-muted" x-t>Porta do host vazia = automática: uma porta livre, liberada no firewall do host.</text>
             </column>
 
             <!-- Dados -->

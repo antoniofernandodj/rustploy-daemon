@@ -54,7 +54,7 @@ impl DeployExecutor {
                 ),
             )
             .await;
-            if !svc.spec.domain_routes().is_empty() || svc.spec.host_port.is_some() {
+            if !svc.spec.domain_routes().is_empty() || !svc.spec.tcp_routes().is_empty() {
                 self.log_step(
                     &dep.id,
                     &svc.id,

@@ -119,6 +119,7 @@ mod pre_deploy_check_tests {
             },
             port: 8080,
             host_port: None,
+            tcp_ports: vec![],
             domain: None,
             tls_enabled: false,
             env_vars: vec![],

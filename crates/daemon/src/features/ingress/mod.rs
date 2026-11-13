@@ -2,6 +2,7 @@
 
 pub mod external_ports;
 pub mod firewall;
+pub mod port_suggestions;
 pub mod proxy;
 pub mod router;
 pub mod tls;

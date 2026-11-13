@@ -78,8 +78,12 @@ impl ServiceBundle {
 
         let mut service = super::manifest::ServiceManifest::from_spec(svc, providers);
         // A porta externa de cá não vale lá: quem tinha uma pede "alocar" (0, o
-        // mesmo sentinela do `ServiceCreate`); quem não tinha continua sem.
+        // mesmo sentinela do `ServiceCreate`); quem não tinha continua sem. Cada
+        // porta da lista também, mantendo a porta do container e o rótulo.
         service.host_port = service.host_port.map(|_| 0);
+        for r in &mut service.tcp_ports {
+            r.host_port = 0;
+        }
         let mut project_env = env_vars_to_map(project_env);
 
         if !include_values {
@@ -225,6 +229,18 @@ mod tests {
             }),
             port: 8888,
             host_port: Some(30123),
+            tcp_ports: vec![
+                TcpPortRoute {
+                    host_port: 30123,
+                    container_port: None,
+                    label: None,
+                },
+                TcpPortRoute {
+                    host_port: 30124,
+                    container_port: Some(9001),
+                    label: Some("console".into()),
+                },
+            ],
             domain: Some("api.a.tech".into()),
             tls_enabled: true,
             env_vars: vec![
@@ -334,6 +350,16 @@ mod tests {
             volta.host_port,
             Some(0),
             "porta externa é do servidor de origem: o destino aloca outra"
+        );
+        let portas: Vec<_> = volta
+            .tcp_ports
+            .iter()
+            .map(|r| (r.host_port, r.container_port, r.label.as_deref()))
+            .collect();
+        assert_eq!(
+            portas,
+            vec![(0, None, None), (0, Some(9001), Some("console"))],
+            "cada porta volta como \"Automática\", com a porta do container e o rótulo"
         );
         assert!(
             volta.pre_deploy_job_ids.is_empty(),
