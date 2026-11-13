@@ -2094,10 +2094,10 @@
             </column>
 
             <row style="gap:8px; margin-top:6px" x-show="!store.recoveryKeyGenerated">
-              <button class="btn btn--primary" type="button"
+              <button class="btn btn--sm-primary" type="button"
                       :disabled="store.recoveryKeyConfigured &amp;&amp; !store.recoveryKeyConfirmReplace"
                       @click="store.recoveryKeyGenerate()"
-                      x-text="store.recoveryKeyConfigured ? $t('Gerar outra chave e baixar') : $t('Gerar e baixar a chave')"></button>
+                      x-text="store.recoveryKeyConfigured ? $t('Gerar outra chave') : $t('Gerar e baixar')"></button>
             </row>
 
             <column x-show="store.recoveryKeyGenerated" style="gap:8px; margin-top:6px">
@@ -2108,9 +2108,9 @@
               </text>
               <pre class="log-panel__pre" x-text="store.recoveryKeyGenerated ? store.recoveryKeyGenerated.private_key : ''"></pre>
               <row style="gap:8px">
-                <button class="btn btn--copy" type="button" @click="store.copyText(store.recoveryKeyGenerated.private_key, 'chave')" x-t>Copiar</button>
-                <button class="btn btn--ghost" type="button" @click="store.downloadTextFile(store.recoveryKeyGenerated.filename, store.recoveryKeyGenerated.file_contents)" x-t>Baixar de novo</button>
-                <button class="btn btn--primary" type="button" @click="store.recoveryKeyDismiss()" x-t>Guardei em lugar seguro</button>
+                <button class="btn btn--sm-ghost" type="button" @click="store.copyText(store.recoveryKeyGenerated.private_key, 'chave')" x-t>Copiar</button>
+                <button class="btn btn--sm-ghost" type="button" @click="store.downloadTextFile(store.recoveryKeyGenerated.filename, store.recoveryKeyGenerated.file_contents)" x-t>Baixar de novo</button>
+                <button class="btn btn--sm-primary" type="button" @click="store.recoveryKeyDismiss()" x-t>Guardei em lugar seguro</button>
               </row>
             </column>
           </column>
