@@ -113,10 +113,14 @@ mod tests {
     #[test]
     fn allocate_pula_porta_ocupada_no_so() {
         let range = &RustployConfig::global().external_ports;
-        // Ocupa a primeira porta da faixa no SO e confere que a sondagem a pula.
-        let _guard = std::net::TcpListener::bind(("0.0.0.0", range.range_start))
-            .expect("primeira porta da faixa livre no ambiente de teste");
+        // Ocupa no SO a primeira porta *livre* da faixa (outra instância, como um
+        // daemon de dev, pode já estar em portas iniciais) e confere que a
+        // sondagem a pula.
+        let (guard, held) = (range.range_start..=range.range_end)
+            .find_map(|p| std::net::TcpListener::bind(("0.0.0.0", p)).ok().map(|l| (l, p)))
+            .expect("nenhuma porta livre na faixa no ambiente de teste");
         let port = allocate(&[]).expect("deve alocar");
-        assert_ne!(port, range.range_start);
+        assert_ne!(port, held);
+        drop(guard);
     }
 }
