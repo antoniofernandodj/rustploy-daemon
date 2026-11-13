@@ -217,6 +217,8 @@ pub fn required_level(cmd: &Command) -> Level {
         | Command::ServerRecoverStatus
         | Command::ServerRecoverRun
         | Command::ServerRecoverCancel
+        | Command::RecoveryKeyStatus
+        | Command::RecoveryKeyGenerate { .. }
         | Command::ServiceBackupPolicySet { .. }
         | Command::ServiceBackupRestore { .. }
         | Command::ServiceBackupDelete { .. } => Level::Admin,

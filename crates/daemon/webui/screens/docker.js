@@ -109,6 +109,14 @@ document.addEventListener("alpine:init", () => {
         return;
       }
       this.newRegistryTokenLoginCommand = `docker login ${this.registryHost} -u ${this.newRegistryTokenName.trim()} -p ${registryCreateTokenResult.secret}`;
+      // O segredo só existe nesta resposta: baixa o arquivo na hora (pasta de downloads do navegador).
+      const tokenName = this.newRegistryTokenName.trim();
+      const safeHost = String(this.registryHost).replace(/[^A-Za-z0-9.-]+/g, "_");
+      const day = new Date().toISOString().slice(0, 10).replaceAll("-", "");
+      this.store.downloadTextFile(
+        `rustploy-registry-token-${tokenName}-${safeHost}-${day}.txt`,
+        `# Rustploy — token do registry (${this.newRegistryTokenScope})\n# Guarde em um cofre: o segredo não é mostrado de novo.\nregistry: ${this.registryHost}\nusuário: ${tokenName}\ntoken: ${registryCreateTokenResult.secret}\n\n${this.newRegistryTokenLoginCommand}\n`,
+      );
       this.newRegistryTokenStep = "reveal";
     },
   }));

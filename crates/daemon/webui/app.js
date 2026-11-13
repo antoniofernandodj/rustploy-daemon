@@ -236,6 +236,12 @@ document.addEventListener("alpine:init", () => {
     recoverToken: "",
     recoverBranch: "",
     recoverKey: "",
+    // Chave de recuperação (Settings → Chave de recuperação). A privada só existe em `recoveryKeyGenerated`
+    // logo depois de gerar; nunca é relida do servidor.
+    recoveryKeyConfigured: false,
+    recoveryKeyPublic: "",
+    recoveryKeyConfirmReplace: false,
+    recoveryKeyGenerated: null,
     recoverInfo: { phase: "idle", services: [], projects: 0 },
     recoverTimer: null,
     serverSettingsPublicBase: "",
@@ -1941,6 +1947,67 @@ document.addEventListener("alpine:init", () => {
       this.nav("settings");
       this.settingsTab = "gitsync";
       this.stateGitFormLoad();
+    },
+
+    // ── Chave de recuperação ─────────────────────────────────────────────
+    // Plano: docs/plano-chave-de-recuperacao.md.
+
+    /** Abre a aba (usada pelos avisos de "sem chave" em Backups e Sincronização). */
+    recoveryKeyOpen() {
+      this.nav("settings");
+      this.settingsTab = "recoverykey";
+      this.recoveryKeyLoad();
+    },
+
+    async recoveryKeyLoad() {
+      const statusResponse = await this.api?.rpc("RecoveryKeyStatus");
+      const info = statusResponse?.ok ? statusResponse.value?.RecoveryKey : null;
+      if (!info) return;
+      this.recoveryKeyConfigured = info.configured === true;
+      this.recoveryKeyPublic = info.public_key || "";
+    },
+
+    /** Gera a chave, baixa o arquivo na hora (pasta de downloads do navegador) e mostra a privada uma vez. */
+    async recoveryKeyGenerate() {
+      const replace = this.recoveryKeyConfigured;
+      if (replace && !this.recoveryKeyConfirmReplace) return;
+      const generateResponse = await this.api.rpcChecked({ RecoveryKeyGenerate: { replace } });
+      if (!generateResponse.ok) {
+        this.toastResult(generateResponse, "");
+        return;
+      }
+      const generated = generateResponse.value.RecoveryKeyGenerated;
+      this.recoveryKeyConfigured = true;
+      this.recoveryKeyPublic = generated.public_key;
+      this.recoveryKeyConfirmReplace = false;
+      this.recoveryKeyGenerated = {
+        private_key: generated.private_key,
+        filename: generated.suggested_filename,
+        file_contents: generated.file_contents,
+      };
+      this.downloadTextFile(generated.suggested_filename, generated.file_contents);
+      // os avisos de "sem chave" das abas Backups e Sincronização somem sem recarregar
+      this.backupDestRecoveryMissing = false;
+      if (this.stateGitStatus) this.stateGitStatus.recovery_configured = true;
+    },
+
+    /** "Já guardei": esquece a privada da memória da página. */
+    recoveryKeyDismiss() {
+      this.recoveryKeyGenerated = null;
+    },
+
+    /** Baixa um texto como arquivo (o navegador grava na pasta de downloads). Só o navegador sabe o
+     * caminho final, então avisamos "baixado pelo navegador", sem prometer um caminho. */
+    downloadTextFile(filename, contents) {
+      const url = URL.createObjectURL(new Blob([contents], { type: "text/plain" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      this.toastOk(t`baixado pelo navegador: ${filename}`);
     },
 
     // ── Recuperar este servidor ──────────────────────────────────────────

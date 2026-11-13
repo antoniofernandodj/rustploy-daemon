@@ -117,7 +117,11 @@ mod tests {
         // daemon de dev, pode já estar em portas iniciais) e confere que a
         // sondagem a pula.
         let (guard, held) = (range.range_start..=range.range_end)
-            .find_map(|p| std::net::TcpListener::bind(("0.0.0.0", p)).ok().map(|l| (l, p)))
+            .find_map(|p| {
+                std::net::TcpListener::bind(("0.0.0.0", p))
+                    .ok()
+                    .map(|l| (l, p))
+            })
             .expect("nenhuma porta livre na faixa no ambiente de teste");
         let port = allocate(&[]).expect("deve alocar");
         assert_ne!(port, held);

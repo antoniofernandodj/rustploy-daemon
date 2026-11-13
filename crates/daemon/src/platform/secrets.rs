@@ -201,6 +201,34 @@ impl SecretsManager {
         Ok(public.to_string())
     }
 
+    /// **Gera** a chave de recuperação (`docs/plano-chave-de-recuperacao.md`): grava só a pública em
+    /// `[secrets] recovery_recipient` e devolve `(pública, privada)`. A privada **não** é guardada
+    /// (nem em disco, nem na memória): quem chama a entrega à pessoa na hora. Havendo chave, recusa,
+    /// a não ser com `replace`. Sem `config.toml` não há onde gravar a pública — recusa também, senão
+    /// o servidor passaria a cifrar para uma chave que esqueceria no próximo boot.
+    pub fn generate_recovery(&self, replace: bool) -> Result<(String, String)> {
+        if self.has_recovery() && !replace {
+            bail!("já existe uma chave de recuperação; confirme a troca para gerar outra");
+        }
+        let Some(path) = &self.config_path else {
+            bail!("este servidor não tem config.toml para gravar a chave pública de recuperação");
+        };
+        let identity = x25519::Identity::generate();
+        let public = identity.to_public();
+        set_secrets_key_in_config(path, "recovery_recipient", &public.to_string())
+            .map_err(|e| anyhow!("não consegui gravar recovery_recipient no config.toml: {e:#}"))?;
+        *self.recovery.write().unwrap_or_else(|e| e.into_inner()) = Some(public.clone());
+        Ok((
+            public.to_string(),
+            identity.to_string().expose_secret().to_string(),
+        ))
+    }
+
+    /// A chave **pública** de recuperação configurada (`age1…`), se houver.
+    pub fn recovery_public_key(&self) -> Option<String> {
+        self.recovery().map(|r| r.to_string())
+    }
+
     /// Há uma recuperação em curso (a identidade de recuperação está na memória)?
     #[cfg(test)]
     pub fn recovery_in_progress(&self) -> bool {
@@ -2179,5 +2207,56 @@ mod recovery_tests {
         b.begin_recovery(outra.to_string().expose_secret()).unwrap();
         let texto = std::fs::read_to_string(&path).unwrap();
         assert_eq!(texto.matches("recovery_recipient").count(), 1, "{texto}");
+    }
+
+    #[tokio::test]
+    async fn gerar_grava_so_a_publica_e_a_privada_abre_o_que_foi_cifrado() {
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("config.toml");
+        let base = toml::to_string(&crate::platform::config::RustployConfig::default()).unwrap();
+        std::fs::write(&path, &base).unwrap();
+        let mut m = SecretsManager::new(lazy_db()).unwrap();
+        m.config_path = Some(path.clone());
+        assert!(!m.has_recovery() && m.recovery_public_key().is_none());
+
+        let (publica, privada) = m.generate_recovery(false).unwrap();
+        assert!(publica.starts_with("age1") && privada.starts_with("AGE-SECRET-KEY-1"));
+        assert_eq!(m.recovery_public_key().as_deref(), Some(publica.as_str()));
+        let texto = std::fs::read_to_string(&path).unwrap();
+        assert!(texto.contains(&format!("recovery_recipient = \"{publica}\"")));
+        assert!(
+            !texto.contains("AGE-SECRET-KEY"),
+            "a privada nunca vai para o disco"
+        );
+
+        // o que o servidor cifra daqui em diante abre com a privada devolvida
+        let c = m.encrypt("segredo").unwrap();
+        let novo =
+            SecretsManager::with_keys(lazy_db(), parse_identity(&privada).unwrap(), None).unwrap();
+        assert_eq!(novo.decrypt(&c).unwrap(), "segredo");
+    }
+
+    #[tokio::test]
+    async fn gerar_de_novo_exige_confirmar_a_troca() {
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("config.toml");
+        let base = toml::to_string(&crate::platform::config::RustployConfig::default()).unwrap();
+        std::fs::write(&path, &base).unwrap();
+        let mut m = SecretsManager::new(lazy_db()).unwrap();
+        m.config_path = Some(path.clone());
+        let (primeira, _) = m.generate_recovery(false).unwrap();
+        assert!(m.generate_recovery(false).is_err());
+        assert_eq!(m.recovery_public_key().as_deref(), Some(primeira.as_str()));
+        let (segunda, _) = m.generate_recovery(true).unwrap();
+        assert_ne!(primeira, segunda);
+        let texto = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(texto.matches("recovery_recipient").count(), 1, "{texto}");
+    }
+
+    #[tokio::test]
+    async fn gerar_sem_config_toml_e_recusado() {
+        let m = SecretsManager::new(lazy_db()).unwrap();
+        assert!(m.generate_recovery(false).is_err());
+        assert!(!m.has_recovery());
     }
 }

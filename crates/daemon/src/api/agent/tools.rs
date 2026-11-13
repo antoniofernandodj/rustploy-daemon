@@ -235,6 +235,10 @@ fn proibido_ao_agente(cmd: &Command) -> Option<&'static str> {
         | Command::ServerRecoverCancel => Some(
             "recuperar um servidor leva a chave de recuperação e um token: é ação de uma pessoa na GUI/webui (Settings → Recuperar)",
         ),
+        // A resposta traz a chave privada de recuperação, uma única vez: é a chave-mestra do que foi cifrado.
+        Command::RecoveryKeyGenerate { .. } => Some(
+            "gerar a chave de recuperação devolve a chave privada uma única vez: é ação de uma pessoa na GUI/webui (Settings → Chave de recuperação), que a baixa na hora",
+        ),
         // Substitui os dados atuais (restaurar) ou apaga o único backup (apagar): decisão de uma pessoa.
         Command::ServiceBackupRestore { .. } | Command::ServiceBackupDelete { .. } => Some(
             "restaurar substitui os dados do serviço e apagar remove um backup: é decisão de uma pessoa na GUI/webui (aba Dados)",

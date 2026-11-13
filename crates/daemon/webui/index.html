@@ -1538,6 +1538,8 @@
                   @click="store.settingsTab = 'gitsync'; store.stateGitFormLoad()"><span x-t>Sincronização</span><span class="nav-item__badge" x-show="store.stateGitAlertMessage" x-text="' ●'"></span></button>
           <button type="button" :class="store.settingsTab === 'backups' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'"
                   @click="store.settingsTab = 'backups'; store.backupDestinationLoad()" x-t>Backups</button>
+          <button type="button" :class="store.settingsTab === 'recoverykey' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'"
+                  @click="store.settingsTab = 'recoverykey'; store.recoveryKeyLoad()"><span x-t>Chave de recuperação</span><span class="nav-item__badge" x-show="!store.recoveryKeyConfigured && store.backupDestRecoveryMissing" x-text="' ●'"></span></button>
           <button type="button" :class="store.settingsTab === 'recover' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'"
                   @click="store.settingsTab = 'recover'; store.recoverStatusLoad()" x-t>Recuperar</button>
           <button type="button" :class="store.settingsTab === 'updates' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'"
@@ -1731,6 +1733,9 @@
             <text class="banner banner--warn" x-show="store.stateGitStatus && !store.stateGitStatus.recovery_configured" x-t>
               Sem recovery_recipient no config.toml: perder o config.toml deste servidor significa perder todos os secrets, inclusive os do repositório.
             </text>
+            <row x-show="store.stateGitStatus &amp;&amp; !store.stateGitStatus.recovery_configured">
+              <button class="btn btn--ghost" type="button" @click="store.recoveryKeyOpen()" x-t>Gerar chave de recuperação</button>
+            </row>
 
             <text class="u-label-cap" style="margin-top:10px" x-t>MODO</text>
             <row class="tabs">
@@ -2015,8 +2020,11 @@
               próprio agendamento na aba Dados.
             </text>
             <text class="banner banner--warn" x-show="store.backupDestRecoveryMissing" x-t>
-              Não há chave de recuperação configurada. Os backups são cifrados: sem ela, só este servidor os abriria e eles não restaurariam um servidor novo. Configure antes [secrets] recovery_recipient no config.toml.
+              Não há chave de recuperação configurada. Os backups são cifrados: sem ela, só este servidor os abriria e eles não restaurariam um servidor novo. Gere a chave na aba Chave de recuperação.
             </text>
+            <row x-show="store.backupDestRecoveryMissing">
+              <button class="btn btn--ghost" type="button" @click="store.recoveryKeyOpen()" x-t>Gerar chave de recuperação</button>
+            </row>
 
             <text class="u-label-cap" style="margin-top:10px" x-t>ENDEREÇO (ENDPOINT)</text>
             <input class="field__input" type="text" x-model="store.backupDestEndpoint" placeholder="https://s3.us-east-005.backblazeb2.com" />
@@ -2055,6 +2063,56 @@
               <button class="btn btn--danger" type="button" x-show="store.backupDestConfigured" @click="store.backupDestinationClear()" x-t>Remover</button>
               <text class="u-muted" x-text="store.backupDestMessage"></text>
             </row>
+          </column>
+        </column>
+
+        <column class="u-fill-all" x-show="store.settingsTab === 'recoverykey'">
+          <column class="form-panel">
+            <text class="u-label-cap" x-t>CHAVE DE RECUPERAÇÃO</text>
+            <text class="u-muted" x-t>
+              Os backups e o repositório git guardam segredos cifrados. Se este servidor for perdido, só a chave de
+              recuperação os abre num servidor novo. O servidor guarda apenas a parte pública; a privada aparece uma
+              única vez, ao gerar, e é baixada na hora. Guarde-a em um cofre ou gerenciador de senhas.
+            </text>
+            <text class="banner banner--warn" x-show="!store.recoveryKeyConfigured" x-t>
+              Este servidor ainda não tem chave de recuperação.
+            </text>
+            <column x-show="store.recoveryKeyConfigured" style="gap:6px">
+              <text class="u-label-cap" x-t>CHAVE PÚBLICA</text>
+              <pre class="log-panel__pre" x-text="store.recoveryKeyPublic"></pre>
+            </column>
+
+            <column x-show="store.recoveryKeyConfigured &amp;&amp; !store.recoveryKeyGenerated" style="gap:6px; margin-top:6px">
+              <text class="banner banner--warn" x-t>
+                Gerar outra chave troca a atual: o que for exportado daqui em diante só abre com a nova. Backups e
+                commits antigos continuam abrindo só com a chave antiga — guarde-a até não precisar mais.
+              </text>
+              <label class="check-row">
+                <input type="checkbox" x-model="store.recoveryKeyConfirmReplace" />
+                <span x-t>Entendi, quero trocar a chave de recuperação</span>
+              </label>
+            </column>
+
+            <row style="gap:8px; margin-top:6px" x-show="!store.recoveryKeyGenerated">
+              <button class="btn btn--primary" type="button"
+                      :disabled="store.recoveryKeyConfigured &amp;&amp; !store.recoveryKeyConfirmReplace"
+                      @click="store.recoveryKeyGenerate()"
+                      x-text="store.recoveryKeyConfigured ? $t('Gerar outra chave e baixar') : $t('Gerar e baixar a chave')"></button>
+            </row>
+
+            <column x-show="store.recoveryKeyGenerated" style="gap:8px; margin-top:6px">
+              <text class="u-ok" x-text="$t('Chave gerada e baixada pelo navegador: ') + (store.recoveryKeyGenerated ? store.recoveryKeyGenerated.filename : '')"></text>
+              <text class="banner banner--warn" x-t>
+                Esta é a única cópia: o servidor não a guarda e ela não será mostrada de novo. Mova o arquivo para
+                um cofre; não deixe só na pasta de downloads.
+              </text>
+              <pre class="log-panel__pre" x-text="store.recoveryKeyGenerated ? store.recoveryKeyGenerated.private_key : ''"></pre>
+              <row style="gap:8px">
+                <button class="btn btn--copy" type="button" @click="store.copyText(store.recoveryKeyGenerated.private_key, 'chave')" x-t>Copiar</button>
+                <button class="btn btn--ghost" type="button" @click="store.downloadTextFile(store.recoveryKeyGenerated.filename, store.recoveryKeyGenerated.file_contents)" x-t>Baixar de novo</button>
+                <button class="btn btn--primary" type="button" @click="store.recoveryKeyDismiss()" x-t>Guardei em lugar seguro</button>
+              </row>
+            </column>
           </column>
         </column>
 

@@ -5,6 +5,8 @@ mod backup_destination_clear;
 mod backup_destination_get;
 mod backup_destination_set;
 mod backup_destination_test;
+mod recovery_key_generate;
+mod recovery_key_status;
 mod server_recover;
 mod service_backup_delete;
 mod service_backup_list;
@@ -34,6 +36,8 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         Command::ServerRecoverStatus => server_recover::status().await,
         Command::ServerRecoverRun => server_recover::run(state).await,
         Command::ServerRecoverCancel => server_recover::cancel(state).await,
+        Command::RecoveryKeyStatus => recovery_key_status::handle(&state),
+        Command::RecoveryKeyGenerate { replace } => recovery_key_generate::handle(&state, replace),
         Command::ServiceBackupList { service_id } => {
             service_backup_list::handle(state, service_id).await
         }

@@ -34,6 +34,8 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         Command::ServerRecoverStatus => "ServerRecoverStatus",
         Command::ServerRecoverRun => "ServerRecoverRun",
         Command::ServerRecoverCancel => "ServerRecoverCancel",
+        Command::RecoveryKeyStatus => "RecoveryKeyStatus",
+        Command::RecoveryKeyGenerate { .. } => "RecoveryKeyGenerate",
         Command::ServiceBackupList { .. } => "ServiceBackupList",
         Command::ServiceBackupNow { .. } => "ServiceBackupNow",
         Command::ServiceBackupPolicySet { .. } => "ServiceBackupPolicySet",
@@ -224,6 +226,8 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         | Command::ServerRecoverStatus
         | Command::ServerRecoverRun
         | Command::ServerRecoverCancel
+        | Command::RecoveryKeyStatus
+        | Command::RecoveryKeyGenerate { .. }
         | Command::ServiceBackupList { .. }
         | Command::ServiceBackupNow { .. }
         | Command::ServiceBackupPolicySet { .. }
