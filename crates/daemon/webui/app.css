@@ -794,7 +794,8 @@ button[data-busy] {
 .page-head__title { letter-spacing: normal; }
 .card__name { letter-spacing: normal; }
 .sidebar { background: var(--surface); border-right: none; }
-.nav-item--active { background: var(--blue); box-shadow: none; }
+/* O app iced pinta o item ativo com o gradiente dos botões azuis (`.btn--blue`): claro em cima, escuro embaixo. */
+.nav-item--active { background: linear-gradient(180deg, #2A7BF0, #1A60CC); box-shadow: none; }
 .nav-item--active::before { display: none; }
 .nav-item { font-weight: 400; }
 .topbar { background: none; backdrop-filter: none; }
