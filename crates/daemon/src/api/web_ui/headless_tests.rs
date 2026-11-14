@@ -2068,6 +2068,20 @@ async fn tcp_ports_editor_lists_adds_deletes_and_suggests() {
         .await,
         "a aba Domains deveria mostrar o formulário de porta TCP"
     );
+    // Nada espremido: cada controle do bloco de portas tem altura de verdade (no app desktop, o bloco
+    // novo ficou sem rolagem e cortado; aqui o `.env` cresce com o conteúdo e a página rola).
+    let heights = eval_str(
+        &page,
+        r#"(() => JSON.stringify(['input[x-model="newTcpHost"]', 'input[x-model="newTcpContainer"]',
+            'input[x-model="newTcpLabel"]', 'button[\\@click="addTcpPort()"]', 'button[\\@click="suggestPorts()"]']
+            .map((sel) => Math.round(document.querySelector('[x-data="serviceDetail"] ' + sel).getBoundingClientRect().height))))()"#,
+    )
+    .await;
+    let heights: Vec<u32> = serde_json::from_str(&heights).unwrap();
+    assert!(
+        heights.iter().all(|h| *h >= 20),
+        "controle espremido: alturas {heights:?}"
+    );
 
     // Sugestões: o botão vem com nome e "escutando agora"; clicar preenche porta e rótulo.
     let picked = eval_str(
