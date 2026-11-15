@@ -415,7 +415,7 @@ pub(super) async fn run_once_up(
     let compose_tail = Mutex::new(VecDeque::new());
     let read_stdout = read_compose_output(
         stdout,
-        shared::protocol::LogStream::Stdout,
+        crate::protocol::LogStream::Stdout,
         main_service,
         bus,
         db,
@@ -426,7 +426,7 @@ pub(super) async fn run_once_up(
     );
     let read_stderr = read_compose_output(
         stderr,
-        shared::protocol::LogStream::Stderr,
+        crate::protocol::LogStream::Stderr,
         main_service,
         bus,
         db,
@@ -490,7 +490,7 @@ pub(super) async fn run_once_up(
                 job_id,
                 job_run_id,
                 mirror,
-                shared::protocol::LogStream::Stderr,
+                crate::protocol::LogStream::Stderr,
                 header,
             )
             .await;
@@ -501,7 +501,7 @@ pub(super) async fn run_once_up(
                     job_id,
                     job_run_id,
                     mirror,
-                    shared::protocol::LogStream::Stderr,
+                    crate::protocol::LogStream::Stderr,
                     line,
                 )
                 .await;

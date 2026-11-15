@@ -12,8 +12,8 @@
 #![allow(dead_code)] // API de quando o módulo vivia no `shared`; parte dela só os testes usam.
 
 use super::manifest::{API_VERSION, SECRET_PREFIX, env_map_to_vars, env_vars_to_map};
+use crate::domain::*;
 use serde::{Deserialize, Serialize};
-use shared::*;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Valor de `kind` num pacote de serviço (o IaC do servidor não tem `kind`).
@@ -100,8 +100,8 @@ impl ServiceBundle {
         })
     }
 
-    /// Confere um pacote JÁ desserializado (o parse do YAML é de quem chama —
-    /// o `rustploy-shared` não depende de um parser de YAML). Rejeita `kind`
+    /// Confere um pacote JÁ desserializado (o parse do YAML é de quem chama).
+    /// Rejeita `kind`
     /// diferente de `Service` e `apiVersion` desconhecida, para um YAML do IaC
     /// (ou de uma versão futura) não ser importado como se fosse isto.
     pub fn validate(&self) -> Result<(), String> {

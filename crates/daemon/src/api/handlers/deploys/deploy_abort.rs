@@ -3,7 +3,8 @@
 //! executor.
 
 use crate::bootstrap::state::AppState;
-use shared::{Event, Response as RpResponse, ServiceStatus};
+use crate::domain::ServiceStatus;
+use crate::protocol::{Event, Response as RpResponse};
 
 pub async fn handle(state: AppState, deployment_id: String) -> RpResponse {
     // A fila tem jobs e aquecimentos além de deploys; o botão de tirar da fila é o mesmo.
@@ -63,7 +64,7 @@ pub async fn handle(state: AppState, deployment_id: String) -> RpResponse {
         &state.db,
         &deployment_id,
         &dep.state,
-        shared::DeployState::Failed,
+        crate::domain::DeployState::Failed,
         Some("aborted by user".into()),
     )
     .await

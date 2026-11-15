@@ -5,10 +5,11 @@
 //! um resumo, pra tela mostrar "última limpeza" sem depender do SSE.
 
 use super::prune::{self as docker_prune, PruneStat};
+use crate::domain::{DockerCleanupConfig, DockerCleanupLastRun, DockerCleanupResourceResult};
 use crate::features::maintenance::MaintenanceContext;
+use crate::protocol::Event;
 use crate::store::daemon_settings;
 use chrono::Utc;
-use shared::{DockerCleanupConfig, DockerCleanupLastRun, DockerCleanupResourceResult, Event};
 use std::time::Duration;
 use tokio::sync::OwnedSemaphorePermit;
 use tracing::{info, warn};

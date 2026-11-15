@@ -3,10 +3,9 @@
 //! serviço/projeto.
 
 use crate::bootstrap::state::AppState;
+use crate::domain::{ActiveDeployInfo, DeployEngineSummary, DeployState, QueueItemKind};
+use crate::protocol::Response as RpResponse;
 use chrono::Utc;
-use shared::{
-    ActiveDeployInfo, DeployEngineSummary, DeployState, QueueItemKind, Response as RpResponse,
-};
 use std::collections::HashMap;
 
 /// Um item que não é deploy (a execução de um job ou o aquecimento de um) no formato das listas do

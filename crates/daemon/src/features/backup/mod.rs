@@ -1,10 +1,10 @@
 //! Backup periódico das env vars de projetos e serviços em snapshots JSON, com
 //! listagem, restauração e limpeza dos antigos.
 
+use crate::domain::{EnvComment, EnvVar, EnvVarValue};
 use crate::store::Db;
 use chrono::{Datelike, Utc};
 use serde::{Deserialize, Serialize};
-use shared::{EnvComment, EnvVar, EnvVarValue};
 use std::{
     path::{Path, PathBuf},
     sync::Arc,

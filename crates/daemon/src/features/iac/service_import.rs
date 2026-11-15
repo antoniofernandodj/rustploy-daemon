@@ -10,13 +10,14 @@
 //!    devolve tudo o que o relatório precisa; é o que o `dry_run` mostra.
 //! 2. [`apply`] — só roda sem `dry_run` e sem pendência que bloqueie.
 
+use crate::domain::{
+    EnvVar, EnvVarValue, ImportWarning, Project, ProjectEnvChoice, ProjectEnvState,
+    ProjectEnvStatus, Service, ServiceImportReport, ServiceImportReq, ServiceSource, ServiceSpec,
+    normalize_name,
+};
 use crate::features::iac::IacContext;
 use crate::features::iac::service_bundle::ServiceBundle;
-use shared::{
-    EnvVar, EnvVarValue, ImportWarning, Project, ProjectEnvChoice, ProjectEnvState,
-    ProjectEnvStatus, Response as RpResponse, Service, ServiceImportReport, ServiceImportReq,
-    ServiceSource, ServiceSpec, normalize_name,
-};
+use crate::protocol::Response as RpResponse;
 use std::collections::{BTreeMap, BTreeSet};
 use tracing::info;
 
@@ -521,7 +522,8 @@ mod tests {
 #[cfg(test)]
 mod e2e {
     use super::*;
-    use shared::{DomainRoute, EnvVarValue, Healthcheck, ResourceLimits, Response, ServiceStatus};
+    use crate::domain::{DomainRoute, EnvVarValue, Healthcheck, ResourceLimits, ServiceStatus};
+    use crate::protocol::Response;
     use ulid::Ulid;
 
     async fn daemon() -> IacContext {
@@ -952,7 +954,7 @@ mod e2e {
             .await
             .unwrap();
         let mut s = spec(&p.id);
-        s.source = ServiceSource::Archive(shared::ArchiveSource::default());
+        s.source = ServiceSource::Archive(crate::domain::ArchiveSource::default());
         let svc = crate::store::services::create(&a.db, s).await.unwrap();
 
         let Response::ServiceExportPlan(plan) =

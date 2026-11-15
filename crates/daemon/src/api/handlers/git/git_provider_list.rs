@@ -1,7 +1,7 @@
 //! `Command::GitProviderList`: provedores git conectados, sem os tokens.
 
 use crate::bootstrap::state::AppState;
-use shared::Response;
+use crate::protocol::Response;
 
 pub async fn handle(state: AppState) -> Response {
     match crate::store::git_providers::list(&state.db).await {

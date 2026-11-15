@@ -126,21 +126,23 @@ async fn tar_in(source: &Source, from: &Path) -> Result<()> {
 
 async fn stop_service(state: &DeployContext, service_id: &str) -> Result<()> {
     match crate::features::deploy::stop::handle(state.clone(), service_id.to_string()).await {
-        shared::Response::Err { message, .. } => bail!("não consegui parar o serviço: {message}"),
+        crate::protocol::Response::Err { message, .. } => {
+            bail!("não consegui parar o serviço: {message}")
+        }
         _ => Ok(()),
     }
 }
 
 /// Religa (um deploy novo, como o "Iniciar" de sempre). Falha só vira aviso: os dados já estão.
 async fn start_service(state: &DeployContext, service_id: &str) {
-    if let shared::Response::Err { message, .. } =
+    if let crate::protocol::Response::Err { message, .. } =
         crate::features::deploy::start::handle(state.clone(), service_id.to_string()).await
     {
         warn!(service_id, %message, "dados do serviço: não consegui religá-lo");
     }
 }
 
-async fn load(state: &DeployContext, service_id: &str) -> Result<shared::Service> {
+async fn load(state: &DeployContext, service_id: &str) -> Result<crate::domain::Service> {
     crate::store::services::get(&state.db, service_id)
         .await
         .map_err(|e| anyhow!(e.to_string()))?
@@ -211,11 +213,18 @@ pub async fn export(
     Ok(Exported {
         _workdir: workdir,
         file,
-        filename: format!("{}-{day}.{ext}", shared::normalize_name(&svc.spec.name)),
+        filename: format!(
+            "{}-{day}.{ext}",
+            crate::domain::normalize_name(&svc.spec.name)
+        ),
     })
 }
 
-async fn stage_all(svc: &shared::Service, found: &[Part], dir: &Path) -> Result<Vec<StagedPart>> {
+async fn stage_all(
+    svc: &crate::domain::Service,
+    found: &[Part],
+    dir: &Path,
+) -> Result<Vec<StagedPart>> {
     let mut staged = Vec::new();
     for (i, p) in found.iter().enumerate() {
         let path = dir.join(format!("{i}.raw"));
@@ -355,7 +364,7 @@ pub async fn import_with(
                     let _ = std::fs::create_dir_all(dir);
                 }
                 // stack Compose: o volume nasce já com as etiquetas dela (ver `create_stack_volume`)
-                if matches!(svc.spec.source, shared::ServiceSource::Compose(_)) {
+                if matches!(svc.spec.source, crate::domain::ServiceSource::Compose(_)) {
                     parts::create_stack_volume(&svc.id, &svc.compose_project_name(), &mp.name)
                         .await;
                 }

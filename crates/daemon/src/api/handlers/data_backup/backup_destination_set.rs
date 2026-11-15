@@ -2,7 +2,8 @@
 //! agente MCP: a chave secreta passaria pela conversa (ver `api::agent::tools::proibido_ao_agente`).
 
 use crate::bootstrap::state::AppState;
-use shared::{BackupDestination, Response};
+use crate::domain::BackupDestination;
+use crate::protocol::Response;
 
 pub async fn handle(state: AppState, destination: BackupDestination) -> Response {
     match crate::features::data_backup::destination::save(&state.db, &state.secrets, destination)

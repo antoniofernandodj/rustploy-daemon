@@ -3,7 +3,7 @@
 //! do zero mesmo com o job quente.
 
 use crate::bootstrap::state::AppState;
-use shared::Response as RpResponse;
+use crate::protocol::Response as RpResponse;
 
 pub async fn handle(state: AppState, job_id: String, force: bool) -> RpResponse {
     let job = match crate::store::job::get(&state.db, &job_id).await {

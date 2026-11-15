@@ -2,9 +2,9 @@
 //! estatísticas de 24h.
 
 use super::Db;
+use crate::domain::{DeployState, Deployment, StateTransition};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use shared::{DeployState, Deployment, StateTransition};
 use tracing::info;
 use ulid::Ulid;
 

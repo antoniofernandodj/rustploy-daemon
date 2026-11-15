@@ -2,7 +2,8 @@
 //! o Live velho corrigido e nomes resolvidos.
 
 use crate::bootstrap::state::AppState;
-use shared::{DeploymentSummary, Response as RpResponse};
+use crate::domain::DeploymentSummary;
+use crate::protocol::Response as RpResponse;
 use std::collections::HashMap;
 
 pub async fn handle(state: AppState, limit: usize) -> RpResponse {

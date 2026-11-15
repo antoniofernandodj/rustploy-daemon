@@ -13,8 +13,8 @@
 //! sobrescreveria o valor real. Por isso [`restaurar_envs`] devolve o valor original quando o que
 //! chega é exatamente a versão mascarada dele.
 
+use crate::domain::{EnvVar, EnvVarValue};
 use serde_json::Value;
-use shared::{EnvVar, EnvVarValue};
 
 /// O que substitui um valor escondido.
 pub const MASCARA: &str = "***";

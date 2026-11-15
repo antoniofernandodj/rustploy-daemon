@@ -1,0 +1,44 @@
+//! Modelos de domínio: projeto, serviço e suas fontes, deployment, jobs, bancos, registry e inventário Docker,
+//! mais os nomes derivados deles (`naming`: containers, redes, stacks Compose e aliases DNS).
+
+mod audit;
+mod data_backup;
+mod database;
+mod deployment;
+mod docker_inventory;
+mod env;
+mod git;
+mod ingress;
+mod job;
+mod metrics;
+mod naming;
+mod project;
+mod registry;
+mod service;
+mod service_bundle;
+mod service_data;
+mod source;
+mod state_git;
+mod update;
+mod wizard;
+
+pub use audit::*;
+pub use data_backup::*;
+pub use database::*;
+pub use deployment::*;
+pub use docker_inventory::*;
+pub use env::*;
+pub use git::*;
+pub use ingress::*;
+pub use job::*;
+pub use metrics::*;
+pub use naming::*;
+pub use project::*;
+pub use registry::*;
+pub use service::*;
+pub use service_bundle::*;
+pub use service_data::*;
+pub use source::*;
+pub use state_git::*;
+pub use update::*;
+pub use wizard::*;

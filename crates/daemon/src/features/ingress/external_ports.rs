@@ -5,9 +5,9 @@
 //! spec (redeploys/restarts reusam a mesma porta para sempre). Portas manuais
 //! passam por validação de duplicata contra os demais serviços e entre si.
 
+use crate::domain::{MAX_TCP_PORTS, ServiceSpec, TcpPortRoute};
 use crate::platform::config::RustployConfig;
 use crate::store::Db;
-use shared::{MAX_TCP_PORTS, ServiceSpec, TcpPortRoute};
 
 /// Sentinela em `TcpPortRoute.host_port` (e no `host_port` legado) que pede alocação automática.
 pub const AUTO_PORT: u16 = 0;

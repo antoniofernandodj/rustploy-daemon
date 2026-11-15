@@ -8,11 +8,11 @@
 #![allow(dead_code)] // API de quando o módulo vivia no `shared`; parte dela só os testes usam.
 
 use super::templates::{self, Template};
-use serde_json::json;
-use shared::{
+use crate::domain::{
     ComposeSource, EnvVar, EnvVarValue, Healthcheck, ResourceLimits, ServiceSource, ServiceSpec,
     WizardCreateReq,
 };
+use serde_json::json;
 
 // ── Bancos de dados ──────────────────────────────────────────────────────────
 
@@ -394,7 +394,7 @@ pub fn db_spec(db: DbKind, name: String, project_id: String, f: &DbFormInput) ->
     } else {
         f.image.trim().to_string()
     };
-    let svc = format!("rp_{}", shared::normalize_name(&name));
+    let svc = format!("rp_{}", crate::domain::normalize_name(&name));
     base_spec(
         name,
         project_id,
@@ -490,7 +490,7 @@ pub fn broker_spec(
     } else {
         f.image.trim().to_string()
     };
-    let svc = format!("rp_{}", shared::normalize_name(&name));
+    let svc = format!("rp_{}", crate::domain::normalize_name(&name));
     base_spec(
         name,
         project_id,
@@ -640,7 +640,7 @@ pub fn storage_spec(
     } else {
         f.image.trim().to_string()
     };
-    let svc = format!("rp_{}", shared::normalize_name(&name));
+    let svc = format!("rp_{}", crate::domain::normalize_name(&name));
     let (access_key, secret_key) = kind.credential_keys();
     let plain = |k: &str, v: &str| EnvVar {
         key: k.to_string(),

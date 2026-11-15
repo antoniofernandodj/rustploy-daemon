@@ -2,9 +2,10 @@
 //! Compose), apaga o serviço, tira suas rotas do ingress e fecha a porta
 //! externa no firewall. Volumes nomeados e imagens ficam (dados do usuário).
 
+use crate::domain::ServiceSource;
 use crate::engine::containers;
 use crate::features::services::ServicesContext;
-use shared::{Response as RpResponse, ServiceSource};
+use crate::protocol::Response as RpResponse;
 
 /// Containers do serviço: para (réplicas, ou `compose down`, que já os remove) e
 /// remove o que sobrar, inclusive staging e parados. Idempotente: sem container

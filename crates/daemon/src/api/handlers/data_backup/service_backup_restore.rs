@@ -2,7 +2,7 @@
 //! plano). Não está disponível ao agente MCP: é decisão de uma pessoa.
 
 use crate::bootstrap::state::AppState;
-use shared::Response;
+use crate::protocol::Response;
 
 pub async fn handle(state: AppState, service_id: String, key: String, confirm: bool) -> Response {
     if !confirm {

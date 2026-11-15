@@ -2,7 +2,7 @@
 //! (`jobs::runner::spawn`).
 
 use crate::bootstrap::state::AppState;
-use shared::Response as RpResponse;
+use crate::protocol::Response as RpResponse;
 
 pub async fn handle(state: AppState, id: String) -> RpResponse {
     let job = match crate::store::job::get(&state.db, &id).await {

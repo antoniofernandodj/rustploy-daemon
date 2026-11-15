@@ -22,22 +22,22 @@ pub(crate) async fn project_deps(
 /// Valida o `depends_on` de um spec que vai ser gravado (`self_id`: `None` na criação).
 pub(crate) async fn check_depends_on(
     db: &crate::store::Db,
-    spec: &shared::ServiceSpec,
+    spec: &crate::domain::ServiceSpec,
     self_id: Option<&str>,
-) -> Result<(), shared::Response> {
+) -> Result<(), crate::protocol::Response> {
     if spec.depends_on.is_empty() {
         return Ok(());
     }
     let others = project_deps(db, &spec.project_id)
         .await
-        .map_err(|e| shared::Response::err("DatabaseError", e.to_string()))?;
+        .map_err(|e| crate::protocol::Response::err("DatabaseError", e.to_string()))?;
     crate::features::deploy::deps::validate(&others, self_id, &spec.depends_on)
-        .map_err(|e| shared::Response::err(e.code, e.message))?;
+        .map_err(|e| crate::protocol::Response::err(e.code, e.message))?;
 
     // Um ciclo que passa pelo banco compartilhado (entre projetos) só aparece no grafo completo.
     let all = crate::store::services::list_all(db)
         .await
-        .map_err(|e| shared::Response::err("DatabaseError", e.to_string()))?;
+        .map_err(|e| crate::protocol::Response::err("DatabaseError", e.to_string()))?;
     let access = crate::store::shared_access::all(db)
         .await
         .unwrap_or_default();
@@ -48,7 +48,7 @@ pub(crate) async fn check_depends_on(
         .collect();
     crate::features::deploy::deps::shared_cycle(&tuples, &implicit, self_id, &spec.depends_on)
         .map_err(|nomes| {
-            shared::Response::err(
+            crate::protocol::Response::err(
                 "DependencyCycle",
                 format!(
                     "essa dependência cria um ciclo que passa por um banco compartilhado entre: {}",

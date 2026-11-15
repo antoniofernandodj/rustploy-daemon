@@ -10,10 +10,10 @@
 //! selo de versão nova acender numa janela aberta sem ninguém clicar em "Verificar".
 
 use super::github_release::LatestRelease;
+use crate::domain::UpdateInfo;
 use crate::platform::config::UpdateConfig;
 use anyhow::{Result, anyhow};
 use chrono::Utc;
-use shared::UpdateInfo;
 use std::{future::Future, sync::Arc, time::Duration};
 use tokio::{sync::Mutex, time::Instant};
 use update_core::{

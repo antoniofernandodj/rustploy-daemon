@@ -2,7 +2,7 @@
 //! início).
 
 use crate::bootstrap::state::AppState;
-use shared::{Event, Response as RpResponse};
+use crate::protocol::{Event, Response as RpResponse};
 
 /// Move um deploy enfileirado para o início da fila ("furar fila"). No-op se o
 /// id não estiver na fila (já rodando/terminado).

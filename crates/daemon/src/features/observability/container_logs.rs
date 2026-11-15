@@ -1,6 +1,7 @@
 //! Streaming dos logs dos containers gerenciados para o event bus, reconectando
 //! e encerrando streams parados.
 
+use crate::protocol::{Event, LogStream};
 use crate::{platform::event_bus::EventBus, store::Db};
 use bollard::{
     Docker,
@@ -8,7 +9,6 @@ use bollard::{
 };
 use chrono::{DateTime, Utc};
 use futures::StreamExt;
-use shared::{Event, protocol::LogStream};
 use std::{collections::HashSet, sync::Arc, time::Duration};
 use tokio::{sync::Mutex, time::interval};
 use tracing::{debug, warn};

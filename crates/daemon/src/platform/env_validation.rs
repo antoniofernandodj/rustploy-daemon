@@ -1,7 +1,7 @@
 //! Validação das env vars gravadas por serviço, projeto e job: nome válido e
 //! sem chave repetida. Valor vazio é legítimo (`FOO=`) e passa.
 
-use shared::EnvVar;
+use crate::domain::EnvVar;
 use std::collections::HashSet;
 
 /// Nome aceito: começa com letra ou `_`; o resto são letras, dígitos, `_`,
@@ -32,7 +32,7 @@ pub fn validate(env_vars: &[EnvVar]) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use shared::EnvVarValue;
+    use crate::domain::EnvVarValue;
 
     fn var(key: &str) -> EnvVar {
         EnvVar {

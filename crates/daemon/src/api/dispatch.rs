@@ -2,7 +2,7 @@
 //! `handlers/`. Ver `docs/indice/comandos.md`.
 
 use crate::bootstrap::state::AppState;
-use shared::{Command, Response as RpResponse};
+use crate::protocol::{Command, Response as RpResponse};
 use tracing::info;
 
 pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {

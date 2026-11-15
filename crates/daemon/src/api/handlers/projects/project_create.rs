@@ -1,7 +1,7 @@
 //! `Command::ProjectCreate`: cria um projeto.
 
 use crate::bootstrap::state::AppState;
-use shared::Response as RpResponse;
+use crate::protocol::Response as RpResponse;
 
 pub async fn handle(state: AppState, name: String, description: Option<String>) -> RpResponse {
     match crate::store::projects::create(&state.db, name, description).await {

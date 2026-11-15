@@ -2,7 +2,7 @@
 
 use crate::bootstrap::state::AppState;
 use crate::features::state_git::StateGitError;
-use shared::{Command, Response as RpResponse};
+use crate::protocol::{Command, Response as RpResponse};
 
 fn erro(e: StateGitError) -> RpResponse {
     match e {

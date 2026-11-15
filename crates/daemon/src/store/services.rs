@@ -6,9 +6,9 @@
 
 use super::Db;
 use super::infra::model::{InfraState, ServiceInfra};
+use crate::domain::{Service, ServiceSource, ServiceSpec, ServiceStatus};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use shared::{Service, ServiceSource, ServiceSpec, ServiceStatus};
 use std::collections::HashMap;
 use tracing::{debug, info, warn};
 use ulid::Ulid;
@@ -91,14 +91,14 @@ async fn filtered(db: &Db, keep: impl Fn(&Runtime) -> bool) -> Result<Vec<Servic
 /// (`rp_<últimos 8 do ID>_<nome>`); se já está em uso — chance de ~1 em 10¹² —,
 /// o ID inteiro.
 fn new_compose_project(st: &InfraState, id: &str, name: &str) -> String {
-    let short = shared::new_compose_project_name(id, name);
+    let short = crate::domain::new_compose_project_name(id, name);
     let taken = st
         .projects
         .iter()
         .flat_map(|p| p.services.iter())
         .any(|s| s.compose_project.as_deref() == Some(short.as_str()));
     if taken {
-        shared::new_compose_project_name_long(id, name)
+        crate::domain::new_compose_project_name_long(id, name)
     } else {
         short
     }
@@ -137,7 +137,7 @@ pub async fn create(db: &Db, spec: ServiceSpec) -> Result<Service> {
         if project
             .services
             .iter()
-            .any(|s| shared::normalize_name(&s.spec.name) == new_safe)
+            .any(|s| crate::domain::normalize_name(&s.spec.name) == new_safe)
         {
             anyhow::bail!(
                 "já existe um serviço com o nome \"{}\" neste projeto",
@@ -243,7 +243,7 @@ pub async fn update_spec(db: &Db, id: &str, spec: ServiceSpec) -> Result<Option<
         if project
             .services
             .iter()
-            .any(|s| s.id != id && shared::normalize_name(&s.spec.name) == new_safe)
+            .any(|s| s.id != id && crate::domain::normalize_name(&s.spec.name) == new_safe)
         {
             anyhow::bail!(
                 "já existe um serviço com o nome \"{}\" neste projeto",
@@ -454,7 +454,7 @@ fn test_compose_spec(name: String, project_id: String) -> ServiceSpec {
     ServiceSpec {
         name,
         project_id,
-        source: ServiceSource::Compose(shared::ComposeSource {
+        source: ServiceSource::Compose(crate::domain::ComposeSource {
             content: String::new(),
             ingress_service: None,
         }),
@@ -466,9 +466,9 @@ fn test_compose_spec(name: String, project_id: String) -> ServiceSpec {
         env_vars: vec![],
         env_comments: vec![],
         volumes: vec![],
-        healthcheck: shared::Healthcheck::default(),
+        healthcheck: crate::domain::Healthcheck::default(),
         replicas: 1,
-        resources: shared::ResourceLimits::default(),
+        resources: crate::domain::ResourceLimits::default(),
         run_command: None,
         run_args: vec![],
         product: None,
@@ -486,7 +486,7 @@ fn test_compose_spec(name: String, project_id: String) -> ServiceSpec {
 mod tests {
 
     use super::*;
-    use shared::ServiceSource;
+    use crate::domain::ServiceSource;
 
     fn spec(name: &str, project: &str) -> ServiceSpec {
         ServiceSpec {
@@ -503,9 +503,9 @@ mod tests {
             env_vars: vec![],
             env_comments: vec![],
             volumes: vec![],
-            healthcheck: shared::Healthcheck::default(),
+            healthcheck: crate::domain::Healthcheck::default(),
             replicas: 1,
-            resources: shared::ResourceLimits::default(),
+            resources: crate::domain::ResourceLimits::default(),
             run_command: None,
             run_args: vec![],
             product: None,
@@ -1036,7 +1036,7 @@ pub async fn backfill_compose_projects(
         .iter()
         .filter_map(|s| s.compose_project.clone())
         .collect();
-    let legacy_of = |s: &Service| shared::compose_project_name(&s.id, &s.spec.name);
+    let legacy_of = |s: &Service| crate::domain::compose_project_name(&s.id, &s.spec.name);
     let legacy_names: std::collections::HashSet<String> =
         compose.iter().map(|s| legacy_of(s)).collect();
 
@@ -1179,7 +1179,7 @@ mod nome_gravado_tests {
         let b = projects::create(&db, "b".into(), None).await.unwrap();
         let na = projects::network_name(&db, &a.id).await.unwrap();
         let nb = projects::network_name(&db, &b.id).await.unwrap();
-        assert_eq!(na, shared::new_project_network_name(&a.id));
+        assert_eq!(na, crate::domain::new_project_network_name(&a.id));
         assert!(na.len() > "rp_net_".len() + 20, "ID inteiro: {na}");
         assert_ne!(na, nb);
     }
@@ -1211,7 +1211,10 @@ mod nome_gravado_tests {
         let spec = test_compose_spec("postgres".into(), p.id.clone());
         let svc = create(&db, spec).await.unwrap();
         let stack = svc.compose_project.clone().expect("Compose grava a stack");
-        assert_eq!(stack, shared::new_compose_project_name(&svc.id, "postgres"));
+        assert_eq!(
+            stack,
+            crate::domain::new_compose_project_name(&svc.id, "postgres")
+        );
 
         let mut spec = svc.spec.clone();
         spec.name = "banco".into();
@@ -1238,7 +1241,7 @@ mod nome_gravado_tests {
         let db = temp_db().await;
         let p = projects::create(&db, "p".into(), None).await.unwrap();
         let mut spec = test_compose_spec("postgres".into(), p.id.clone());
-        spec.source = ServiceSource::Compose(shared::ComposeSource {
+        spec.source = ServiceSource::Compose(crate::domain::ComposeSource {
             content: "services:\n  app:\n    image: x\n".into(),
             ingress_service: None,
         });
@@ -1251,7 +1254,7 @@ mod nome_gravado_tests {
         update_spec(&db, &svc.id, spec).await.unwrap();
         esquece_stack(&db, Some(&svc.id));
 
-        let antiga = shared::compose_project_name(&svc.id, "postgres");
+        let antiga = crate::domain::compose_project_name(&svc.id, "postgres");
         backfill_compose_projects(&db, &live(&[("outra_coisa", &["x"]), (&antiga, &["app"])]))
             .await
             .unwrap();
@@ -1271,7 +1274,7 @@ mod nome_gravado_tests {
         let depois = get(&db, &svc.id).await.unwrap().unwrap();
         assert_eq!(
             depois.compose_project,
-            Some(shared::compose_project_name(&svc.id, "db"))
+            Some(crate::domain::compose_project_name(&svc.id, "db"))
         );
     }
 
@@ -1288,7 +1291,7 @@ mod nome_gravado_tests {
         esquece_stack(&db, None);
         // Só a stack de `a` existe no Docker; `b` não pode adotá-la, mesmo se
         // os dois tivessem os mesmos 8 primeiros chars do ID.
-        let stack_a = shared::compose_project_name(&a.id, "a");
+        let stack_a = crate::domain::compose_project_name(&a.id, "a");
         backfill_compose_projects(&db, &live(&[(&stack_a, &["app"])]))
             .await
             .unwrap();
@@ -1297,7 +1300,7 @@ mod nome_gravado_tests {
         assert_ne!(a2.compose_project, b2.compose_project);
         assert_eq!(
             b2.compose_project,
-            Some(shared::compose_project_name(&b.id, "b"))
+            Some(crate::domain::compose_project_name(&b.id, "b"))
         );
     }
 
@@ -1311,7 +1314,7 @@ mod nome_gravado_tests {
         let p = projects::create(&db, "p".into(), None).await.unwrap();
         let mk = |name: &str, key: &str| {
             let mut spec = test_compose_spec(name.into(), p.id.clone());
-            spec.source = ServiceSource::Compose(shared::ComposeSource {
+            spec.source = ServiceSource::Compose(crate::domain::ComposeSource {
                 content: format!("services:\n  {key}:\n    image: x\n"),
                 ingress_service: None,
             });

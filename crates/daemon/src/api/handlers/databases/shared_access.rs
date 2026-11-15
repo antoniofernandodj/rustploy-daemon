@@ -1,8 +1,9 @@
 //! `Command::SharedAccess{List,Grant,Revoke}`: quais projetos alcançam um
 //! servidor de banco compartilhado (ver `deploy::shared_net`).
 
+use crate::domain::{Service, SharedAccess};
+use crate::protocol::Response as RpResponse;
 use crate::{bootstrap::state::AppState, features::deploy::shared_net, store};
-use shared::{Response as RpResponse, Service, SharedAccess};
 
 async fn server(state: &AppState, id: &str) -> Result<Service, RpResponse> {
     match store::services::get(&state.db, id).await {

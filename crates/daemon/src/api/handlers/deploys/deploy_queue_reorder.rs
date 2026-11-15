@@ -1,7 +1,7 @@
 //! `Command::DeployQueueReorder`: reordena a fila global (arrastar na GUI).
 
 use crate::bootstrap::state::AppState;
-use shared::{Event, Response as RpResponse};
+use crate::protocol::{Event, Response as RpResponse};
 
 /// Reordena a fila para a ordem dada (ids de deployment). Ids desconhecidos são
 /// ignorados; enfileirados omitidos vão ao fim preservando a ordem relativa.

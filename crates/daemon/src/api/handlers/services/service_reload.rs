@@ -1,9 +1,10 @@
 //! `Command::ServiceReload`: reinicia o container live de um serviço (stop
 //! gracioso + start) sem redeployar.
 
+use crate::domain::{DeployState, ServiceStatus};
+use crate::protocol::{Event, Response as RpResponse};
 use crate::{bootstrap::state::AppState, engine::containers};
 use chrono::Utc;
-use shared::{DeployState, Event, Response as RpResponse, ServiceStatus};
 
 pub async fn handle(state: AppState, service_id: String) -> RpResponse {
     let svc = match crate::store::services::get(&state.db, &service_id).await {

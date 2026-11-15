@@ -3,7 +3,7 @@
 
 use crate::bootstrap::state::AppState;
 use crate::features::maintenance::prune::{self, PruneStat};
-use shared::Response as RpResponse;
+use crate::protocol::Response as RpResponse;
 
 fn respond(result: Result<PruneStat, String>) -> RpResponse {
     match result {

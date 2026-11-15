@@ -10,17 +10,18 @@
 //! aquecimento explícito e também de uma execução bem-sucedida, que baixa e
 //! compila tudo do mesmo jeito.
 
+use crate::domain::{Job, JobWarmStatus, QueueItemKind};
 use crate::engine::compose::{self, ComposeImages};
 use crate::engine::networks;
 use crate::features::deploy::queue::{QueueTaskFn, QueueTaskInfo};
 use crate::features::jobs::JobsContext;
 use crate::features::maintenance::prune::{self as docker_prune, BuildCachePrune};
+use crate::protocol::Event;
 use crate::store::{self, Db, daemon_settings};
 use anyhow::{Result, anyhow};
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use shared::{Event, Job, JobWarmStatus, QueueItemKind};
 use std::time::Duration;
 use tracing::{info, warn};
 
@@ -355,7 +356,7 @@ async fn warm_in_dir(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use shared::JobGitSource;
+    use crate::domain::JobGitSource;
 
     fn job(compose: &str) -> Job {
         Job {

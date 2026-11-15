@@ -1,7 +1,7 @@
 //! `Command::Ping`: responde `Pong` com o uptime.
 
 use crate::bootstrap::state::AppState;
-use shared::Response as RpResponse;
+use crate::protocol::Response as RpResponse;
 
 pub async fn handle(state: AppState) -> RpResponse {
     RpResponse::Pong {

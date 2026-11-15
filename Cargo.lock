@@ -2748,7 +2748,6 @@ dependencies = [
  "reqwest 0.12.28",
  "rustls",
  "rustls-pemfile",
- "rustploy-shared 0.30.0",
  "rustploy-update-core",
  "serde",
  "serde_json",
@@ -2778,7 +2777,6 @@ dependencies = [
  "chrono",
  "clap",
  "hex",
- "rustploy-shared 0.5.0",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -2786,30 +2784,6 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
- "ulid",
-]
-
-[[package]]
-name = "rustploy-shared"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e072690a8b948338d7c59fefbfc0d1d17c50d73887bd76c4841b7fb88c5919f"
-dependencies = [
- "chrono",
- "serde",
- "serde_json",
- "ulid",
-]
-
-[[package]]
-name = "rustploy-shared"
-version = "0.30.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d433e2f7adce457081955a86df44647b84a900f98e0f03525280cd729f14f65f"
-dependencies = [
- "chrono",
- "serde",
- "serde_json",
  "ulid",
 ]
 

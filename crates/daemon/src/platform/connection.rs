@@ -214,28 +214,28 @@ pub fn is_sql_or_mongo(product: Option<&str>) -> bool {
 /// na rede de um projeto); (2) `shared` só vale para banco do wizard, em Compose.
 pub fn validate_shared_rules(
     name: &str,
-    source: &shared::ServiceSource,
+    source: &crate::domain::ServiceSource,
     product: Option<&str>,
     shared: bool,
 ) -> Result<(), String> {
     let reserved = |n: &str| {
         n.to_ascii_lowercase()
-            .starts_with(shared::SHARED_ALIAS_PREFIX)
+            .starts_with(crate::domain::SHARED_ALIAS_PREFIX)
     };
     if reserved(name) {
         return Err(format!(
             "o prefixo \"{}\" é reservado para bancos compartilhados",
-            shared::SHARED_ALIAS_PREFIX
+            crate::domain::SHARED_ALIAS_PREFIX
         ));
     }
-    if let shared::ServiceSource::Compose(c) = source
+    if let crate::domain::ServiceSource::Compose(c) = source
         && let Some((k, _)) = compose_services(&c.content)
             .iter()
             .find(|(k, _)| reserved(k))
     {
         return Err(format!(
             "o serviço Compose \"{k}\" usa o prefixo reservado \"{}\"",
-            shared::SHARED_ALIAS_PREFIX
+            crate::domain::SHARED_ALIAS_PREFIX
         ));
     }
     if shared {
@@ -244,7 +244,7 @@ pub fn validate_shared_rules(
                 "só Postgres, MySQL, MariaDB e MongoDB podem ser servidor compartilhado".into(),
             );
         }
-        if !matches!(source, shared::ServiceSource::Compose(_)) {
+        if !matches!(source, crate::domain::ServiceSource::Compose(_)) {
             return Err("servidor compartilhado precisa ser um serviço Compose".into());
         }
     }
@@ -342,7 +342,7 @@ mod tests {
 
     #[test]
     fn prefixo_reservado_e_shared_so_em_banco() {
-        use shared::{ComposeSource, ServiceSource};
+        use crate::domain::{ComposeSource, ServiceSource};
         let c = |y: &str| {
             ServiceSource::Compose(ComposeSource {
                 content: y.into(),

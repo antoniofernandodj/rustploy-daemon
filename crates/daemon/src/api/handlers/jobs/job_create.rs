@@ -1,7 +1,8 @@
 //! `Command::JobCreate`: cria um job one-shot (Schedules) de um projeto.
 
 use crate::bootstrap::state::AppState;
-use shared::{EnvComment, EnvVar, JobGitSource, Recurrence, Response as RpResponse};
+use crate::domain::{EnvComment, EnvVar, JobGitSource, Recurrence};
+use crate::protocol::Response as RpResponse;
 
 #[allow(clippy::too_many_arguments)]
 pub async fn handle(

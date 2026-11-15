@@ -2,13 +2,13 @@
 //! em tar, com progresso no log de build.
 
 use crate::platform::{event_bus::EventBus, log_sink::LogSink};
+use crate::protocol::Event;
 use anyhow::{Result, anyhow};
 use bollard::{
     Docker,
     image::{BuildImageOptions, CreateImageOptions, RemoveImageOptions},
 };
 use futures::StreamExt;
-use shared::Event;
 use std::{path::Path, sync::Arc};
 use tracing::{debug, info, warn};
 

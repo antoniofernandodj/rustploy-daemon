@@ -5,18 +5,18 @@
 //! em uso. Invalida os caches de inventário afetados para a aba refletir na hora.
 
 use crate::bootstrap::state::AppState;
+use crate::protocol::Response as RpResponse;
 use bollard::{
     container::RemoveContainerOptions, image::RemoveImageOptions, volume::RemoveVolumeOptions,
 };
-use shared::Response as RpResponse;
 
 /// O serviço do estado a que um container pertence: pelo label `rustploy.service_id` (serviços
 /// normais) ou pelo nome da stack Compose (`com.docker.compose.project`) — os containers de um
 /// Compose não levam label do rustploy.
 fn owning_service<'a>(
     labels: &std::collections::HashMap<String, String>,
-    services: &'a [shared::Service],
-) -> Option<&'a shared::Service> {
+    services: &'a [crate::domain::Service],
+) -> Option<&'a crate::domain::Service> {
     services.iter().find(|s| {
         labels
             .get("rustploy.service_id")
@@ -179,14 +179,14 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
 
-    fn svc(id: &str, compose: Option<&str>) -> shared::Service {
+    fn svc(id: &str, compose: Option<&str>) -> crate::domain::Service {
         let mut s = crate::features::wizard::app_spec(id.into(), "p".into());
         s.name = id.into();
-        shared::Service {
+        crate::domain::Service {
             id: id.into(),
             spec: s,
             compose_project: compose.map(String::from),
-            status: shared::ServiceStatus::Stopped,
+            status: crate::domain::ServiceStatus::Stopped,
             live_container_id: None,
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),

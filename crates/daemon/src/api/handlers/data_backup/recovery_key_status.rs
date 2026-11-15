@@ -1,7 +1,7 @@
 //! `Command::RecoveryKeyStatus`: há chave de recuperação e qual é a pública (nunca a privada).
 
 use crate::bootstrap::state::AppState;
-use shared::Response;
+use crate::protocol::Response;
 
 pub fn handle(state: &AppState) -> Response {
     let public_key = state.secrets.recovery_public_key();

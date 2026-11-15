@@ -2,7 +2,7 @@
 //! guarda o `state` CSRF.
 
 use crate::bootstrap::state::AppState;
-use shared::Response;
+use crate::protocol::Response;
 use tracing::warn;
 use ulid::Ulid;
 
@@ -15,8 +15,8 @@ pub async fn handle(state: AppState, provider_id: String) -> Response {
         Ok(None) => return Response::err("NotFound", "Provider não encontrado"),
         Err(e) => return Response::err("DatabaseError", e.to_string()),
     };
-    let kind =
-        shared::GitProviderKind::from_str(&provider.kind).unwrap_or(shared::GitProviderKind::Gitea);
+    let kind = crate::domain::GitProviderKind::from_str(&provider.kind)
+        .unwrap_or(crate::domain::GitProviderKind::Gitea);
 
     let client_id = provider.oauth_client_id.clone().unwrap_or_default();
     if client_id.is_empty() {

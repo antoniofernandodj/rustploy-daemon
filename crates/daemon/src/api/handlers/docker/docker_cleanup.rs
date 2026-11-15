@@ -2,9 +2,10 @@
 //! manual da limpeza automática do Docker (`maintenance/`).
 
 use crate::bootstrap::state::AppState;
+use crate::domain::DockerCleanupConfig;
 use crate::features::maintenance;
+use crate::protocol::Response as RpResponse;
 use chrono::Utc;
-use shared::{DockerCleanupConfig, Response as RpResponse};
 
 pub async fn get_config(state: AppState) -> RpResponse {
     let config = match maintenance::run::load_config(&state.maintenance_ctx()).await {

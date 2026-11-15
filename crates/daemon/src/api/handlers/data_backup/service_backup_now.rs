@@ -2,7 +2,7 @@
 //! em `ServiceBackupList(.last_run)`.
 
 use crate::bootstrap::state::AppState;
-use shared::Response;
+use crate::protocol::Response;
 
 pub async fn handle(
     state: AppState,

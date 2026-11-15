@@ -8,9 +8,9 @@ pub mod warm;
 
 pub use context::{ActiveJobs, JobsContext};
 
+use crate::protocol::LogStream;
 use crate::store::{self, Db};
 use chrono::Utc;
-use shared::protocol::LogStream;
 
 /// Fecha, como **interrompidas**, as execuções que ficaram sem fim: um daemon que
 /// acabou de subir não tem nenhuma execução viva. Cobre as que rodavam e as que

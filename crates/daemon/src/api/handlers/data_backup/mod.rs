@@ -15,7 +15,7 @@ mod service_backup_policy_set;
 mod service_backup_restore;
 
 use crate::bootstrap::state::AppState;
-use shared::{Command, Response as RpResponse};
+use crate::protocol::{Command, Response as RpResponse};
 
 pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
     match cmd {

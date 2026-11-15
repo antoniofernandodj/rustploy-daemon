@@ -6,7 +6,7 @@ pub mod docker_prune;
 pub mod docker_remove;
 
 use crate::bootstrap::state::AppState;
-use shared::{Command, Response as RpResponse};
+use crate::protocol::{Command, Response as RpResponse};
 
 pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
     match cmd {

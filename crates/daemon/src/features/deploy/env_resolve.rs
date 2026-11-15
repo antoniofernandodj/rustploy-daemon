@@ -4,10 +4,10 @@
 //! base (projeto + serviço gatilho, secrets incluídas) sem instanciar um
 //! `DeployExecutor` inteiro.
 
+use crate::domain::{EnvVarValue, Job, Service};
 use crate::platform::secrets::SecretsManager;
 use crate::store::Db;
 use anyhow::Result;
-use shared::{EnvVarValue, Job, Service};
 use std::collections::HashMap;
 use tracing::{debug, error, warn};
 
@@ -84,8 +84,8 @@ async fn resolve_project_env(
 
 /// Funde env vars do projeto (base) com as do serviço (sobrescreve por
 /// chave), decifrando `EnvVarValue::Secret` via `secrets`. Mesma precedência
-/// de `shared::resolve_env_vars`, mas com secrets resolvidas em texto puro
-/// (`shared::resolve_env_vars` deixa `EnvVarValue` intacto).
+/// de `crate::domain::resolve_env_vars`, mas com secrets resolvidas em texto puro
+/// (`crate::domain::resolve_env_vars` deixa `EnvVarValue` intacto).
 pub async fn resolve(
     db: &Db,
     secrets: &SecretsManager,
@@ -247,7 +247,7 @@ mod tests {
     /// enxerga os dois; o job autônomo só o do projeto.
     #[tokio::test]
     async fn escopos_de_secret_na_resolucao_de_servico_e_job() {
-        use shared::{EnvVar, EnvVarValue};
+        use crate::domain::{EnvVar, EnvVarValue};
         let dir = tempfile::tempdir().unwrap();
         let db = Arc::new(crate::store::connect(dir.path()).await.unwrap());
         db.seed_project_for_test("p1");
@@ -292,7 +292,7 @@ mod tests {
         assert_eq!(map["C"], "ss");
 
         // job COM gatilho: o override do job pode apontar para um secret do serviço gatilho
-        let mk_job = |trigger: Option<&str>| shared::Job {
+        let mk_job = |trigger: Option<&str>| crate::domain::Job {
             id: "j".into(),
             project_id: "p1".into(),
             trigger_service_id: trigger.map(String::from),

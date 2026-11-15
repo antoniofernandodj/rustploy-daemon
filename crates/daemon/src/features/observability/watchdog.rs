@@ -2,10 +2,11 @@
 //! healthcheck, reinicia com limite de tentativas e, se o container sumiu, pede
 //! redeploy.
 
+use crate::domain::{Healthcheck, HealthcheckKind, ServiceSource, ServiceStatus};
 use crate::features::observability::WatchdogContext;
+use crate::protocol::Event;
 use crate::{platform::event_bus::EventBus, store::Db};
 use bollard::Docker;
-use shared::{Event, Healthcheck, HealthcheckKind, ServiceSource, ServiceStatus};
 use std::{
     collections::HashMap,
     sync::Arc,
@@ -149,7 +150,7 @@ pub async fn watchdog_loop(state: WatchdogContext) {
 /// se o container foi removido, enfileira um redeploy no lugar.
 async fn try_restart(
     state: &WatchdogContext,
-    svc: &shared::Service,
+    svc: &crate::domain::Service,
     container_id: &str,
     svc_state: &mut ServiceState,
 ) {
@@ -253,7 +254,7 @@ fn is_not_found_error(e: &bollard::errors::Error) -> bool {
     msg.contains("404") || msg.contains("No such container")
 }
 
-async fn trigger_redeploy(state: &WatchdogContext, svc: &shared::Service) {
+async fn trigger_redeploy(state: &WatchdogContext, svc: &crate::domain::Service) {
     info!(service = %svc.spec.name, service_id = %svc.id, "watchdog: disparando redeploy automático");
 
     let image = match &svc.spec.source {

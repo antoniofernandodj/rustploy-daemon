@@ -2,7 +2,7 @@
 //! o `pre_deploy_job_id` dos serviços que o usavam como gate.
 
 use crate::bootstrap::state::AppState;
-use shared::Response as RpResponse;
+use crate::protocol::Response as RpResponse;
 use tracing::warn;
 
 pub async fn handle(state: AppState, id: String) -> RpResponse {

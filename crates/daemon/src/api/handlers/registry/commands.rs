@@ -4,14 +4,12 @@
 //! disco é liberado pelo GC (`RegistryGc` — botão na UI + job diário).
 
 use crate::bootstrap::state::AppState;
+use crate::domain::{RegistryRepoInfo, RegistryStatusInfo, RegistryTagInfo, RegistryTokenInfo};
 use crate::platform::config::RustployConfig;
+use crate::protocol::Response as RpResponse;
 use crate::store::registry as db_registry;
 use crate::store::registry_tokens as db_tokens;
 use sha2::{Digest, Sha256};
-use shared::{
-    RegistryRepoInfo, RegistryStatusInfo, RegistryTagInfo, RegistryTokenInfo,
-    Response as RpResponse,
-};
 use std::io::Read;
 
 pub async fn status(state: AppState) -> RpResponse {
@@ -121,7 +119,7 @@ pub async fn gc(state: AppState) -> RpResponse {
 
 pub async fn retention_set(
     state: AppState,
-    mut config: shared::RegistryRetentionConfig,
+    mut config: crate::domain::RegistryRetentionConfig,
 ) -> RpResponse {
     // zero apagaria tudo o que não está em uso: grava o mínimo que vale
     config.keep_last = config.effective_keep_last();

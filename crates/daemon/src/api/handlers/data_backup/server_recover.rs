@@ -2,8 +2,9 @@
 //! Não estão disponíveis ao agente MCP: levam a chave de recuperação e um token.
 
 use crate::bootstrap::state::AppState;
+use crate::domain::{GitAuthMode, GitProviderKind};
 use crate::features::data_backup::recover;
-use shared::{GitAuthMode, GitProviderKind, Response};
+use crate::protocol::Response;
 
 /// `https://host[:porta]/…` → `(github|gitea, base_url)`. O github.com usa a base padrão.
 fn provider_for(remote: &str) -> (GitProviderKind, String) {

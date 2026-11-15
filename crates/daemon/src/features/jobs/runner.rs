@@ -3,20 +3,21 @@
 //! (`docker::compose::run_once`), grava o resultado em `job_run`/`job_log` e
 //! reagenda (`Job::recurrence`, quando houver).
 
+use crate::domain::{Job, JobRun};
 use crate::engine::{self, DockerClient, networks};
 use crate::features::jobs::JobsContext;
 use crate::platform::event_bus::EventBus;
 use crate::platform::secrets::SecretsManager;
+use crate::protocol::Event;
 use crate::store;
 use anyhow::Result;
 use chrono::Utc;
-use shared::{Event, Job, JobRun};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::{error, info, warn};
 
+use crate::domain::QueueItemKind;
 use crate::features::deploy::queue::{QueueTaskFn, QueueTaskInfo};
-use shared::QueueItemKind;
 
 pub struct JobRunner {
     pub db: Arc<store::Db>,
@@ -210,7 +211,7 @@ impl JobRunner {
                             job_id: jid.clone(),
                             line: p.description.clone(),
                             timestamp: ts,
-                            stream: shared::protocol::LogStream::Stdout,
+                            stream: crate::protocol::LogStream::Stdout,
                         });
                         let db_handle = db_handle.clone();
                         let rid = rid.clone();
@@ -219,7 +220,7 @@ impl JobRunner {
                             let _ = store::job_log::append(
                                 &db_handle,
                                 &rid,
-                                &shared::protocol::LogStream::Stdout,
+                                &crate::protocol::LogStream::Stdout,
                                 &line,
                                 ts,
                             )
@@ -282,12 +283,12 @@ impl JobRunner {
             job_id: job_id.to_string(),
             line: texto.to_string(),
             timestamp: ts,
-            stream: shared::protocol::LogStream::Stdout,
+            stream: crate::protocol::LogStream::Stdout,
         });
         let _ = store::job_log::append(
             &self.db,
             run_id,
-            &shared::protocol::LogStream::Stdout,
+            &crate::protocol::LogStream::Stdout,
             texto,
             ts,
         )

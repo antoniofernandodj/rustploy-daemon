@@ -6,8 +6,9 @@
 //! pode vazar o que o git não aceitaria.
 
 use crate::bootstrap::state::AppState;
+use crate::domain::InfraFile;
 use crate::features::state_git::blocking;
-use shared::{InfraFile, Response};
+use crate::protocol::Response;
 
 pub async fn handle(state: AppState) -> Response {
     let snapshot = state.db.infra().snapshot();

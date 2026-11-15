@@ -15,7 +15,7 @@ impl DeployExecutor {
         // Coleta os IPs de todas as réplicas; cada rota de domínio
         // depois compõe `ip:porta` com a sua própria porta de container.
         let mut ips: Vec<String> = Vec::with_capacity(replicas as usize);
-        let alias = shared::app_network_alias(&svc.spec.name);
+        let alias = crate::domain::app_network_alias(&svc.spec.name);
         for i in 0..replicas {
             let staging = containers::replica_staging_name(&svc.id, &svc.spec.name, &dep_short, i);
             info!(

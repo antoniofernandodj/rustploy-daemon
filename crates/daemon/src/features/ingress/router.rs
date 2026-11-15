@@ -132,7 +132,12 @@ impl IngressController {
     /// Como todo caminho que registra rota passa por aqui (deploy, rolling
     /// update, compose, reconcile de boot e sob demanda), a poda vale para
     /// todos eles.
-    pub fn register_domains(&self, spec: &shared::ServiceSpec, ips: &[String], service_id: &str) {
+    pub fn register_domains(
+        &self,
+        spec: &crate::domain::ServiceSpec,
+        ips: &[String],
+        service_id: &str,
+    ) {
         let routes = spec.domain_routes();
         let old = self.table.load();
         let mut new_table = (**old).clone();
@@ -152,7 +157,7 @@ impl IngressController {
     }
 
     /// Remove todas as rotas de domínio do serviço (parada/remoção/reconcile).
-    pub fn remove_domains(&self, spec: &shared::ServiceSpec) {
+    pub fn remove_domains(&self, spec: &crate::domain::ServiceSpec) {
         for route in spec.domain_routes() {
             self.remove_route(&route.domain);
         }
@@ -166,12 +171,12 @@ impl IngressController {
     ///
     /// Ordenada (domínio, depois porta) porque isto é saída de diagnóstico
     /// lida por gente: a ordem de um `HashMap` mudaria a cada chamada.
-    pub fn snapshot(&self) -> shared::IngressSnapshot {
+    pub fn snapshot(&self) -> crate::domain::IngressSnapshot {
         let table = self.table.load();
-        let mut domains: Vec<shared::IngressDomainRoute> = table
+        let mut domains: Vec<crate::domain::IngressDomainRoute> = table
             .routes
             .values()
-            .map(|e| shared::IngressDomainRoute {
+            .map(|e| crate::domain::IngressDomainRoute {
                 domain: e.domain.clone(),
                 backends: e.backends.clone(),
                 service_id: e.service_id.clone(),
@@ -179,12 +184,12 @@ impl IngressController {
             .collect();
         domains.sort_by(|a, b| a.domain.cmp(&b.domain));
 
-        let mut ports: Vec<shared::IngressPortRoute> = self
+        let mut ports: Vec<crate::domain::IngressPortRoute> = self
             .port_backends
             .lock()
             .unwrap()
             .iter()
-            .map(|(port, backend)| shared::IngressPortRoute {
+            .map(|(port, backend)| crate::domain::IngressPortRoute {
                 host_port: *port,
                 // `None` = listener no ar sem destino; vira lista vazia.
                 backends: (**backend.load())
@@ -195,7 +200,7 @@ impl IngressController {
             .collect();
         ports.sort_by_key(|p| p.host_port);
 
-        shared::IngressSnapshot { domains, ports }
+        crate::domain::IngressSnapshot { domains, ports }
     }
 
     pub fn table_handle(&self) -> RouteHandle {
@@ -244,7 +249,7 @@ impl Default for IngressController {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use shared::{DomainRoute, Healthcheck, ServiceSource, ServiceSpec};
+    use crate::domain::{DomainRoute, Healthcheck, ServiceSource, ServiceSpec};
 
     fn spec(domains: &[&str]) -> ServiceSpec {
         ServiceSpec {

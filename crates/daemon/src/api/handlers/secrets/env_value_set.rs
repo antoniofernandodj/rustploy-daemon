@@ -2,8 +2,9 @@
 //! Atômico; a chave, a ordem e os comentários do editor `.env` não mudam.
 
 use crate::bootstrap::state::AppState;
+use crate::domain::EnvVarValue;
 use crate::platform::secrets::Scope;
-use shared::{EnvVarValue, Response};
+use crate::protocol::Response;
 
 pub async fn handle(
     state: AppState,

@@ -2,7 +2,11 @@
 //! (clone/pull/build, staging, healthcheck, troca para live, rollback) e grava
 //! cada passo no log de build.
 
+use crate::domain::{
+    DeployState, Deployment, HealthcheckKind, Service, ServiceSource, ServiceStatus,
+};
 use crate::platform::config::RustployConfig;
+use crate::protocol::Event;
 use crate::{
     engine,
     engine::{DockerClient, containers, images, networks},
@@ -14,9 +18,6 @@ use crate::{
 use anyhow::{Result, anyhow};
 use bollard::models::HealthStatusEnum;
 use chrono::Utc;
-use shared::{
-    DeployState, Deployment, Event, HealthcheckKind, Service, ServiceSource, ServiceStatus,
-};
 use std::{path::PathBuf, sync::Arc, time::Duration};
 use tokio::time::sleep;
 use tracing::{debug, error, info, warn};

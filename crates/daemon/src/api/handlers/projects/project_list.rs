@@ -1,7 +1,7 @@
 //! `Command::ProjectList`: todos os projetos.
 
 use crate::bootstrap::state::AppState;
-use shared::Response as RpResponse;
+use crate::protocol::Response as RpResponse;
 
 pub async fn handle(state: AppState) -> RpResponse {
     match crate::store::projects::list(&state.db).await {

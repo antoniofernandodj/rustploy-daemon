@@ -2,7 +2,7 @@
 //! ou jobs.
 
 use crate::bootstrap::state::AppState;
-use shared::Response as RpResponse;
+use crate::protocol::Response as RpResponse;
 
 pub async fn handle(state: AppState, id: String) -> RpResponse {
     match crate::store::services::count_by_project(&state.db, &id).await {

@@ -1,6 +1,8 @@
 //! Corrige deployments marcados Live que já não estão no ar (`fix_stale_live`),
 //! sem tocar em serviço com deploy em andamento.
 
+use crate::domain::{DeployState, Deployment, ServiceStatus};
+use crate::protocol::Event;
 /// Reconciles deployments marked as "Live" in the DB against the actual Docker
 /// container state, correcting stale entries.
 ///
@@ -12,7 +14,6 @@
 use crate::store::services::DesiredState;
 use crate::{bootstrap::state::AppState, engine};
 use chrono::Utc;
-use shared::{DeployState, Deployment, Event, ServiceStatus};
 use std::collections::HashSet;
 use std::time::Duration;
 use tracing::{info, warn};

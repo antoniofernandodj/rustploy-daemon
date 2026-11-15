@@ -2,7 +2,8 @@
 //! projeto/serviço resolvidos.
 
 use crate::bootstrap::state::AppState;
-use shared::{JobSummary, Response as RpResponse};
+use crate::domain::JobSummary;
+use crate::protocol::Response as RpResponse;
 use std::collections::HashMap;
 
 pub async fn handle(state: AppState) -> RpResponse {

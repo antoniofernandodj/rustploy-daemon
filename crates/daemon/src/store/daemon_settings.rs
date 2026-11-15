@@ -115,14 +115,14 @@ pub async fn sql_get(db: &Db, key: &str) -> Result<Option<String>> {
 pub const KEY_WEBHOOK_BASE_URL: &str = "webhook_base_url";
 pub const KEY_ACME_EMAIL: &str = "acme_email";
 pub const KEY_REGISTRY_DOMAIN: &str = "registry_domain";
-/// JSON de `shared::DockerCleanupConfig` — ver `crate::features::maintenance`.
+/// JSON de `crate::domain::DockerCleanupConfig` — ver `crate::features::maintenance`.
 pub const KEY_DOCKER_CLEANUP_CONFIG: &str = "docker_cleanup_config";
-/// JSON de `shared::RegistryRetentionConfig` — ver `crate::features::registry::retention`.
+/// JSON de `crate::domain::RegistryRetentionConfig` — ver `crate::features::registry::retention`.
 pub const KEY_REGISTRY_RETENTION: &str = "registry_retention";
 /// JSON do destino S3 dos backups de dados (chave secreta cifrada) — ver
 /// `crate::features::data_backup::destination`.
 pub const KEY_BACKUP_DESTINATION: &str = "backup_destination";
-/// JSON de `shared::DockerCleanupLastRun`, ausente até a primeira execução.
+/// JSON de `crate::domain::DockerCleanupLastRun`, ausente até a primeira execução.
 pub const KEY_DOCKER_CLEANUP_LAST_RUN: &str = "docker_cleanup_last_run";
 /// JSON de `BuildCachePrune`: quando o cache de build foi limpo pela última vez
 /// e com qual corte de idade.

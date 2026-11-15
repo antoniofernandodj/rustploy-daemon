@@ -4,9 +4,9 @@
 //! Gitea accepts `Authorization: token <token>` for both OAuth access tokens
 //! and Personal Access Tokens, so the read endpoints are auth-mode agnostic.
 
+use crate::domain::{GitAccount, GitBranch, GitRepo};
 use anyhow::{Context, Result};
 use serde::Deserialize;
-use shared::{GitAccount, GitBranch, GitRepo};
 
 /// Tokens returned by the OAuth token endpoint.
 #[derive(Debug, Clone)]

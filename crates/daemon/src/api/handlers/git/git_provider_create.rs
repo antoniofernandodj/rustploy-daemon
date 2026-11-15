@@ -2,9 +2,10 @@
 //! OAuth ou token pessoal.
 
 use crate::bootstrap::state::AppState;
+use crate::domain::{GitAuthMode, GitProviderKind};
+use crate::protocol::Response;
 use crate::store::git_providers::{self, StoredProvider};
 use chrono::Utc;
-use shared::{GitAuthMode, GitProviderKind, Response};
 use ulid::Ulid;
 
 /// Registers a Git provider. For `Pat` mode the token is validated immediately

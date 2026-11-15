@@ -12,15 +12,16 @@
 
 use super::MaintenanceContext;
 use super::prune::{self as docker_prune, BuildCachePrune};
+use crate::domain::{Service, ServiceSource, ServiceWarmStatus};
 use crate::engine::images;
 use crate::features::deploy::git;
 use crate::features::jobs::warm::cache_pruned_since;
+use crate::protocol::Event;
 use crate::store::{self, Db, daemon_settings};
 use anyhow::{Result, anyhow};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use shared::{Event, Service, ServiceSource, ServiceWarmStatus};
 use std::path::PathBuf;
 use std::time::Duration;
 use tracing::{info, warn};
@@ -401,7 +402,7 @@ async fn build_in_dir(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use shared::{ArchiveSource, GitSource};
+    use crate::domain::{ArchiveSource, GitSource};
 
     fn git_source(branch: &str) -> ServiceSource {
         ServiceSource::Git(GitSource {

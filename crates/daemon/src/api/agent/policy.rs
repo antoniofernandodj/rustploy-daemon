@@ -13,8 +13,8 @@
 //! [`required_level`] é um `match` **exaustivo** (sem `_`): um `Command` novo não compila até alguém
 //! decidir o nível dele.
 
+use crate::protocol::Command;
 use serde_json::Value;
-use shared::Command;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Level {

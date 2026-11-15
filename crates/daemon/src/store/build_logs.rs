@@ -1,9 +1,9 @@
 //! Tabela `build_log`: linhas do log de build de cada deployment.
 
 use super::Db;
+use crate::protocol::{BuildLogLine, LogStream};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use shared::protocol::{BuildLogLine, LogStream};
 
 pub async fn append(
     db: &Db,

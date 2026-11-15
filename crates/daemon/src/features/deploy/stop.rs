@@ -1,12 +1,11 @@
 //! Parar um serviço (`Command::ServiceStop`): para um serviço (todas as réplicas live, ou a stack
 //! Compose) e marca o deployment como Stopped.
 
+use crate::domain::{DeployState, EnvVarValue, ServiceSource, ServiceStatus};
 use crate::features::deploy::DeployContext;
+use crate::protocol::{Event, Response as RpResponse};
 use crate::{engine, engine::containers};
 use chrono::Utc;
-use shared::{
-    DeployState, EnvVarValue, Event, Response as RpResponse, ServiceSource, ServiceStatus,
-};
 
 pub async fn handle(state: DeployContext, service_id: String) -> RpResponse {
     let previous = match crate::store::services::get(&state.db, &service_id).await {

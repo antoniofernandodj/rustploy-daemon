@@ -1,7 +1,7 @@
 //! `Command::GetBuildLogs`: linhas do log de build de um deployment.
 
 use crate::bootstrap::state::AppState;
-use shared::Response as RpResponse;
+use crate::protocol::Response as RpResponse;
 
 pub async fn handle(state: AppState, deployment_id: String) -> RpResponse {
     match crate::store::build_logs::get_for_deployment(&state.db, &deployment_id).await {

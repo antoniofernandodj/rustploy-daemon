@@ -2,7 +2,7 @@
 //! conectado.
 
 use crate::bootstrap::state::AppState;
-use shared::Response;
+use crate::protocol::Response;
 
 pub async fn handle(state: AppState, provider_id: String, repo_full_name: String) -> Response {
     let provider = match crate::store::git_providers::get(&state.db, &provider_id).await {
@@ -14,8 +14,8 @@ pub async fn handle(state: AppState, provider_id: String, repo_full_name: String
         Ok(t) => t,
         Err(e) => return Response::err("NotConnected", e.to_string()),
     };
-    let kind =
-        shared::GitProviderKind::from_str(&provider.kind).unwrap_or(shared::GitProviderKind::Gitea);
+    let kind = crate::domain::GitProviderKind::from_str(&provider.kind)
+        .unwrap_or(crate::domain::GitProviderKind::Gitea);
     match crate::features::git_providers::list_branches(
         kind,
         &provider.base_url,

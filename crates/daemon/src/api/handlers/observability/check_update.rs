@@ -1,7 +1,7 @@
 //! `Command::CheckUpdate`: há release mais nova que este daemon? Só consulta, nunca instala.
 
 use crate::bootstrap::state::AppState;
-use shared::Response as RpResponse;
+use crate::protocol::Response as RpResponse;
 
 pub async fn handle(state: AppState, force: bool) -> RpResponse {
     match state.update_checker.check(force).await {

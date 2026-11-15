@@ -104,7 +104,7 @@ mod tests {
             b"main-1  | hello\nside-1  | ignored\n\x1b[31mfailed to bind port 5432\x1b[0m\n\n";
         read_compose_output(
             input,
-            shared::protocol::LogStream::Stderr,
+            crate::protocol::LogStream::Stderr,
             "main",
             &bus,
             &db,

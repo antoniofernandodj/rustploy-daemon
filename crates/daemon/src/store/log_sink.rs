@@ -2,8 +2,8 @@
 
 use super::{Db, build_logs, job_log};
 use crate::platform::log_sink::LogSink;
+use crate::protocol::LogStream;
 use chrono::{DateTime, Utc};
-use shared::protocol::LogStream;
 
 impl LogSink for Db {
     async fn append_build_line(

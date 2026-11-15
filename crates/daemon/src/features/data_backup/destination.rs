@@ -5,6 +5,7 @@
 //! Depois de restaurar um servidor a partir do git, o destino já vem junto e a chave abre com a chave
 //! de recuperação, então os backups continuam sozinhos.
 
+use crate::domain::{BackupDestination, BackupDestinationView};
 use crate::platform::age_format::is_enc;
 use crate::platform::s3::S3Config;
 use crate::platform::secrets::SecretsManager;
@@ -12,7 +13,6 @@ use crate::store::Db;
 use crate::store::daemon_settings::{self, KEY_BACKUP_DESTINATION};
 use anyhow::{Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
-use shared::{BackupDestination, BackupDestinationView};
 
 /// Como o destino é gravado.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

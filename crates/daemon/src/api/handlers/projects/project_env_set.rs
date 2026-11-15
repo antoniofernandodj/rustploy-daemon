@@ -2,7 +2,8 @@
 //! projeto.
 
 use crate::bootstrap::state::AppState;
-use shared::{EnvComment, EnvVar, Response as RpResponse};
+use crate::domain::{EnvComment, EnvVar};
+use crate::protocol::Response as RpResponse;
 use tracing::info;
 
 pub async fn handle(

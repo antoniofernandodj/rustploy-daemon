@@ -1,6 +1,8 @@
 //! `Command::ManagedDatabase{List,Create,Delete}`: databases (com usuário
 //! próprio) dentro de um servidor de banco compartilhado.
 
+use crate::domain::{ManagedDatabaseCreateReq, Service};
+use crate::protocol::Response as RpResponse;
 use crate::{
     bootstrap::state::AppState,
     features::databases::env_switch,
@@ -12,7 +14,6 @@ use crate::{
     store::{self, managed_database::Row},
 };
 use chrono::Utc;
-use shared::{ManagedDatabaseCreateReq, Response as RpResponse, Service};
 
 async fn server(state: &AppState, id: &str) -> Result<(Service, Engine), RpResponse> {
     let svc = match store::services::get(&state.db, id).await {
@@ -51,7 +52,7 @@ fn open_views(
     svc: &Service,
     engine: Engine,
     rows: Vec<Row>,
-) -> anyhow::Result<Vec<shared::ManagedDatabase>> {
+) -> anyhow::Result<Vec<crate::domain::ManagedDatabase>> {
     rows.into_iter()
         .map(|r| {
             let r = store::managed_database::open(&state.secrets, r)?;

@@ -13,7 +13,7 @@ pub mod job_warm;
 pub mod job_warm_status;
 
 use crate::bootstrap::state::AppState;
-use shared::{Command, Response as RpResponse};
+use crate::protocol::{Command, Response as RpResponse};
 
 pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
     match cmd {

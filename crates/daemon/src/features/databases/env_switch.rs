@@ -7,9 +7,9 @@
 //! descreve. Então a troca vai em todo lugar onde a chave já existe; se não
 //! existe em lugar nenhum, entra no projeto.
 
+use crate::domain::{EnvChange, EnvVar, EnvVarValue};
 use crate::store::Db;
 use anyhow::Result;
-use shared::{EnvChange, EnvVar, EnvVarValue};
 
 /// A chave já está definida no projeto ou em algum serviço dele?
 pub async fn is_defined(db: &Db, project_id: &str, key: &str) -> Result<bool> {

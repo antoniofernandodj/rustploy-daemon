@@ -1,16 +1,16 @@
 //! Clients for hosted Git providers. Gitea and GitHub are implemented; the
 //! module is structured so GitLab (etc.) can be added alongside them. The
 //! per-provider REST clients live in `gitea`/`github`; the free functions below
-//! dispatch on [`shared::GitProviderKind`] so callers stay provider-agnostic.
+//! dispatch on [`crate::domain::GitProviderKind`] so callers stay provider-agnostic.
 
 pub mod gitea;
 pub mod github;
 
+use crate::domain::{GitAccount, GitBranch, GitProviderKind, GitRepo};
 use crate::platform::secrets::SecretsManager;
 use crate::store::Db;
 use crate::store::git_providers::{self, StoredProvider};
 use anyhow::{Context, Result};
-use shared::{GitAccount, GitBranch, GitProviderKind, GitRepo};
 
 /// Reads a stored provider's kind, defaulting to Gitea for forward-compat with
 /// rows written before a kind existed.
@@ -215,7 +215,7 @@ pub async fn refresh_access_token(
     secrets: &SecretsManager,
     p: &StoredProvider,
 ) -> Option<String> {
-    if p.auth_mode != shared::GitAuthMode::OAuth.as_str() {
+    if p.auth_mode != crate::domain::GitAuthMode::OAuth.as_str() {
         return None;
     }
     let client_id = p.oauth_client_id.as_deref()?;

@@ -3,7 +3,7 @@
 
 use crate::bootstrap::state::AppState;
 use crate::platform::secrets::Scope;
-use shared::Response;
+use crate::protocol::Response;
 
 pub async fn handle(
     state: AppState,

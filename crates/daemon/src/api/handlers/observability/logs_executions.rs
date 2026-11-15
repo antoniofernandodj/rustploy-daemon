@@ -2,15 +2,16 @@
 //! execução) com log guardado, e a exclusão delas. Plano: `docs/plano-log-de-runtime-persistido.md`.
 
 use crate::bootstrap::state::AppState;
+use crate::domain::ServiceSource;
 use crate::platform::log_store::{self, ExecMeta};
-use shared::protocol::LogExecution;
-use shared::{Response as RpResponse, ServiceSource};
+use crate::protocol::LogExecution;
+use crate::protocol::Response as RpResponse;
 
 /// Serviço existente e com log persistido ligado, ou a resposta de erro pronta.
 async fn service_and_store(
     state: &AppState,
     service_id: &str,
-) -> Result<(shared::Service, std::sync::Arc<log_store::LogStore>), RpResponse> {
+) -> Result<(crate::domain::Service, std::sync::Arc<log_store::LogStore>), RpResponse> {
     let svc = match crate::store::services::get(&state.db, service_id).await {
         Ok(Some(s)) => s,
         Ok(None) => return Err(RpResponse::err("NotFound", "serviço não encontrado")),

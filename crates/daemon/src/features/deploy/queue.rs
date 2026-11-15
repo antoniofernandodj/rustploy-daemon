@@ -23,7 +23,8 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
-use shared::{Event, QueueItemKind, ServiceStatus};
+use crate::domain::{QueueItemKind, ServiceStatus};
+use crate::protocol::Event;
 use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore, watch};
 use tracing::{info, warn};
 

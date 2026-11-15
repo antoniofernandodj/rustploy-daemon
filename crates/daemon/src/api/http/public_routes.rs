@@ -86,7 +86,7 @@ pub async fn webhook(req: Request<Incoming>, state: AppState) -> Response<Full<B
         .ok()
         .flatten();
     if let Some(service) = &service
-        && let shared::ServiceSource::Git(git) = &service.spec.source
+        && let crate::domain::ServiceSource::Git(git) = &service.spec.source
     {
         if let Some(payload_branch) = extract_push_branch(&body)
             && !git.branch.is_empty()
@@ -317,8 +317,8 @@ pub async fn oauth_callback(req: Request<Incoming>, state: AppState) -> Response
         Ok(Some(p)) => p,
         _ => return html(StatusCode::NOT_FOUND, "Erro", "Provider não encontrado."),
     };
-    let kind =
-        shared::GitProviderKind::from_str(&provider.kind).unwrap_or(shared::GitProviderKind::Gitea);
+    let kind = crate::domain::GitProviderKind::from_str(&provider.kind)
+        .unwrap_or(crate::domain::GitProviderKind::Gitea);
 
     let client_id = provider.oauth_client_id.clone().unwrap_or_default();
     let client_secret = match &provider.oauth_client_secret_enc {
@@ -436,8 +436,8 @@ pub async fn oauth_callback(req: Request<Incoming>, state: AppState) -> Response
     }
 
     let provider_label = match kind {
-        shared::GitProviderKind::Github => "GitHub",
-        shared::GitProviderKind::Gitea => "Gitea",
+        crate::domain::GitProviderKind::Github => "GitHub",
+        crate::domain::GitProviderKind::Gitea => "Gitea",
     };
     info!(provider_id = %provider_id, kind = %provider.kind, login = %account.login, "oauth: conta conectada");
     html(
@@ -455,7 +455,10 @@ pub async fn oauth_callback(req: Request<Incoming>, state: AppState) -> Response
 /// setting no banco; o segmento do path vem do kind do provider. `Option`
 /// mantido porque o chamador ainda trata o caso "sem base utilizável"; hoje ela
 /// é sempre derivável.
-pub fn callback_redirect_uri(state: &AppState, kind: shared::GitProviderKind) -> Option<String> {
+pub fn callback_redirect_uri(
+    state: &AppState,
+    kind: crate::domain::GitProviderKind,
+) -> Option<String> {
     let seg = crate::features::git_providers::callback_path_segment(kind);
     Some(format!("{}/oauth/{seg}/callback", state.public_base_url()))
 }

@@ -2,7 +2,7 @@
 //! velho corrigido por `reconcile::fix_stale_live`.
 
 use crate::bootstrap::state::AppState;
-use shared::Response as RpResponse;
+use crate::protocol::Response as RpResponse;
 
 pub async fn handle(state: AppState, service_id: String, limit: usize) -> RpResponse {
     match crate::store::deployments::list_for_service(&state.db, &service_id, limit).await {

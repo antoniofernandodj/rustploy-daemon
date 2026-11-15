@@ -1,8 +1,9 @@
 //! `Command::ServiceCreate`: cria um serviço, alocando a porta externa
 //! automática e liberando-a no firewall.
 
+use crate::domain::{ServiceSource, ServiceSpec};
 use crate::features::services::ServicesContext;
-use shared::{Response as RpResponse, ServiceSource, ServiceSpec};
+use crate::protocol::Response as RpResponse;
 use tracing::info;
 
 pub async fn handle(state: ServicesContext, mut spec: ServiceSpec) -> RpResponse {

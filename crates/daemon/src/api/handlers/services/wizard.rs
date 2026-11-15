@@ -4,9 +4,9 @@
 //! só ligamos aos handlers existentes.
 
 use crate::bootstrap::state::AppState;
+use crate::domain::WizardCreateReq;
 use crate::features::wizard;
-use shared::Response as RpResponse;
-use shared::WizardCreateReq;
+use crate::protocol::Response as RpResponse;
 
 /// Catálogos de bancos/brokers/storages/templates prontos como JSON para o contexto do
 /// cliente (`new_service_databases`/`new_service_brokers`/`new_service_templates`). `search` filtra os templates.
@@ -53,17 +53,17 @@ pub async fn create(state: AppState, req: WizardCreateReq) -> RpResponse {
 /// Devolve o serviço relido, ou `None` se não havia nada a mover.
 async fn secure_credentials(
     state: &AppState,
-    svc: &shared::Service,
-) -> anyhow::Result<Option<shared::Service>> {
+    svc: &crate::domain::Service,
+) -> anyhow::Result<Option<crate::domain::Service>> {
     let keys: Vec<String> = svc
         .spec
         .env_vars
         .iter()
         .filter(|v| match &v.value {
-            shared::EnvVarValue::Plain(value) => {
+            crate::domain::EnvVarValue::Plain(value) => {
                 !value.is_empty() && crate::store::infra::audit::name_looks_sensitive(&v.key)
             }
-            shared::EnvVarValue::Secret(_) => false,
+            crate::domain::EnvVarValue::Secret(_) => false,
         })
         .map(|v| v.key.clone())
         .collect();
@@ -77,7 +77,7 @@ async fn secure_credentials(
                 &svc.spec.project_id,
                 Some(svc.id.as_str()),
                 key,
-                shared::SecretMoveOp::EnvToSecret,
+                crate::protocol::SecretMoveOp::EnvToSecret,
             )
             .await?;
     }
@@ -87,7 +87,7 @@ async fn secure_credentials(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use shared::EnvVarValue;
+    use crate::domain::EnvVarValue;
 
     async fn estado() -> AppState {
         let tmp = std::env::temp_dir().join(format!("rustploy-wizard-test-{}", ulid::Ulid::new()));

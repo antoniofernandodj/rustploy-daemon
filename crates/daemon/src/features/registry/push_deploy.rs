@@ -5,7 +5,8 @@
 
 use super::storage::PushedTag;
 use crate::bootstrap::state::AppState;
-use shared::{Event, Service, ServiceSource};
+use crate::domain::{Service, ServiceSource};
+use crate::protocol::Event;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tracing::{info, warn};
 

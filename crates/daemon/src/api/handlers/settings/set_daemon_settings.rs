@@ -2,8 +2,8 @@
 //! ligando/desligando ACME e a rota do registry no ingress na hora.
 
 use crate::platform::config::RustployConfig;
+use crate::protocol::Response as RpResponse;
 use crate::{bootstrap::state::AppState, store::daemon_settings};
-use shared::Response as RpResponse;
 use tracing::{error, info, warn};
 
 pub async fn handle(

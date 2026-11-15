@@ -1,7 +1,8 @@
 //! `Command::ServiceBackupPolicySet`: grava a política de backup automático do serviço.
 
 use crate::bootstrap::state::AppState;
-use shared::{BackupPolicy, Response};
+use crate::domain::BackupPolicy;
+use crate::protocol::Response;
 
 pub async fn handle(state: AppState, service_id: String, policy: Option<BackupPolicy>) -> Response {
     match crate::features::data_backup::service_backup::policy_set(

@@ -1,13 +1,14 @@
 //! `Command::Migration*`: assistente de migração para banco compartilhado
 //! (ver `crate::features::databases::migration`).
 
+use crate::domain::MigrationStartReq;
+use crate::protocol::Response as RpResponse;
 use crate::{
     bootstrap::state::AppState,
     features::databases::migration::{self, valid_source_db},
     features::databases::shared_db::{self, Engine},
     store,
 };
-use shared::{MigrationStartReq, Response as RpResponse};
 
 fn err(code: &str, m: impl Into<String>) -> RpResponse {
     RpResponse::err(code, m.into())

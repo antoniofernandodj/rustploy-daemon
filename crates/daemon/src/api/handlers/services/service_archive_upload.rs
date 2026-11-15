@@ -7,9 +7,10 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
+use crate::domain::{ArchiveSource, ServiceSource};
+use crate::protocol::Response as RpResponse;
 use anyhow::{Context, Result, anyhow};
 use bytes::Bytes;
-use shared::{ArchiveSource, Response as RpResponse, ServiceSource};
 use tracing::{info, warn};
 use ulid::Ulid;
 

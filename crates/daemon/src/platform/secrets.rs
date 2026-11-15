@@ -11,10 +11,10 @@ use std::{io::Write, path::Path, sync::Arc};
 use tracing::{info, warn};
 use ulid::Ulid;
 
+use crate::domain::{EnvVar, EnvVarValue};
 use crate::platform::config::SecretsConfig;
 use crate::store::Db;
 use crate::store::infra::model::{InfraState, JobInfra, ProjectInfra, SecretInfra, ServiceInfra};
-use shared::{EnvVar, EnvVarValue};
 
 use crate::platform::age_format;
 pub use crate::platform::age_format::is_enc;
@@ -440,9 +440,9 @@ impl SecretsManager {
         project_id: &str,
         scope: impl Into<Scope<'a>>,
         name: &str,
-        op: shared::SecretMoveOp,
+        op: crate::protocol::SecretMoveOp,
     ) -> Result<()> {
-        use shared::SecretMoveOp::*;
+        use crate::protocol::SecretMoveOp::*;
         let scope = scope.into();
         // Os valores são decifrados/cifrados fora da closure só quando a operação precisa.
         self.db.infra().update(|st| {
@@ -1225,18 +1225,28 @@ mod tests {
         )
         .await
         .unwrap();
-        m.move_secret("p1", Scope::Job(j), "A", shared::SecretMoveOp::EnvToSecret)
-            .await
-            .unwrap();
+        m.move_secret(
+            "p1",
+            Scope::Job(j),
+            "A",
+            crate::protocol::SecretMoveOp::EnvToSecret,
+        )
+        .await
+        .unwrap();
         assert_eq!(m.get_scoped("p1", Scope::Job(j), "A").await.unwrap(), "1");
         m.rename_secret("p1", Scope::Job(j), "A", "B")
             .await
             .unwrap();
         let envs = db.infra().snapshot().projects[0].jobs[0].env_vars.clone();
         assert_eq!(envs[0].value, EnvVarValue::Secret("B".into()));
-        m.move_secret("p1", Scope::Job(j), "B", shared::SecretMoveOp::SecretToEnv)
-            .await
-            .unwrap();
+        m.move_secret(
+            "p1",
+            Scope::Job(j),
+            "B",
+            crate::protocol::SecretMoveOp::SecretToEnv,
+        )
+        .await
+        .unwrap();
         let envs = db.infra().snapshot().projects[0].jobs[0].env_vars.clone();
         assert_eq!(envs[0].value, EnvVarValue::Plain("1".into()));
         m.rename_env_key("p1", Scope::Job(j), "A", "C")
@@ -1360,7 +1370,7 @@ mod tests {
 
     #[tokio::test]
     async fn env_para_secret_e_de_volta_no_servico() {
-        use shared::SecretMoveOp::*;
+        use crate::protocol::SecretMoveOp::*;
         let (db, m, _d) = cenario().await;
         set_env_plain(&db, Some("s1"), "DB_PASSWORD", "hunter2");
         m.move_secret("p1", Some("s1"), "DB_PASSWORD", EnvToSecret)
@@ -1401,7 +1411,7 @@ mod tests {
 
     #[tokio::test]
     async fn env_para_secret_no_projeto_e_conflitos() {
-        use shared::SecretMoveOp::*;
+        use crate::protocol::SecretMoveOp::*;
         let (db, m, _d) = cenario().await;
         set_env_plain(&db, None, "TOKEN", "abc");
         m.set("p1", "TOKEN", "ja-existe").await.unwrap();
@@ -1423,7 +1433,7 @@ mod tests {
 
     #[tokio::test]
     async fn secret_para_env_aponta_todas_as_envs_ou_cria_uma() {
-        use shared::SecretMoveOp::*;
+        use crate::protocol::SecretMoveOp::*;
         let (db, m, _d) = cenario().await;
         m.set_scoped("p1", Some("s1"), "SEGREDO", "v1")
             .await
@@ -1477,7 +1487,7 @@ mod tests {
 
     #[tokio::test]
     async fn mover_entre_servico_e_projeto() {
-        use shared::SecretMoveOp::*;
+        use crate::protocol::SecretMoveOp::*;
         let (_db, m, _d) = cenario().await;
         // o caso de uso do usuário: o banco cria a senha no serviço; sobe para o projeto
         m.set_scoped("p1", Some("s1"), "DB_PASSWORD", "pw")
@@ -1541,7 +1551,7 @@ mod tests {
 
     #[tokio::test]
     async fn mover_env_entre_servico_e_projeto() {
-        use shared::SecretMoveOp::*;
+        use crate::protocol::SecretMoveOp::*;
         let (db, m, _d) = cenario().await;
         set_env_plain(&db, Some("s1"), "LOG_LEVEL", "debug");
         // serviço → projeto: sai do serviço, entra no projeto, valor intacto
@@ -1607,7 +1617,7 @@ mod tests {
                 st.projects[0].services[0]
                     .spec
                     .env_comments
-                    .push(shared::EnvComment {
+                    .push(crate::domain::EnvComment {
                         text: "# senha do broker".into(),
                         before_key: Some("RABBITMQ_DEFAULT_PASS".into()),
                     });
@@ -1632,7 +1642,7 @@ mod tests {
 
     #[tokio::test]
     async fn renomear_chave_de_env_secret_nao_mexe_no_secret() {
-        use shared::SecretMoveOp::EnvToSecret;
+        use crate::protocol::SecretMoveOp::EnvToSecret;
         let (db, m, _d) = cenario().await;
         set_env_plain(&db, Some("s1"), "DB_PASSWORD", "hunter2");
         m.move_secret("p1", Some("s1"), "DB_PASSWORD", EnvToSecret)
@@ -1693,7 +1703,7 @@ mod tests {
 
     #[tokio::test]
     async fn trocar_valor_para_secret_existente_no_servico_e_no_projeto() {
-        use shared::SecretMoveOp::EnvToSecret;
+        use crate::protocol::SecretMoveOp::EnvToSecret;
         let (db, m, _d) = cenario().await;
         set_env_plain(&db, Some("s1"), "SENHA", "hunter2");
         set_env_plain(&db, Some("s1"), "OUTRA", "x");

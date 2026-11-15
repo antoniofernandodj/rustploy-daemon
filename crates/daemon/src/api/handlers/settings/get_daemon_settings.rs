@@ -1,8 +1,8 @@
 //! `Command::GetDaemonSettings`: e-mail ACME, domínio do registry e a URL
 //! pública derivada de `[api]`.
 
+use crate::protocol::Response as RpResponse;
 use crate::{bootstrap::state::AppState, store::daemon_settings};
-use shared::Response as RpResponse;
 
 pub async fn handle(state: AppState) -> RpResponse {
     let acme_email = daemon_settings::get(&state.db, daemon_settings::KEY_ACME_EMAIL)

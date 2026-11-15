@@ -5,7 +5,7 @@
 //! havia como olhá-la: um domínio respondendo 502 não tinha diagnóstico
 //! possível pela API — nem conserto, a não ser redeployar.
 use crate::bootstrap::state::AppState;
-use shared::Response as RpResponse;
+use crate::protocol::Response as RpResponse;
 use tracing::info;
 
 /// Foto da tabela viva (domínios + portas).

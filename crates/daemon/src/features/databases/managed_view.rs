@@ -1,16 +1,16 @@
 //! Visão de um banco gerenciado: monta a connection URL como o projeto consumidor a enxerga.
 
+use crate::domain::{ManagedDatabase, Service};
 use crate::features::databases::shared_db::Engine;
 use crate::features::deploy::shared_net;
 use crate::platform::connection::{self, ConnTarget};
 use crate::store::managed_database::Row;
-use shared::{ManagedDatabase, Service};
 
 /// Como o projeto consumidor enxerga o servidor: o alias global (outro projeto)
 /// ou a chave do YAML (o próprio projeto do servidor).
 fn host_for(svc: &Service, project_id: &str) -> String {
     if project_id == svc.spec.project_id
-        && let shared::ServiceSource::Compose(c) = &svc.spec.source
+        && let crate::domain::ServiceSource::Compose(c) = &svc.spec.source
         && let Some(h) = connection::compose_host(
             &c.content,
             c.ingress_service.as_deref(),

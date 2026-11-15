@@ -1,8 +1,8 @@
 //! `Command::GetWebhookUrl`: URL de webhook de deploy de um serviço;
 //! `build_url` monta `{base}/webhook/{id}/{token}`.
 
+use crate::protocol::Response as RpResponse;
 use crate::{bootstrap::state::AppState, store::webhook_tokens};
-use shared::Response as RpResponse;
 
 pub async fn handle(state: AppState, service_id: String) -> RpResponse {
     let token = match webhook_tokens::get(&state.db, &state.secrets, &service_id).await {

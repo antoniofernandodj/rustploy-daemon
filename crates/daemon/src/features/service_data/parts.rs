@@ -1,8 +1,8 @@
 //! Quais volumes pertencem a um serviço. O nome real do volume é um detalhe interno: para fora
 //! só sai o nome lógico (`Part::name`).
 
+use crate::domain::{Service, ServiceSource};
 use anyhow::{Result, anyhow};
-use shared::{Service, ServiceSource};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Source {
@@ -281,7 +281,7 @@ mod tests {
 #[cfg(test)]
 mod synth_tests {
     use super::*;
-    use shared::{ComposeSource, VolumeMount};
+    use crate::domain::{ComposeSource, VolumeMount};
 
     fn svc(source: ServiceSource, volumes: Vec<VolumeMount>) -> Service {
         let mut s = crate::features::wizard::app_spec("svc".into(), "p1".into());
@@ -291,7 +291,7 @@ mod synth_tests {
             id: "svc_1".into(),
             spec: s,
             compose_project: Some("minha_stack".into()),
-            status: shared::ServiceStatus::Stopped,
+            status: crate::domain::ServiceStatus::Stopped,
             live_container_id: None,
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),

@@ -1,7 +1,7 @@
 //! `Command::UpdateStatus`: o passo da atualização em curso, ou o resultado da última.
 
 use crate::bootstrap::state::AppState;
-use shared::Response as RpResponse;
+use crate::protocol::Response as RpResponse;
 
 pub async fn handle(state: AppState) -> RpResponse {
     RpResponse::UpdateProgress(Box::new(

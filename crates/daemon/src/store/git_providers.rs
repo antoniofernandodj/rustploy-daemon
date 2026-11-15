@@ -2,13 +2,13 @@
 //!
 //! Secrets (OAuth client secret, access/refresh tokens, PAT) are stored already
 //! encrypted by the caller via `SecretsManager`; this module only moves opaque
-//! strings in and out of SQLite. The public [`shared::GitProvider`] projection
+//! strings in and out of SQLite. The public [`crate::domain::GitProvider`] projection
 //! deliberately omits every secret column.
 
 use super::Db;
+use crate::domain::{GitAccount, GitAuthMode, GitProvider, GitProviderKind};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use shared::{GitAccount, GitAuthMode, GitProvider, GitProviderKind};
 
 /// Full row as stored, including the encrypted secret columns. Used internally
 /// by the daemon (e.g. the deploy executor and OAuth callback); never sent to

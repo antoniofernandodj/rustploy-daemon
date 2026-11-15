@@ -8,18 +8,18 @@
 //! a cada volta do reconcile (30 s, e no boot). Ver
 //! `docs/plano-banco-compartilhado.md` §2.3.
 
+use crate::domain::{Service, ServiceSource};
 use crate::{
     engine::{DockerClient, containers, networks},
     store::Db,
 };
 use anyhow::{Result, anyhow};
 use bollard::{Docker, container::InspectContainerOptions};
-use shared::{Service, ServiceSource};
 use tracing::{info, warn};
 
-/// Alias global do servidor (`shared::shared_alias` sobre a stack gravada).
+/// Alias global do servidor (`crate::domain::shared_alias` sobre a stack gravada).
 pub fn alias_of(svc: &Service) -> String {
-    shared::shared_alias(&svc.compose_project_name())
+    crate::domain::shared_alias(&svc.compose_project_name())
 }
 
 /// Container do servidor: o mesmo que o deploy elege como alvo da stack.

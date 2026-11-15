@@ -97,8 +97,8 @@ impl DeployExecutor {
     pub(super) async fn wait_compose_healthcheck(
         &self,
         ip: &str,
-        svc: &shared::Service,
-        dep: &shared::Deployment,
+        svc: &crate::domain::Service,
+        dep: &crate::domain::Deployment,
     ) {
         let hc = &svc.spec.healthcheck;
         if !matches!(hc.kind, HealthcheckKind::Tcp | HealthcheckKind::Http { .. }) {

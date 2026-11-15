@@ -10,13 +10,13 @@
 //! YAML e o `state_git` os preserva, então um servidor restaurado enxerga os backups do original.
 
 use super::destination;
+use crate::domain::{BackupEntry, BackupRun, ServiceBackups};
 use crate::features::deploy::DeployContext;
 use crate::features::service_data::{parts, transfer};
 use crate::platform::s3::{self, S3Config};
 use crate::store::daemon_settings;
 use anyhow::{Result, anyhow, bail};
 use chrono::Utc;
-use shared::{BackupEntry, BackupRun, ServiceBackups};
 use tracing::{info, warn};
 
 /// Uma operação "em andamento" há mais que isto é lixo de um daemon que caiu no meio: a tela a mostra
@@ -416,7 +416,7 @@ pub async fn fetch(
 pub async fn policy_set(
     ctx: DeployContext,
     service_id: &str,
-    policy: Option<shared::BackupPolicy>,
+    policy: Option<crate::domain::BackupPolicy>,
 ) -> Result<ServiceBackups> {
     let destination_ok = destination::view(&ctx.db, &ctx.secrets).await.configured;
     super::policy::set(

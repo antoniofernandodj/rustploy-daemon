@@ -13,10 +13,10 @@
 
 use super::model::*;
 use super::txn::{FileTree, Tx};
+use crate::domain::{EnvComment, EnvVar, JobGitSource, Recurrence, ServiceSpec};
 use crate::store::{Db, daemon_settings};
 use anyhow::{Context, Result, bail};
 use chrono::{DateTime, Utc};
-use shared::{EnvComment, EnvVar, JobGitSource, Recurrence, ServiceSpec};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
@@ -704,7 +704,7 @@ mod tests {
         // o runtime foi semeado a partir do SQL antigo (s1 estava Running → intenção Running)
         assert_eq!(
             services::get(&db, "s1").await.unwrap().unwrap().status,
-            shared::ServiceStatus::Running
+            crate::domain::ServiceStatus::Running
         );
         assert_eq!(
             services::desired_state(&db, "s1").await.unwrap(),

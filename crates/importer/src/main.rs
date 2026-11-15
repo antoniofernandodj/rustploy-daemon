@@ -10,6 +10,17 @@ mod source;
 mod transform;
 mod warnings;
 
+// Os modelos e o protocolo moram no daemon (`crates/daemon/src/domain` e `protocol`), que é só
+// binário — não dá para depender dele como crate. Montamos os mesmos arquivos aqui para o importer
+// gravar exatamente o formato que o daemon lê, sem uma segunda cópia. O `protocol` vem junto porque
+// os testes do `domain` o usam. O allow é porque o importer só usa uma fração desses tipos.
+#[allow(dead_code, unused_imports)]
+#[path = "../../daemon/src/domain/mod.rs"]
+mod domain;
+#[allow(dead_code, unused_imports)]
+#[path = "../../daemon/src/protocol/mod.rs"]
+mod protocol;
+
 #[derive(Parser)]
 #[command(name = "rustploy-import")]
 #[command(about = "Migrate data from other platforms to Rustploy", long_about = None)]

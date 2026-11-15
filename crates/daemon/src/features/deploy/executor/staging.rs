@@ -67,7 +67,7 @@ impl DeployExecutor {
                 ips[live.replica as usize] = Some(ip);
             }
         }
-        let alias = shared::app_network_alias(&svc.spec.name);
+        let alias = crate::domain::app_network_alias(&svc.spec.name);
 
         for i in 0..replicas {
             let staging = containers::replica_staging_name(&svc.id, &svc.spec.name, &dep_short, i);

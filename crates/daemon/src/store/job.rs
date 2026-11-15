@@ -3,9 +3,9 @@
 
 use super::Db;
 use super::infra::model::JobInfra;
+use crate::domain::{EnvComment, EnvVar, Job, JobGitSource, Recurrence};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use shared::{EnvComment, EnvVar, Job, JobGitSource, Recurrence};
 use std::collections::HashMap;
 use ulid::Ulid;
 
@@ -342,7 +342,7 @@ mod tests {
         super::super::job_log::append(
             &db,
             &run.id,
-            &shared::protocol::LogStream::Stdout,
+            &crate::protocol::LogStream::Stdout,
             "oi",
             Utc::now(),
         )

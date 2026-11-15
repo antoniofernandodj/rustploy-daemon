@@ -1,0 +1,524 @@
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+
+use crate::domain::normalize_name;
+use crate::domain::*;
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ServiceSpec {
+    pub name: String,
+    pub project_id: String,
+    pub source: ServiceSource,
+    pub port: u16,
+    /// Legado (até 2026-11): **uma** porta TCP do host, sempre ligada à `port` do serviço. Substituído por
+    /// `tcp_ports`; o daemon ainda o **espelha** (a rota que vai para a `port`) para clientes e daemons
+    /// antigos não perderem a porta. Código novo lê [`ServiceSpec::tcp_routes`], nunca este campo.
+    #[serde(default)]
+    pub host_port: Option<u16>,
+    /// Portas TCP do host ligadas a portas do container (passthrough no ingress, sem HTTP): cada uma pode ir
+    /// para uma porta diferente do container (ex.: RustFS 9000 = API S3 e 9001 = console). Retrocompat: vazio
+    /// cai no `host_port` legado. Ver [`ServiceSpec::tcp_routes`] e `docs/plano-multiplas-portas-tcp.md`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tcp_ports: Vec<TcpPortRoute>,
+    pub domain: Option<String>,
+    #[serde(default)]
+    pub tls_enabled: bool,
+    pub env_vars: Vec<EnvVar>,
+    /// Comentários (`# ...`) do editor `.env`, ancorados por `key` (posição
+    /// preservada mesmo que as vars sejam reordenadas). Não participa da
+    /// construção do ambiente do container — só a lista/edição via UI olha
+    /// pra isso.
+    #[serde(default)]
+    pub env_comments: Vec<EnvComment>,
+    pub volumes: Vec<VolumeMount>,
+    pub healthcheck: Healthcheck,
+    pub replicas: u32,
+    pub resources: ResourceLimits,
+    #[serde(default)]
+    pub run_command: Option<String>,
+    #[serde(default)]
+    pub run_args: Vec<String>,
+    /// Produto de software gerenciado que roda no serviço — banco (postgres |
+    /// mongodb | mariadb | mysql | redis), broker (kafka | rabbitmq | nats) ou
+    /// storage (rustfs | minio); `None` = serviço comum. Controla a aba
+    /// Connection no painel e a geração da internal connection URL (scheme por
+    /// tipo: postgres://, amqp://, nats://, Kafka sem scheme). Antes se
+    /// chamava `db_kind` (renomeado na 0.18.0).
+    #[serde(default)]
+    pub product: Option<String>,
+    /// Rotas HTTP de domínio. Cada domínio pode apontar para uma porta de
+    /// container diferente e ligar TLS de forma independente — permite um
+    /// serviço que responde em várias portas expor vários subdomínios.
+    /// Retrocompat: quando vazio, cai no `domain`/`tls_enabled` legado (roteado
+    /// para `port`). Ver [`ServiceSpec::domain_routes`].
+    #[serde(default)]
+    pub domains: Vec<DomainRoute>,
+    /// Legado (pré-fila, até 2026-08-05): um único `Job` de pré-deploy check.
+    /// Substituído por `pre_deploy_job_ids`; mantido só pra retrocompat de
+    /// specs salvos antes — nunca mais escrito por código novo. Ver
+    /// [`ServiceSpec::pre_deploy_checks`].
+    #[serde(default)]
+    pub pre_deploy_job_id: Option<String>,
+    /// Fila de `Job`s (Schedules) rodados em ORDEM antes de tocar em
+    /// qualquer coisa (pull/build/staging) — vazio = sem checks, deploy
+    /// segue direto. Cada item roda até completar (exit code do
+    /// `main_service`); a primeira falha interrompe a fila **e** o deploy
+    /// inteiro, sem rodar os checks seguintes. Ver `DeployState::
+    /// PreDeployCheck` e `docs/plano-pre-deploy-gate.md`. Retrocompat: quando
+    /// vazio, cai no `pre_deploy_job_id` legado — ver
+    /// [`ServiceSpec::pre_deploy_checks`].
+    #[serde(default)]
+    pub pre_deploy_job_ids: Vec<String>,
+    /// Se `Some`, este serviço de banco é um **servidor compartilhado**: o
+    /// daemon o conecta às redes dos projetos autorizados (`shared_access`),
+    /// sob o alias global [`shared_alias`](crate::domain::shared_alias). Só vale com
+    /// `product` de banco. Ver `docs/plano-banco-compartilhado.md` §2.3/§4.1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shared: Option<SharedServerConfig>,
+    /// IDs de serviços **do mesmo projeto** que precisam estar prontos antes deste subir (no boot
+    /// do daemon e no "Subir projeto"). Sem ciclos — o daemon valida na criação/edição. Dependência
+    /// de banco compartilhado **não** se declara aqui: é derivada de `shared_access`.
+    /// Ver `docs/plano-backup-estado-em-git.md` (R8).
+    #[serde(default)]
+    pub depends_on: Vec<String>,
+    /// Participa do religamento automático (boot do daemon e "Subir projeto/tudo")? Padrão `true`.
+    /// É *declaração* (vai para o YAML); a intenção momentânea "foi parado à mão" é outra coisa e
+    /// mora no runtime do daemon (`desired_state`).
+    #[serde(default = "default_autostart")]
+    pub autostart: bool,
+    /// Push-to-deploy: com `source = Registry` apontando para o registry **embutido**, cada
+    /// `docker push` da tag configurada redeploya o serviço sozinho (sem webhook nem Git no
+    /// servidor). Opt-in; padrão `false`. Ver `docs/plano-registry-embutido.md` (Fase 4).
+    #[serde(default)]
+    pub registry_auto_deploy: bool,
+}
+
+fn default_autostart() -> bool {
+    true
+}
+
+/// Configuração de um servidor de banco compartilhado. Hoje só marca o serviço
+/// como tal; é struct (e não `bool`) para receber opções sem quebrar o spec.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct SharedServerConfig {}
+
+/// Uma rota HTTP de domínio de um serviço: qual domínio, para qual porta do
+/// container e com ou sem TLS.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct DomainRoute {
+    pub domain: String,
+    /// Porta do container que este domínio atende. `None` = a `port` padrão do
+    /// serviço.
+    #[serde(default)]
+    pub port: Option<u16>,
+    #[serde(default)]
+    pub tls: bool,
+}
+
+impl DomainRoute {
+    /// Porta de container efetiva (a própria, ou a `port` padrão do serviço).
+    pub fn container_port(&self, default: u16) -> u16 {
+        self.port.unwrap_or(default)
+    }
+}
+
+/// Uma porta do container que o serviço provavelmente tem, sugerida ao configurar as portas TCP.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PortSuggestion {
+    /// Porta do container.
+    pub port: u16,
+    /// Nome conhecido ("API S3", "console", "painel"), se o produto do serviço o tiver na tabela.
+    #[serde(default)]
+    pub label: Option<String>,
+    /// De onde veio, em ids estáveis para os clientes traduzirem: `"listening"` (o container escuta agora),
+    /// `"image"` (a imagem/container declara), `"compose"` (o compose declara), `"product"` (tabela do
+    /// produto). Uma porta pode vir de várias.
+    pub sources: Vec<String>,
+    /// Porta interna (ex.: cluster do RabbitMQ): existe, mas não deve ser exposta.
+    #[serde(default)]
+    pub internal: bool,
+}
+
+/// Máximo de portas TCP por serviço: uma lista longa por engano abriria meia faixa de portas no firewall.
+pub const MAX_TCP_PORTS: usize = 8;
+
+/// Uma porta TCP do host ligada a uma porta do container.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TcpPortRoute {
+    /// Porta do host. `0` = "Automática": o daemon escolhe uma livre da faixa ao salvar.
+    pub host_port: u16,
+    /// Porta do container. `None` = a `port` padrão do serviço.
+    #[serde(default)]
+    pub container_port: Option<u16>,
+    /// Nome para a tela ("console", "painel"). Não muda nada no roteamento.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+}
+
+impl TcpPortRoute {
+    /// Porta de container efetiva (a própria, ou a `port` padrão do serviço).
+    pub fn container_port(&self, default: u16) -> u16 {
+        self.container_port.unwrap_or(default)
+    }
+}
+
+impl Service {
+    /// Nome da stack Compose: o gravado; na falta (banco ainda não migrado, ou
+    /// serviço que virou Compose depois), a fórmula legada com o nome atual —
+    /// exatamente o que o daemon usava antes de o nome ser gravado.
+    pub fn compose_project_name(&self) -> String {
+        self.compose_project
+            .clone()
+            .unwrap_or_else(|| crate::domain::compose_project_name(&self.id, &self.spec.name))
+    }
+}
+
+impl ServiceSpec {
+    pub fn safe_name(&self) -> String {
+        normalize_name(&self.name)
+    }
+
+    /// Rotas HTTP efetivas do serviço: a lista `domains` nova, ou — para specs
+    /// antigos que só têm o campo `domain` — uma rota única sintetizada a partir
+    /// do domínio legado (roteada para `port`, TLS = `tls_enabled`).
+    pub fn domain_routes(&self) -> Vec<DomainRoute> {
+        if !self.domains.is_empty() {
+            self.domains.clone()
+        } else if let Some(d) = &self.domain {
+            vec![DomainRoute {
+                domain: d.clone(),
+                port: None,
+                tls: self.tls_enabled,
+            }]
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// Portas TCP efetivas do serviço: a lista `tcp_ports`, ou — para specs antigos que só têm o
+    /// `host_port` — uma rota única para a `port` do serviço.
+    pub fn tcp_routes(&self) -> Vec<TcpPortRoute> {
+        if !self.tcp_ports.is_empty() {
+            self.tcp_ports.clone()
+        } else if let Some(p) = self.host_port {
+            vec![TcpPortRoute {
+                host_port: p,
+                container_port: None,
+                label: None,
+            }]
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// Move o `host_port` legado para `tcp_ports` e **espelha** de volta no `host_port` a rota que vai para
+    /// a `port` do serviço (a única que um cliente/daemon antigo entende: ele liga o `host_port` à `port`).
+    /// Sem rota para a `port`, o espelho fica vazio, para nenhum antigo rotear para a porta errada.
+    /// Idempotente; chamado antes de gravar o spec.
+    pub fn materialize_tcp_ports(&mut self) {
+        if self.tcp_ports.is_empty() {
+            self.tcp_ports = self.tcp_routes();
+        }
+        let main = self.port;
+        self.host_port = self
+            .tcp_ports
+            .iter()
+            .find(|r| r.container_port(main) == main)
+            .map(|r| r.host_port);
+    }
+
+    /// Portas de container que o ingress precisa alcançar: a de cada domínio e a de cada porta TCP do
+    /// host. Ordenadas e sem repetição.
+    ///
+    /// Serve para escolher, numa stack Compose, qual container recebe a rota
+    /// (ver `docker::containers::find_compose_ingress_container`).
+    pub fn ingress_container_ports(&self) -> Vec<u16> {
+        let mut ports: Vec<u16> = self
+            .domain_routes()
+            .iter()
+            .map(|r| r.container_port(self.port))
+            .collect();
+        ports.extend(
+            self.tcp_routes()
+                .iter()
+                .map(|r| r.container_port(self.port)),
+        );
+        ports.sort_unstable();
+        ports.dedup();
+        ports
+    }
+
+    /// Move o domínio legado (`domain`/`tls_enabled`) para a lista `domains` e
+    /// zera os campos legados, para que edições subsequentes operem numa única
+    /// fonte de verdade (a lista). Idempotente.
+    pub fn materialize_domains(&mut self) {
+        if self.domains.is_empty() {
+            self.domains = self.domain_routes();
+        }
+        self.domain = None;
+        self.tls_enabled = false;
+    }
+
+    /// Fila efetiva de checks de pré-deploy: `pre_deploy_job_ids` quando não
+    /// vazia, ou — para specs antigos que só têm o campo singular — uma fila
+    /// de um item sintetizada a partir do `pre_deploy_job_id` legado.
+    pub fn pre_deploy_checks(&self) -> Vec<String> {
+        if !self.pre_deploy_job_ids.is_empty() {
+            self.pre_deploy_job_ids.clone()
+        } else if let Some(j) = &self.pre_deploy_job_id {
+            vec![j.clone()]
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// Move o `pre_deploy_job_id` legado para `pre_deploy_job_ids` e zera o
+    /// campo legado — mesmo idioma de `materialize_domains`. Idempotente.
+    pub fn materialize_pre_deploy_checks(&mut self) {
+        if self.pre_deploy_job_ids.is_empty() {
+            self.pre_deploy_job_ids = self.pre_deploy_checks();
+        }
+        self.pre_deploy_job_id = None;
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Service {
+    pub id: String,
+    pub spec: ServiceSpec,
+    /// Nome da stack Docker Compose (só serviços Compose), **gravado** na
+    /// criação e nunca recalculado — renomear o serviço não muda a stack, então
+    /// os volumes (`<stack>_<volume>`) continuam os mesmos. Só leitura para os
+    /// clientes: vive numa coluna própria, fora do `spec`, que a GUI e a webui
+    /// devolvem no `ServiceUpdate`. `None` em serviço que não é Compose; use
+    /// [`Service::compose_project_name`].
+    #[serde(default)]
+    pub compose_project: Option<String>,
+    pub status: ServiceStatus,
+    pub live_container_id: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum ServiceStatus {
+    Stopped,
+    Stopping,
+    Deploying,
+    Running,
+    Degraded,
+    Error(String),
+    /// Deploy criado e esperando na fila global — ainda não começou a rodar.
+    Queued,
+}
+
+impl std::fmt::Display for ServiceStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Stopped => write!(f, "Stopped"),
+            Self::Stopping => write!(f, "Stopping"),
+            Self::Deploying => write!(f, "Deploying"),
+            Self::Running => write!(f, "Running"),
+            Self::Degraded => write!(f, "Degraded"),
+            Self::Error(msg) => write!(f, "Error: {msg}"),
+            Self::Queued => write!(f, "Queued"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct VolumeMount {
+    pub host_path: String,
+    pub container_path: String,
+    pub read_only: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Healthcheck {
+    pub kind: HealthcheckKind,
+    pub interval_secs: u32,
+    pub timeout_secs: u32,
+    pub retries: u32,
+    pub start_period_secs: u32,
+}
+
+impl Default for Healthcheck {
+    fn default() -> Self {
+        Self {
+            // `None` (não `Tcp`): serviço novo nasce SEM verificação. Era `Tcp`
+            // aqui e `None` no caminho de criação da webui, então o mesmo
+            // "criar serviço" dava healthchecks diferentes conforme o cliente e
+            // o caminho (wizard × `ServiceCreate` direto). Escolhido `None`
+            // porque a porta declarada nem sempre é uma porta que aceita
+            // conexão — worker e job não escutam nada, e um `Tcp` padrão
+            // reprovaria o deploy deles. O custo é o deploy passar mesmo com a
+            // porta errada; por isso o log do deploy agora diz, em letras
+            // claras, que nada foi testado (ver `deploy::executor`).
+            kind: HealthcheckKind::None,
+            interval_secs: 5,
+            timeout_secs: 3,
+            retries: 10,
+            start_period_secs: 5,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum HealthcheckKind {
+    None,
+    Http { path: String, expected_status: u16 },
+    Tcp,
+    DockerNative,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct ResourceLimits {
+    pub cpu_shares: u64,
+    pub mem_limit_bytes: u64,
+}
+
+/// Se a imagem de um serviço com fonte Git ou zip já tem o cache de build quente
+/// no host, de modo que o próximo deploy não baixe nem recompile tudo do zero.
+/// Fonte única da verdade (`Command::ServiceWarmStatusList`): as telas só exibem
+/// este valor, nunca o deduzem. Serviços de outras fontes (imagem pronta, etc.)
+/// não têm build e não aparecem.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct ServiceWarmStatus {
+    pub service_id: String,
+    pub warm: bool,
+    /// Há um aquecimento em andamento (ou esperando a vaga da fila) agora.
+    pub warming: bool,
+    /// Por que está frio (`warm == false`): nunca aquecido, imagem ausente,
+    /// cache de build limpo, fonte alterada. `None` quando quente.
+    pub reason: Option<String>,
+    /// Quando o serviço foi aquecido pela última vez (aquecimento explícito ou
+    /// deploy bem-sucedido).
+    pub warmed_at: Option<DateTime<Utc>>,
+}
+
+#[cfg(test)]
+mod dependencias_tests {
+    use super::*;
+
+    fn spec() -> ServiceSpec {
+        ServiceSpec {
+            name: "api".into(),
+            project_id: "p".into(),
+            source: ServiceSource::Registry { image: "x".into() },
+            port: 80,
+            host_port: None,
+            tcp_ports: vec![],
+            domain: None,
+            tls_enabled: false,
+            env_vars: vec![],
+            env_comments: vec![],
+            volumes: vec![],
+            healthcheck: Healthcheck::default(),
+            replicas: 1,
+            resources: ResourceLimits::default(),
+            run_command: None,
+            run_args: vec![],
+            product: None,
+            domains: vec![],
+            pre_deploy_job_id: None,
+            pre_deploy_job_ids: vec![],
+            shared: None,
+            depends_on: vec!["svc_db".into()],
+            registry_auto_deploy: false,
+            autostart: false,
+        }
+    }
+
+    /// Specs gravados antes de existirem `depends_on`/`autostart` (JSON no SQLite) precisam
+    /// continuar legíveis, com dependências vazias e autostart ligado.
+    #[test]
+    fn spec_antigo_sem_os_campos_novos_le_com_os_padroes() {
+        let mut v = serde_json::to_value(spec()).unwrap();
+        let obj = v.as_object_mut().unwrap();
+        assert!(obj.remove("depends_on").is_some());
+        assert!(obj.remove("autostart").is_some());
+        let velho: ServiceSpec = serde_json::from_value(v).unwrap();
+        assert!(velho.depends_on.is_empty());
+        assert!(velho.autostart);
+    }
+
+    #[test]
+    fn campos_novos_ida_e_volta() {
+        let back: ServiceSpec =
+            serde_json::from_str(&serde_json::to_string(&spec()).unwrap()).unwrap();
+        assert_eq!(back.depends_on, vec!["svc_db".to_string()]);
+        assert!(!back.autostart);
+    }
+
+    #[test]
+    fn autostart_padrao_e_verdadeiro() {
+        assert!(default_autostart());
+    }
+}
+
+#[cfg(test)]
+mod tcp_ports_tests {
+    use super::*;
+
+    fn spec(port: u16, host_port: Option<u16>) -> ServiceSpec {
+        let mut v = serde_json::json!({
+            "name": "s3", "project_id": "p", "source": {"Registry": {"image": "x"}},
+            "port": port, "domain": null, "env_vars": [], "volumes": [],
+            "healthcheck": Healthcheck::default(), "replicas": 1,
+            "resources": ResourceLimits::default(),
+        });
+        v["host_port"] = serde_json::json!(host_port);
+        serde_json::from_value(v).unwrap()
+    }
+
+    fn rota(host: u16, container: Option<u16>) -> TcpPortRoute {
+        TcpPortRoute {
+            host_port: host,
+            container_port: container,
+            label: None,
+        }
+    }
+
+    /// Spec antigo (só `host_port`) continua significando a mesma coisa: uma porta para a `port`.
+    #[test]
+    fn host_port_legado_vira_uma_rota_para_a_porta_do_servico() {
+        let s = spec(9000, Some(20002));
+        assert!(
+            s.tcp_ports.is_empty(),
+            "o campo novo nasce vazio no spec antigo"
+        );
+        assert_eq!(s.tcp_routes(), vec![rota(20002, None)]);
+        assert!(spec(9000, None).tcp_routes().is_empty());
+    }
+
+    #[test]
+    fn materializar_move_o_legado_e_espelha_a_rota_da_porta_principal() {
+        let mut s = spec(9000, Some(20002));
+        s.materialize_tcp_ports();
+        assert_eq!(s.tcp_ports, vec![rota(20002, None)]);
+        assert_eq!(s.host_port, Some(20002));
+
+        // a rota da porta principal pode ser a segunda: é ela que vai para o espelho
+        s.tcp_ports = vec![rota(20003, Some(9001)), rota(20005, Some(9000))];
+        s.materialize_tcp_ports();
+        assert_eq!(s.host_port, Some(20005));
+    }
+
+    /// Um cliente/daemon antigo liga o `host_port` à `port`: espelhar uma rota de outra porta o faria
+    /// rotear para o lugar errado.
+    #[test]
+    fn sem_rota_para_a_porta_principal_o_espelho_fica_vazio() {
+        let mut s = spec(9000, None);
+        s.tcp_ports = vec![rota(20003, Some(9001))];
+        s.materialize_tcp_ports();
+        assert_eq!(s.host_port, None);
+        assert_eq!(s.tcp_routes(), vec![rota(20003, Some(9001))]);
+    }
+
+    /// Sem portas novas o spec serializa como antes (o YAML do git não muda para quem não usa).
+    #[test]
+    fn lista_vazia_nao_aparece_no_json() {
+        let v = serde_json::to_value(spec(9000, Some(20002))).unwrap();
+        assert!(v.get("tcp_ports").is_none());
+    }
+}

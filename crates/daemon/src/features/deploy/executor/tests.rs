@@ -69,6 +69,7 @@ mod embedded_registry_image_tests {
 #[cfg(test)]
 mod pre_deploy_check_tests {
     use super::*;
+    use crate::domain::{Healthcheck, ResourceLimits, ServiceSource, ServiceSpec};
     use crate::platform::config::AcmeConfig;
     use crate::{
         engine::DockerClient,
@@ -77,7 +78,6 @@ mod pre_deploy_check_tests {
         platform::secrets::SecretsManager,
         store,
     };
-    use shared::{Healthcheck, ResourceLimits, ServiceSource, ServiceSpec};
     use ulid::Ulid;
 
     pub(super) async fn test_executor() -> DeployExecutor {
@@ -222,8 +222,8 @@ mod pre_deploy_check_tests {
 mod failure_log_tests {
     use super::pre_deploy_check_tests::{spec, test_executor};
     use super::*;
+    use crate::domain::{GitSource, ServiceSpec, StateTransition};
     use crate::store;
-    use shared::{GitSource, ServiceSpec, StateTransition};
 
     fn git_spec() -> ServiceSpec {
         let mut s = spec(vec![]);
@@ -298,7 +298,7 @@ mod failure_log_tests {
     #[test]
     fn mensagem_cita_o_build_context_quando_ele_nao_e_a_raiz() {
         let msg = missing_dockerfile_msg(
-            &ServiceSource::Archive(shared::ArchiveSource {
+            &ServiceSource::Archive(crate::domain::ArchiveSource {
                 build_context: "apps/web".into(),
                 ..Default::default()
             }),

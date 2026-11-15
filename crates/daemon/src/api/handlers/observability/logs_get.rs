@@ -2,13 +2,11 @@
 //! (Compose) via `docker compose logs`.
 
 use crate::bootstrap::state::AppState;
+use crate::domain::{EnvVarValue, ServiceSource};
+use crate::protocol::{LogEntry, LogStream, Response as RpResponse};
 use bollard::container::{LogOutput, LogsOptions};
 use chrono::Utc;
 use futures::StreamExt;
-use shared::{
-    EnvVarValue, Response as RpResponse, ServiceSource,
-    protocol::{LogEntry, LogStream},
-};
 use tokio::io::AsyncWriteExt;
 
 pub async fn handle(state: AppState, service_id: String, tail: usize) -> RpResponse {

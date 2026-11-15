@@ -1,7 +1,7 @@
 //! Cache do inventário do host (imagens, volumes, redes), que é lento de consultar.
 
+use crate::domain::{DockerImageInfo, DockerNetworkInfo, DockerVolumeInfo};
 use crate::platform::ttl_cache::TtlCache;
-use shared::{DockerImageInfo, DockerNetworkInfo, DockerVolumeInfo};
 use std::time::Duration;
 
 /// How long the host-wide Docker inventory (`docker system df` + the network

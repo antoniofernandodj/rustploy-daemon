@@ -2,7 +2,7 @@
 //! consulta; não redeploya).
 
 use crate::bootstrap::state::AppState;
-use shared::Response as RpResponse;
+use crate::protocol::Response as RpResponse;
 
 pub async fn handle(state: AppState, service_id: String) -> RpResponse {
     match crate::store::deployments::list_for_service(&state.db, &service_id, 10).await {
@@ -10,7 +10,7 @@ pub async fn handle(state: AppState, service_id: String) -> RpResponse {
             let prev = history
                 .iter()
                 .skip(1)
-                .find(|d| d.state == shared::DeployState::Live);
+                .find(|d| d.state == crate::domain::DeployState::Live);
             match prev {
                 Some(d) => RpResponse::Deployment(Box::new(d.clone())),
                 None => RpResponse::err("NotFound", "no previous successful deploy"),

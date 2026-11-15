@@ -2,11 +2,11 @@
 //! (`docs/plano-backup-de-dados-para-s3.md`, Fase 3). Mora no YAML do serviço (`ServiceInfra.backup`) e,
 //! portanto, vai para o git: depois de restaurar um servidor, os agendamentos continuam.
 
+use crate::domain::BackupPolicy;
 use crate::store::Db;
 use crate::store::infra::model::BackupInfra;
 use anyhow::{Result, bail};
 use chrono::{DateTime, Utc};
-use shared::BackupPolicy;
 
 /// A política gravada do serviço e desde quando vale.
 pub fn get(db: &Db, service_id: &str) -> Option<BackupInfra> {
@@ -98,8 +98,8 @@ pub fn is_due(b: &BackupInfra, last_start: Option<DateTime<Utc>>, now: DateTime<
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::Recurrence;
     use chrono::TimeZone;
-    use shared::Recurrence;
 
     fn b(rec: Recurrence, since: DateTime<Utc>) -> BackupInfra {
         BackupInfra {

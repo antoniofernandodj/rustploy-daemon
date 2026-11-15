@@ -2,7 +2,7 @@
 //! andamento.
 
 use crate::bootstrap::state::AppState;
-use shared::Response as RpResponse;
+use crate::protocol::Response as RpResponse;
 
 /// Sinaliza cancelamento pro `job_run` em `state.active_jobs` (ver
 /// `docs/plano-cancelamento-de-jobs.md`) — quem observa o sinal e mata o
@@ -13,7 +13,9 @@ pub async fn handle(state: AppState, job_run_id: String) -> RpResponse {
     // Ainda esperando a vez na fila: sai da fila e fecha como cancelada (nunca começou).
     if let Some(cancelar) = state.deploy_queue.cancel_queued(&job_run_id) {
         cancelar.await;
-        state.bus.publish(shared::Event::DeployQueueChanged);
+        state
+            .bus
+            .publish(crate::protocol::Event::DeployQueueChanged);
         return RpResponse::Ok;
     }
 
@@ -46,7 +48,9 @@ pub async fn abort_item(state: &AppState, id: &str) -> Option<RpResponse> {
         return Some(match state.deploy_queue.cancel_queued(id) {
             Some(cancelar) => {
                 cancelar.await;
-                state.bus.publish(shared::Event::DeployQueueChanged);
+                state
+                    .bus
+                    .publish(crate::protocol::Event::DeployQueueChanged);
                 RpResponse::Ok
             }
             None => RpResponse::err(

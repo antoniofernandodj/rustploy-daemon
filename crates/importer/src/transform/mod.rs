@@ -3,7 +3,7 @@
 
 pub mod dokploy;
 
-use shared::models::{Project, Service};
+use crate::domain::{Project, Service};
 
 pub struct TransformedData {
     pub projects: Vec<Project>,

@@ -168,8 +168,8 @@ Três repositórios, reunidos pelo agregador `rustploy` via git submodules
 
 ```tree
 rustploy/                # agregador: Makefile, AGENTS.md, docs/, tools/indexer, .github/ (release)
-├── rustploy-shared/     # crates.io — Command, Event, Response, modelos de domínio e nomes derivados
-├── rustploy-daemon/     # este repo: rustployd — API HTTP, SQLite (sqlx), Docker, ingress, deploy engine (crates/daemon), importer
+├── rustploy-shared/     # crates.io — rustploy-update-core (atualização comum ao daemon e ao app)
+├── rustploy-daemon/     # este repo: rustployd — API HTTP, SQLite (sqlx), Docker, ingress, deploy engine, domínio e protocolo (crates/daemon), importer
 └── rustploy-gui/        # rustploy-gui — único cliente (glacier-ui/XML→iced), fala HTTP
 ```
 

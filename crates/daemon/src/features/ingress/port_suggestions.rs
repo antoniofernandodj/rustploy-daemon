@@ -10,7 +10,7 @@
 //!
 //! Nenhuma fonte é obrigatória: a que falhar (container parado, imagem sem `cat`) some sem erro.
 
-use shared::{PortSuggestion, Service, ServiceSource};
+use crate::domain::{PortSuggestion, Service, ServiceSource};
 use std::collections::BTreeMap;
 
 const LISTENING: &str = "listening";

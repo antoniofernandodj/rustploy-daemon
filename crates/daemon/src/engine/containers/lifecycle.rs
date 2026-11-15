@@ -1,5 +1,6 @@
 //! Ciclo de vida de um container: criar o staging, start, stop, rename, remover e alias de rede.
 
+use crate::domain::ServiceSpec;
 use anyhow::{Result, anyhow};
 use bollard::{
     Docker,
@@ -13,7 +14,6 @@ use bollard::{
         EndpointSettings, HostConfig, Mount, MountTypeEnum, RestartPolicy, RestartPolicyNameEnum,
     },
 };
-use shared::ServiceSpec;
 use std::collections::HashMap;
 use tracing::{debug, info, warn};
 

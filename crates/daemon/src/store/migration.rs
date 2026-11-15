@@ -2,15 +2,15 @@
 //! foi parado e as env vars trocadas — o necessário para o rollback).
 
 use super::Db;
+use crate::domain::{Migration, MigrationStep};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use shared::{Migration, MigrationStep};
 
 /// Linha completa: a `Migration` pública + o que só o daemon precisa.
 #[derive(Debug, Clone)]
 pub struct Record {
     pub m: Migration,
-    pub env_changes: Vec<shared::EnvChange>,
+    pub env_changes: Vec<crate::domain::EnvChange>,
     pub stopped_services: Vec<String>,
 }
 

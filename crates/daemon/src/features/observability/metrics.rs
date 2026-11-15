@@ -1,10 +1,11 @@
 //! Coleta periódica de métricas de CPU/memória/disco do host e por container,
 //! publicadas no event bus.
 
+use crate::domain::{ContainerMetricsPoint, SystemMetricsPoint};
+use crate::protocol::Event;
 use crate::{platform::event_bus::EventBus, store::Db};
 use bollard::Docker;
 use chrono::Utc;
-use shared::{ContainerMetricsPoint, Event, SystemMetricsPoint};
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use sysinfo::System;
 use tokio::time::interval;

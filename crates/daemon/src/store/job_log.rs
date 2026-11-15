@@ -1,9 +1,9 @@
 //! Tabela `job_log`: linhas de log (stdout/stderr) de cada execução de job.
 
 use super::Db;
+use crate::protocol::{BuildLogLine, LogStream};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use shared::protocol::{BuildLogLine, LogStream};
 
 fn stream_to_str(s: &LogStream) -> &'static str {
     match s {

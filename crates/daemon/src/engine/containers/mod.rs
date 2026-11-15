@@ -14,7 +14,7 @@ pub use query::*;
 // ── Nomes de container de serviço Application ───────────────────────────────
 //
 // Formato atual: `rp_<id8>_<safe>` (+ `_r<i>` / `_staging_<dep>`), com a base
-// de `shared::app_container_base`. Formato legado, de antes do ID no nome:
+// de `crate::domain::app_container_base`. Formato legado, de antes do ID no nome:
 // `rp_<safe>` (+ os mesmos sufixos). Nenhum dos dois serve para **achar** o
 // container de um serviço — isso é por label (`find_live_replicas`, e
 // `find_owned_by_name` para staging). O legado só é montado para achar o

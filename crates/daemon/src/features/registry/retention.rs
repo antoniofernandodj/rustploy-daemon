@@ -16,9 +16,9 @@
 
 use std::collections::HashSet;
 
+use crate::domain::RegistryRetentionConfig;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use shared::RegistryRetentionConfig;
 use tracing::info;
 
 use crate::store::daemon_settings::{self, KEY_REGISTRY_RETENTION};

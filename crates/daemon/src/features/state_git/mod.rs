@@ -17,13 +17,13 @@
 
 pub mod git;
 
+use crate::domain::{StateGitCommit, StateGitRejected, StateGitRemoved, StateGitStatus};
 use crate::features::git_providers;
 use crate::platform::secrets::SecretsManager;
 use crate::store::infra::audit::{Certainty, Finding, plaintext_findings};
 use crate::store::infra::model::InfraState;
 use crate::store::{Db, daemon_settings};
 use git::{Auth, CommitInfo};
-use shared::{StateGitCommit, StateGitRejected, StateGitRemoved, StateGitStatus};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -1087,9 +1087,9 @@ impl StateGit {
     ///   (`--force-with-lease`: se alguém empurrar nesse meio-tempo, recusa).
     pub async fn resolve(
         self: &Arc<Self>,
-        choice: shared::StateGitResolveChoice,
+        choice: crate::protocol::StateGitResolveChoice,
     ) -> Result<StateGitStatus, StateGitError> {
-        use shared::StateGitResolveChoice::*;
+        use crate::protocol::StateGitResolveChoice::*;
         let s = self.settings().await?;
         if s.mode != Mode::Sync {
             return Err(StateGitError::Invalid(
@@ -1290,7 +1290,7 @@ impl StateGit {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use shared::{EnvVar, EnvVarValue};
+    use crate::domain::{EnvVar, EnvVarValue};
 
     struct Cenario {
         db: Arc<Db>,
@@ -1474,7 +1474,12 @@ mod tests {
 
         // corrigir: virar secret → destrava sozinho, e o que entra no git é só o limpo
         c.secrets
-            .move_secret("p1", None, "API_TOKEN", shared::SecretMoveOp::EnvToSecret)
+            .move_secret(
+                "p1",
+                None,
+                "API_TOKEN",
+                crate::protocol::SecretMoveOp::EnvToSecret,
+            )
             .await
             .unwrap();
         c.sg.cycle(false).await;
@@ -1924,7 +1929,7 @@ mod tests {
         crate::store::services::update_status(
             &c.db,
             "s2",
-            &shared::ServiceStatus::Running,
+            &crate::domain::ServiceStatus::Running,
             Some("cont_vivo"),
         )
         .await
@@ -2184,7 +2189,7 @@ mod tests {
         crate::store::services::update_status(
             &c.db,
             "s2",
-            &shared::ServiceStatus::Running,
+            &crate::domain::ServiceStatus::Running,
             Some("cont_vivo"),
         )
         .await
@@ -2224,7 +2229,7 @@ mod tests {
             .unwrap();
         // o runtime nunca foi tocado: o serviço volta já apontando para o mesmo container
         assert_eq!(svc.live_container_id.as_deref(), Some("cont_vivo"));
-        assert_eq!(svc.status, shared::ServiceStatus::Running);
+        assert_eq!(svc.status, crate::domain::ServiceStatus::Running);
     }
 
     fn head_remoto(ext: &Externo) -> String {
@@ -2256,7 +2261,7 @@ mod tests {
         let (c, remote, _url, do_colega) = divergido().await;
         let local_antes = head_local(&c);
         let st =
-            c.sg.resolve(shared::StateGitResolveChoice::UseRemote)
+            c.sg.resolve(crate::protocol::StateGitResolveChoice::UseRemote)
                 .await
                 .unwrap();
         assert_eq!((st.paused_reason, st.last_error), (None, None));
@@ -2293,7 +2298,7 @@ mod tests {
     async fn usar_o_meu_sobrescreve_o_remoto_depois_de_guardar_o_dele() {
         let (c, remote, _url, do_colega) = divergido().await;
         let st =
-            c.sg.resolve(shared::StateGitResolveChoice::UseLocal)
+            c.sg.resolve(crate::protocol::StateGitResolveChoice::UseLocal)
                 .await
                 .unwrap();
         assert_eq!(
@@ -2349,7 +2354,7 @@ mod tests {
         // sem pausa: nada a resolver
         let (c, _remote, _url) = com_remoto().await;
         assert!(
-            c.sg.resolve(shared::StateGitResolveChoice::UseLocal)
+            c.sg.resolve(crate::protocol::StateGitResolveChoice::UseLocal)
                 .await
                 .is_err()
         );
@@ -2358,7 +2363,7 @@ mod tests {
         c2.sg.configure("commit", None, None, None).await.unwrap();
         assert!(
             c2.sg
-                .resolve(shared::StateGitResolveChoice::UseRemote)
+                .resolve(crate::protocol::StateGitResolveChoice::UseRemote)
                 .await
                 .is_err()
         );
@@ -2378,7 +2383,7 @@ mod tests {
         );
         assert!(
             c3.sg
-                .resolve(shared::StateGitResolveChoice::UseRemote)
+                .resolve(crate::protocol::StateGitResolveChoice::UseRemote)
                 .await
                 .is_err()
         );

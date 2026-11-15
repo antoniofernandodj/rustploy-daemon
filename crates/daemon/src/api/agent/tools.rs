@@ -7,8 +7,8 @@
 
 use std::time::{Duration, Instant};
 
+use crate::protocol::Command;
 use serde_json::{Value, json};
-use shared::Command;
 
 use crate::api::agent::redigir::{redigir_resposta, restaurar_envs, sobrou_mascara};
 use crate::api::dispatch::dispatch;
@@ -201,7 +201,7 @@ fn proibido_ao_agente(cmd: &Command) -> Option<&'static str> {
         }
         // Secret → env cria um `Plain`: o valor passaria a aparecer em `ServiceGet`.
         Command::SecretMove {
-            op: shared::SecretMoveOp::SecretToEnv,
+            op: crate::protocol::SecretMoveOp::SecretToEnv,
             ..
         } => Some(
             "converter um secret em variável em claro expõe o valor: é ação de uma pessoa na GUI/webui",
@@ -370,7 +370,7 @@ async fn restaurar_mascaras(state: &AppState, cmd: &mut Command) -> Result<(), T
 async fn verificar_servico_congelado(
     state: &AppState,
     id: &str,
-    novo: &shared::ServiceSpec,
+    novo: &crate::domain::ServiceSpec,
 ) -> Result<(), ToolError> {
     let Ok(Some(atual)) = crate::store::services::get(&state.db, id).await else {
         return Ok(()); // serviço que não existe: o handler responde NotFound
@@ -399,7 +399,7 @@ async fn verificar_job_congelado(
     state: &AppState,
     id: &str,
     compose: &str,
-    git_source: &Option<shared::JobGitSource>,
+    git_source: &Option<crate::domain::JobGitSource>,
     main_service: &str,
 ) -> Result<(), ToolError> {
     let Ok(Some(atual)) = crate::store::job::get(&state.db, id).await else {
@@ -830,7 +830,7 @@ mod tests {
                 service_id: None,
                 job_id: None,
                 name: "K".into(),
-                op: shared::SecretMoveOp::SecretToEnv,
+                op: crate::protocol::SecretMoveOp::SecretToEnv,
             },
             Command::RegistryTokenCreate {
                 name: "ci".into(),
@@ -855,7 +855,7 @@ mod tests {
                 service_id: None,
                 job_id: None,
                 name: "K".into(),
-                op: shared::SecretMoveOp::EnvToSecret,
+                op: crate::protocol::SecretMoveOp::EnvToSecret,
             },
             Command::ServiceExport {
                 service_id: "s".into(),
@@ -868,7 +868,7 @@ mod tests {
                 service_id: None,
                 job_id: None,
                 key: "K".into(),
-                value: shared::EnvVarValue::Plain("v".into()),
+                value: crate::domain::EnvVarValue::Plain("v".into()),
             },
         ];
         for c in &liberados {

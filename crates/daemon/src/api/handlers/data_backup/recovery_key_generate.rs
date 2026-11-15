@@ -2,7 +2,7 @@
 //! Plano: `docs/plano-chave-de-recuperacao.md`.
 
 use crate::bootstrap::state::AppState;
-use shared::Response;
+use crate::protocol::Response;
 
 pub fn handle(state: &AppState, replace: bool) -> Response {
     match state.secrets.generate_recovery(replace) {

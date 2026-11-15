@@ -4,8 +4,8 @@
 //! root) roda em segundo plano, porque o `dpkg` reinicia o daemon no meio e nenhuma resposta
 //! HTTP sobreviveria a isso. A UI acompanha por `Command::UpdateStatus`.
 
+use crate::protocol::Response as RpResponse;
 use crate::{bootstrap::state::AppState, features::update::apply::ApplyPlan};
-use shared::Response as RpResponse;
 
 pub async fn handle(state: AppState, allow_active_deploys: bool) -> RpResponse {
     if !state.update_applier.is_helper_available() {

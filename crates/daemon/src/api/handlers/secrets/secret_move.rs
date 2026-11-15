@@ -2,7 +2,7 @@
 
 use crate::bootstrap::state::AppState;
 use crate::platform::secrets::Scope;
-use shared::{Response, SecretMoveOp};
+use crate::protocol::{Response, SecretMoveOp};
 
 pub async fn handle(
     state: AppState,

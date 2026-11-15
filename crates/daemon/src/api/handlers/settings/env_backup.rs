@@ -2,7 +2,7 @@
 //! env vars (`crate::features::backup`).
 
 use crate::bootstrap::state::AppState;
-use shared::Response as RpResponse;
+use crate::protocol::Response as RpResponse;
 
 pub async fn list(state: AppState) -> RpResponse {
     match crate::features::backup::list_snapshots(&state.backup_dir).await {

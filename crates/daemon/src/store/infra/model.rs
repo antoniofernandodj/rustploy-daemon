@@ -18,10 +18,10 @@
 
 use super::txn::FileTree;
 use super::yaml::{from_yaml, to_yaml};
+use crate::domain::{EnvComment, EnvVar, JobGitSource, Recurrence, ServiceSpec};
 use anyhow::{Context, Result, bail};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use shared::{EnvComment, EnvVar, JobGitSource, Recurrence, ServiceSpec};
 use std::collections::BTreeMap;
 
 /// Versão do formato dos arquivos. Sobe quando o YAML mudar de forma incompatível.
@@ -47,7 +47,7 @@ pub struct SettingsInfra {
     /// O JSON de `docker_cleanup_config`, como valor estruturado (fica legível no YAML).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub docker_cleanup_config: Option<serde_json::Value>,
-    /// O JSON de `shared::RegistryRetentionConfig` (retenção de tags do registry embutido).
+    /// O JSON de `crate::domain::RegistryRetentionConfig` (retenção de tags do registry embutido).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub registry_retention: Option<serde_json::Value>,
     /// O destino S3 dos backups de dados (JSON; a chave secreta vai como `ENC[age:…]`).
@@ -151,7 +151,7 @@ pub struct ServiceInfra {
 /// ligado às 10h roda às 03:00 do dia seguinte, não na hora).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BackupInfra {
-    pub policy: shared::BackupPolicy,
+    pub policy: crate::domain::BackupPolicy,
     pub since: DateTime<Utc>,
 }
 

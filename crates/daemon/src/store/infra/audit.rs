@@ -13,8 +13,8 @@
 //!   dentro de um Dockerfile/script, não é visto). Por isso a auditoria é uma trava, não uma garantia.
 
 use super::model::{InfraState, ProjectInfra};
+use crate::domain::{EnvVar, EnvVarValue, ServiceSource};
 use crate::platform::secrets::is_enc;
-use shared::{EnvVar, EnvVarValue, ServiceSource};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Certainty {

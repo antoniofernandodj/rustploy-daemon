@@ -5,8 +5,9 @@
 //! `force` remove mesmo assim (o cliente já avisou o usuário).
 
 use crate::bootstrap::state::AppState;
+use crate::domain::ServiceSource;
+use crate::protocol::Response;
 use crate::store::Db;
-use shared::{Response, ServiceSource};
 
 /// Quem usa a conta: `projeto/serviço` e `projeto/job (job)`, em ordem estável.
 pub async fn users_of(db: &Db, provider_id: &str) -> anyhow::Result<Vec<String>> {
@@ -75,7 +76,7 @@ pub async fn handle(state: AppState, id: String, force: bool) -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use shared::{GitSource, JobGitSource};
+    use crate::domain::{GitSource, JobGitSource};
 
     #[tokio::test]
     async fn lista_quem_usa_a_conta_e_ignora_as_outras() {

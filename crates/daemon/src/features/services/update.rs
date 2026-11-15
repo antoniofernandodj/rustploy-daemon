@@ -1,8 +1,9 @@
 //! `Command::ServiceUpdate`: grava um ServiceSpec novo (porta externa, TLS dos
 //! domínios, firewall) sem redeployar.
 
+use crate::domain::ServiceSpec;
 use crate::features::services::ServicesContext;
-use shared::{Response as RpResponse, ServiceSpec};
+use crate::protocol::Response as RpResponse;
 use tracing::warn;
 
 pub async fn handle(state: ServicesContext, id: String, mut spec: ServiceSpec) -> RpResponse {
@@ -128,14 +129,14 @@ pub(crate) async fn sync_firewall(state: &ServicesContext, id: &str, old: &[u16]
 #[cfg(test)]
 mod tests {
     use super::*;
-    use shared::TcpPortRoute;
+    use crate::domain::TcpPortRoute;
 
     fn spec(host_port: Option<u16>, tcp: &[(u16, Option<u16>)]) -> ServiceSpec {
         let mut s: ServiceSpec = serde_json::from_value(serde_json::json!({
             "name": "s3", "project_id": "p", "source": {"Registry": {"image": "x"}},
             "port": 9000, "domain": null, "env_vars": [], "volumes": [],
-            "healthcheck": shared::Healthcheck::default(), "replicas": 1,
-            "resources": shared::ResourceLimits::default(),
+            "healthcheck": crate::domain::Healthcheck::default(), "replicas": 1,
+            "resources": crate::domain::ResourceLimits::default(),
         }))
         .unwrap();
         s.host_port = host_port;

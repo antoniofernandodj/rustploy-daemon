@@ -1,7 +1,7 @@
 //! Destino das linhas de log de build/job: o motor de containers escreve aqui sem saber que existe banco.
 
+use crate::protocol::LogStream;
 use chrono::{DateTime, Utc};
-use shared::protocol::LogStream;
 use std::future::Future;
 
 pub trait LogSink: Send + Sync + 'static {

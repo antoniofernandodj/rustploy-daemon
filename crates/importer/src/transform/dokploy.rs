@@ -1,14 +1,14 @@
 //! Converte os dados do Dokploy em projetos e serviços do rustploy, anotando o
 //! que não dá para migrar no `Report`.
 
+use crate::domain::{
+    ComposeSource, EnvVar, EnvVarValue, GitSource, Healthcheck, Project, ResourceLimits, Service,
+    ServiceSource, ServiceSpec, ServiceStatus,
+};
 use crate::source::dokploy::DokployData;
 use crate::transform::TransformedData;
 use crate::warnings::Report;
 use chrono::Utc;
-use shared::models::{
-    ComposeSource, EnvVar, EnvVarValue, GitSource, Healthcheck, Project, ResourceLimits, Service,
-    ServiceSource, ServiceSpec, ServiceStatus,
-};
 use std::collections::HashMap;
 use ulid::Ulid;
 
@@ -126,6 +126,7 @@ pub fn transform(data: DokployData, gitea_url: Option<&str>) -> (TransformedData
                 source,
                 port,
                 host_port: None,
+                tcp_ports: vec![],
                 domain,
                 tls_enabled,
                 env_vars,
@@ -136,11 +137,14 @@ pub fn transform(data: DokployData, gitea_url: Option<&str>) -> (TransformedData
                 resources: ResourceLimits::default(),
                 run_command: None,
                 run_args: vec![],
-                db_kind: None,
+                product: None,
                 domains: vec![],
                 pre_deploy_job_id: None,
                 pre_deploy_job_ids: vec![],
                 shared: None,
+                depends_on: vec![],
+                autostart: true,
+                registry_auto_deploy: false,
             },
             status: ServiceStatus::Stopped,
             live_container_id: None,
@@ -193,6 +197,7 @@ pub fn transform(data: DokployData, gitea_url: Option<&str>) -> (TransformedData
                 }),
                 port,
                 host_port: None,
+                tcp_ports: vec![],
                 domain,
                 tls_enabled,
                 env_vars,
@@ -203,11 +208,14 @@ pub fn transform(data: DokployData, gitea_url: Option<&str>) -> (TransformedData
                 resources: ResourceLimits::default(),
                 run_command: None,
                 run_args: vec![],
-                db_kind: None,
+                product: None,
                 domains: vec![],
                 pre_deploy_job_id: None,
                 pre_deploy_job_ids: vec![],
                 shared: None,
+                depends_on: vec![],
+                autostart: true,
+                registry_auto_deploy: false,
             },
             status: ServiceStatus::Stopped,
             live_container_id: None,

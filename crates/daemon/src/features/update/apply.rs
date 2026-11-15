@@ -8,13 +8,13 @@
 //! o helper: ele está em `/var/lib/rustploy-update/last.json`, que [`UpdateApplier::status`] lê.
 
 use super::github_release::LatestRelease;
+use crate::domain::{UpdateProgress, UpdateStage};
 use crate::{
     platform::{config::UpdateConfig, https_client},
     store::Db,
 };
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
-use shared::{UpdateProgress, UpdateStage};
 use std::{
     path::{Path, PathBuf},
     sync::{Arc, Mutex},

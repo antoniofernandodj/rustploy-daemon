@@ -2,10 +2,10 @@
 
 use crate::platform::config::RustployConfig;
 use crate::platform::{event_bus::EventBus, log_sink::LogSink};
+use crate::protocol::Event;
 use anyhow::{Result, anyhow};
 use bollard::{Docker, volume::CreateVolumeOptions};
 use chrono::Utc;
-use shared::Event;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::fs::{File, remove_file};

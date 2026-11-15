@@ -2,7 +2,7 @@
 //! recusa um em andamento.
 
 use crate::bootstrap::state::AppState;
-use shared::Response as RpResponse;
+use crate::protocol::Response as RpResponse;
 use tracing::info;
 
 pub async fn handle(state: AppState, deployment_id: String) -> RpResponse {

@@ -8,7 +8,7 @@ pub mod git_provider_list;
 pub mod git_repo_list;
 
 use crate::bootstrap::state::AppState;
-use shared::{Command, Response as RpResponse};
+use crate::protocol::{Command, Response as RpResponse};
 
 pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
     match cmd {

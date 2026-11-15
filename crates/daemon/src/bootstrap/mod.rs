@@ -14,9 +14,9 @@ use crate::features::ingress::{IngressController, TlsManager};
 use crate::features::{deploy, jobs, registry};
 use crate::platform::config::RustployConfig;
 use crate::platform::{event_bus::EventBus, secrets};
+use crate::protocol::Event;
 use crate::store;
 use anyhow::Result;
-use shared::Event;
 use std::{path::PathBuf, sync::Arc};
 use tracing::{error, info, warn};
 

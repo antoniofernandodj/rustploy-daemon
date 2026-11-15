@@ -1,9 +1,10 @@
 //! `Command::ServiceConnectionInfo`: host e connection string internos de um
 //! serviço (ver `crate::platform::connection` e `docs/plano-banco-compartilhado.md` §3).
 
+use crate::domain::ServiceSource;
 use crate::platform::connection::{self, ConnTarget};
+use crate::protocol::Response as RpResponse;
 use crate::{bootstrap::state::AppState, engine::containers, features::deploy::env_resolve};
-use shared::{Response as RpResponse, ServiceSource};
 use std::collections::HashMap;
 
 pub async fn handle(state: AppState, service_id: String) -> RpResponse {
@@ -30,11 +31,11 @@ pub async fn handle(state: AppState, service_id: String) -> RpResponse {
                     idx.for_service(&svc)
                         .first()
                         .map(|c| c.name.clone())
-                        .unwrap_or_else(|| shared::app_network_alias(&svc.spec.name))
+                        .unwrap_or_else(|| crate::domain::app_network_alias(&svc.spec.name))
                 }
             }
         }
-        _ => shared::app_network_alias(&svc.spec.name),
+        _ => crate::domain::app_network_alias(&svc.spec.name),
     };
 
     let (database, user, password, auth_source) =

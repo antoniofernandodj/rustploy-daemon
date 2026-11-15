@@ -4,8 +4,8 @@
 //! clientes. Eles mapeiam para os modelos internos [`Project`] e [`ServiceSpec`]
 //! de forma ergonômica para edição humana e versionamento em Git.
 
+use crate::domain::*;
 use serde::{Deserialize, Serialize};
-use shared::*;
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
@@ -177,7 +177,7 @@ impl ServiceManifest {
             depends_on: vec![],
             registry_auto_deploy: false,
             autostart: true,
-            shared: self.shared.then(shared::SharedServerConfig::default),
+            shared: self.shared.then(crate::domain::SharedServerConfig::default),
         }
     }
 

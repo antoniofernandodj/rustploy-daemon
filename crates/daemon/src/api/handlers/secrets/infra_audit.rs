@@ -1,9 +1,10 @@
 //! `Command::InfraAudit`: o que está em claro no estado de infra (sem os valores).
 
 use crate::bootstrap::state::AppState;
+use crate::domain::PlaintextFinding;
 use crate::features::state_git::StateGit;
+use crate::protocol::Response;
 use crate::store::infra::audit::{Certainty, plaintext_findings};
-use shared::{PlaintextFinding, Response};
 
 pub async fn handle(state: AppState) -> Response {
     let allowed = state.state_git.allowed().await;

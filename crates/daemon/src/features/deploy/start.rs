@@ -1,9 +1,10 @@
 //! Iniciar um deploy (`Command::DeployStart`): valida a fonte do serviço, cria o deployment e o
 //! enfileira na fila global (quem roda é `deploy::queue::run_worker`).
 
+use crate::domain::{ServiceSource, ServiceStatus};
 use crate::features::deploy::DeployContext;
+use crate::protocol::{Event, Response as RpResponse};
 use crate::store::services;
-use shared::{Event, Response as RpResponse, ServiceSource, ServiceStatus};
 use tracing::{error, info, warn};
 
 pub async fn handle(state: DeployContext, service_id: String) -> RpResponse {

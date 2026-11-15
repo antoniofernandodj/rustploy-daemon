@@ -1,7 +1,7 @@
 //! `Command::ServiceGet`: um serviço pelo id.
 
 use crate::bootstrap::state::AppState;
-use shared::Response as RpResponse;
+use crate::protocol::Response as RpResponse;
 
 pub async fn handle(state: AppState, id: String) -> RpResponse {
     match crate::store::services::get(&state.db, &id).await {

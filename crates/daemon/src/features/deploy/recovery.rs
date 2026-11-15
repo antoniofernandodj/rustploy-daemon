@@ -1,6 +1,7 @@
 //! Recuperação no boot: aborta deploys interrompidos, reconcilia status com o
 //! Docker e restaura as rotas do ingress.
 
+use crate::domain::{DeployState, Service, ServiceStatus};
 use crate::{
     engine,
     engine::{DockerClient, containers},
@@ -9,7 +10,6 @@ use crate::{
     platform::secrets::SecretsManager,
     store::Db,
 };
-use shared::{DeployState, Service, ServiceStatus};
 use std::{path::PathBuf, sync::Arc};
 use tracing::{info, warn};
 
@@ -311,7 +311,7 @@ pub async fn reconcile(
 /// mexido em nada.
 async fn compose_ingress_ip(docker: &DockerClient, svc: &Service, net: &str) -> Option<String> {
     let ingress_service = match &svc.spec.source {
-        shared::ServiceSource::Compose(c) => c.ingress_service.as_deref(),
+        crate::domain::ServiceSource::Compose(c) => c.ingress_service.as_deref(),
         _ => None,
     };
     let project = svc.compose_project_name();

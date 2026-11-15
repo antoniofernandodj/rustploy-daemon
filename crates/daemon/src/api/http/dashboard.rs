@@ -6,10 +6,10 @@
 //! banco, quem é broker, o que conta como rodando" mora aqui, uma vez.
 
 use crate::bootstrap::state::AppState;
+use crate::domain::{Job, Project, Service, ServiceSource, ServiceStatus, ServiceWarmStatus};
 use crate::features::maintenance::service_warm;
 use crate::store;
 use serde::Serialize;
-use shared::{Job, Project, Service, ServiceSource, ServiceStatus, ServiceWarmStatus};
 use std::collections::HashMap;
 
 const DATABASE_KINDS: &[&str] = &["postgres", "mongodb", "mariadb", "mysql", "redis"];
@@ -201,8 +201,8 @@ pub async fn load(state: &AppState) -> Vec<DashboardProject> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::{GitSource, ServiceSpec};
     use chrono::Utc;
-    use shared::{GitSource, ServiceSpec};
 
     fn project(id: &str) -> Project {
         Project {
@@ -235,9 +235,9 @@ mod tests {
                 env_vars: vec![],
                 env_comments: vec![],
                 volumes: vec![],
-                healthcheck: shared::Healthcheck::default(),
+                healthcheck: crate::domain::Healthcheck::default(),
                 replicas: 1,
-                resources: shared::ResourceLimits::default(),
+                resources: crate::domain::ResourceLimits::default(),
                 run_command: None,
                 run_args: vec![],
                 product: None,

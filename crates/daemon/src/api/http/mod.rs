@@ -9,11 +9,11 @@
 //! certificate, so the GUI can reach it directly over HTTPS.
 //!
 //! - `POST /api/rpc` — body is a JSON-encoded [`Command`]; the reply is a
-//!   JSON-encoded [`Response`](shared::Response). One endpoint covers every
+//!   JSON-encoded [`Response`](crate::protocol::Response). One endpoint covers every
 //!   command; the client reshapes the (externally tagged) JSON in Luau.
 //! - `GET /api/events` — Server-Sent Events. Emits a `snapshot` record with the
 //!   full dashboard state every 2s (replacing the old client-side 2s poll) plus
-//!   a `bus` record for each live [`Event`](shared::Event) from the event bus
+//!   a `bus` record for each live [`Event`](crate::protocol::Event) from the event bus
 //!   (logs, metrics, deploy progress). One connection replaces poll + stream.
 //!   Each record is **self-describing**: its JSON `data` carries a `kind` field
 //!   (`"snapshot"`/`"bus"`) because the SSE client (glacier-ui) discards the
@@ -28,13 +28,13 @@ use std::convert::Infallible;
 use std::sync::Arc;
 
 use crate::platform::config::ApiConfig;
+use crate::protocol::{Command, Event, Response as RpResponse};
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full, StreamBody, combinators::BoxBody};
 use hyper::body::{Frame, Incoming};
 use hyper::service::service_fn;
 use hyper::{Method, Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
-use shared::{Command, Event, Response as RpResponse};
 use tracing::{error, info, warn};
 
 use super::agent;
@@ -692,7 +692,7 @@ async fn rpc(req: Request<Incoming>, state: AppState, caller: Caller) -> Respons
                 .await;
             match resultado {
                 Ok(valor) => return json_value(StatusCode::OK, &valor),
-                Err(e) => shared::Response::err(e.code, e.message),
+                Err(e) => crate::protocol::Response::err(e.code, e.message),
             }
         }
     };
@@ -996,10 +996,10 @@ fn mark_seen(seen: &mut SeenLines, ts: chrono::DateTime<chrono::Utc>, line: &str
 /// de conectar; o histórico anterior é do seed da janela) que ainda não foram
 /// entregues. Na ordem do banco, já marcadas como vistas.
 fn recover_lines(
-    db_lines: Vec<shared::protocol::BuildLogLine>,
+    db_lines: Vec<crate::protocol::BuildLogLine>,
     since: chrono::DateTime<chrono::Utc>,
     seen: &mut SeenLines,
-) -> Vec<shared::protocol::BuildLogLine> {
+) -> Vec<crate::protocol::BuildLogLine> {
     db_lines
         .into_iter()
         .filter(|l| l.timestamp >= since)
@@ -1998,7 +1998,7 @@ mod tests {
             &state.db,
             &dep_db,
             &dep.state,
-            shared::DeployState::Failed,
+            crate::domain::DeployState::Failed,
             Some("build falhou".into()),
         )
         .await
@@ -2018,13 +2018,13 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(dep.state, shared::DeployState::Failed);
+        assert_eq!(dep.state, crate::domain::DeployState::Failed);
         let svc = crate::store::services::get(&state.db, &api)
             .await
             .unwrap()
             .unwrap();
         assert!(
-            matches!(svc.status, shared::ServiceStatus::Error(ref m) if m.contains("db")),
+            matches!(svc.status, crate::domain::ServiceStatus::Error(ref m) if m.contains("db")),
             "{:?}",
             svc.status
         );
@@ -2111,7 +2111,7 @@ mod tests {
             .infra()
             .update(|st| {
                 for svc in st.projects.iter_mut().flat_map(|p| p.services.iter_mut()) {
-                    svc.spec.shared = Some(shared::SharedServerConfig {});
+                    svc.spec.shared = Some(crate::domain::SharedServerConfig {});
                 }
                 Ok(())
             })
@@ -2187,12 +2187,12 @@ mod tests {
             const N: usize = 413;
             let coletor = tokio::spawn(linhas_do_sse(body, N, Duration::from_secs(5)));
             for i in 0..N {
-                state.bus.publish(shared::Event::JobLogLine {
+                state.bus.publish(crate::protocol::Event::JobLogLine {
                     job_run_id: "jrun_T".into(),
                     job_id: "job_1".into(),
                     line: format!("linha {i}"),
                     timestamp: chrono::Utc::now(),
-                    stream: shared::protocol::LogStream::Stdout,
+                    stream: crate::protocol::LogStream::Stdout,
                 });
                 if espacamento_us == 0 {
                     tokio::task::yield_now().await;
@@ -2215,9 +2215,9 @@ mod tests {
         }
     }
 
-    fn linha_bd(i: i64, base: chrono::DateTime<chrono::Utc>) -> shared::protocol::BuildLogLine {
-        shared::protocol::BuildLogLine {
-            stream: shared::protocol::LogStream::Stdout,
+    fn linha_bd(i: i64, base: chrono::DateTime<chrono::Utc>) -> crate::protocol::BuildLogLine {
+        crate::protocol::BuildLogLine {
+            stream: crate::protocol::LogStream::Stdout,
             line: format!("linha {i}"),
             timestamp: base + chrono::Duration::microseconds(i),
         }
@@ -2276,7 +2276,7 @@ mod tests {
         }
         for i in 0..N {
             let l = linha_bd(i, base);
-            state.bus.publish(shared::Event::JobLogLine {
+            state.bus.publish(crate::protocol::Event::JobLogLine {
                 job_run_id: "jrun_L".into(),
                 job_id: "job_1".into(),
                 line: l.line,

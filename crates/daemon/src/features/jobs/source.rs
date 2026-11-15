@@ -2,11 +2,11 @@
 //! (`runner`) e pelo aquecimento (`warm`): a mesma resolução de credenciais do
 //! deploy de serviço git-sourced.
 
+use crate::domain::{Job, JobGitSource};
 use crate::features::deploy::git::{self, CloneOptions, CloneProgress};
 use crate::platform::secrets::SecretsManager;
 use crate::store::Db;
 use anyhow::Result;
-use shared::{Job, JobGitSource};
 use std::path::Path;
 
 /// Clona `git` para dentro de `build_dir` (vira o checkout do job).

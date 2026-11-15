@@ -2,7 +2,8 @@
 //! agente MCP (o rascunho traz a chave secreta).
 
 use crate::bootstrap::state::AppState;
-use shared::{BackupDestination, Response};
+use crate::domain::BackupDestination;
+use crate::protocol::Response;
 
 pub async fn handle(state: AppState, destination: Option<BackupDestination>) -> Response {
     match crate::features::data_backup::destination::test(&state.db, &state.secrets, destination)

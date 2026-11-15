@@ -4,10 +4,10 @@
 //!
 //! Redis, Kafka, RabbitMQ e os demais seguem como volume (tar).
 
+use crate::domain::Service;
 use crate::features::databases::migration::{counts_plan, image_version, source_image};
 use crate::features::databases::shared_db::{self, Engine};
 use anyhow::{Result, anyhow, bail};
-use shared::Service;
 use std::path::Path;
 
 /// Um banco que sabemos despejar e restaurar.

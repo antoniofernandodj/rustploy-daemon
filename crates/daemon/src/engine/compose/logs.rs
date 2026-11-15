@@ -1,8 +1,8 @@
 //! Leitura e limpeza da saída do compose, linha a linha, para o log do job/deploy.
 
 use crate::platform::{event_bus::EventBus, log_sink::LogSink};
+use crate::protocol::Event;
 use chrono::Utc;
-use shared::Event;
 use std::collections::VecDeque;
 use std::sync::Mutex;
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -75,7 +75,7 @@ pub(super) async fn record_job_line(
     job_id: &str,
     job_run_id: &str,
     mirror: Option<&(String, String)>,
-    stream: shared::protocol::LogStream,
+    stream: crate::protocol::LogStream,
     line: String,
 ) {
     let ts = Utc::now();
@@ -106,7 +106,7 @@ pub(super) async fn record_job_line(
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn read_compose_output<R: tokio::io::AsyncRead + Unpin>(
     reader: R,
-    stream: shared::protocol::LogStream,
+    stream: crate::protocol::LogStream,
     main_service: &str,
     bus: &EventBus,
     db: &impl LogSink,

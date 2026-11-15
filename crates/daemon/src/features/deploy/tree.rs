@@ -15,10 +15,8 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use shared::{
-    DeployBatchItem, DeployBatchStatus, DeployState, Event, Response as RpResponse, Service,
-    ServiceStatus,
-};
+use crate::domain::{DeployBatchItem, DeployBatchStatus, DeployState, Service, ServiceStatus};
+use crate::protocol::{Event, Response as RpResponse};
 use tracing::{info, warn};
 
 use crate::features::deploy::{DeployContext, deps};

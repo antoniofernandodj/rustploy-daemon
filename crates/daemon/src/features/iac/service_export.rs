@@ -3,12 +3,10 @@
 //! `docs/plano-copiar-servico-entre-servidores.md`). O arquivo gerado é um
 //! [`crate::features::iac::service_bundle::ServiceBundle`]; quem o lê é `service_import`.
 
+use crate::domain::{EnvVarValue, PlanVar, Project, Service, ServiceExportPlan, ServiceSource};
 use crate::features::iac::IacContext;
 use crate::features::iac::service_bundle::{BundleOrigin, ServiceBundle, suggested_project_vars};
-use shared::{
-    EnvVarValue, PlanVar, Project, Response as RpResponse, Service, ServiceExportPlan,
-    ServiceSource,
-};
+use crate::protocol::Response as RpResponse;
 use std::collections::BTreeMap;
 use tracing::{error, info};
 
@@ -97,7 +95,7 @@ pub async fn export(
         }
     }
 
-    let providers: BTreeMap<String, shared::GitProvider> =
+    let providers: BTreeMap<String, crate::domain::GitProvider> =
         match crate::store::git_providers::list(&state.db).await {
             Ok(list) => list
                 .into_iter()
@@ -136,7 +134,7 @@ pub async fn export(
         yaml,
         filename: format!(
             "{}.rustploy-service.yml",
-            shared::normalize_name(&svc.spec.name)
+            crate::domain::normalize_name(&svc.spec.name)
         ),
     }
 }

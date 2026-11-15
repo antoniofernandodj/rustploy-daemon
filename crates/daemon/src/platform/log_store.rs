@@ -23,9 +23,9 @@
 //! [`global`] devolve `None` e tudo vira no-op.
 
 use crate::platform::config::LogsConfig;
+use crate::protocol::{LogHistoryEntry, LogStream};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use shared::protocol::{LogHistoryEntry, LogStream};
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufWriter, Read, Seek, SeekFrom, Write};

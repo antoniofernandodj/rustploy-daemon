@@ -7,9 +7,9 @@
 
 use super::Db;
 use super::infra::model::ProjectInfra;
+use crate::domain::{EnvComment, EnvVar, Project};
 use anyhow::Result;
 use chrono::Utc;
-use shared::{EnvComment, EnvVar, Project};
 use ulid::Ulid;
 
 fn to_project(p: &ProjectInfra) -> Project {
@@ -27,7 +27,7 @@ pub async fn create(db: &Db, name: String, description: Option<String>) -> Resul
     let id = format!("prj_{}", Ulid::new());
     let now = Utc::now();
     // Rede gravada na criação (ID inteiro: não colide) e lida daí em diante.
-    let network_name = shared::new_project_network_name(&id);
+    let network_name = crate::domain::new_project_network_name(&id);
     let rec = ProjectInfra {
         id,
         name,
@@ -77,7 +77,7 @@ pub async fn network_name(db: &Db, project_id: &str) -> Result<String> {
         .iter()
         .find(|p| p.id == project_id)
         .and_then(|p| p.network_name.clone())
-        .unwrap_or_else(|| shared::legacy_project_net_for(project_id)))
+        .unwrap_or_else(|| crate::domain::legacy_project_net_for(project_id)))
 }
 
 /// `id do projeto → nome da rede` de todos os projetos (o inventário Docker
@@ -91,7 +91,7 @@ pub async fn network_names(db: &Db) -> Result<std::collections::HashMap<String, 
             let net = p
                 .network_name
                 .clone()
-                .unwrap_or_else(|| shared::legacy_project_net_for(&p.id));
+                .unwrap_or_else(|| crate::domain::legacy_project_net_for(&p.id));
             (p.id.clone(), net)
         })
         .collect())
@@ -143,7 +143,7 @@ pub async fn delete(db: &Db, id: &str) -> Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use shared::EnvVarValue;
+    use crate::domain::EnvVarValue;
 
     async fn mem_db() -> Db {
         Db::memory_for_test().await
@@ -172,13 +172,13 @@ mod tests {
         // rede gravada na criação
         assert_eq!(
             network_name(&db, &a.id).await.unwrap(),
-            shared::new_project_network_name(&a.id)
+            crate::domain::new_project_network_name(&a.id)
         );
         assert_eq!(network_names(&db).await.unwrap().len(), 2);
         // desconhecido → rede legada, update/get/delete → None/false
         assert_eq!(
             network_name(&db, "nada").await.unwrap(),
-            shared::legacy_project_net_for("nada")
+            crate::domain::legacy_project_net_for("nada")
         );
         assert!(
             update(&db, "nada", "x".into(), None)

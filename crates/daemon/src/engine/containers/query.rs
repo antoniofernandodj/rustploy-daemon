@@ -179,7 +179,7 @@ impl ContainerIndex {
     /// Containers de um serviço: pelos labels `rustploy.service_id`, ou — quando
     /// vazio (serviço Compose) — pelo `com.docker.compose.project` gravado do
     /// serviço (`Service::compose_project_name`).
-    pub fn for_service(&self, service: &shared::Service) -> Vec<ManagedContainer> {
+    pub fn for_service(&self, service: &crate::domain::Service) -> Vec<ManagedContainer> {
         if let Some(v) = self.by_service_id.get(&service.id) {
             return v.clone();
         }

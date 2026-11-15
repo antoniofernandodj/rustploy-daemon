@@ -1,7 +1,7 @@
 //! Bus de eventos em memória (broadcast): o que alimenta o SSE `/api/events`
 //! dos clientes.
 
-use shared::Event;
+use crate::protocol::Event;
 use tokio::sync::broadcast;
 
 const CHANNEL_CAPACITY: usize = 1024;

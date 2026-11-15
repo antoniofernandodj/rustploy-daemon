@@ -11,7 +11,7 @@ pub mod ping;
 pub mod update_status;
 
 use crate::bootstrap::state::AppState;
-use shared::{Command, Response as RpResponse};
+use crate::protocol::{Command, Response as RpResponse};
 
 pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
     match cmd {

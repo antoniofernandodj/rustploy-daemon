@@ -18,17 +18,20 @@ pub fn replica_staging_name(
     dep_short: &str,
     idx: u32,
 ) -> String {
-    let base = shared::app_container_base(service_id, service_name);
+    let base = crate::domain::app_container_base(service_id, service_name);
     with_replica_suffix(format!("{base}_staging_{dep_short}"), idx)
 }
 
 pub fn replica_live_name(service_id: &str, service_name: &str, idx: u32) -> String {
-    with_replica_suffix(shared::app_container_base(service_id, service_name), idx)
+    with_replica_suffix(
+        crate::domain::app_container_base(service_id, service_name),
+        idx,
+    )
 }
 
 /// Nome de staging no formato legado (`rp_<safe>_staging_<dep>[_r<i>]`).
 pub fn legacy_replica_staging_name(service_name: &str, dep_short: &str, idx: u32) -> String {
-    let safe_name = shared::normalize_name(service_name);
+    let safe_name = crate::domain::normalize_name(service_name);
     with_replica_suffix(format!("rp_{safe_name}_staging_{dep_short}"), idx)
 }
 

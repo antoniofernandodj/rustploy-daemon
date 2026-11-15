@@ -2,8 +2,8 @@
 //! container no deploy e ao rollback). Plano: `docs/plano-log-de-runtime-persistido.md`.
 
 use crate::bootstrap::state::AppState;
+use crate::protocol::Response as RpResponse;
 use chrono::{DateTime, Utc};
-use shared::Response as RpResponse;
 
 pub async fn handle(
     state: AppState,

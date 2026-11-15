@@ -12,13 +12,13 @@
 //! fim, ao cancelar ou depois de 1 hora parada. Só a pública vai para o `config.toml`.
 
 use super::service_backup;
+use crate::domain::{RecoverService, ServerRecoverInfo, Service};
 use crate::features::deploy::DeployContext;
 use crate::features::deploy::autostart::{self, Bringer, DockerBringer, Policy, Progress};
 use crate::features::service_data::{database, transfer};
 use crate::features::state_git::StateGit;
 use anyhow::{Result, anyhow, bail};
 use async_trait::async_trait;
-use shared::{RecoverService, ServerRecoverInfo, Service};
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};

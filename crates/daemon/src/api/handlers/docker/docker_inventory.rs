@@ -3,10 +3,11 @@
 //! everything rustploy manages" command.
 
 use crate::bootstrap::state::AppState;
-use shared::{
-    DockerContainerInfo, DockerImageInfo, DockerNetworkInfo, DockerVolumeInfo,
-    Response as RpResponse, ServiceSource, ServiceStatus,
+use crate::domain::{
+    DockerContainerInfo, DockerImageInfo, DockerNetworkInfo, DockerVolumeInfo, ServiceSource,
+    ServiceStatus,
 };
+use crate::protocol::Response as RpResponse;
 use std::collections::HashMap;
 
 /// Best-effort project/service ownership lookup, built once per request from

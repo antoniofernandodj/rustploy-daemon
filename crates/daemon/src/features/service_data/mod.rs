@@ -11,8 +11,9 @@ pub mod parts;
 pub mod stream;
 pub mod transfer;
 
+use crate::domain::{DataPart, ServiceDataPlan, ServiceStatus};
 use crate::features::deploy::DeployContext;
-use shared::{DataPart, Response as RpResponse, ServiceDataPlan, ServiceStatus};
+use crate::protocol::Response as RpResponse;
 
 /// Imagem descartável que monta o volume só para ler/gravar o tar.
 pub const HELPER_IMAGE: &str = "docker.io/library/busybox:stable";

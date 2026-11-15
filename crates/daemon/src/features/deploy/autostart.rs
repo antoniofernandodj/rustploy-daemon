@@ -17,9 +17,10 @@
 //! - dependências implícitas: todo serviço de um projeto com acesso a um servidor de banco
 //!   compartilhado (`shared_access`) espera esse servidor.
 
+use crate::domain::{Service, ServiceSource, ServiceStatus};
 use crate::features::deploy::{DeployContext, deps};
+use crate::protocol::Event;
 use async_trait::async_trait;
-use shared::{Event, Service, ServiceSource, ServiceStatus};
 use std::{
     collections::{BTreeMap, BTreeSet},
     time::Duration,
@@ -298,8 +299,10 @@ impl DockerBringer {
     async fn deploy_and_wait(&self, svc: &Service) -> Result<(), String> {
         let resp = crate::features::deploy::start::handle(self.ctx.clone(), svc.id.clone()).await;
         let dep = match resp {
-            shared::Response::Deployment(d) => d,
-            shared::Response::Err { code, message } => return Err(format!("{code}: {message}")),
+            crate::protocol::Response::Deployment(d) => d,
+            crate::protocol::Response::Err { code, message } => {
+                return Err(format!("{code}: {message}"));
+            }
             outra => {
                 return Err(format!(
                     "resposta inesperada ao iniciar o deploy: {outra:?}"
@@ -310,7 +313,7 @@ impl DockerBringer {
         loop {
             match crate::store::deployments::get(&self.ctx.db, &dep.id).await {
                 Ok(Some(d)) if d.state.is_terminal() => {
-                    return if d.state == shared::DeployState::Live {
+                    return if d.state == crate::domain::DeployState::Live {
                         Ok(())
                     } else {
                         Err(format!("o deploy terminou em {}", d.state.label()))
@@ -329,7 +332,7 @@ impl DockerBringer {
     /// "Pronto": healthcheck do serviço; sem healthcheck, a porta responde (TCP); sem porta,
     /// container rodando.
     async fn wait_ready(&self, svc: &Service, container_id: &str) -> Result<(), String> {
-        use shared::HealthcheckKind;
+        use crate::domain::HealthcheckKind;
         let hc = &svc.spec.healthcheck;
         let timeout = Duration::from_secs(u64::from(hc.timeout_secs.max(1)));
         let deadline = tokio::time::Instant::now() + self.policy.ready_timeout;
@@ -343,7 +346,7 @@ impl DockerBringer {
                     .await
                 }
                 HealthcheckKind::None => {
-                    let tcp = shared::Healthcheck {
+                    let tcp = crate::domain::Healthcheck {
                         kind: HealthcheckKind::Tcp,
                         ..hc.clone()
                     };
@@ -450,8 +453,8 @@ pub fn spawn_boot(ctx: DeployContext) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::{Healthcheck, ResourceLimits, ServiceSpec};
     use chrono::Utc;
-    use shared::{Healthcheck, ResourceLimits, ServiceSpec};
     use std::{collections::HashMap, sync::Mutex};
 
     fn svc(id: &str, project: &str, deps: &[&str]) -> Service {

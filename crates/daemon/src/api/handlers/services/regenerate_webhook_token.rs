@@ -1,8 +1,8 @@
 //! `Command::RegenerateWebhookToken`: gera um token novo de webhook para o
 //! serviço e devolve a URL nova.
 
+use crate::protocol::Response as RpResponse;
 use crate::{bootstrap::state::AppState, store::webhook_tokens};
-use shared::Response as RpResponse;
 use tracing::error;
 
 pub async fn handle(state: AppState, service_id: String) -> RpResponse {
