@@ -1024,4 +1024,11 @@ export default {
   "Valores sensíveis (tokens, senhas, chaves de API) cifrados com a chave do servidor. Para ver um valor use o botão 👁 (o acesso fica registrado na auditoria); para trocá-lo, salve um novo com o mesmo nome.": "Sensitive values (tokens, passwords, API keys) encrypted with the server's key. To see a value use the 👁 button (the access is logged in the audit); to change it, save a new one with the same name.",
   "Para usar num serviço: na aba Variáveis, ligue \"usar secret\" e escolha o nome; ou escreva <secret:NOME> (ou secret:NOME) como valor, no editor .env do projeto ou do serviço. Para clonar um repositório Git privado, use o nome do secret puro, sem prefixo, no campo Credentials da aba General do serviço.": "To use it in a service: in the Variables tab, turn on \"use secret\" and choose the name; or write <secret:NAME> (or secret:NAME) as the value, in the project's or the service's .env editor. To clone a private Git repository, use the plain secret name, with no prefix, in the Credentials field of the service's General tab.",
   "O valor real só é decifrado em memória, na hora do deploy.": "The real value is only decrypted in memory, at deploy time.",
+  "Pausar": "Pause",
+  "Ativar": "Enable",
+  "nunca aquecido": "never warmed",
+  "a fonte do serviço mudou desde o último aquecimento": "the service source changed since the last warm-up",
+  "a definição do job mudou desde o último aquecimento": "the job definition changed since the last warm-up",
+  "a imagem {0} não está mais no host": "image {0} is no longer on the host",
+  "o cache de build foi limpo em {0}": "the build cache was cleaned on {0}",
 };

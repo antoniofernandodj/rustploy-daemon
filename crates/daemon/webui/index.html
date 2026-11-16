@@ -3137,12 +3137,12 @@
                 <text class="status-dot state-cell--warn">◆</text>
                 <text class="badge__label state-cell--warn" x-t>mudança pendente de deploy</text>
               </row>
-              <row class="badge" x-show="warm" :title="warm?.reason || ''">
+              <row class="badge" x-show="warm" :title="warmReason">
                 <text class="status-dot" :class="'state-cell--' + warmKind">◐</text>
                 <text class="badge__label" :class="'state-cell--' + warmKind" x-text="warmLabel"></text>
               </row>
             </row>
-            <text class="u-muted" x-show="warm?.reason && !warm?.warming" x-text="$t('frio: ') + (warm?.reason || '')"></text>
+            <text class="u-muted" x-show="warm?.reason && !warm?.warming" x-text="$t('frio:') + ' ' + warmReason"></text>
             <text class="u-muted" x-show="store.serviceMessage" x-text="store.serviceMessage"></text>
             <template x-if="svc"><row class="service__actions service__actions--compact">
               <button class="btn btn--primary" type="button" title="Deploy" @click="store.deployStart()">▶</button>

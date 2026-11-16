@@ -1135,8 +1135,8 @@ async fn job_actions_window_lists_actions_and_warm_status() {
             "document.querySelector('.job-actions__status').textContent"
         )
         .await
-        .contains("nunca aquecido"),
-        "a janela mostra por que o job está frio"
+        .contains("never warmed"),
+        "a janela mostra por que o job está frio, traduzido (o daemon manda \"nunca aquecido\")"
     );
 
     // Quente: "Aquecer" só avisa — o daemon respondeu `already_warm`, e a tela mostra o aviso.

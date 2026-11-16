@@ -2,7 +2,7 @@
 // dentro de cada um, só os serviços rodando. O recorte e a classificação por tipo
 // (app Git/zip/imagem, banco, broker, compose) vêm prontos do daemon em
 // `snapshot.dashboard` (api/http/dashboard.rs) — aqui só se desenha.
-import { formatBytes, serviceWarmLabel } from "../format.js";
+import { formatBytes, serviceWarmLabel, warmReasonText } from "../format.js";
 
 /** `https://host/webhook/<id>/<token>` → `https://host/webhook/<id>/••••••••`. */
 export function maskWebhook(url) {
@@ -39,7 +39,7 @@ document.addEventListener("alpine:init", () => {
                 hasWarm: !!svc.warm,
                 warmLabel,
                 warmKind,
-                warmReason: svc.warm?.reason || "",
+                warmReason: warmReasonText(svc.warm?.reason),
                 webhookShown: svc.webhook ? (this.revealed[svc.service_id] ? svc.webhook : maskWebhook(svc.webhook)) : "",
                 isRevealed: !!this.revealed[svc.service_id],
                 hasChecks: svc.pre_deploy_checks.length > 0,

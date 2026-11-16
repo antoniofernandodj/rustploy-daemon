@@ -9,6 +9,7 @@
 import {
   serviceStatusLabelKind,
   serviceWarmLabel,
+  warmReasonText,
   sourceSummary,
   looksLikeGitUrl,
   dateDayMonthHourMinuteSecond,
@@ -513,6 +514,9 @@ document.addEventListener("alpine:init", () => {
     },
     get warmKind() {
       return serviceWarmLabel(this.warm)[1];
+    },
+    get warmReason() {
+      return warmReasonText(this.warm?.reason);
     },
     get sourceText() {
       return this.svc ? sourceSummary(this.svc.spec.source) : "—";

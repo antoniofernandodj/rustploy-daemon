@@ -16,6 +16,7 @@ import {
   envValueFromDraft,
   jobSummaryRows,
   formatBytes,
+  warmReasonText,
 } from "../format.js";
 import { t } from "../i18n.js";
 
@@ -96,7 +97,7 @@ document.addEventListener("alpine:init", () => {
             hasWarm: !!warm,
             warmLabel,
             warmKind,
-            warmReason: warm?.reason || "",
+            warmReason: warmReasonText(warm?.reason),
             id: service.id,
             name: service.spec.name,
             port: service.spec.port,

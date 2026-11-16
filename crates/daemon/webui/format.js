@@ -956,6 +956,27 @@ export function jobWarmLabel(warm) {
 /** Rótulo/cor do aquecimento de um serviço com build. `warm` é o
  * `ServiceWarmStatus` do daemon (fonte única da verdade); `undefined` = o
  * serviço não tem build (imagem pronta, compose) e não mostra selo. */
+/** O motivo de "frio" vem do daemon em português, com partes variáveis (a imagem,
+ * a data da limpeza). Aqui ele é casado com os formatos conhecidos e traduzido;
+ * um motivo desconhecido (daemon mais novo) passa como veio. Igual a
+ * `format/jobs.luau::warm_reason` na GUI. */
+export function warmReasonText(reason) {
+  if (!reason) return "";
+  switch (reason) {
+    case "nunca aquecido":
+      return t("nunca aquecido");
+    case "a fonte do serviço mudou desde o último aquecimento":
+      return t("a fonte do serviço mudou desde o último aquecimento");
+    case "a definição do job mudou desde o último aquecimento":
+      return t("a definição do job mudou desde o último aquecimento");
+  }
+  const image = reason.match(/^a imagem (.+) não está mais no host$/);
+  if (image) return t`a imagem ${image[1]} não está mais no host`;
+  const cleaned = reason.match(/^o cache de build foi limpo em (.+)$/);
+  if (cleaned) return t`o cache de build foi limpo em ${cleaned[1]}`;
+  return reason;
+}
+
 export function serviceWarmLabel(warm) {
   if (!warm) return ["", "muted"];
   return jobWarmLabel(warm);
@@ -984,7 +1005,7 @@ export function jobSummaryRows(list, term, inflight) {
       owner: item.trigger_service_name ? `${item.project_name} / ${item.trigger_service_name}` : item.project_name,
       recurrence: recurrenceLabel(job.recurrence),
       enabled: job.enabled,
-      enabledLabel: job.enabled ? "Pausar" : "Ativar",
+      enabledLabel: job.enabled ? t("Pausar") : t("Ativar"),
       lastRunLabel,
       lastRunKind,
       // `running`: usado pra desativar/trocar o botão "Rodar agora" enquanto
@@ -998,7 +1019,7 @@ export function jobSummaryRows(list, term, inflight) {
       isWarming: !!item.warm?.warming,
       warmLabel,
       warmKind,
-      warmReason: item.warm?.reason || "",
+      warmReason: warmReasonText(item.warm?.reason),
       warmedAtLabel: item.warm?.warmed_at ? dateDayMonthHourMinute(item.warm.warmed_at) : "",
     });
   }
