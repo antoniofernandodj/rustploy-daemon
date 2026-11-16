@@ -1,6 +1,6 @@
 // screens/job_env.js — janela "Variáveis do job": as envs e os secrets de UM job, com os mesmos
-// botões da aba Environment do serviço e das variáveis do projeto (renomear, editar no lugar,
-// cifrar, voltar para claro, subir para o projeto, ver/copiar o valor, editor `.env`).
+// botões da aba Environment do serviço e das variáveis do projeto (linha editável no lugar com
+// "usar secret", cifrar, voltar para claro, subir para o projeto, ver/copiar o valor, editor `.env`).
 //
 // O escopo de job é `job_id` nos comandos de secret/env (EnvKeyRename, EnvValueSet, SecretSet,
 // SecretMove…). A lista de envs viaja no próprio `Job` do snapshot; adicionar/remover/colar o
@@ -17,6 +17,7 @@ import {
   envValueFromDraft,
 } from "../format.js";
 import { t } from "../i18n.js";
+import { envRowEditor } from "../env_rows.js";
 
 document.addEventListener("alpine:init", () => {
   Alpine.data("jobEnv", () => ({
@@ -24,13 +25,33 @@ document.addEventListener("alpine:init", () => {
       return Alpine.store("app");
     },
 
+    // Linha editável no lugar (env_rows.js): chave/valor sem borda, "usar secret" com lista, OK +
+    // confirmação. A lista traz os secrets do job, os do serviço gatilho e os do projeto — a ordem
+    // em que o daemon os procura (env_resolve); um nome que um escopo de cima já tem fica de fora.
+    ...envRowEditor({
+      scope() {
+        return this.scope;
+      },
+      secretOptions() {
+        return this.envSecretChoices;
+      },
+      async afterSave() {
+        await this.afterChange();
+      },
+      footer: () => t("Vale na próxima execução."),
+    }),
+
     newEnvKey: "",
     newEnvValue: "",
+    newEnvIsSecret: false,
     envTextOpen: false,
     envText: "",
-    envEdit: null,
+    // envEdit: null, // edição antiga (✏️/✎), substituída pela linha editável em 2026-11-16
     // Nomes dos secrets DESTE job (o valor nunca volta do daemon) e os que o usuário pediu para ver.
     jobSecrets: [],
+    // Os do serviço gatilho e os do projeto, só para a lista do "usar secret".
+    triggerServiceSecrets: [],
+    projectSecrets: [],
     revealedSecrets: {},
     newSecretName: "",
     newSecretValue: "",
@@ -40,7 +61,7 @@ document.addEventListener("alpine:init", () => {
         () => this.store.jobEnvJobId,
         () => {
           this.revealedSecrets = {};
-          this.envEdit = null;
+          this.envDrafts = {};
           this.envTextOpen = false;
           this.loadSecrets();
         }
@@ -57,6 +78,21 @@ document.addEventListener("alpine:init", () => {
     },
     get envCount() {
       return (this.job?.env_vars || []).length;
+    },
+    get envSecretChoices() {
+      const seen = new Set();
+      const choices = [];
+      const add = (names, label) => {
+        for (const name of names) {
+          if (seen.has(name)) continue;
+          seen.add(name);
+          choices.push({ name, label: label(name) });
+        }
+      };
+      add(this.jobSecrets, (name) => name);
+      add(this.triggerServiceSecrets, (name) => t`${name} (serviço)`);
+      add(this.projectSecrets, (name) => t`${name} (projeto)`);
+      return choices;
     },
     get scope() {
       return { project_id: this.job.project_id, job_id: this.job.id };
@@ -93,13 +129,24 @@ document.addEventListener("alpine:init", () => {
       if (!key) return;
       const job = this.job;
       if (!confirmEnvKey(this.store, key, job.env_vars)) return;
+      if (this.newEnvIsSecret && !this.newEnvValue) {
+        this.store.toastWarn(t("escolha um secret"));
+        return;
+      }
       const vars = (job.env_vars || []).filter((envVar) => envVar.key !== key);
-      vars.push({ key, value: { Plain: this.newEnvValue } });
+      vars.push({ key, value: envValueFromDraft(this.newEnvValue, this.newEnvIsSecret) });
       const result = await this.saveEnv(vars, job.env_comments || [], t("variável salva"));
       if (result.ok) {
         this.newEnvKey = "";
         this.newEnvValue = "";
+        this.newEnvIsSecret = false;
       }
+    },
+    /** Checkbox "usar secret" do form de adicionar: troca o modo e limpa o valor (num modo é o texto
+     * digitado, no outro o nome do secret escolhido na lista). */
+    toggleEnvSecretMode() {
+      this.newEnvIsSecret = !this.newEnvIsSecret;
+      this.newEnvValue = "";
     },
     async deleteEnvVar(key) {
       if (!confirm(t`Remover a variável "${key}" deste job?`)) return;
@@ -128,36 +175,38 @@ document.addEventListener("alpine:init", () => {
       if (result.ok) this.envTextOpen = false;
     },
 
-    // ── Edição no lugar da chave/valor ─────────────────────────────────
-    startEnvEdit(row, field) {
-      this.envEdit = { key: row.key, field, draft: field === "key" ? row.key : row.isSecret ? row.secretName : row.value };
-    },
-    isEnvEditing(key, field) {
-      return !!this.envEdit && this.envEdit.key === key && this.envEdit.field === field;
-    },
-    cancelEnvEdit() {
-      this.envEdit = null;
-    },
-    async commitEnvEdit(row) {
-      const edit = this.envEdit;
-      if (!edit) return;
-      this.envEdit = null; // antes do await: o blur que vem junto com o Enter não grava duas vezes
-      let response;
-      if (edit.field === "key") {
-        const to = edit.draft.trim();
-        if (!to || to === row.key) return;
-        response = await this.store.api.rpcChecked({ EnvKeyRename: { ...this.scope, from: row.key, to } });
-        this.store.toastResult(response, t`renomeado: ${row.key} → ${to}`);
-      } else {
-        const current = row.isSecret ? row.secretName : row.value;
-        if (edit.draft === current) return;
-        response = await this.store.api.rpcChecked({
-          EnvValueSet: { ...this.scope, key: row.key, value: envValueFromDraft(edit.draft, row.isSecret) },
-        });
-        this.store.toastResult(response, t`valor de ${row.key} salvo`);
-      }
-      if (response.ok) await this.afterChange();
-    },
+    // Substituído pela linha editável com OK + confirmação (env_rows.js), 2026-11-16. Fica
+    // comentado para referência; pode ser apagado quando o desenho novo assentar.
+    // // ── Edição no lugar da chave/valor ─────────────────────────────────
+    // startEnvEdit(row, field) {
+    //   this.envEdit = { key: row.key, field, draft: field === "key" ? row.key : row.isSecret ? row.secretName : row.value };
+    // },
+    // isEnvEditing(key, field) {
+    //   return !!this.envEdit && this.envEdit.key === key && this.envEdit.field === field;
+    // },
+    // cancelEnvEdit() {
+    //   this.envEdit = null;
+    // },
+    // async commitEnvEdit(row) {
+    //   const edit = this.envEdit;
+    //   if (!edit) return;
+    //   this.envEdit = null; // antes do await: o blur que vem junto com o Enter não grava duas vezes
+    //   let response;
+    //   if (edit.field === "key") {
+    //     const to = edit.draft.trim();
+    //     if (!to || to === row.key) return;
+    //     response = await this.store.api.rpcChecked({ EnvKeyRename: { ...this.scope, from: row.key, to } });
+    //     this.store.toastResult(response, t`renomeado: ${row.key} → ${to}`);
+    //   } else {
+    //     const current = row.isSecret ? row.secretName : row.value;
+    //     if (edit.draft === current) return;
+    //     response = await this.store.api.rpcChecked({
+    //       EnvValueSet: { ...this.scope, key: row.key, value: envValueFromDraft(edit.draft, row.isSecret) },
+    //     });
+    //     this.store.toastResult(response, t`valor de ${row.key} salvo`);
+    //   }
+    //   if (response.ok) await this.afterChange();
+    // },
 
     /** ✏️ num secret/variável: renomeia sem o valor passar pela tela. */
     async rename(kind, from) {
@@ -202,14 +251,27 @@ document.addEventListener("alpine:init", () => {
       const job = this.job;
       if (!job) {
         this.jobSecrets = [];
+        this.triggerServiceSecrets = [];
+        this.projectSecrets = [];
         return;
       }
-      try {
-        const response = await this.store.api.rpc({ SecretList: { project_id: job.project_id, job_id: job.id } });
-        if (this.job?.id === job.id) this.jobSecrets = response.ok ? response.value?.SecretNames || [] : [];
-      } catch (_) {
-        this.jobSecrets = [];
-      }
+      const names = async (scope) => {
+        try {
+          const response = await this.store.api.rpc({ SecretList: { project_id: job.project_id, ...scope } });
+          return response.ok ? response.value?.SecretNames || [] : [];
+        } catch (_) {
+          return [];
+        }
+      };
+      const [jobNames, serviceNames, projectNames] = await Promise.all([
+        names({ job_id: job.id }),
+        job.trigger_service_id ? names({ service_id: job.trigger_service_id }) : Promise.resolve([]),
+        names({}),
+      ]);
+      if (this.job?.id !== job.id) return;
+      this.jobSecrets = jobNames;
+      this.triggerServiceSecrets = serviceNames;
+      this.projectSecrets = projectNames;
     },
     async addSecret() {
       const name = this.newSecretName.trim();

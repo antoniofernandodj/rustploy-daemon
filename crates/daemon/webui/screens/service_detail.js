@@ -31,6 +31,7 @@ import {
   tcpRoutes,
 } from "../format.js";
 import { t } from "../i18n.js";
+import { envRowEditor } from "../env_rows.js";
 
 document.addEventListener("alpine:init", () => {
   Alpine.data("serviceDetail", () => ({
@@ -39,6 +40,23 @@ document.addEventListener("alpine:init", () => {
     },
     newEnvKey: "",
     newEnvValue: "",
+    // "usar secret" no form de adicionar: o valor vem da lista de secrets, não digitado.
+    newEnvIsSecret: false,
+    // Linha de variável editável no lugar, com OK + confirmação (env_rows.js). Uma variável do
+    // serviço enxerga os secrets dele e os do projeto (no deploy, o do serviço vale antes).
+    ...envRowEditor({
+      scope() {
+        return { project_id: this.svc?.spec?.project_id, service_id: this.svc?.id };
+      },
+      secretOptions() {
+        return this.envSecretChoices;
+      },
+      async afterSave() {
+        await this.store.fetchServiceDetail(this.svc.id);
+        await this.store.refreshNow();
+        await this.loadServiceSecrets();
+      },
+    }),
     // Secrets DESTE serviço (só os nomes; o valor nunca volta do daemon).
     serviceSecrets: [],
     // Valores de secret que o usuário pediu para ver (SecretReveal), por nome. Só em memória; some ao trocar de serviço.
@@ -933,8 +951,28 @@ document.addEventListener("alpine:init", () => {
       return envRowsWithComments(service.spec.env_vars, service.spec.env_comments);
     },
 
+    /** Os secrets que uma variável deste serviço pode usar: os do serviço e, depois, os do projeto
+     * (menos os que um do serviço com o mesmo nome esconde — no deploy o do serviço vale antes). */
+    get envSecretChoices() {
+      const own = this.serviceSecrets.map((name) => ({ name, label: name }));
+      const projectSecrets = (this.store.snap?.projects || []).find((project) => project.id === this.svc?.spec?.project_id)?.secrets || [];
+      const inherited = projectSecrets
+        .filter((name) => !this.serviceSecrets.includes(name))
+        .map((name) => ({ name, label: t`${name} (projeto)` }));
+      return [...own, ...inherited];
+    },
+
+    toggleEnvSecretMode() {
+      this.newEnvIsSecret = !this.newEnvIsSecret;
+      this.newEnvValue = "";
+    },
+
     async addEnvVar() {
       if (!this.newEnvKey.trim()) return;
+      if (this.newEnvIsSecret && !this.newEnvValue.trim()) {
+        this.store.toastWarn(t("escolha um secret"));
+        return;
+      }
       if (!confirmEnvKey(this.store, this.newEnvKey.trim(), this.svc.spec.env_vars)) return;
       // JSON round-trip (não structuredClone): this.svc.spec é um Proxy
       // reativo do Alpine — o clonador estrutural nativo do browser não
@@ -943,11 +981,13 @@ document.addEventListener("alpine:init", () => {
       // planos (sem funções/Date/referências circulares).
       const spec = JSON.parse(JSON.stringify(this.svc.spec));
       spec.env_vars = spec.env_vars.filter((envVar) => envVar.key !== this.newEnvKey.trim());
-      spec.env_vars.push({ key: this.newEnvKey.trim(), value: { Plain: this.newEnvValue } });
+      // Como a GUI (services.luau::env_add): `secret:NOME` digitado também vira referência.
+      spec.env_vars.push({ key: this.newEnvKey.trim(), value: envValueFromDraft(this.newEnvValue, this.newEnvIsSecret) });
       const saveServiceSpecResult = await this.store.saveServiceSpec(spec, t("variável salva"));
       if (saveServiceSpecResult.ok) {
         this.newEnvKey = "";
         this.newEnvValue = "";
+        this.newEnvIsSecret = false;
       }
     },
 
@@ -1033,41 +1073,43 @@ document.addEventListener("alpine:init", () => {
     // ── Edição no lugar da chave/valor de uma variável DESTE serviço ────────
     // Mesmo desenho do projeto (ver `envEdit` em project_detail.js): a linha vira um input; Enter ou
     // clicar fora grava (se mudou), Esc desiste. Chave: EnvKeyRename; valor: EnvValueSet.
-    envEdit: null,
-    startEnvEdit(row, field) {
-      this.envEdit = { key: row.key, field, draft: field === "key" ? row.key : row.isSecret ? row.secretName : row.value };
-    },
-    isEnvEditing(key, field) {
-      return !!this.envEdit && this.envEdit.key === key && this.envEdit.field === field;
-    },
-    cancelEnvEdit() {
-      this.envEdit = null;
-    },
-    async commitEnvEdit(row) {
-      const edit = this.envEdit;
-      if (!edit) return;
-      this.envEdit = null; // antes do await: o blur que vem junto com o Enter não grava duas vezes
-      const scope = { project_id: this.svc.spec.project_id, service_id: this.svc.id };
-      let response;
-      if (edit.field === "key") {
-        const to = edit.draft.trim();
-        if (!to || to === row.key) return;
-        response = await this.store.api.rpcChecked({ EnvKeyRename: { ...scope, from: row.key, to } });
-        this.store.toastResult(response, t`renomeado: ${row.key} → ${to}`);
-      } else {
-        const current = row.isSecret ? row.secretName : row.value;
-        if (edit.draft === current) return;
-        response = await this.store.api.rpcChecked({
-          EnvValueSet: { ...scope, key: row.key, value: envValueFromDraft(edit.draft, row.isSecret) },
-        });
-        this.store.toastResult(response, t`valor de ${row.key} salvo`);
-      }
-      if (response.ok) {
-        await this.store.fetchServiceDetail(this.svc.id);
-        await this.store.refreshNow();
-        await this.loadServiceSecrets();
-      }
-    },
+    // Substituído pela linha editável com OK + confirmação (env_rows.js), 2026-11-16. Fica
+    // comentado para referência; pode ser apagado quando o desenho novo assentar.
+    // envEdit: null,
+    // startEnvEdit(row, field) {
+    //   this.envEdit = { key: row.key, field, draft: field === "key" ? row.key : row.isSecret ? row.secretName : row.value };
+    // },
+    // isEnvEditing(key, field) {
+    //   return !!this.envEdit && this.envEdit.key === key && this.envEdit.field === field;
+    // },
+    // cancelEnvEdit() {
+    //   this.envEdit = null;
+    // },
+    // async commitEnvEdit(row) {
+    //   const edit = this.envEdit;
+    //   if (!edit) return;
+    //   this.envEdit = null; // antes do await: o blur que vem junto com o Enter não grava duas vezes
+    //   const scope = { project_id: this.svc.spec.project_id, service_id: this.svc.id };
+    //   let response;
+    //   if (edit.field === "key") {
+    //     const to = edit.draft.trim();
+    //     if (!to || to === row.key) return;
+    //     response = await this.store.api.rpcChecked({ EnvKeyRename: { ...scope, from: row.key, to } });
+    //     this.store.toastResult(response, t`renomeado: ${row.key} → ${to}`);
+    //   } else {
+    //     const current = row.isSecret ? row.secretName : row.value;
+    //     if (edit.draft === current) return;
+    //     response = await this.store.api.rpcChecked({
+    //       EnvValueSet: { ...scope, key: row.key, value: envValueFromDraft(edit.draft, row.isSecret) },
+    //     });
+    //     this.store.toastResult(response, t`valor de ${row.key} salvo`);
+    //   }
+    //   if (response.ok) {
+    //     await this.store.fetchServiceDetail(this.svc.id);
+    //     await this.store.refreshNow();
+    //     await this.loadServiceSecrets();
+    //   }
+    // },
 
     /** ✏️: renomeia a chave de uma variável (`kind` "env") ou o nome de um secret ("secret") DESTE
      * serviço, sem o valor passar pela tela. Ver `projectRename` em project_detail.js. */

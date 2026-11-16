@@ -1226,14 +1226,26 @@
               <template x-if="!envTextOpen">
                 <column style="gap:10px">
                   <row class="env__add">
-                    <input class="env__input" type="text" placeholder="KEY" x-model="newEnvKey" />
-                    <input class="env__input" type="text" placeholder="value" x-model="newEnvValue" />
+                    <input class="env__input" type="text" placeholder="KEY" x-model="newEnvKey"
+                           @keydown.enter.prevent="addEnvVar()" />
+                    <template x-if="!newEnvIsSecret">
+                      <input class="env__input" type="text" placeholder="value" x-model="newEnvValue"
+                             @keydown.enter.prevent="addEnvVar()" />
+                    </template>
+                    <template x-if="newEnvIsSecret">
+                      <select class="form-select env__input" x-model="newEnvValue">
+                        <option value="" x-t>escolha o secret</option>
+                        <template x-for="option in envSecretChoices" :key="option.name"><option :value="option.name" x-text="option.label"></option></template>
+                      </select>
+                    </template>
+                    <label class="env__use-secret">
+                      <input type="checkbox" :checked="newEnvIsSecret" @change="toggleEnvSecretMode()" />
+                      <span x-t>usar secret</span>
+                    </label>
                     <button class="btn btn--primary" type="button" @click="addEnvVar()" x-t>Adicionar</button>
                   </row>
-                  <text class="u-muted-grow">
-                    <span x-t>Para um valor sensível, use um secret: escreva</span> &lt;secret:NOME&gt; <span x-t>ou
-                    secret:NOME como valor, ou use o 🔒 numa variável. O job enxerga os secrets dele, depois os do serviço gatilho e os do projeto.</span>
-                  </text>
+                  <text class="u-muted" x-show="newEnvIsSecret && envSecretChoices.length === 0" x-t>Nenhum secret disponível — crie um em "Secrets do job", abaixo, ou nos secrets do serviço gatilho ou do projeto.</text>
+                  <text class="u-muted-grow" x-t>Para um valor sensível, marque "usar secret" e escolha um secret do job, do serviço gatilho ou do projeto (o job os procura nessa ordem).</text>
                   <column class="kv-list">
                     <template x-for="envVar in envVars" :key="envVar.key">
                       <column style="width:100%">
@@ -1242,10 +1254,6 @@
                         </row>
                         <row class="kv-list__row" x-show="!envVar.isComment">
                           <button class="env__del" type="button" @click="deleteEnvVar(envVar.key)">✕</button>
-                          <button class="btn btn--ghost btn--sm" type="button" @click="startEnvEdit(envVar, 'key')"
-                            :title="$t('Renomear (o valor não muda)')"><span x-icon.13="'pencil'"></span></button>
-                          <button class="btn btn--ghost btn--sm" type="button" @click="startEnvEdit(envVar, 'value')"
-                            :title="$t('Editar o valor no lugar')"><span x-icon.13="'penline'"></span></button>
                           <button class="btn btn--ghost btn--sm" type="button" x-show="!envVar.isSecret" @click="envToSecret(envVar.key)"
                             :title="$t('Mover para secret (o valor passa a ser guardado cifrado)')"><span x-icon.13="'lock'"></span></button>
                           <button class="btn btn--ghost btn--sm" type="button" x-show="!envVar.isSecret" @click="envToProject(envVar.key)"
@@ -1253,21 +1261,31 @@
                           <button class="btn btn--ghost btn--sm" type="button" x-show="envVar.isSecret" @click="secretToEnv(envVar.secretName)"
                             :title="$t('Voltar para variável em claro (o valor deixa de ser cifrado)')"><span x-icon.13="'unlock'"></span></button>
                           <text class="env__sep"></text>
-                          <template x-if="isEnvEditing(envVar.key, 'key')">
-                            <input class="env__inline env__key" type="text" x-model="envEdit.draft" x-init="$nextTick(() => { $el.focus(); $el.select(); })"
-                                   @keydown.enter.prevent="commitEnvEdit(envVar)" @keydown.escape.prevent="cancelEnvEdit()" @blur="commitEnvEdit(envVar)" />
+                          <!-- Chave e valor editáveis no lugar (sem borda); nada grava sozinho: OK (ou Enter) confirma
+                               e grava, ✕ (ou Esc) desfaz. Ver env_rows.js. -->
+                          <input class="env__inline env__key" type="text" spellcheck="false" :value="envRow(envVar).key"
+                                 @input="setEnvDraft(envVar, 'key', $event.target.value)"
+                                 @keydown.enter.prevent="saveEnvRow(envVar)" @keydown.escape.prevent="resetEnvRow(envVar)" />
+                          <template x-if="!envRow(envVar).useSecret">
+                            <input class="env__inline kv-list__val kv-list__val--compact" type="text" spellcheck="false" :value="envRow(envVar).value"
+                                   @input="setEnvDraft(envVar, 'value', $event.target.value)"
+                                   @keydown.enter.prevent="saveEnvRow(envVar)" @keydown.escape.prevent="resetEnvRow(envVar)" />
                           </template>
-                          <template x-if="!isEnvEditing(envVar.key, 'key')">
-                            <text class="env__key" x-text="envVar.key"></text>
+                          <template x-if="envRow(envVar).useSecret">
+                            <select class="form-select env__secret-select" @change="setEnvDraft(envVar, 'secret', $event.target.value)">
+                              <option value="" :selected="!envRow(envVar).secret" x-t>escolha o secret</option>
+                              <template x-for="option in envSecretOptions(envVar)" :key="option.name">
+                                <option :value="option.name" :selected="option.name === envRow(envVar).secret" x-text="option.label"></option>
+                              </template>
+                            </select>
                           </template>
-                          <template x-if="isEnvEditing(envVar.key, 'value')">
-                            <input class="env__inline kv-list__val kv-list__val--compact" type="text" x-model="envEdit.draft" x-init="$nextTick(() => { $el.focus(); $el.select(); })"
-                                   :placeholder="envVar.isSecret ? $t('nome do secret') : ''"
-                                   @keydown.enter.prevent="commitEnvEdit(envVar)" @keydown.escape.prevent="cancelEnvEdit()" @blur="commitEnvEdit(envVar)" />
-                          </template>
-                          <template x-if="!isEnvEditing(envVar.key, 'value')">
-                            <text class="kv-list__val kv-list__val--compact" x-text="envVar.isSecret ? '(secret)' : envVar.value"></text>
-                          </template>
+                          <label class="env__use-secret">
+                            <input type="checkbox" :checked="envRow(envVar).useSecret" @change="setEnvDraft(envVar, 'useSecret', $event.target.checked)" />
+                            <span x-t>usar secret</span>
+                          </label>
+                          <button class="btn btn--primary btn--sm" type="button" x-show="envRowDirty(envVar)" @click="saveEnvRow(envVar)">OK</button>
+                          <button class="btn btn--ghost btn--sm" type="button" x-show="envRowDirty(envVar)" @click="resetEnvRow(envVar)"
+                                  :title="$t('Desfazer')">✕</button>
                         </row>
                       </column>
                     </template>
@@ -2409,22 +2427,22 @@
             <column style="gap:10px">
               <row class="env__add">
                 <input class="env__input" type="text" placeholder="KEY" x-model="newEnvKey" @keydown.enter.prevent="addEnvVar()" />
-                <input class="env__input" type="text" :placeholder="newEnvIsSecret ? $t('nome do secret') : 'value'" x-model="newEnvValue"
-                       @keydown.enter.prevent="addEnvVar()" />
-                <button type="button" :class="newEnvIsSecret ? 'btn btn--blue' : 'tabs__tab'" @click="toggleEnvSecretMode()" x-t>usar secret</button>
+                <template x-if="!newEnvIsSecret">
+                  <input class="env__input" type="text" placeholder="value" x-model="newEnvValue" @keydown.enter.prevent="addEnvVar()" />
+                </template>
+                <template x-if="newEnvIsSecret">
+                  <select class="form-select env__input" x-model="newEnvValue">
+                    <option value="" x-t>escolha o secret</option>
+                    <template x-for="secret in secrets" :key="secret.name"><option :value="secret.name" x-text="secret.name"></option></template>
+                  </select>
+                </template>
+                <label class="env__use-secret">
+                  <input type="checkbox" :checked="newEnvIsSecret" @change="toggleEnvSecretMode()" />
+                  <span x-t>usar secret</span>
+                </label>
                 <button class="btn btn--primary" type="button" @click="addEnvVar()" x-t>Adicionar</button>
               </row>
-              <template x-if="newEnvIsSecret">
-                <column style="gap:8px">
-                  <text class="u-muted" x-show="secrets.length === 0" x-t>Nenhum secret cadastrado — crie um na aba Secrets.</text>
-                  <row class="env__add env__chips" x-show="secrets.length > 0">
-                    <text class="u-muted" x-t>Secrets do projeto:</text>
-                    <template x-for="secret in secrets" :key="secret.name">
-                      <button class="btn btn--ghost btn--xs" type="button" @click="useSecret(secret.name)" x-text="secret.name"></button>
-                    </template>
-                  </row>
-                </column>
-              </template>
+              <text class="u-muted" x-show="newEnvIsSecret && secrets.length === 0" x-t>Nenhum secret cadastrado — crie um na aba Secrets.</text>
               <column class="kv-list">
                 <template x-for="envVar in envVars" :key="envVar.key">
                   <column style="width:100%">
@@ -2433,10 +2451,6 @@
                     </row>
                     <row class="kv-list__row" x-show="!envVar.isComment">
                       <button class="env__del" type="button" @click="deleteEnvVar(envVar.key)">✕</button>
-                      <button class="btn btn--ghost btn--sm" type="button" @click="startEnvEdit(envVar, 'key')"
-                        :title="$t('Renomear (o valor não muda)')"><span x-icon.13="'pencil'"></span></button>
-                      <button class="btn btn--ghost btn--sm" type="button" @click="startEnvEdit(envVar, 'value')"
-                        :title="$t('Editar o valor no lugar')"><span x-icon.13="'penline'"></span></button>
                       <button class="btn btn--ghost btn--sm" type="button" x-show="!envVar.isSecret" @click="projectEnvToSecret(envVar.key)"
                         :title="$t('Mover para secret (o valor passa a ser guardado cifrado)')"><span x-icon.13="'lock'"></span></button>
                       <button class="btn btn--ghost btn--sm" type="button" x-show="!envVar.isSecret" @click="projectEnvToService(envVar.key)"
@@ -2444,21 +2458,31 @@
                       <button class="btn btn--ghost btn--sm" type="button" x-show="envVar.isSecret" @click="projectSecretToEnv(envVar.secretName)"
                         :title="$t('Voltar para variável em claro (o valor deixa de ser cifrado)')"><span x-icon.13="'unlock'"></span></button>
                       <text class="env__sep"></text>
-<template x-if="isEnvEditing(envVar.key, 'key')">
-                        <input class="env__inline env__key" type="text" x-model="envEdit.draft" x-init="$nextTick(() => { $el.focus(); $el.select(); })"
-                           @keydown.enter.prevent="commitEnvEdit(envVar)" @keydown.escape.prevent="cancelEnvEdit()" @blur="commitEnvEdit(envVar)" />
+                      <!-- Chave e valor editáveis no lugar (sem borda); nada grava sozinho: OK (ou Enter) confirma
+                           e grava, ✕ (ou Esc) desfaz. Ver env_rows.js. -->
+                      <input class="env__inline env__key" type="text" spellcheck="false" :value="envRow(envVar).key"
+                             @input="setEnvDraft(envVar, 'key', $event.target.value)"
+                             @keydown.enter.prevent="saveEnvRow(envVar)" @keydown.escape.prevent="resetEnvRow(envVar)" />
+                      <template x-if="!envRow(envVar).useSecret">
+                        <input class="env__inline kv-list__val kv-list__val--compact" type="text" spellcheck="false" :value="envRow(envVar).value"
+                               @input="setEnvDraft(envVar, 'value', $event.target.value)"
+                               @keydown.enter.prevent="saveEnvRow(envVar)" @keydown.escape.prevent="resetEnvRow(envVar)" />
                       </template>
-                      <template x-if="!isEnvEditing(envVar.key, 'key')">
-                        <text class="env__key" x-text="envVar.key"></text>
+                      <template x-if="envRow(envVar).useSecret">
+                        <select class="form-select env__secret-select" @change="setEnvDraft(envVar, 'secret', $event.target.value)">
+                          <option value="" :selected="!envRow(envVar).secret" x-t>escolha o secret</option>
+                          <template x-for="option in envSecretOptions(envVar)" :key="option.name">
+                            <option :value="option.name" :selected="option.name === envRow(envVar).secret" x-text="option.label"></option>
+                          </template>
+                        </select>
                       </template>
-                      <template x-if="isEnvEditing(envVar.key, 'value')">
-                        <input class="env__inline kv-list__val kv-list__val--compact" type="text" x-model="envEdit.draft" x-init="$nextTick(() => { $el.focus(); $el.select(); })"
-                           :placeholder="envVar.isSecret ? $t('nome do secret') : ''"
-                           @keydown.enter.prevent="commitEnvEdit(envVar)" @keydown.escape.prevent="cancelEnvEdit()" @blur="commitEnvEdit(envVar)" />
-                      </template>
-                      <template x-if="!isEnvEditing(envVar.key, 'value')">
-                        <text class="kv-list__val kv-list__val--compact" x-text="envVar.isSecret ? '(secret)' : envVar.value"></text>
-                      </template>
+                      <label class="env__use-secret">
+                        <input type="checkbox" :checked="envRow(envVar).useSecret" @change="setEnvDraft(envVar, 'useSecret', $event.target.checked)" />
+                        <span x-t>usar secret</span>
+                      </label>
+                      <button class="btn btn--primary btn--sm" type="button" x-show="envRowDirty(envVar)" @click="saveEnvRow(envVar)">OK</button>
+                      <button class="btn btn--ghost btn--sm" type="button" x-show="envRowDirty(envVar)" @click="resetEnvRow(envVar)"
+                              :title="$t('Desfazer')">✕</button>
                     </row>
                   </column>
                 </template>
@@ -3521,14 +3545,24 @@
                            @keydown.enter.prevent="addEnvVar()" />
                   </row>
                   <row class="env__add">
-                    <input class="env__input" type="text" placeholder="value" x-model="newEnvValue"
-                           @keydown.enter.prevent="addEnvVar()" />
+                    <template x-if="!newEnvIsSecret">
+                      <input class="env__input" type="text" placeholder="value" x-model="newEnvValue"
+                             @keydown.enter.prevent="addEnvVar()" />
+                    </template>
+                    <template x-if="newEnvIsSecret">
+                      <select class="form-select env__input" x-model="newEnvValue">
+                        <option value="" x-t>escolha o secret</option>
+                        <template x-for="option in envSecretChoices" :key="option.name"><option :value="option.name" x-text="option.label"></option></template>
+                      </select>
+                    </template>
+                    <label class="env__use-secret">
+                      <input type="checkbox" :checked="newEnvIsSecret" @change="toggleEnvSecretMode()" />
+                      <span x-t>usar secret</span>
+                    </label>
                     <button class="btn btn--primary" type="button" @click="addEnvVar()" x-t>Adicionar</button>
                   </row>
-                  <text class="u-muted-grow">
-                    <span x-t>Para um valor sensível, use um secret do projeto: escreva</span> &lt;secret:NOME&gt; <span x-t>ou
-                    secret:NOME como valor. O secret é criado na aba Secrets do projeto.</span>
-                  </text>
+                  <text class="u-muted" x-show="newEnvIsSecret && envSecretChoices.length === 0" x-t>Nenhum secret disponível — crie um em "Secrets do serviço", abaixo, ou na aba Secrets do projeto.</text>
+                  <text class="u-muted-grow" x-t>Para um valor sensível, marque "usar secret" e escolha um secret do serviço ou do projeto.</text>
                   <!-- Variáveis e secrets do serviço no MESMO painel, separados por uma
                        régua (como service/environment.component.gv). -->
                   <column class="kv-list env__panel">
@@ -3539,10 +3573,6 @@
                         </row>
                         <row class="kv-list__row" x-show="!envVar.isComment">
                           <button class="env__del" type="button" @click="deleteEnvVar(envVar.key)">✕</button>
-                          <button class="btn btn--ghost btn--sm" type="button" @click="startEnvEdit(envVar, 'key')"
-                            :title="$t('Renomear (o valor não muda)')"><span x-icon.13="'pencil'"></span></button>
-                          <button class="btn btn--ghost btn--sm" type="button" @click="startEnvEdit(envVar, 'value')"
-                            :title="$t('Editar o valor no lugar')"><span x-icon.13="'penline'"></span></button>
                           <button class="btn btn--ghost btn--sm" type="button" x-show="!envVar.isSecret" @click="envToSecret(envVar.key)"
                             :title="$t('Mover para secret (o valor passa a ser guardado cifrado)')"><span x-icon.13="'lock'"></span></button>
                           <button class="btn btn--ghost btn--sm" type="button" x-show="!envVar.isSecret" @click="envToProject(envVar.key)"
@@ -3550,21 +3580,31 @@
                           <button class="btn btn--ghost btn--sm" type="button" x-show="envVar.isSecret" @click="serviceSecretToEnv(envVar.secretName)"
                             :title="$t('Voltar para variável em claro (o valor deixa de ser cifrado)')"><span x-icon.13="'unlock'"></span></button>
                           <text class="env__sep"></text>
-<template x-if="isEnvEditing(envVar.key, 'key')">
-                            <input class="env__inline env__key" type="text" x-model="envEdit.draft" x-init="$nextTick(() => { $el.focus(); $el.select(); })"
-                                   @keydown.enter.prevent="commitEnvEdit(envVar)" @keydown.escape.prevent="cancelEnvEdit()" @blur="commitEnvEdit(envVar)" />
+                          <!-- Chave e valor editáveis no lugar (sem borda); nada grava sozinho: OK (ou Enter) confirma
+                               e grava, ✕ (ou Esc) desfaz. Ver env_rows.js. -->
+                          <input class="env__inline env__key" type="text" spellcheck="false" :value="envRow(envVar).key"
+                                 @input="setEnvDraft(envVar, 'key', $event.target.value)"
+                                 @keydown.enter.prevent="saveEnvRow(envVar)" @keydown.escape.prevent="resetEnvRow(envVar)" />
+                          <template x-if="!envRow(envVar).useSecret">
+                            <input class="env__inline kv-list__val kv-list__val--compact" type="text" spellcheck="false" :value="envRow(envVar).value"
+                                   @input="setEnvDraft(envVar, 'value', $event.target.value)"
+                                   @keydown.enter.prevent="saveEnvRow(envVar)" @keydown.escape.prevent="resetEnvRow(envVar)" />
                           </template>
-                          <template x-if="!isEnvEditing(envVar.key, 'key')">
-                            <text class="env__key" x-text="envVar.key"></text>
+                          <template x-if="envRow(envVar).useSecret">
+                            <select class="form-select env__secret-select" @change="setEnvDraft(envVar, 'secret', $event.target.value)">
+                              <option value="" :selected="!envRow(envVar).secret" x-t>escolha o secret</option>
+                              <template x-for="option in envSecretOptions(envVar)" :key="option.name">
+                                <option :value="option.name" :selected="option.name === envRow(envVar).secret" x-text="option.label"></option>
+                              </template>
+                            </select>
                           </template>
-                          <template x-if="isEnvEditing(envVar.key, 'value')">
-                            <input class="env__inline kv-list__val kv-list__val--compact" type="text" x-model="envEdit.draft" x-init="$nextTick(() => { $el.focus(); $el.select(); })"
-                                   :placeholder="envVar.isSecret ? $t('nome do secret') : ''"
-                                   @keydown.enter.prevent="commitEnvEdit(envVar)" @keydown.escape.prevent="cancelEnvEdit()" @blur="commitEnvEdit(envVar)" />
-                          </template>
-                          <template x-if="!isEnvEditing(envVar.key, 'value')">
-                            <text class="kv-list__val kv-list__val--compact" x-text="envVar.isSecret ? '(secret)' : envVar.value"></text>
-                          </template>
+                          <label class="env__use-secret">
+                            <input type="checkbox" :checked="envRow(envVar).useSecret" @change="setEnvDraft(envVar, 'useSecret', $event.target.checked)" />
+                            <span x-t>usar secret</span>
+                          </label>
+                          <button class="btn btn--primary btn--sm" type="button" x-show="envRowDirty(envVar)" @click="saveEnvRow(envVar)">OK</button>
+                          <button class="btn btn--ghost btn--sm" type="button" x-show="envRowDirty(envVar)" @click="resetEnvRow(envVar)"
+                                  :title="$t('Desfazer')">✕</button>
                         </row>
                       </column>
                     </template>

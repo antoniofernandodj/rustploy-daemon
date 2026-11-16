@@ -446,7 +446,7 @@ async fn project_title_and_env_secret_reference() {
     // `<secret:NOME>` digitado e o modo "usar secret" viram { Secret }.
     let env = eval_str(
         &page,
-        &format!("(async () => {{ const d = {d}; window.confirm = () => true; d.newEnvKey = 'TOKEN'; d.newEnvValue = '<secret:GITHUB_TOKEN>'; await d.addEnvVar(); d.useSecret('GITHUB_TOKEN'); const key = d.newEnvKey; await d.addEnvVar(); d.newEnvKey = 'PLAIN'; d.newEnvValue = 'x'; await d.addEnvVar(); return JSON.stringify({{ key, first: window.__env[0].at(-1), second: window.__env[1].at(-1), third: window.__env[2].at(-1), mode: d.newEnvIsSecret }}); }})()"),
+        &format!("(async () => {{ const d = {d}; window.confirm = () => true; d.newEnvKey = 'TOKEN'; d.newEnvValue = '<secret:GITHUB_TOKEN>'; await d.addEnvVar(); d.toggleEnvSecretMode(); d.newEnvKey = 'GH'; d.newEnvValue = 'GITHUB_TOKEN'; const key = d.newEnvKey; await d.addEnvVar(); d.newEnvKey = 'PLAIN'; d.newEnvValue = 'x'; await d.addEnvVar(); return JSON.stringify({{ key, first: window.__env[0].at(-1), second: window.__env[1].at(-1), third: window.__env[2].at(-1), mode: d.newEnvIsSecret }}); }})()"),
     )
     .await;
     let v: serde_json::Value = serde_json::from_str(&env).unwrap();
@@ -454,10 +454,7 @@ async fn project_title_and_env_secret_reference() {
         v["first"]["value"]["Secret"], "GITHUB_TOKEN",
         "<secret:NOME> digitado vira referência"
     );
-    assert_eq!(
-        v["key"], "GITHUB_TOKEN",
-        "o chip preenche a chave vazia com o nome"
-    );
+    assert_eq!(v["key"], "GH");
     assert_eq!(
         v["second"]["value"]["Secret"], "GITHUB_TOKEN",
         "modo usar secret grava referência"
@@ -471,6 +468,131 @@ async fn project_title_and_env_secret_reference() {
         "o modo secret desliga depois de adicionar"
     );
 
+    assert_eq!(
+        errors(&page).await,
+        Vec::<String>::new(),
+        "sem erros de JS no console"
+    );
+
+    // Linha editável no lugar (env_rows.js): chave e valor são campos com o que está gravado;
+    // mexer não grava nada, só faz aparecer o OK; o OK confirma e grava o valor (pelo nome antigo)
+    // e depois a chave.
+    page.evaluate(
+        r#"(() => {
+            const s = Alpine.store('app');
+            s.snap.projects[0].env_vars = [{ key: 'A', value: { Plain: '1' } }];
+            s.snap = { ...s.snap };
+            window.__saved = [];
+        })()"#,
+    )
+    .await
+    .expect("semeia uma variável");
+    let _ = eval_str(
+        &page,
+        &format!("(() => {{ {d}.projectTab = 'env'; return ''; }})()"),
+    )
+    .await;
+    assert!(
+        visible(&page, "[x-data=\"projectDetail\"] input.env__key").await,
+        "a chave da variável deveria ser um campo editável"
+    );
+    let row = eval_str(
+        &page,
+        &format!(
+            "(async () => {{ const d = {d}; await Alpine.nextTick(); \
+             const key = document.querySelector('[x-data=\"projectDetail\"] input.env__key').value; \
+             const row = d.envVars.find((r) => r.key === 'A'); \
+             const before = d.envRowDirty(row); \
+             d.setEnvDraft(row, 'key', 'B'); d.setEnvDraft(row, 'useSecret', true); d.setEnvDraft(row, 'secret', 'GITHUB_TOKEN'); \
+             const after = d.envRowDirty(row); const sentBeforeOk = window.__saved.length; \
+             window.confirm = () => false; await d.saveEnvRow(row); const sentAfterNo = window.__saved.length; \
+             window.confirm = () => true; await d.saveEnvRow(row); \
+             return JSON.stringify({{ key, before, after, sentBeforeOk, sentAfterNo, saved: window.__saved, dirty: d.envRowDirty(row) }}); }})()"
+        ),
+    )
+    .await;
+    let r: serde_json::Value = serde_json::from_str(&row).unwrap();
+    assert_eq!(r["key"], "A", "o campo da chave começa com a chave gravada");
+    assert_eq!(r["before"], false, "sem mexer não há OK");
+    assert_eq!(r["after"], true, "depois de mexer aparece o OK");
+    assert_eq!(r["sentBeforeOk"], 0, "mexer não grava nada");
+    assert_eq!(r["sentAfterNo"], 0, "recusar a confirmação não grava nada");
+    assert_eq!(
+        r["saved"],
+        serde_json::json!([
+            { "EnvValueSet": { "project_id": "prj_1", "key": "A", "value": { "Secret": "GITHUB_TOKEN" } } },
+            { "EnvKeyRename": { "project_id": "prj_1", "from": "A", "to": "B" } }
+        ]),
+        "confirmar grava o valor pelo nome antigo e depois renomeia"
+    );
+    assert_eq!(r["dirty"], false, "gravado, o rascunho some");
+}
+
+/// Janela "Variáveis do job" (screens/job_env.js): a mesma linha editável do projeto e do serviço
+/// (env_rows.js). A lista do "usar secret" traz os secrets do job, os do serviço gatilho e os do
+/// projeto, sem repetir nome; o OK confirma e grava com o `job_id`.
+#[tokio::test]
+async fn job_env_editable_row() {
+    let addr = spawn_static_server().await;
+    let (browser, _handler) = launch().await;
+    let page = open_page(&browser, addr).await;
+    seed_connected(&page).await;
+
+    page.evaluate(
+        r#"(() => {
+            const s = Alpine.store('app');
+            window.__saved = [];
+            s.api.rpcChecked = async (cmd) => { window.__saved.push(cmd); return { ok: true }; };
+            s.api.rpc = async (cmd) => {
+                const req = cmd.SecretList;
+                if (!req) return { ok: false, error: 'stub' };
+                if (req.job_id) return { ok: true, value: { SecretNames: ['J'] } };
+                if (req.service_id) return { ok: true, value: { SecretNames: ['S', 'J'] } };
+                return { ok: true, value: { SecretNames: ['P', 'S'] } };
+            };
+            s.refreshNow = async () => {};
+            s.jobsById = { job_1: { id: 'job_1', project_id: 'prj_1', name: 'backup', trigger_service_id: 'svc_1',
+                env_vars: [{ key: 'A', value: { Plain: '1' } }], env_comments: [] } };
+            s.openJobEnv('job_1');
+        })()"#,
+    )
+    .await
+    .expect("abre a janela do job");
+
+    assert!(
+        visible(&page, "[x-data=\"jobEnv\"] input.env__key").await,
+        "a chave da variável do job deveria ser um campo editável"
+    );
+    let d = "Alpine.$data(document.querySelector('[x-data=\"jobEnv\"]'))";
+    let out = eval_str(
+        &page,
+        &format!(
+            "(async () => {{ const d = {d}; await d.loadSecrets(); \
+             const choices = d.envSecretChoices.map((c) => c.name).join(','); \
+             const row = d.envVars.find((r) => r.key === 'A'); \
+             d.setEnvDraft(row, 'useSecret', true); d.setEnvDraft(row, 'secret', 'S'); \
+             const dirty = d.envRowDirty(row); \
+             window.confirm = () => false; await d.saveEnvRow(row); const sentAfterNo = window.__saved.length; \
+             window.confirm = () => true; await d.saveEnvRow(row); \
+             return JSON.stringify({{ choices, dirty, sentAfterNo, saved: window.__saved, after: d.envRowDirty(row) }}); }})()"
+        ),
+    )
+    .await;
+    let r: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(
+        r["choices"], "J,S,P",
+        "job, serviço gatilho e projeto, sem repetir nome"
+    );
+    assert_eq!(r["dirty"], true, "depois de mexer aparece o OK");
+    assert_eq!(r["sentAfterNo"], 0, "recusar a confirmação não grava nada");
+    assert_eq!(
+        r["saved"],
+        serde_json::json!([
+            { "EnvValueSet": { "project_id": "prj_1", "job_id": "job_1", "key": "A", "value": { "Secret": "S" } } }
+        ]),
+        "confirmar grava com o job_id"
+    );
+    assert_eq!(r["after"], false, "gravado, o rascunho some");
     assert_eq!(
         errors(&page).await,
         Vec::<String>::new(),

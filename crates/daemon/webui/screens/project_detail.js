@@ -19,6 +19,7 @@ import {
   warmReasonText,
 } from "../format.js";
 import { t } from "../i18n.js";
+import { envRowEditor } from "../env_rows.js";
 
 /** Container "primário" de um serviço pra exibir no card: o live, senão o
  * primeiro em execução, senão o primeiro da lista. `extra` é "+N" quando há
@@ -55,6 +56,19 @@ document.addEventListener("alpine:init", () => {
     projectTab: "services", // "services" | "env" | "secrets" | "jobs"
     // Valores de secret que o usuário pediu para ver (SecretReveal). Só em memória; some ao trocar de projeto.
     revealedSecrets: {},
+    // Linha de variável editável no lugar, com OK + confirmação (env_rows.js). Uma variável do
+    // projeto só enxerga os secrets do projeto.
+    ...envRowEditor({
+      scope() {
+        return { project_id: this.store.selectedProjectId };
+      },
+      secretOptions() {
+        return this.secrets.map((secret) => ({ name: secret.name, label: secret.name }));
+      },
+      async afterSave() {
+        await this.store.refreshNow();
+      },
+    }),
     init() {
       this.$watch(
         () => this.store.selectedProjectId,
@@ -222,12 +236,13 @@ document.addEventListener("alpine:init", () => {
       this.newEnvIsSecret = !this.newEnvIsSecret;
       this.newEnvValue = "";
     },
-    /** Chip de um secret: liga o modo secret e preenche (a chave também, se vazia). */
-    useSecret(name) {
-      this.newEnvIsSecret = true;
-      this.newEnvValue = name;
-      if (!this.newEnvKey.trim()) this.newEnvKey = name;
-    },
+    // Os chips de secret saíram em 2026-11-16: o "usar secret" agora mostra uma lista (select).
+    // /** Chip de um secret: liga o modo secret e preenche (a chave também, se vazia). */
+    // useSecret(name) {
+    //   this.newEnvIsSecret = true;
+    //   this.newEnvValue = name;
+    //   if (!this.newEnvKey.trim()) this.newEnvKey = name;
+    // },
     async addEnvVar() {
       const key = this.newEnvKey.trim();
       if (!key) {
@@ -310,36 +325,38 @@ document.addEventListener("alpine:init", () => {
     // `envEdit` = { key, field: "key" | "value", draft } — a própria linha vira um input, sem levar
     // a variável para um formulário (numa lista grande o formulário ficava fora da tela).
     // Enter ou clicar fora grava (se mudou); Esc desiste. Chave: EnvKeyRename; valor: EnvValueSet.
-    envEdit: null,
-    startEnvEdit(row, field) {
-      this.envEdit = { key: row.key, field, draft: field === "key" ? row.key : row.isSecret ? row.secretName : row.value };
-    },
-    isEnvEditing(key, field) {
-      return !!this.envEdit && this.envEdit.key === key && this.envEdit.field === field;
-    },
-    cancelEnvEdit() {
-      this.envEdit = null;
-    },
-    async commitEnvEdit(row) {
-      const edit = this.envEdit;
-      if (!edit) return;
-      this.envEdit = null; // antes do await: o blur que vem junto com o Enter não grava duas vezes
-      const projectId = this.store.selectedProjectId;
-      if (edit.field === "key") {
-        const to = edit.draft.trim();
-        if (!to || to === row.key) return;
-        const renameResponse = await this.store.api.rpcChecked({ EnvKeyRename: { project_id: projectId, from: row.key, to } });
-        this.store.toastResult(renameResponse, t`renomeado: ${row.key} → ${to}`);
-      } else {
-        const current = row.isSecret ? row.secretName : row.value;
-        if (edit.draft === current) return;
-        const setResponse = await this.store.api.rpcChecked({
-          EnvValueSet: { project_id: projectId, key: row.key, value: envValueFromDraft(edit.draft, row.isSecret) },
-        });
-        this.store.toastResult(setResponse, t`valor de ${row.key} salvo`);
-      }
-      await this.store.refreshNow();
-    },
+    // Substituído pela linha editável com OK + confirmação (env_rows.js), 2026-11-16. Fica
+    // comentado para referência; pode ser apagado quando o desenho novo assentar.
+    // envEdit: null,
+    // startEnvEdit(row, field) {
+    //   this.envEdit = { key: row.key, field, draft: field === "key" ? row.key : row.isSecret ? row.secretName : row.value };
+    // },
+    // isEnvEditing(key, field) {
+    //   return !!this.envEdit && this.envEdit.key === key && this.envEdit.field === field;
+    // },
+    // cancelEnvEdit() {
+    //   this.envEdit = null;
+    // },
+    // async commitEnvEdit(row) {
+    //   const edit = this.envEdit;
+    //   if (!edit) return;
+    //   this.envEdit = null; // antes do await: o blur que vem junto com o Enter não grava duas vezes
+    //   const projectId = this.store.selectedProjectId;
+    //   if (edit.field === "key") {
+    //     const to = edit.draft.trim();
+    //     if (!to || to === row.key) return;
+    //     const renameResponse = await this.store.api.rpcChecked({ EnvKeyRename: { project_id: projectId, from: row.key, to } });
+    //     this.store.toastResult(renameResponse, t`renomeado: ${row.key} → ${to}`);
+    //   } else {
+    //     const current = row.isSecret ? row.secretName : row.value;
+    //     if (edit.draft === current) return;
+    //     const setResponse = await this.store.api.rpcChecked({
+    //       EnvValueSet: { project_id: projectId, key: row.key, value: envValueFromDraft(edit.draft, row.isSecret) },
+    //     });
+    //     this.store.toastResult(setResponse, t`valor de ${row.key} salvo`);
+    //   }
+    //   await this.store.refreshNow();
+    // },
 
     // ── Renomear (EnvKeyRename / SecretRename) ─────────────────────────
     // O valor nunca passa pela tela (nem pelo agente): só a chave da variável, ou o nome do secret

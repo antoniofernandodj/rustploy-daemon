@@ -13,6 +13,7 @@ const APP_SHELL = [
   "/app.css",
   "/app.js",
   "/format.js",
+  "/env_rows.js",
   "/directives.js",
   "/i18n.js",
   "/locales/en.js",
