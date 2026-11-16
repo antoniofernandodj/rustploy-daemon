@@ -1076,14 +1076,16 @@ document.addEventListener("alpine:init", () => {
       await this.fetchServiceDetail(this.selectedServiceId);
     },
 
-    async deployRollback() {
-      if (!confirm(t("Reverter para o deploy anterior?"))) return;
-      const serviceId = this.selectedServiceId;
-      const deployRollbackResponse = await this.api.rpcChecked({ DeployRollback: { service_id: serviceId } });
-      if (deployRollbackResponse.ok) this.deployTrackId = serviceId;
-      this.toastResult(deployRollbackResponse, t("rollback iniciado"));
-      await this.fetchServiceDetail(serviceId);
-    },
+// (legado: o botão Rollback saiu do cabeçalho do serviço, como na GUI, que nunca o teve;
+// o comando continua no daemon e no MCP. Mantido por referência.)
+    // async deployRollback() {
+    //   if (!confirm(t("Reverter para o deploy anterior?"))) return;
+    //   const serviceId = this.selectedServiceId;
+    //   const deployRollbackResponse = await this.api.rpcChecked({ DeployRollback: { service_id: serviceId } });
+    //   if (deployRollbackResponse.ok) this.deployTrackId = serviceId;
+    //   this.toastResult(deployRollbackResponse, t("rollback iniciado"));
+    //   await this.fetchServiceDetail(serviceId);
+    // },
 
     async deleteDeployment(deploymentId) {
       const deployDeleteResponse = await this.api.rpcChecked({ DeployDelete: { deployment_id: deploymentId } });

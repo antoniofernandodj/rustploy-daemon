@@ -378,6 +378,106 @@ async fn project_detail_renders() {
     );
 }
 
+/// Projeto: nome e descrição se editam no próprio título (como na GUI,
+/// `project_title_change`), gravando por `ProjectUpdate` sem botão; e a
+/// variável nova do projeto vira referência de secret tanto pelo modo
+/// "usar secret" quanto por `<secret:NOME>` digitado (antes gravava o texto
+/// puro).
+#[tokio::test]
+async fn project_title_and_env_secret_reference() {
+    let addr = spawn_static_server().await;
+    let (browser, _handler) = launch().await;
+    let page = open_page(&browser, addr).await;
+    seed_connected(&page).await;
+
+    page.evaluate(
+        r#"(() => {
+            const s = Alpine.store('app');
+            s.view = 'project';
+            s.selectedProjectId = 'prj_1';
+            window.__saved = [];
+            s.api.rpcChecked = async (cmd) => { window.__saved.push(cmd); return { ok: true }; };
+            window.__env = [];
+            s.saveProjectEnv = async (vars) => { window.__env.push(vars); return { ok: true }; };
+        })()"#,
+    )
+    .await
+    .expect("abre o projeto");
+
+    assert!(
+        visible(
+            &page,
+            "[x-data=\"projectDetail\"] input.page-head__title-input"
+        )
+        .await,
+        "o nome do projeto deveria ser um input no título"
+    );
+    let d = "Alpine.$data(document.querySelector('[x-data=\"projectDetail\"]'))";
+    assert_eq!(
+        eval_str(&page, &format!("(() => {d}.editName)()")).await,
+        "acme",
+        "o título começa com o nome atual"
+    );
+
+    // Digitar grava sozinho (debounce de 0,5 s), aparando nome e descrição.
+    let _ = eval_str(
+        &page,
+        &format!("(() => {{ const d = {d}; d.titleFocused = true; d.editName = ' acme-2 '; d.editDescription = ' loja '; d.titleInput(); return ''; }})()"),
+    )
+    .await;
+    tokio::time::sleep(Duration::from_millis(900)).await;
+    assert_eq!(
+        eval_str(&page, "(() => JSON.stringify(window.__saved))()").await,
+        r#"[{"ProjectUpdate":{"id":"prj_1","name":"acme-2","description":"loja"}}]"#,
+        "grava o ProjectUpdate depois do debounce"
+    );
+
+    // Nome vazio nunca é gravado.
+    let _ = eval_str(
+        &page,
+        &format!("(async () => {{ const d = {d}; d.editName = '  '; await d.titleSave(); return ''; }})()"),
+    )
+    .await;
+    assert_eq!(
+        eval_str(&page, "(() => String(window.__saved.length))()").await,
+        "1"
+    );
+
+    // `<secret:NOME>` digitado e o modo "usar secret" viram { Secret }.
+    let env = eval_str(
+        &page,
+        &format!("(async () => {{ const d = {d}; window.confirm = () => true; d.newEnvKey = 'TOKEN'; d.newEnvValue = '<secret:GITHUB_TOKEN>'; await d.addEnvVar(); d.useSecret('GITHUB_TOKEN'); const key = d.newEnvKey; await d.addEnvVar(); d.newEnvKey = 'PLAIN'; d.newEnvValue = 'x'; await d.addEnvVar(); return JSON.stringify({{ key, first: window.__env[0].at(-1), second: window.__env[1].at(-1), third: window.__env[2].at(-1), mode: d.newEnvIsSecret }}); }})()"),
+    )
+    .await;
+    let v: serde_json::Value = serde_json::from_str(&env).unwrap();
+    assert_eq!(
+        v["first"]["value"]["Secret"], "GITHUB_TOKEN",
+        "<secret:NOME> digitado vira referência"
+    );
+    assert_eq!(
+        v["key"], "GITHUB_TOKEN",
+        "o chip preenche a chave vazia com o nome"
+    );
+    assert_eq!(
+        v["second"]["value"]["Secret"], "GITHUB_TOKEN",
+        "modo usar secret grava referência"
+    );
+    assert_eq!(
+        v["third"]["value"]["Plain"], "x",
+        "valor comum continua em claro"
+    );
+    assert_eq!(
+        v["mode"], false,
+        "o modo secret desliga depois de adicionar"
+    );
+
+    assert_eq!(
+        errors(&page).await,
+        Vec::<String>::new(),
+        "sem erros de JS no console"
+    );
+}
+
 /// Modal "plano de deploy": serviço com dependências mostra a ordem e três
 /// botões (Confirmar / Só o serviço / Rejeitar); projeto mostra dois
 /// (Aceitar / Rejeitar). Rejeitar fecha sem enfileirar nada.
@@ -583,13 +683,15 @@ async fn service_detail_and_general_tab_render() {
     );
 }
 
-/// Renomear serviço (aba General): o campo aparece, o aviso muda conforme o
-/// tipo (Compose × Application), `renameService()` manda o spec inteiro só
-/// com o nome trocado, não manda nada se o nome não mudou, e o card
+/// Renomear serviço pelo título do cabeçalho (como na GUI,
+/// `service_title_change`): o input do título começa com o nome, o aviso muda
+/// conforme o tipo (Compose × Application), `titleSave()` manda o spec inteiro
+/// só com o nome trocado e aparado, não manda nada se o nome não mudou ou
+/// ficou vazio, digitar grava sozinho depois do debounce, e o card
 /// "Internal URL" de um Compose continua apontando para a chave do YAML
 /// depois do rename (o hostname interno não acompanha o nome).
 #[tokio::test]
-async fn rename_service_in_general_tab() {
+async fn rename_service_in_title() {
     let addr = spawn_static_server().await;
     let (browser, _handler) = launch().await;
     let page = open_page(&browser, addr).await;
@@ -610,12 +712,12 @@ async fn rename_service_in_general_tab() {
                     source: { Compose: { content: 'services:\n  # comentário\n\n  rp_banco:\n    image: postgres:18\n' } },
                     healthcheck: { kind: 'None', interval_secs: 5, timeout_secs: 3, retries: 10, start_period_secs: 5 } },
             };
-            // Captura o que o rename manda salvar, sem daemon.
+            // Captura o que o título manda gravar, sem daemon.
             window.__saved = [];
-            s.saveServiceSpec = async (spec, msg) => { window.__saved.push({ spec, msg }); return { ok: true }; };
-            window.__toasts = [];
-            s.toastError = (m) => window.__toasts.push(m);
-            Alpine.$data(document.querySelector('[x-data="serviceDetail"]')).initGeneralForm();
+            s.api.rpcChecked = async (cmd) => { window.__saved.push(cmd); return { ok: true }; };
+            s.refreshNow = async () => {};
+            window.__oks = [];
+            s.toastOk = (m) => window.__oks.push(m);
         })()"#,
     )
     .await
@@ -624,63 +726,73 @@ async fn rename_service_in_general_tab() {
     assert!(
         visible(
             &page,
-            "[x-data=\"serviceDetail\"] input[x-model=\"editName\"]"
+            "[x-data=\"serviceDetail\"] input.service__title[x-model=\"titleDraft\"]"
         )
         .await,
-        "a aba General deveria mostrar o campo de nome"
+        "o cabeçalho deveria mostrar o título editável"
     );
     let d = "Alpine.$data(document.querySelector('[x-data=\"serviceDetail\"]'))";
     assert_eq!(
-        eval_str(
-            &page,
-            "(() => Alpine.$data(document.querySelector('[x-data=\"serviceDetail\"]')).editName)()"
-        )
-        .await,
+        eval_str(&page, &format!("(() => {d}.titleDraft)()")).await,
         "banco",
-        "o campo começa com o nome atual"
+        "o título começa com o nome atual"
     );
     assert!(
-        eval_str(&page, "(() => Alpine.$data(document.querySelector('[x-data=\"serviceDetail\"]')).renameNote)()")
+        eval_str(&page, &format!("(() => {d}.renameNote)()"))
             .await
             .contains("volumes"),
         "Compose: o aviso diz que a stack e os volumes não mudam"
     );
 
-    // Mesmo nome e nome vazio: nada é salvo; o vazio avisa.
+    // Mesmo nome e nome vazio: nada é gravado.
     let _ = eval_str(
         &page,
-        &format!("(async () => {{ const d = {d}; d.editName = 'banco'; await d.renameService(); d.editName = '   '; await d.renameService(); return ''; }})()")
+        &format!("(async () => {{ const d = {d}; d.titleDraft = 'banco'; await d.titleSave(); d.titleDraft = '   '; await d.titleSave(); return ''; }})()")
     )
     .await;
     assert_eq!(
-        eval_str(
-            &page,
-            "(() => JSON.stringify({ saved: window.__saved.length, toasts: window.__toasts }))()"
-        )
-        .await,
-        r#"{"saved":0,"toasts":["Enter the service name"]}"#,
-        "mesmo nome não salva; vazio só avisa"
+        eval_str(&page, "(() => String(window.__saved.length))()").await,
+        "0",
+        "mesmo nome e vazio não gravam"
     );
 
     // Nome novo: manda o spec inteiro (fonte, porta, product) só com o nome trocado.
     let saved = eval_str(
         &page,
-        &format!("(async () => {{ const d = {d}; d.editName = '  meu-banco  '; await d.renameService(); const x = window.__saved[0]; return JSON.stringify({{ n: window.__saved.length, msg: x.msg, name: x.spec.name, port: x.spec.port, kind: x.spec.product, content: x.spec.source.Compose.content, edit: d.editName }}); }})()")
+        &format!("(async () => {{ const d = {d}; d.titleDraft = '  meu-banco  '; await d.titleSave(); const x = window.__saved[0].ServiceUpdate; return JSON.stringify({{ n: window.__saved.length, id: x.id, name: x.spec.name, port: x.spec.port, kind: x.spec.product, content: x.spec.source.Compose.content, detail: Alpine.store('app').serviceDetail.spec.name }}); }})()")
     )
     .await;
     let v: serde_json::Value = serde_json::from_str(&saved).unwrap();
     assert_eq!(v["n"], 1);
-    assert_eq!(v["msg"], "service renamed");
+    assert_eq!(v["id"], "svc_1");
     assert_eq!(v["name"], "meu-banco", "o nome é aparado");
     assert_eq!(v["port"], 5432);
     assert_eq!(v["kind"], "postgres");
     assert!(v["content"].as_str().unwrap().contains("rp_banco:"));
-    assert_eq!(v["edit"], "meu-banco");
+    assert_eq!(
+        v["detail"], "meu-banco",
+        "o detalhe local passa a ter o nome novo"
+    );
 
-    // O detalhe passa a ter o nome novo; o host interno segue o YAML.
+    // Digitar grava sozinho, 0,5 s depois da última tecla (sem botão).
+    let _ = eval_str(
+        &page,
+        &format!(
+            "(() => {{ const d = {d}; d.titleDraft = 'banco-2'; d.titleInput(); return ''; }})()"
+        ),
+    )
+    .await;
+    tokio::time::sleep(Duration::from_millis(900)).await;
+    assert_eq!(
+        eval_str(&page, "(() => window.__saved.length + ':' + window.__saved[window.__saved.length - 1].ServiceUpdate.spec.name)()").await,
+        "2:banco-2",
+        "o debounce grava o nome digitado"
+    );
+
+    // O host interno segue o YAML.
     let url = eval_str(
         &page,
-        &format!("(() => {{ Alpine.store('app').serviceDetail.spec.name = 'meu-banco'; {d}.connectionUrl = 'postgresql://u:p@rp_banco:5432/db'; return {d}.connectionInfo.internalUrl; }})()")
+        &format!("(() => {{ {d}.connectionUrl = 'postgresql://u:p@rp_banco:5432/db'; return {d}.connectionInfo.internalUrl; }})()")
     )
     .await;
     // O host (chave do YAML) agora é decidido no daemon
