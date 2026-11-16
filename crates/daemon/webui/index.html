@@ -102,12 +102,13 @@
       </row>
       <template x-for="group in groups" :key="group.title">
         <column class="sidebar__group">
-          <text class="sidebar__section" x-text="group.title"></text>
+          <text class="sidebar__section" x-text="$t(group.title)"></text>
           <template x-for="navItem in group.items" :key="navItem.v">
-            <button type="button" :class="on(navItem) ? 'nav-item nav-item--active' : 'nav-item'" :title="navItem.label"
+            <button type="button" :class="on(navItem) ? 'nav-item nav-item--active' : 'nav-item'" :title="$t(navItem.label)"
                     @click="$store.app.nav(navItem.v)">
               <span class="nav-item__icon" x-text="navItem.icon"></span>
-              <text class="nav-item__label" x-text="navItem.label"></text>
+              <!-- "Projetos (N)" com a contagem, como o NavItem da GUI (shell.projects). -->
+              <text class="nav-item__label" x-text="$t(navItem.label) + (navItem.v === 'projects' ? ' (' + (($store.app.snap && $store.app.snap.projects) || []).length + ')' : '')"></text>
             </button>
           </template>
         </column>
@@ -136,10 +137,12 @@
                  x-model="$store.app.search" @input="$store.app.searchChanged($event.target.value)" />
         </row>
         <text class="u-muted topbar__status" :title="location.origin" x-text="'● ' + location.host + ' · daemon v' + $store.app.daemonVersion"></text>
+        <!-- (legado: o seletor de idioma ficava aqui; agora mora em Configurações → Idioma,
+             como na GUI — home/settings/language.component.gv)
         <row class="language-switch">
           <button type="button" class="btn" :class="$store.i18n.locale === 'en' ? 'btn--primary' : 'btn--ghost'" @click="$store.i18n.set('en')">English</button>
           <button type="button" class="btn" :class="$store.i18n.locale === 'pt-BR' ? 'btn--primary' : 'btn--ghost'" @click="$store.i18n.set('pt-BR')">Português</button>
-        </row>
+        </row> -->
         <button class="btn btn--danger btn-icon" type="button" @click="$store.app.stopAll()" title="Para todos os containers gerenciados" x-t:title>
           <text x-t>Stop All</text>
         </button>
@@ -166,9 +169,9 @@
             <text class="page-head__subtitle" x-t>Projetos e serviços rodando agora — projetos sem serviço no ar não aparecem.</text>
           </column>
           <row class="page-head__stats page-head__stats--hide-lg">
-            <column class="stat">
+            <column class="stat-card">
               <text class="u-label-cap" x-t>SERVIÇOS NO AR</text>
-              <text class="stat__num" x-text="totalServices"></text>
+              <text class="stat-card__num" x-text="totalServices"></text>
             </column>
           </row>
         </row>
@@ -283,11 +286,11 @@
 
         <column class="panel panel--fill">
           <row class="table__head">
-            <text class="table__head-cell table__col-svc" x-t>SERVIÇO</text>
-            <text class="table__head-cell table__col-proj" x-t>PROJETO</text>
-            <text class="table__head-cell table__col-state" x-t>ESTADO</text>
+            <button type="button" class="table__head-cell table__head-sort table__col-svc" @click="sortBy('service')"><span x-t>SERVIÇO</span><span x-text="sortMark('service')"></span></button>
+            <button type="button" class="table__head-cell table__head-sort table__col-proj" @click="sortBy('project')"><span x-t>PROJETO</span><span x-text="sortMark('project')"></span></button>
+            <button type="button" class="table__head-cell table__head-sort table__col-state" @click="sortBy('stateLabel')"><span x-t>ESTADO</span><span x-text="sortMark('stateLabel')"></span></button>
             <text class="table__head-cell table__col-dur" x-t>DURAÇÃO</text>
-            <text class="table__head-cell table__col-start" x-t>INÍCIO</text>
+            <button type="button" class="table__head-cell table__head-sort table__col-start" @click="sortBy('start')"><span x-t>INÍCIO</span><span x-text="sortMark('start')"></span></button>
           </row>
 
           <column class="u-center-fill" x-show="store.dataLoading" style="padding:24px">
@@ -878,7 +881,7 @@
               <label class="check-row"><input type="checkbox" x-model="retentionEnabled" /><span x-t>Manter só as últimas tags de cada repositório</span></label>
               <text class="u-label-cap" x-t>TAGS A MANTER</text>
               <input class="field__input" type="number" min="1" max="1000" step="1" x-model.number="retentionKeepLast" placeholder="10" style="max-width:90px" />
-              <button class="btn btn--primary" type="button" @click="saveRetention()" x-t>Save</button>
+              <button class="btn btn--primary" type="button" @click="saveRetention()" x-t>Salvar</button>
             </row>
             <text class="u-muted" x-t>Roda antes de cada GC (o diário ou o botão). Nunca apaga a tag que um serviço usa. As imagens que ficarem sem tag saem do disco no GC.</text>
           </column>
@@ -1240,15 +1243,15 @@
                         <row class="kv-list__row" x-show="!envVar.isComment">
                           <button class="env__del" type="button" @click="deleteEnvVar(envVar.key)">✕</button>
                           <button class="btn btn--ghost btn--sm" type="button" @click="startEnvEdit(envVar, 'key')"
-                            :title="$t('Renomear (o valor não muda)')">✏️</button>
+                            :title="$t('Renomear (o valor não muda)')"><span x-icon.13="'pencil'"></span></button>
                           <button class="btn btn--ghost btn--sm" type="button" @click="startEnvEdit(envVar, 'value')"
-                            :title="$t('Editar o valor no lugar')">✎</button>
+                            :title="$t('Editar o valor no lugar')"><span x-icon.13="'penline'"></span></button>
                           <button class="btn btn--ghost btn--sm" type="button" x-show="!envVar.isSecret" @click="envToSecret(envVar.key)"
-                            :title="$t('Mover para secret (o valor passa a ser guardado cifrado)')">🔒</button>
+                            :title="$t('Mover para secret (o valor passa a ser guardado cifrado)')"><span x-icon.13="'lock'"></span></button>
                           <button class="btn btn--ghost btn--sm" type="button" x-show="!envVar.isSecret" @click="envToProject(envVar.key)"
-                            :title="$t('Subir para o projeto (todos os serviços e jobs do projeto herdam)')">↑</button>
+                            :title="$t('Subir para o projeto (todos os serviços e jobs do projeto herdam)')"><span x-icon.13="'up'"></span></button>
                           <button class="btn btn--ghost btn--sm" type="button" x-show="envVar.isSecret" @click="secretToEnv(envVar.secretName)"
-                            :title="$t('Voltar para variável em claro (o valor deixa de ser cifrado)')">🔓</button>
+                            :title="$t('Voltar para variável em claro (o valor deixa de ser cifrado)')"><span x-icon.13="'unlock'"></span></button>
                           <text class="env__sep"></text>
                           <template x-if="isEnvEditing(envVar.key, 'key')">
                             <input class="env__inline env__key" type="text" x-model="envEdit.draft" x-init="$nextTick(() => { $el.focus(); $el.select(); })"
@@ -1282,17 +1285,17 @@
                       <row class="kv-list__row">
                         <button class="env__del" type="button" @click="deleteSecret(secretName)">✕</button>
                         <button class="btn btn--ghost btn--sm" type="button" @click="rename('secret', secretName)"
-                          :title="$t('Renomear (o valor não muda)')">✏️</button>
+                          :title="$t('Renomear (o valor não muda)')"><span x-icon.13="'pencil'"></span></button>
                         <button class="btn btn--ghost btn--sm" type="button" @click="secretToEnv(secretName)"
-                          :title="$t('Voltar para variável em claro (o valor deixa de ser cifrado)')">🔓</button>
+                          :title="$t('Voltar para variável em claro (o valor deixa de ser cifrado)')"><span x-icon.13="'unlock'"></span></button>
                         <button class="btn btn--ghost btn--sm" type="button" @click="secretToProject(secretName)"
-                          :title="$t('Subir para o projeto (todos os serviços e jobs do projeto podem usar)')">↑</button>
+                          :title="$t('Subir para o projeto (todos os serviços e jobs do projeto podem usar)')"><span x-icon.13="'up'"></span></button>
                         <button class="btn btn--ghost btn--sm" type="button" x-show="revealedSecrets[secretName] === undefined" @click="revealSecret(secretName)"
-                          :title="$t('Ver o valor (o acesso fica registrado na auditoria do servidor)')">👁</button>
+                          :title="$t('Ver o valor (o acesso fica registrado na auditoria do servidor)')"><span x-icon.13="'eye'"></span></button>
                         <button class="btn btn--ghost btn--sm" type="button" x-show="revealedSecrets[secretName] !== undefined" @click="hideSecret(secretName)"
-                          :title="$t('Esconder o valor')">🙈</button>
+                          :title="$t('Esconder o valor')"><span x-icon.13="'eyeoff'"></span></button>
                         <button class="btn btn--ghost btn--sm" type="button" x-show="revealedSecrets[secretName] !== undefined" @click="copySecret(secretName)"
-                          :title="$t('Copiar o valor')">📋</button>
+                          :title="$t('Copiar o valor')"><span x-icon.13="'copy'"></span></button>
                         <text class="env__sep"></text>
                         <text class="env__key" x-text="secretName"></text>
                         <text class="kv-list__val kv-list__val--compact" x-show="revealedSecrets[secretName] === undefined" x-t>cifrado</text>
@@ -1544,8 +1547,22 @@
                   @click="store.settingsTab = 'recover'; store.recoverStatusLoad()" x-t>Recuperar</button>
           <button type="button" :class="store.settingsTab === 'updates' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'"
                   @click="store.settingsTab = 'updates'"><span x-t>Atualizações</span><span class="nav-item__badge" x-show="store.updateIsAvailable" x-text="' ●'"></span></button>
+          <button type="button" :class="store.settingsTab === 'language' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'"
+                  @click="store.settingsTab = 'language'" x-t>Idioma</button>
         </row>
         <hr class="rule" />
+
+        <!-- Idioma (porta de home/settings/language.component.gv) -->
+        <column class="u-fill-all" x-show="store.settingsTab === 'language'">
+          <column class="form-panel">
+            <text class="u-label-cap" x-t>IDIOMA DA INTERFACE</text>
+            <text class="u-muted" x-t>Escolha o idioma do aplicativo. A escolha fica guardada.</text>
+            <row class="language-switch">
+              <button type="button" class="btn" :class="$store.i18n.locale === 'en' ? 'btn--primary' : 'btn--ghost'" @click="$store.i18n.set('en')">English</button>
+              <button type="button" class="btn" :class="$store.i18n.locale === 'pt-BR' ? 'btn--primary' : 'btn--ghost'" @click="$store.i18n.set('pt-BR')">Português</button>
+            </row>
+          </column>
+        </column>
 
         <!-- Web Server -->
         <column class="u-fill-all" x-show="store.settingsTab === 'web'">
@@ -1606,7 +1623,7 @@
             </text>
 
             <row class="env__add" style="margin-top:14px">
-              <button class="btn btn--primary" type="button" @click="store.settingsSave()" x-t>Save</button>
+              <button class="btn btn--primary" type="button" @click="store.settingsSave()" x-t>Salvar</button>
               <text class="u-muted" x-text="store.settingsMessage"></text>
             </row>
           </column>
@@ -2266,24 +2283,31 @@
         <row class="proj-bar">
           <button class="btn btn--ghost" type="button" @click="store.nav('projects')" x-t>‹ Projetos</button>
           <column class="u-grow"></column>
-          <row class="proj-bar__actions" x-show="!editing">
-            <button class="btn btn--sm-ghost" type="button" @click="store.requestProjectDeploy()" x-t>Deploy</button>
+          <row class="proj-bar__actions">
             <button class="btn btn--sm-ghost" type="button" @click="store.openServicesReorder()" x-t>Reordenar serviços</button>
+            <button class="btn btn--sm-ghost" type="button" @click="store.requestProjectDeploy()" x-t>Deploy</button>
             <button class="btn btn--sm-primary" type="button" @click="store.openNewService()" x-t>+ Novo serviço</button>
-            <button class="btn btn--sm-ghost" type="button" @click="store.openProjectWin(project)" x-t>Editar projeto</button>
+            <!-- (legado: "Editar projeto" abria o modal; o nome/descrição agora se editam no próprio título, como na GUI)
+            <button class="btn btn--sm-ghost" type="button" @click="store.openProjectWin(project)" x-t>Editar projeto</button> -->
             <button class="btn btn--sm-danger" type="button" x-show="canDelete"
                     @click="store.deleteProject(store.selectedProjectId)" x-t>Remover projeto</button>
           </row>
         </row>
 
-        <template x-if="true">
-          <row class="page-head">
-            <column class="page-head__titles">
-              <text class="page-head__title" x-text="project ? project.name : ''"></text>
-              <text class="page-head__subtitle" x-text="project ? (project.description || '') : ''"></text>
-            </column>
-          </row>
-        </template>
+        <!-- Nome e descrição: inputs sem borda, editados no lugar, sem botão (gravam
+             0,5 s depois da última tecla — projectDetail.titleInput), como na GUI. -->
+        <row class="page-head">
+          <column class="page-head__titles">
+            <input class="page-head__title-input" type="text" x-model="editName"
+                   placeholder="Nome do projeto" x-t:placeholder spellcheck="false"
+                   @input="titleInput()" @focus="titleFocused = true" @blur="titleBlur()"
+                   @keydown.enter.prevent="$el.blur()" />
+            <input class="page-head__subtitle-input" type="text" x-model="editDescription"
+                   placeholder="Descrição (opcional)" x-t:placeholder spellcheck="false"
+                   @input="titleInput()" @focus="titleFocused = true" @blur="titleBlur()"
+                   @keydown.enter.prevent="$el.blur()" />
+          </column>
+        </row>
 
         <row class="tabs">
           <button type="button" :class="projectTab === 'services' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'"
@@ -2302,33 +2326,37 @@
           <column class="grid">
             <template x-for="service in services" :key="service.id">
               <column class="card">
+                <!-- Como components/service_card.component.gv: nome:porta à esquerda,
+                     selos à direita (pendente, quente/frio, status). -->
                 <row class="card__head">
-                  <row style="align-items:center; gap:6px">
+                  <row class="card__name-row">
                     <text class="card__title" x-text="service.name"></text>
                     <text class="card__port" x-text="':' + service.port"></text>
                   </row>
-                  <row class="badge">
-                    <text class="status-dot" :class="'state-cell--' + service.statusKind">●</text>
-                    <text class="badge__label" :class="'state-cell--' + service.statusKind" x-text="service.statusLabel"></text>
-                  </row>
-                  <row class="badge" x-show="$store.app.stateGitPendingDeploy(service.id)"
-                       :title="$t('Um commit do repositório mudou este serviço. O que está rodando só acompanha no próximo deploy.')">
-                    <text class="status-dot state-cell--warn">◆</text>
-                    <text class="badge__label state-cell--warn" x-t>mudança pendente de deploy</text>
-                  </row>
-                  <row class="badge" x-show="service.hasWarm" :title="service.warmReason">
-                    <text class="status-dot" :class="'state-cell--' + service.warmKind">◐</text>
-                    <text class="badge__label" :class="'state-cell--' + service.warmKind" x-text="service.warmLabel"></text>
+                  <row class="card__badges">
+                    <row class="badge" x-show="$store.app.stateGitPendingDeploy(service.id)"
+                         :title="$t('Um commit do repositório mudou este serviço. O que está rodando só acompanha no próximo deploy.')">
+                      <text class="status-dot state-cell--warn">◆</text>
+                      <text class="badge__label state-cell--warn" x-t>mudança pendente de deploy</text>
+                    </row>
+                    <row class="badge" x-show="service.hasWarm" :title="service.warmReason">
+                      <text class="status-dot" :class="'state-cell--' + service.warmKind">◐</text>
+                      <text class="badge__label" :class="'state-cell--' + service.warmKind" x-text="service.warmLabel"></text>
+                    </row>
+                    <row class="badge">
+                      <text class="status-dot" :class="'state-cell--' + service.statusKind">●</text>
+                      <text class="badge__label" :class="'state-cell--' + service.statusKind" x-text="service.statusLabel"></text>
+                    </row>
                   </row>
                 </row>
-                <row class="card__container" style="gap:6px;align-items:center">
+                <row class="card__container">
                   <button class="btn--copy-mini" type="button" title="Copiar nome" x-t:title x-show="service.containerNameFull"
-                    @click="$store.app.copyText(service.containerNameFull, 'nome')">📋</button>
+                    @click="$store.app.copyText(service.containerNameFull, 'nome')">⧉</button>
                   <text class="u-muted" x-text="'name: ' + service.containerName"></text>
                 </row>
-                <row style="gap:6px;align-items:center">
+                <row class="card__container">
                   <button class="btn--copy-mini" type="button" title="Copiar id" x-t:title x-show="service.containerIdFull"
-                    @click="$store.app.copyText(service.containerIdFull, 'id')">📋</button>
+                    @click="$store.app.copyText(service.containerIdFull, 'id')">⧉</button>
                   <text class="u-muted" x-text="'id: ' + service.containerId"></text>
                   <text class="u-muted" x-show="service.containerExtra" x-text="'extra: ' + service.containerExtra"></text>
                 </row>
@@ -2363,25 +2391,40 @@
 
         <!-- Variáveis do projeto -->
         <column class="env" x-show="projectTab === 'env'">
+          <!-- Ordem da GUI (shell/project_env.component.gv): cabeçalho, "mover para o
+               serviço", form de adição (com o modo "usar secret") e a lista. -->
+          <row class="env__head">
+            <text class="u-muted-grow" x-t>Herdadas por todos os serviços deste projeto no deploy — as do serviço têm precedência.</text>
+            <button class="btn btn--export" type="button" @click="openEnvText()" x-show="!envTextOpen">.env</button>
+            <button class="btn btn--blue" type="button" @click="closeEnvText()" x-show="envTextOpen" x-t>Fechar</button>
+          </row>
           <row class="env__add">
-            <text class="u-muted" x-t>Mover para o serviço:</text>
+            <text class="u-muted" style="flex-shrink:0" x-t>Mover para o serviço:</text>
             <select class="form-select" x-model="moveTargetServiceId">
               <option value="" x-t>escolha o serviço de destino</option>
               <template x-for="serviceOption in serviceOptions" :key="serviceOption.id"><option :value="serviceOption.id" x-text="serviceOption.name"></option></template>
             </select>
           </row>
-          <row class="env__head">
-            <text class="u-muted-grow" x-t>Herdadas por todos os serviços deste projeto no deploy.</text>
-            <button class="btn btn--export" type="button" @click="openEnvText()" x-show="!envTextOpen">.env</button>
-            <button class="btn btn--export-on" type="button" @click="closeEnvText()" x-show="envTextOpen" x-t>Fechar</button>
-          </row>
           <template x-if="!envTextOpen">
             <column style="gap:10px">
               <row class="env__add">
-                <input class="env__input" type="text" placeholder="KEY" x-model="newEnvKey" />
-                <input class="env__input" type="text" placeholder="value" x-model="newEnvValue" />
+                <input class="env__input" type="text" placeholder="KEY" x-model="newEnvKey" @keydown.enter.prevent="addEnvVar()" />
+                <input class="env__input" type="text" :placeholder="newEnvIsSecret ? $t('nome do secret') : 'value'" x-model="newEnvValue"
+                       @keydown.enter.prevent="addEnvVar()" />
+                <button type="button" :class="newEnvIsSecret ? 'btn btn--blue' : 'tabs__tab'" @click="toggleEnvSecretMode()" x-t>usar secret</button>
                 <button class="btn btn--primary" type="button" @click="addEnvVar()" x-t>Adicionar</button>
               </row>
+              <template x-if="newEnvIsSecret">
+                <column style="gap:8px">
+                  <text class="u-muted" x-show="secrets.length === 0" x-t>Nenhum secret cadastrado — crie um na aba Secrets.</text>
+                  <row class="env__add env__chips" x-show="secrets.length > 0">
+                    <text class="u-muted" x-t>Secrets do projeto:</text>
+                    <template x-for="secret in secrets" :key="secret.name">
+                      <button class="btn btn--ghost btn--xs" type="button" @click="useSecret(secret.name)" x-text="secret.name"></button>
+                    </template>
+                  </row>
+                </column>
+              </template>
               <column class="kv-list">
                 <template x-for="envVar in envVars" :key="envVar.key">
                   <column style="width:100%">
@@ -2391,15 +2434,15 @@
                     <row class="kv-list__row" x-show="!envVar.isComment">
                       <button class="env__del" type="button" @click="deleteEnvVar(envVar.key)">✕</button>
                       <button class="btn btn--ghost btn--sm" type="button" @click="startEnvEdit(envVar, 'key')"
-                        :title="$t('Renomear (o valor não muda)')">✏️</button>
+                        :title="$t('Renomear (o valor não muda)')"><span x-icon.13="'pencil'"></span></button>
                       <button class="btn btn--ghost btn--sm" type="button" @click="startEnvEdit(envVar, 'value')"
-                        :title="$t('Editar o valor no lugar')">✎</button>
+                        :title="$t('Editar o valor no lugar')"><span x-icon.13="'penline'"></span></button>
                       <button class="btn btn--ghost btn--sm" type="button" x-show="!envVar.isSecret" @click="projectEnvToSecret(envVar.key)"
-                        :title="$t('Mover para secret (o valor passa a ser guardado cifrado)')">🔒</button>
+                        :title="$t('Mover para secret (o valor passa a ser guardado cifrado)')"><span x-icon.13="'lock'"></span></button>
                       <button class="btn btn--ghost btn--sm" type="button" x-show="!envVar.isSecret" @click="projectEnvToService(envVar.key)"
-                        :title="$t('Mover para o serviço escolhido (os outros serviços deixam de herdar)')">↓</button>
+                        :title="$t('Mover para o serviço escolhido (os outros serviços deixam de herdar)')"><span x-icon.13="'down'"></span></button>
                       <button class="btn btn--ghost btn--sm" type="button" x-show="envVar.isSecret" @click="projectSecretToEnv(envVar.secretName)"
-                        :title="$t('Voltar para variável em claro (o valor deixa de ser cifrado)')">🔓</button>
+                        :title="$t('Voltar para variável em claro (o valor deixa de ser cifrado)')"><span x-icon.13="'unlock'"></span></button>
                       <text class="env__sep"></text>
 <template x-if="isEnvEditing(envVar.key, 'key')">
                         <input class="env__inline env__key" type="text" x-model="envEdit.draft" x-init="$nextTick(() => { $el.focus(); $el.select(); })"
@@ -2435,24 +2478,27 @@
           </template>
         </column>
 
-        <!-- Secrets do projeto -->
+        <!-- Secrets do projeto — ordem de shell/project_secrets.component.gv: os três
+             avisos, "mover para o serviço", NOME numa linha e valor + salvar na outra. -->
         <column class="env" x-show="projectTab === 'secrets'">
+          <column class="secrets__intro">
+            <text class="u-muted-grow" x-t>Valores sensíveis (tokens, senhas, chaves de API) cifrados com a chave do servidor. Para ver um valor use o botão 👁 (o acesso fica registrado na auditoria); para trocá-lo, salve um novo com o mesmo nome.</text>
+            <text class="u-muted-grow" x-t>Para usar num serviço: na aba Variáveis, ligue "usar secret" e escolha o nome; ou escreva &lt;secret:NOME&gt; (ou secret:NOME) como valor, no editor .env do projeto ou do serviço. Para clonar um repositório Git privado, use o nome do secret puro, sem prefixo, no campo Credentials da aba General do serviço.</text>
+            <text class="u-muted-grow" x-t>O valor real só é decifrado em memória, na hora do deploy.</text>
+          </column>
           <row class="env__add">
-            <text class="u-muted" x-t>Mover para o serviço:</text>
+            <text class="u-muted" style="flex-shrink:0" x-t>Mover para o serviço:</text>
             <select class="form-select" x-model="moveTargetServiceId">
               <option value="" x-t>escolha o serviço de destino</option>
               <template x-for="serviceOption in serviceOptions" :key="serviceOption.id"><option :value="serviceOption.id" x-text="serviceOption.name"></option></template>
             </select>
           </row>
-          <text class="u-muted-grow">
-            <span x-t>Valores sensíveis (tokens, senhas, chaves de API) cifrados com a chave do
-            servidor. Para ver um valor use o botão 👁 (o acesso fica registrado na auditoria); para
-            trocá-lo, salve um novo com o mesmo nome. Para usar num serviço, escreva</span> &lt;secret:NOME&gt; <span x-t>como valor de uma
-            variável de ambiente.</span>
-          </text>
           <row class="env__add">
             <input class="env__input" type="text" placeholder="NOME" x-t:placeholder x-model="newSecretName" />
-            <input class="env__input" type="password" placeholder="valor (cifrado ao salvar)" x-t:placeholder x-model="newSecretValue" />
+          </row>
+          <row class="env__add">
+            <input class="env__input" type="password" placeholder="valor (cifrado ao salvar)" x-t:placeholder x-model="newSecretValue"
+                   @keydown.enter.prevent="submitSecret()" />
             <button class="btn btn--primary" type="button" @click="submitSecret()" x-t>Salvar secret</button>
           </row>
           <column class="kv-list">
@@ -2460,17 +2506,17 @@
               <row class="kv-list__row">
                 <button class="env__del" type="button" @click="store.deleteSecret(secret.name)">✕</button>
                 <button class="btn btn--ghost btn--sm" type="button" @click="projectRename('secret', secret.name)"
-                  :title="$t('Renomear (o valor não muda)')">✏️</button>
+                  :title="$t('Renomear (o valor não muda)')"><span x-icon.13="'pencil'"></span></button>
                 <button class="btn btn--ghost btn--sm" type="button" @click="projectSecretToEnv(secret.name)"
-                  :title="$t('Voltar para variável em claro (o valor deixa de ser cifrado)')">🔓</button>
+                  :title="$t('Voltar para variável em claro (o valor deixa de ser cifrado)')"><span x-icon.13="'unlock'"></span></button>
                 <button class="btn btn--ghost btn--sm" type="button" @click="projectSecretToService(secret.name)"
-                  :title="$t('Mover para o serviço escolhido (os outros serviços deixam de ver)')">↓</button>
+                  :title="$t('Mover para o serviço escolhido (os outros serviços deixam de ver)')"><span x-icon.13="'down'"></span></button>
                 <button class="btn btn--ghost btn--sm" type="button" x-show="secret.value === null" @click="revealSecret(secret.name)"
-                  :title="$t('Ver o valor (o acesso fica registrado na auditoria do servidor)')">👁</button>
+                  :title="$t('Ver o valor (o acesso fica registrado na auditoria do servidor)')"><span x-icon.13="'eye'"></span></button>
                 <button class="btn btn--ghost btn--sm" type="button" x-show="secret.value !== null" @click="hideSecret(secret.name)"
-                  :title="$t('Esconder o valor')">🙈</button>
+                  :title="$t('Esconder o valor')"><span x-icon.13="'eyeoff'"></span></button>
                 <button class="btn btn--ghost btn--sm" type="button" x-show="secret.value !== null" @click="copySecret(secret.name)"
-                  :title="$t('Copiar o valor')">📋</button>
+                  :title="$t('Copiar o valor')"><span x-icon.13="'copy'"></span></button>
                 <text class="env__sep"></text>
                 <text class="env__key" x-text="secret.name"></text>
                 <text class="kv-list__val kv-list__val--compact" x-show="secret.value === null" x-t>cifrado</text>
@@ -3073,7 +3119,13 @@
           <column class="page-head__titles">
             <row class="service__title-row">
               <button class="btn btn--ghost" type="button" @click="store.nav('project')" x-text="'‹ ' + projectName"></button>
-              <text class="page-head__title service__title" x-text="svc ? svc.spec.name : ''"></text>
+              <!-- Título = input sem borda: edita o nome no lugar, sem botão (grava
+                   0,5 s depois da última tecla — serviceDetail.titleInput), como na GUI. -->
+              <input class="page-head__title-input service__title" type="text" x-model="titleDraft"
+                     placeholder="Nome do serviço" x-t:placeholder spellcheck="false"
+                     :title="renameNote"
+                     @input="titleInput()" @focus="titleFocused = true" @blur="titleBlur()"
+                     @keydown.enter.prevent="$el.blur()" />
             </row>
             <row class="service__substatus">
               <row class="badge">
@@ -3095,7 +3147,9 @@
             <template x-if="svc"><row class="service__actions service__actions--compact">
               <button class="btn btn--primary" type="button" title="Deploy" @click="store.deployStart()">▶</button>
               <button class="btn btn--blue" type="button" title="Reload" @click="store.serviceReload()">⟳</button>
-              <button class="btn btn--blue" type="button" title="Rollback" @click="store.deployRollback()">↩</button>
+              <!-- (legado: a GUI não tem Rollback no cabeçalho; no lugar dele, Rebuild ⚙)
+              <button class="btn btn--blue" type="button" title="Rollback" @click="store.deployRollback()">↩</button> -->
+              <button class="btn btn--blue" type="button" title="Rebuild" @click="store.deployStart()">⚙</button>
               <button class="btn btn--danger" type="button" title="Stop" x-t:title @click="store.serviceStop()">■</button>
               <button class="btn btn--ghost" type="button" x-show="warm" :disabled="warm?.warming"
                       title="Aquecer: constrói a imagem para o próximo deploy achar o cache, sem mexer no container no ar" x-t:title
@@ -3107,13 +3161,15 @@
           <template x-if="svc"><row class="service__actions service__actions--full">
             <button class="btn btn--primary" type="button" @click="store.deployStart()">Deploy</button>
             <button class="btn btn--blue" type="button" @click="store.serviceReload()">Reload</button>
-            <button class="btn btn--blue" type="button" @click="store.deployRollback()">Rollback</button>
+            <!-- (legado: a GUI não tem Rollback no cabeçalho; no lugar dele, Rebuild)
+            <button class="btn btn--blue" type="button" @click="store.deployRollback()">Rollback</button> -->
+            <button class="btn btn--blue" type="button" @click="store.deployStart()">Rebuild</button>
             <button class="btn btn--danger" type="button" @click="store.serviceStop()" x-t>Stop</button>
             <button class="btn btn--ghost" type="button" x-show="warm" :disabled="warm?.warming"
                     title="Constrói a imagem para o próximo deploy achar o cache, sem mexer no container no ar" x-t:title
                     @click="store.serviceWarm(store.selectedServiceId)" x-t>Aquecer</button>
             <button class="btn btn--ghost" type="button" title="Gera um arquivo para recriar este serviço em outro servidor" x-t:title
-                    @click="store.openExportWin(store.selectedServiceId)" x-t>Exportar</button>
+                    @click="store.openExportWin(store.selectedServiceId)" x-t>Exportar serviço</button>
           </row></template>
         </row>
 
@@ -3134,12 +3190,13 @@
                       @click="store.setServiceTab('domains')" x-t>Domains</button>
               <button type="button" :class="store.serviceTab === 'deployments' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'"
                       @click="store.setServiceTab('deployments')">Deployments</button>
+              <!-- Ordem da GUI (service.component.gv): Databases, Migrar, Dados. -->
+              <button type="button" x-show="isShared" :class="store.serviceTab === 'databases' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'"
+                      @click="store.setServiceTab('databases')">Databases</button>
               <button type="button" x-show="canMigrate" :class="store.serviceTab === 'migrar' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'"
                       @click="store.setServiceTab('migrar')" x-t>Migrar</button>
               <button type="button" :class="store.serviceTab === 'dados' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'"
                       @click="loadData(); store.setServiceTab('dados')" x-t>Dados</button>
-              <button type="button" x-show="isShared" :class="store.serviceTab === 'databases' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'"
-                      @click="store.setServiceTab('databases')">Databases</button>
               <button type="button" :class="store.serviceTab === 'healthcheck' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'"
                       @click="initHealthcheckForm(); store.setServiceTab('healthcheck')">Healthcheck</button>
               <button type="button" :class="store.serviceTab === 'logs' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'"
@@ -3148,12 +3205,15 @@
                       @click="initAdvancedForm(); store.setServiceTab('advanced')" x-t>Advanced</button>
             </row>
             <hr class="rule" />
+            <row class="service__body">
+              <column class="service__main">
 
             <!-- General -->
-            <column class="panel-pad" x-show="store.serviceTab === 'general'">
-              <!-- Renomear. flex-shrink:0 via .form-panel (ver app.css). Compose: o nome
-                   é só de exibição (stack e volumes gravados); Application: o alias de
-                   rede acompanha o nome no próximo deploy — renameNote diz qual vale. -->
+            <column class="service-general" x-show="store.serviceTab === 'general'">
+              <!-- (legado: card "Nome do serviço" + botão Renomear e a lista Origem/Porta/
+                   Réplicas/Container ao vivo. O nome agora se edita no título do
+                   cabeçalho e o resto já aparece no formulário e na aba Connection —
+                   a aba General da GUI é só o formulário da fonte.)
               <column class="form-panel" style="margin-bottom:14px">
                 <text class="u-label-cap" x-t>NOME DO SERVIÇO</text>
                 <row class="env__add">
@@ -3170,12 +3230,13 @@
                 <text class="kv-list__key" x-t>Container ao vivo</text>
                 <text class="kv-list__val" x-text="svc.live_container_id"></text>
               </row>
+              -->
 
               <!-- Compose: editor de texto direto (mesma origem, sem provider).
                    flex-shrink:0 via .form-panel — ver comentário em app.css
                    sobre .healthcheck__grid colapsando dentro de .u-fill-all sem isso. -->
               <template x-if="isCompose">
-                <column class="form-panel" style="margin-top:14px">
+                <column class="form-panel">
                   <text class="u-label-cap">DOCKER COMPOSE (YAML)</text>
                   <textarea class="env__editor" x-model="composeText"></textarea>
                   <row class="env__add">
@@ -3189,7 +3250,7 @@
               <!-- Provider Git / conta conectada / Zip — só para serviços não-Compose.
                    flex-shrink:0 via .form-panel (mesmo motivo do bloco Compose acima). -->
               <template x-if="!isCompose">
-                <column class="form-panel" style="margin-top:14px">
+                <column class="form-panel">
                   <text class="u-label-cap">PROVIDER</text>
                   <row class="tabs">
                     <button type="button" :class="providerTab === 'git' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'"
@@ -3252,7 +3313,7 @@
                       <text class="u-label-cap" x-t>BUILD STAGE (opcional)</text>
                       <input class="field__input" type="text" x-model="serviceFormBuildStage" placeholder="(multi-stage target)" />
                       <row class="env__add">
-                        <button class="btn btn--primary" type="button" @click="saveSource()" x-t>Save</button>
+                        <button class="btn btn--primary" type="button" @click="saveSource()" x-t>Salvar</button>
                         <text class="u-muted" x-text="store.serviceMessage"></text>
                       </row>
                     </column>
@@ -3310,7 +3371,7 @@
                       <text class="u-label-cap">PORT</text>
                       <input class="field__input" type="text" x-model="serviceFormGeneralPort" placeholder="80" />
                       <row class="env__add">
-                        <button class="btn btn--primary" type="button" @click="saveSource()" x-t>Save</button>
+                        <button class="btn btn--primary" type="button" @click="saveSource()" x-t>Salvar</button>
                         <text class="u-muted" x-text="store.serviceMessage"></text>
                       </row>
                     </column>
@@ -3373,7 +3434,7 @@
                       <input class="field__input" type="text" x-model="serviceFormWatchPaths" placeholder="src, Cargo.toml" />
                       <label class="check-row"><input type="checkbox" x-model="serviceFormSubmodules" /><span>Enable submodules</span></label>
                       <row class="env__add">
-                        <button class="btn btn--primary" type="button" @click="saveSource()" x-t>Save</button>
+                        <button class="btn btn--primary" type="button" @click="saveSource()" x-t>Salvar</button>
                         <text class="u-muted" x-text="store.serviceMessage"></text>
                       </row>
                     </column>
@@ -3381,8 +3442,10 @@
                 </column>
               </template>
 
+              <!-- (legado: a GUI não tem "Remover serviço" na aba General — remove-se pelo ✕
+                   do card na grade do projeto, que para o container antes.)
               <button class="btn btn--danger" type="button" style="margin-top:14px; align-self:flex-start"
-                      @click="store.deleteService(svc.id)" x-t>Remover serviço</button>
+                      @click="store.deleteService(svc.id)" x-t>Remover serviço</button> -->
             </column>
 
             <!-- Connection (valores copiáveis) -->
@@ -3431,14 +3494,17 @@
               <hr class="rule" />
               <text class="u-label-cap" x-text="'CONTAINERS (' + liveContainers.length + ')'"></text>
               <text class="u-muted" x-fallback="liveContainers" x-t>Nenhum container em execução.</text>
-              <row class="kv-list__row" x-show="liveContainers.length > 0" style="flex-wrap:wrap">
-                <template x-for="liveContainer in liveContainers" :key="liveContainer.id">
-                  <row class="badge" style="margin-right:18px">
+              <!-- Uma linha por container: estado (badge), nome e id curto — como na GUI. -->
+              <template x-for="liveContainer in liveContainers" :key="liveContainer.id">
+                <row class="kv-list__row">
+                  <row class="badge">
                     <text class="status-dot" :class="'state-cell--' + liveContainer.kind">●</text>
-                    <text class="kv-list__val kv-list__val--compact" x-text="liveContainer.name + '  ' + liveContainer.idShort"></text>
+                    <text class="badge__label" :class="'state-cell--' + liveContainer.kind" x-text="liveContainer.state"></text>
                   </row>
-                </template>
-              </row>
+                  <text class="kv-list__val kv-list__val--compact" style="flex:0 1 auto" x-text="liveContainer.name"></text>
+                  <text class="u-muted" x-text="liveContainer.idShort"></text>
+                </row>
+              </template>
             </column>
 
             <!-- Environment -->
@@ -3451,15 +3517,21 @@
               <template x-if="!envTextOpen">
                 <column style="gap:10px">
                   <row class="env__add">
-                    <input class="env__input" type="text" placeholder="KEY" x-model="newEnvKey" />
-                    <input class="env__input" type="text" placeholder="value" x-model="newEnvValue" />
+                    <input class="env__input" type="text" placeholder="KEY" x-model="newEnvKey"
+                           @keydown.enter.prevent="addEnvVar()" />
+                  </row>
+                  <row class="env__add">
+                    <input class="env__input" type="text" placeholder="value" x-model="newEnvValue"
+                           @keydown.enter.prevent="addEnvVar()" />
                     <button class="btn btn--primary" type="button" @click="addEnvVar()" x-t>Adicionar</button>
                   </row>
                   <text class="u-muted-grow">
                     <span x-t>Para um valor sensível, use um secret do projeto: escreva</span> &lt;secret:NOME&gt; <span x-t>ou
                     secret:NOME como valor. O secret é criado na aba Secrets do projeto.</span>
                   </text>
-                  <column class="kv-list">
+                  <!-- Variáveis e secrets do serviço no MESMO painel, separados por uma
+                       régua (como service/environment.component.gv). -->
+                  <column class="kv-list env__panel">
                     <template x-for="envVar in envVars" :key="envVar.key">
                       <column style="width:100%">
                         <row class="kv-list__row" x-show="envVar.isComment">
@@ -3468,15 +3540,15 @@
                         <row class="kv-list__row" x-show="!envVar.isComment">
                           <button class="env__del" type="button" @click="deleteEnvVar(envVar.key)">✕</button>
                           <button class="btn btn--ghost btn--sm" type="button" @click="startEnvEdit(envVar, 'key')"
-                            :title="$t('Renomear (o valor não muda)')">✏️</button>
+                            :title="$t('Renomear (o valor não muda)')"><span x-icon.13="'pencil'"></span></button>
                           <button class="btn btn--ghost btn--sm" type="button" @click="startEnvEdit(envVar, 'value')"
-                            :title="$t('Editar o valor no lugar')">✎</button>
+                            :title="$t('Editar o valor no lugar')"><span x-icon.13="'penline'"></span></button>
                           <button class="btn btn--ghost btn--sm" type="button" x-show="!envVar.isSecret" @click="envToSecret(envVar.key)"
-                            :title="$t('Mover para secret (o valor passa a ser guardado cifrado)')">🔒</button>
+                            :title="$t('Mover para secret (o valor passa a ser guardado cifrado)')"><span x-icon.13="'lock'"></span></button>
                           <button class="btn btn--ghost btn--sm" type="button" x-show="!envVar.isSecret" @click="envToProject(envVar.key)"
-                            :title="$t('Subir para o projeto (todos os serviços do projeto herdam)')">↑</button>
+                            :title="$t('Subir para o projeto (todos os serviços do projeto herdam)')"><span x-icon.13="'up'"></span></button>
                           <button class="btn btn--ghost btn--sm" type="button" x-show="envVar.isSecret" @click="serviceSecretToEnv(envVar.secretName)"
-                            :title="$t('Voltar para variável em claro (o valor deixa de ser cifrado)')">🔓</button>
+                            :title="$t('Voltar para variável em claro (o valor deixa de ser cifrado)')"><span x-icon.13="'unlock'"></span></button>
                           <text class="env__sep"></text>
 <template x-if="isEnvEditing(envVar.key, 'key')">
                             <input class="env__inline env__key" type="text" x-model="envEdit.draft" x-init="$nextTick(() => { $el.focus(); $el.select(); })"
@@ -3497,30 +3569,33 @@
                       </column>
                     </template>
                     <text class="u-muted" x-fallback="envVars" style="padding:12px" x-t>Nenhuma variável.</text>
-                  </column>
-                  <text class="u-label-cap" x-text="$t('SECRETS DO SERVIÇO (') + serviceSecrets.length + ')'"></text>
-                  <text class="u-muted-grow" x-t>Valores cifrados usados só por este serviço (valem antes de um secret do projeto com o mesmo nome). O valor real nunca volta para cá: salvar com um nome existente substitui, e vale no próximo deploy.</text>
-                  <row class="env__add">
-                    <input class="env__input" type="text" placeholder="NOME" x-t:placeholder x-model="newServiceSecretName" />
-                    <input class="env__input" type="password" placeholder="valor (cifrado ao salvar)" x-t:placeholder x-model="newServiceSecretValue" />
-                    <button class="btn btn--primary" type="button" @click="addServiceSecret()" x-t>Salvar secret</button>
-                  </row>
-                  <column class="kv-list">
+
+                    <hr class="rule env__rule" />
+                    <text class="u-label-cap" x-text="$t('SECRETS DO SERVIÇO (') + serviceSecrets.length + ')'"></text>
+                    <text class="u-muted-grow" x-t>Valores cifrados usados só por este serviço (valem antes de um secret do projeto com o mesmo nome). O valor real nunca volta para cá: salvar com um nome existente substitui, e vale no próximo deploy.</text>
+                    <row class="env__add">
+                      <input class="env__input" type="text" placeholder="NOME" x-t:placeholder x-model="newServiceSecretName" />
+                    </row>
+                    <row class="env__add">
+                      <input class="env__input" type="password" placeholder="valor (cifrado ao salvar)" x-t:placeholder x-model="newServiceSecretValue"
+                             @keydown.enter.prevent="addServiceSecret()" />
+                      <button class="btn btn--primary" type="button" @click="addServiceSecret()" x-t>Salvar secret</button>
+                    </row>
                     <template x-for="secretName in serviceSecrets" :key="secretName">
                       <row class="kv-list__row">
                         <button class="env__del" type="button" @click="deleteServiceSecret(secretName)">✕</button>
                         <button class="btn btn--ghost btn--sm" type="button" @click="serviceRename('secret', secretName)"
-                          :title="$t('Renomear (o valor não muda)')">✏️</button>
+                          :title="$t('Renomear (o valor não muda)')"><span x-icon.13="'pencil'"></span></button>
                         <button class="btn btn--ghost btn--sm" type="button" @click="serviceSecretToEnv(secretName)"
-                          :title="$t('Voltar para variável em claro (o valor deixa de ser cifrado)')">🔓</button>
+                          :title="$t('Voltar para variável em claro (o valor deixa de ser cifrado)')"><span x-icon.13="'unlock'"></span></button>
                         <button class="btn btn--ghost btn--sm" type="button" @click="serviceSecretToProject(secretName)"
-                          :title="$t('Subir para o projeto (todos os serviços do projeto podem usar)')">↑</button>
+                          :title="$t('Subir para o projeto (todos os serviços do projeto podem usar)')"><span x-icon.13="'up'"></span></button>
                         <button class="btn btn--ghost btn--sm" type="button" x-show="revealedSecrets[secretName] === undefined" @click="revealServiceSecret(secretName)"
-                          :title="$t('Ver o valor (o acesso fica registrado na auditoria do servidor)')">👁</button>
+                          :title="$t('Ver o valor (o acesso fica registrado na auditoria do servidor)')"><span x-icon.13="'eye'"></span></button>
                         <button class="btn btn--ghost btn--sm" type="button" x-show="revealedSecrets[secretName] !== undefined" @click="hideServiceSecret(secretName)"
-                          :title="$t('Esconder o valor')">🙈</button>
+                          :title="$t('Esconder o valor')"><span x-icon.13="'eyeoff'"></span></button>
                         <button class="btn btn--ghost btn--sm" type="button" x-show="revealedSecrets[secretName] !== undefined" @click="copyServiceSecret(secretName)"
-                          :title="$t('Copiar o valor')">📋</button>
+                          :title="$t('Copiar o valor')"><span x-icon.13="'copy'"></span></button>
                         <text class="env__sep"></text>
                         <text class="env__key" x-text="secretName"></text>
                         <text class="kv-list__val kv-list__val--compact" x-show="revealedSecrets[secretName] === undefined" x-t>cifrado</text>
@@ -3543,60 +3618,76 @@
               </template>
             </column>
 
-            <!-- Domains -->
-            <column class="env" x-show="store.serviceTab === 'domains'">
-              <row class="env__add">
-                <input class="env__input" type="text" placeholder="dominio.com" x-t:placeholder x-model="newDomain" />
-                <input class="env__input" type="text" placeholder="porta (opcional)" x-t:placeholder x-model="newDomainPort" />
-                <label class="check-row"><input type="checkbox" x-model="newDomainTls" /><span>TLS</span></label>
-                <button class="btn btn--primary" type="button" @click="addDomain()" x-t>Adicionar</button>
-              </row>
-              <column class="kv-list">
-                <template x-for="domain in domains" :key="domain.domain">
-                  <row class="kv-list__row">
-                    <button class="env__del" type="button" @click="deleteDomain(domain.domain)">✕</button>
-                    <text class="env__sep"></text>
-                    <text class="env__key" x-text="domain.domain"></text>
-                    <text class="kv-list__val kv-list__val--compact" x-text="(domain.tls ? 'https' : 'http') + ' → :' + domain.port"></text>
-                  </row>
-                </template>
-                <text class="u-muted" x-fallback="domains" style="padding:12px" x-t>
-                  Nenhum domínio configurado.
-                </text>
+            <!-- Domains — porta de service/domains.component.gv: dois painéis (rotas HTTP
+                 e portas TCP do host), cada um com a lista e o form de adição com campos
+                 empilhados e rotulados. -->
+            <column class="service-stack" x-show="store.serviceTab === 'domains'">
+              <column class="form-panel">
+                <text class="u-label-cap" x-text="$t('DOMÍNIOS (') + domains.length + ')'"></text>
+                <text class="u-muted" x-t>Cada domínio pode apontar para uma porta de container diferente.</text>
+                <column class="kv-list">
+                  <template x-for="domain in domains" :key="domain.domain">
+                    <row class="kv-list__row">
+                      <button class="env__del" type="button" @click="deleteDomain(domain.domain)">✕</button>
+                      <text class="env__sep"></text>
+                      <text class="env__key" x-text="domain.domain"></text>
+                      <text class="kv-list__val kv-list__val--compact" x-text="'→ ' + domain.port"></text>
+                      <text class="u-muted" x-text="domain.tls ? 'TLS' : 'HTTP'"></text>
+                    </row>
+                  </template>
+                  <text class="u-muted" x-fallback="domains" x-t>Nenhum domínio configurado.</text>
+                </column>
+                <text class="u-label-cap" x-t>ADICIONAR DOMÍNIO</text>
+                <input class="field__input" type="text" placeholder="app.exemplo.com" x-t:placeholder x-model="newDomain"
+                       @keydown.enter.prevent="addDomain()" />
+                <text class="u-label-cap" x-t>PORTA DO CONTAINER (opcional)</text>
+                <input class="field__input" type="text" placeholder="(padrão do serviço)" x-t:placeholder x-model="newDomainPort"
+                       @keydown.enter.prevent="addDomain()" />
+                <label class="toggle"><input type="checkbox" x-model="newDomainTls" /><span class="toggle__track"></span><span>HTTPS / TLS</span></label>
+                <row class="env__add">
+                  <button class="btn btn--primary" type="button" @click="addDomain()" x-t>Adicionar domínio</button>
+                </row>
               </column>
 
               <!-- Portas TCP do host (docs/plano-multiplas-portas-tcp.md) -->
-              <text class="u-label-cap" x-text="$t('PORTAS TCP DO HOST (') + tcpPorts.length + ')'"></text>
-              <text class="u-muted" x-t>Cada porta do host leva a uma porta do container, sem HTTP (ex.: a API e o console de um storage).</text>
-              <column class="kv-list">
-                <template x-for="tcpPort in tcpPorts" :key="tcpPort.hostPort">
-                  <row class="kv-list__row">
-                    <button class="env__del" type="button" @click="deleteTcpPort(tcpPort.hostPort)">✕</button>
-                    <text class="env__sep"></text>
-                    <text class="env__key" x-text="tcpPort.hostPort"></text>
-                    <text class="kv-list__val kv-list__val--compact" x-text="'→ :' + tcpPort.containerPort"></text>
-                    <text class="u-muted" x-text="tcpPort.label"></text>
-                  </row>
-                </template>
-                <text class="u-muted" x-fallback="tcpPorts" style="padding:12px" x-t>Nenhuma porta TCP configurada.</text>
+              <column class="form-panel">
+                <text class="u-label-cap" x-text="$t('PORTAS TCP DO HOST (') + tcpPorts.length + ')'"></text>
+                <text class="u-muted" x-t>Cada porta do host leva a uma porta do container, sem HTTP (ex.: a API e o console de um storage).</text>
+                <column class="kv-list">
+                  <template x-for="tcpPort in tcpPorts" :key="tcpPort.hostPort">
+                    <row class="kv-list__row">
+                      <button class="env__del" type="button" @click="deleteTcpPort(tcpPort.hostPort)">✕</button>
+                      <text class="env__sep"></text>
+                      <text class="kv-list__val" x-text="tcpPort.hostPort"></text>
+                      <text class="kv-list__val kv-list__val--compact" x-text="'→ ' + tcpPort.containerPort"></text>
+                      <text class="u-muted" x-text="tcpPort.label"></text>
+                    </row>
+                  </template>
+                  <text class="u-muted" x-fallback="tcpPorts" x-t>Nenhuma porta TCP configurada.</text>
+                </column>
+                <text class="u-label-cap" x-t>PORTA TCP DO HOST (passthrough, opcional)</text>
+                <input class="field__input" type="text" placeholder="Automática" x-t:placeholder x-model="newTcpHost" />
+                <text class="u-label-cap" x-t>PORTA DO CONTAINER (opcional)</text>
+                <input class="field__input" type="text" placeholder="(padrão do serviço)" x-t:placeholder x-model="newTcpContainer" />
+                <row class="env__add">
+                  <button class="btn btn--ghost" type="button" @click="suggestPorts()" x-t>Sugerir portas do container</button>
+                </row>
+                <column class="kv-list kv-list--suggestions" x-show="(portSuggestions || []).length > 0">
+                  <template x-for="suggestion in (portSuggestions || [])" :key="suggestion.port">
+                    <button class="btn btn--ghost" type="button" @click="pickSuggestion(suggestion)" x-text="suggestion.text"></button>
+                  </template>
+                </column>
+                <text class="u-label-cap" x-t>RÓTULO (opcional)</text>
+                <input class="field__input" type="text" placeholder="console, painel…" x-t:placeholder x-model="newTcpLabel" />
+                <row class="env__add">
+                  <button class="btn btn--primary" type="button" @click="addTcpPort()" x-t>Adicionar porta</button>
+                </row>
+                <text class="u-muted" x-t>"Automática" aloca uma porta livre e a libera no firewall do host.</text>
               </column>
-              <row class="env__add">
-                <input class="env__input" type="text" placeholder="porta do host (automática)" x-t:placeholder x-model="newTcpHost" />
-                <input class="env__input" type="text" placeholder="porta do container (padrão do serviço)" x-t:placeholder x-model="newTcpContainer" />
-                <input class="env__input" type="text" placeholder="rótulo (opcional)" x-t:placeholder x-model="newTcpLabel" />
-                <button class="btn btn--primary" type="button" @click="addTcpPort()" x-t>Adicionar porta</button>
-              </row>
-              <row class="env__add">
-                <button class="btn btn--ghost" type="button" @click="suggestPorts()" x-t>Sugerir portas do container</button>
-                <template x-for="suggestion in (portSuggestions || [])" :key="suggestion.port">
-                  <button class="btn btn--ghost btn--sm" type="button" @click="pickSuggestion(suggestion)" x-text="suggestion.text"></button>
-                </template>
-              </row>
-              <text class="u-muted" x-t>Porta do host vazia = automática: uma porta livre, liberada no firewall do host.</text>
             </column>
 
             <!-- Dados -->
-            <column class="form-panel" x-show="store.serviceTab === 'dados'">
+            <column class="form-panel form-panel--stack" x-show="store.serviceTab === 'dados'">
               <text class="u-label-cap" x-t>DADOS DO SERVIÇO</text>
               <text class="u-muted" x-t>Leva os dados deste serviço para um arquivo (.rpdata) e os traz de volta em outro serviço do mesmo tipo, aqui ou em outro servidor. A configuração do serviço vai à parte (Exportar serviço). Exige a chave mestra.</text>
               <template x-if="dataPlan">
@@ -3611,14 +3702,14 @@
                     </template>
                   </column>
                   <template x-for="dataNote in dataPlan.notes" :key="dataNote"><text class="u-muted" x-text="dataNote"></text></template>
-                  <row class="env__add" x-show="!dataPlan.blocked && dataPlan.running && !dataIsDatabase">
+                  <label class="check-row" x-show="!dataPlan.blocked && dataPlan.running && !dataIsDatabase">
                     <input type="checkbox" x-model="dataStop" />
-                    <text x-t>Parar o serviço durante a cópia (recomendado)</text>
-                  </row>
-                  <row class="env__add" x-show="!dataPlan.blocked">
+                    <span x-t>Parar o serviço durante a cópia (recomendado)</span>
+                  </label>
+                  <label class="check-row" x-show="!dataPlan.blocked">
                     <input type="checkbox" x-model="dataEncrypt" />
-                    <text x-t>Cifrar o pacote (age). Só abre num servidor com a mesma identidade ou a chave de recuperação.</text>
-                  </row>
+                    <span x-t>Cifrar o pacote (age). Só abre num servidor com a mesma identidade ou a chave de recuperação.</span>
+                  </label>
                   <row class="env__add" x-show="!dataPlan.blocked">
                     <button class="btn btn--primary" type="button" :disabled="dataBusy" @click="exportData()" x-t>Exportar dados</button>
                   </row>
@@ -3634,12 +3725,9 @@
                     <button class="btn btn--primary" type="button" :disabled="backupRunning" @click="backupNow()" x-t>Fazer backup agora</button>
                     <button class="btn btn--ghost" type="button" @click="loadBackups()" x-t>Atualizar</button>
                   </row>
-                  <column class="kv-list" style="gap:8px; margin-top:8px">
+                  <column style="gap:8px; margin-top:6px">
                     <text class="u-label-cap" x-t>BACKUP AUTOMÁTICO</text>
-                    <label class="check-row">
-                      <input type="checkbox" x-model="backupForm.enabled" />
-                      <span x-t>Ligar o backup automático deste serviço</span>
-                    </label>
+                    <label class="toggle"><input type="checkbox" x-model="backupForm.enabled" /><span class="toggle__track"></span><span x-t>Ligar o backup automático deste serviço</span></label>
                     <row class="tabs" x-show="backupForm.enabled">
                       <button type="button" :class="backupForm.kind === 'interval' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'" @click="backupForm.kind = 'interval'" x-t>A cada N horas</button>
                       <button type="button" :class="backupForm.kind === 'daily' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'" @click="backupForm.kind = 'daily'" x-t>Todo dia</button>
@@ -3647,7 +3735,7 @@
                     </row>
                     <row class="env__add" x-show="backupForm.enabled && backupForm.kind === 'interval'">
                       <text x-t>A cada</text>
-                      <input class="field__input" type="number" min="1" max="168" style="width:90px" x-model="backupForm.hours" />
+                      <input class="field__input field__spin" type="number" min="1" max="168" x-model="backupForm.hours" />
                       <text x-t>hora(s)</text>
                     </row>
                     <row class="env__add" x-show="backupForm.enabled && backupForm.kind === 'weekly'">
@@ -3663,7 +3751,7 @@
                     </row>
                     <row class="env__add" x-show="backupForm.enabled">
                       <text x-t>Manter os últimos</text>
-                      <input class="field__input" type="number" min="1" max="365" style="width:90px" x-model="backupForm.keep" />
+                      <input class="field__input field__spin" type="number" min="1" max="365" x-model="backupForm.keep" />
                       <text x-t>backups</text>
                     </row>
                     <label class="check-row" x-show="backupForm.enabled && !dataIsDatabase">
@@ -3677,13 +3765,13 @@
                   </column>
                   <text class="u-muted" x-show="backupRunLabel" x-text="backupRunLabel"></text>
                   <template x-for="backupCheck in (backups.last_run?.checks || [])" :key="backupCheck"><text class="u-muted" x-text="backupCheck"></text></template>
-                  <column class="kv-list" x-show="backups.entries.length">
+                  <column x-show="backups.entries.length" style="gap:4px">
                     <template x-for="backupEntry in backups.entries" :key="backupEntry.key">
                       <row class="kv-list__row">
-                        <button class="env__del" type="button" :disabled="backupRunning" @click="deleteBackup(backupEntry)">✕</button>
-                        <text class="kv-list__val kv-list__val--compact" x-text="backupEntry.last_modified"></text>
+                        <button class="btn btn--danger btn--xs" type="button" :disabled="backupRunning" @click="deleteBackup(backupEntry)">✕</button>
+                        <text class="kv-list__val" x-text="backupEntry.last_modified"></text>
                         <text class="u-muted" x-text="formatSize(backupEntry.size_bytes)"></text>
-                        <button class="btn btn--ghost" type="button" :disabled="backupRunning" @click="restoreBackup(backupEntry)" x-t>Restaurar</button>
+                        <button class="btn btn--ghost btn--xs" type="button" :disabled="backupRunning" @click="restoreBackup(backupEntry)" x-t>Restaurar</button>
                       </row>
                     </template>
                   </column>
@@ -3791,7 +3879,7 @@
             <column class="env" x-show="store.serviceTab === 'deployments'">
             <!-- Webhook de deploy: um POST na URL dispara um deploy (o token na
                  própria URL é a autenticação). Compose não tem. -->
-            <column class="form-panel" x-show="webhookSupported" style="max-width:none">
+            <column class="form-panel" x-show="webhookSupported">
               <row class="env__head">
                 <text class="u-label-cap" x-t>WEBHOOK DE DEPLOY</text>
                 <text class="u-ok" x-show="copyMessage" x-text="copyMessage"></text>
@@ -3799,10 +3887,8 @@
               <template x-if="webhookUrl">
                 <row class="webhook__row">
                   <input class="field__input webhook__url" type="text" readonly :value="webhookUrl" @focus="$event.target.select()" />
-                  <button class="btn btn--copy btn-icon" type="button" @click="copyToClipboard(webhookUrl)">
-                    <text x-t>Copiar</text></button>
-                  <button class="btn btn--dep-del btn-icon" type="button" :disabled="webhookBusy" @click="regenWebhook()">
-                    <text x-t>Regenerar</text></button>
+                  <button class="btn btn--ghost btn--xs" type="button" @click="copyToClipboard(webhookUrl)" x-t>Copiar</button>
+                  <button class="btn btn--danger btn--xs" type="button" :disabled="webhookBusy" @click="regenWebhook()" x-t>Regenerar</button>
                 </row>
               </template>
               <text class="u-muted" x-show="!webhookUrl" x-t>
@@ -3813,34 +3899,32 @@
                 autenticação. Regenerar invalida a URL anterior.
               </text>
             </column>
-            <column class="panel panel--fill">
-              <row class="table__head">
-                <text class="table__head-cell table__col-state" x-t>ESTADO</text>
-                <text class="table__head-cell table__col-dur" x-t>DURAÇÃO</text>
-                <text class="table__head-cell table__col-start" x-t>INÍCIO</text>
-                <text class="table__head-cell table__col-act-2" x-t>AÇÃO</text>
-              </row>
-              <column class="table__body">
-                <template x-for="deployment in deployments" :key="deployment.id">
-                  <column class="list-row">
-                    <row class="table__row">
-                      <row class="state-cell table__col-state" :class="'state-cell--' + deployment.stateKind">
-                        <text class="status-dot">●</text>
-                        <text class="state-cell__label" x-text="deployment.stateLabel"></text>
-                      </row>
-                      <text class="table__cell table__col-dur" x-text="deployment.duration"></text>
-                      <text class="u-muted table__col-start" x-text="deployment.start"></text>
-                      <row class="deployments__actions table__col-act-2">
-                        <button class="btn btn--dep-logs" type="button" @click="viewBuildLog(deployment.id)" title="Ver build log" x-t:title>↗</button>
-                        <button class="btn btn--dep-logs" type="button" x-show="!deployment.terminal" @click="abortDeployment(deployment.id)" title="Cancelar" x-t:title>⏹</button>
-                        <button class="btn btn--dep-del" type="button" x-show="deployment.terminal" @click="removeDeployment(deployment.id)" title="Remover" x-t:title>✕</button>
-                      </row>
+            <!-- Lista como em service/deployments.component.gv: sem cabeçalho de
+                 tabela; id curto, estado, duração, início e ações (≡ log, ✕ remover),
+                 com a imagem numa linha miúda embaixo. -->
+            <text class="u-muted" x-text="deployments.length + ' deployments'"></text>
+            <column class="deployments__list">
+              <template x-for="deployment in deployments" :key="deployment.id">
+                <column class="list-row">
+                  <row class="table__row">
+                    <text class="table__cell table__cell--key table__col-dep-id" x-text="deployment.id.slice(0, 12)" :title="deployment.id"></text>
+                    <row class="state-cell table__col-state" :class="'state-cell--' + deployment.stateKind">
+                      <text class="status-dot">●</text>
+                      <text class="state-cell__label" x-text="deployment.stateLabel"></text>
                     </row>
-                    <hr class="rule" />
-                  </column>
-                </template>
-                <text class="u-muted" x-fallback="deployments" style="padding:16px" x-t>Nenhum deploy ainda.</text>
-              </column>
+                    <text class="table__cell table__col-dur" x-text="deployment.duration"></text>
+                    <text class="u-muted table__col-dep-start" x-text="deployment.start"></text>
+                    <row class="deployments__actions">
+                      <button class="btn btn--ghost btn--xs" type="button" @click="viewBuildLog(deployment.id)" title="Ver build log" x-t:title>≡</button>
+                      <button class="btn btn--ghost btn--xs" type="button" x-show="!deployment.terminal" @click="abortDeployment(deployment.id)" title="Cancelar" x-t:title>⏹</button>
+                      <button class="btn btn--danger btn--xs" type="button" x-show="deployment.terminal" @click="removeDeployment(deployment.id)" title="Remover deployment" x-t:title>✕</button>
+                    </row>
+                  </row>
+                  <text class="deployments__image" x-show="deployment.image" x-text="deployment.image"></text>
+                  <hr class="rule" />
+                </column>
+              </template>
+              <text class="u-muted" x-fallback="deployments" x-t>Nenhum deploy ainda.</text>
             </column>
             </column>
 
@@ -3882,7 +3966,7 @@
                 </column>
               </row>
               <row class="env__add" style="margin-top:14px">
-                <button class="btn btn--primary" type="button" @click="saveHealthcheck()" x-t>Save</button>
+                <button class="btn btn--primary" type="button" @click="saveHealthcheck()" x-t>Salvar</button>
                 <text class="u-muted" x-show="store.serviceMessage" x-text="store.serviceMessage"></text>
               </row>
             </column>
@@ -3934,93 +4018,119 @@
               </column>
             </column>
 
-            <!-- Advanced (editável) -->
-            <column class="form-panel" x-show="store.serviceTab === 'advanced'">
-              <text class="u-label-cap">REPLICAS</text>
-              <input class="field__input" type="text" x-model="advancedReplicas" placeholder="1" />
-              <text class="u-label-cap" style="margin-top:14px">RUN COMMAND</text>
-              <input class="field__input" type="text" x-model="advancedRunCommand" placeholder="(padrão da imagem)" x-t:placeholder />
-              <text class="u-muted" style="margin-top:8px" x-text="$t('Run args atuais: ') + runArgsText"></text>
+            <!-- Advanced (editável) — porta de service/advanced.component.gv: três
+                 painéis (formulário, dependências e fila de pré-deploy). -->
+            <column class="service-stack" x-show="store.serviceTab === 'advanced'">
+              <column class="form-panel">
+                <text class="u-label-cap">REPLICAS</text>
+                <input class="field__input field__spin" type="number" min="1" max="20" x-model="advancedReplicas" placeholder="1" />
+                <text class="u-label-cap">RUN COMMAND</text>
+                <input class="field__input" type="text" x-model="advancedRunCommand" placeholder="(padrão da imagem)" x-t:placeholder />
+                <text class="u-muted" x-text="$t('Run args atuais: ') + runArgsText"></text>
 
-              <label class="check-row" style="margin-top:14px">
-                <input type="checkbox" x-model="advancedAutostart" />
-                <span x-t>Religar quando o daemon subir</span>
-              </label>
-              <text class="u-muted" x-t>Ligado, o daemon traz este serviço de volta depois de um reinício (só se ele estava rodando). Serviço parado à mão continua parado.</text>
+                <label class="toggle"><input type="checkbox" x-model="advancedAutostart" /><span class="toggle__track"></span><span x-t>Religar quando o daemon subir</span></label>
+                <text class="u-muted" x-t>Ligado, o daemon traz este serviço de volta depois de um reinício (só se ele estava rodando). Serviço parado à mão continua parado.</text>
 
-              <template x-if="svc?.spec?.source?.Registry">
-                <column style="gap:6px">
-                  <label class="check-row" style="margin-top:14px">
-                    <input type="checkbox" x-model="advancedRegistryAutoDeploy" />
-                    <span x-t>Redeployar a cada push no registry embutido</span>
-                  </label>
-                  <text class="u-muted" x-t>Só para uma imagem do registry deste próprio servidor: cada docker push do mesmo repositório e tag redeploya este serviço sozinho (docker login, build, push). Desligado por padrão.</text>
-                </column>
-              </template>
-
-              <row class="env__add" style="margin-top:14px">
-                <button class="btn btn--primary" type="button" @click="saveAdvanced()" x-t>Save</button>
-                <text class="u-muted" x-show="store.serviceMessage" x-text="store.serviceMessage"></text>
-              </row>
-
-              <text class="u-label-cap" style="margin-top:14px" x-text="$t('DEPENDE DE (') + dependencyRows.length + ')'"></text>
-              <text class="u-muted" x-t>Serviços deste projeto que precisam estar prontos antes deste subir, no boot do daemon e em "subir projeto". Sem ciclos: o daemon recusa.</text>
-              <column class="kv-list">
-                <template x-for="dependency in dependencyRows" :key="dependency.id">
-                  <row class="kv-list__row">
-                    <button class="env__del" type="button" @click="dependencyDelete(dependency.id)">✕</button>
-                    <text class="env__sep"></text>
-                    <text class="env__key" x-text="dependency.index + '.'"></text>
-                    <text class="kv-list__val kv-list__val--compact" x-text="dependency.name"></text>
-                  </row>
+                <template x-if="svc?.spec?.source?.Registry">
+                  <column style="gap:10px">
+                    <label class="toggle"><input type="checkbox" x-model="advancedRegistryAutoDeploy" /><span class="toggle__track"></span><span x-t>Redeployar a cada push no registry embutido</span></label>
+                    <text class="u-muted" x-t>Só para uma imagem do registry deste próprio servidor: cada docker push do mesmo repositório e tag redeploya este serviço sozinho (docker login, build, push). Desligado por padrão.</text>
+                  </column>
                 </template>
-                <text class="u-muted" x-fallback="dependencyRows" style="padding:12px" x-t>Nenhuma dependência.</text>
+
+                <row class="env__add">
+                  <button class="btn btn--primary" type="button" @click="saveAdvanced()" x-t>Salvar</button>
+                  <text class="u-muted" x-show="store.serviceMessage" x-text="store.serviceMessage"></text>
+                </row>
               </column>
-              <text class="u-label-cap" style="margin-top:14px" x-t>ADICIONAR UMA DEPENDÊNCIA</text>
-              <row class="env__add">
-                <select class="field__input" x-model="advancedDependencyAddId">
+
+              <column class="form-panel">
+                <text class="u-label-cap" x-text="$t('DEPENDE DE (') + dependencyRows.length + ')'"></text>
+                <text class="u-muted" x-t>Serviços deste projeto que precisam estar prontos antes deste subir, no boot do daemon e em "subir projeto". Sem ciclos: o daemon recusa.</text>
+                <column class="kv-list">
+                  <template x-for="dependency in dependencyRows" :key="dependency.id">
+                    <row class="kv-list__row">
+                      <button class="env__del" type="button" @click="dependencyDelete(dependency.id)">✕</button>
+                      <text class="env__sep"></text>
+                      <text class="env__key" x-text="dependency.index + '.'"></text>
+                      <text class="kv-list__val kv-list__val--compact" x-text="dependency.name"></text>
+                    </row>
+                  </template>
+                  <text class="u-muted" x-fallback="dependencyRows" x-t>Nenhuma dependência.</text>
+                </column>
+                <text class="u-label-cap" x-t>ADICIONAR UMA DEPENDÊNCIA</text>
+                <select class="form-select" x-model="advancedDependencyAddId">
                   <option value="" x-t>escolha um serviço</option>
                   <template x-for="dependencyOption in dependencyOptions" :key="dependencyOption.id">
                     <option :value="dependencyOption.id" x-text="dependencyOption.name"></option>
                   </template>
                 </select>
-                <button class="btn btn--primary" type="button" @click="dependencyAdd()" x-t>Adicionar dependência</button>
-              </row>
-
-              <text class="u-label-cap" style="margin-top:14px" x-text="$t('FILA DE PRÉ-DEPLOY (') + preDeployChecks.length + ')'"></text>
-              <text class="u-muted" x-t>
-                Roda esses Jobs em ORDEM antes do deploy (manual ou webhook),
-                um de cada vez. Se o exit code de algum for diferente de 0, a
-                fila para e o deploy não acontece — os checks seguintes não
-                rodam. Cadastre jobs em Schedules.
-              </text>
-              <column class="kv-list">
-                <template x-for="(preDeployCheck, index) in preDeployChecks" :key="preDeployCheck.id">
-                  <row class="kv-list__row">
-                    <button class="env__del" type="button" @click="preDeployCheckDelete(preDeployCheck.id)">✕</button>
-                    <text class="env__sep"></text>
-                    <text class="env__key" x-text="preDeployCheck.index + '.'"></text>
-                    <text class="kv-list__val kv-list__val--compact" x-text="preDeployCheck.name"></text>
-                    <button class="btn btn--ghost" type="button" :disabled="index === 0" @click="preDeployCheckMove(preDeployCheck.id, -1)">↑</button>
-                    <button class="btn btn--ghost" type="button" :disabled="index === preDeployChecks.length - 1" @click="preDeployCheckMove(preDeployCheck.id, 1)">↓</button>
-                  </row>
-                </template>
-                <text class="u-muted" x-fallback="preDeployChecks" style="padding:12px" x-t>
-                  Nenhum check configurado — deploy segue direto.
-                </text>
+                <row class="env__add">
+                  <button class="btn btn--primary" type="button" :disabled="!advancedDependencyAddId" @click="dependencyAdd()" x-t>Adicionar dependência</button>
+                </row>
               </column>
 
-              <text class="u-label-cap" style="margin-top:14px" x-t>ADICIONAR À FILA</text>
-              <row class="env__add">
-                <select class="field__input" x-model="advancedPreDeployCheckAddJobId">
+              <column class="form-panel">
+                <text class="u-label-cap" x-text="$t('FILA DE PRÉ-DEPLOY (') + preDeployChecks.length + ')'"></text>
+                <text class="u-muted" x-t>
+                  Roda esses Jobs em ORDEM antes do deploy (manual ou webhook),
+                  um de cada vez. Se o exit code de algum for diferente de 0, a
+                  fila para e o deploy não acontece — os checks seguintes não
+                  rodam. Cadastre jobs em Schedules.
+                </text>
+                <column class="kv-list">
+                  <template x-for="(preDeployCheck, index) in preDeployChecks" :key="preDeployCheck.id">
+                    <row class="kv-list__row">
+                      <button class="env__del" type="button" @click="preDeployCheckDelete(preDeployCheck.id)">✕</button>
+                      <button class="btn btn--ghost btn--sm" type="button" :disabled="index === 0" @click="preDeployCheckMove(preDeployCheck.id, -1)"><span x-icon.13="'up'"></span></button>
+                      <button class="btn btn--ghost btn--sm" type="button" :disabled="index === preDeployChecks.length - 1" @click="preDeployCheckMove(preDeployCheck.id, 1)"><span x-icon.13="'down'"></span></button>
+                      <text class="env__sep"></text>
+                      <text class="env__key" x-text="preDeployCheck.index + '.'"></text>
+                      <text class="kv-list__val kv-list__val--compact" x-text="preDeployCheck.name"></text>
+                    </row>
+                  </template>
+                  <text class="u-muted" x-fallback="preDeployChecks" x-t>
+                    Nenhum check configurado — deploy segue direto.
+                  </text>
+                </column>
+
+                <text class="u-label-cap" x-t>ADICIONAR À FILA</text>
+                <select class="form-select" x-model="advancedPreDeployCheckAddJobId">
                   <option value="" x-t>escolher job...</option>
                   <template x-for="preDeployAvailableJob in preDeployAvailableJobs" :key="preDeployAvailableJob.id">
                     <option :value="preDeployAvailableJob.id" x-text="preDeployAvailableJob.name"></option>
                   </template>
                 </select>
-                <button class="btn btn--primary" type="button" @click="preDeployCheckAdd()" x-t>Adicionar à fila</button>
-              </row>
+                <row class="env__add">
+                  <button class="btn btn--primary" type="button" :disabled="!advancedPreDeployCheckAddJobId" @click="preDeployCheckAdd()" x-t>Adicionar à fila</button>
+                </row>
+              </column>
             </column>
+              </column>
+
+              <!-- Painel lateral (porta de service.component.gv → service__aside):
+                   situação do serviço e atalho para os logs, visível em todas as abas. -->
+              <column class="service__aside">
+                <column class="aside-panel">
+                  <text class="u-label-cap" x-t>STATUS</text>
+                  <row class="badge">
+                    <text class="status-dot" :class="'state-cell--' + statusKind">●</text>
+                    <text class="badge__label" :class="'state-cell--' + statusKind" x-text="statusLabel"></text>
+                  </row>
+                  <text class="u-label-cap" x-t>UPTIME</text>
+                  <text class="aside-panel__val" x-text="store.daemonUptime || '…'"></text>
+                  <text class="u-label-cap" x-t>SERVIÇOS</text>
+                  <text class="aside-panel__val" x-text="store.servicesLabel"></text>
+                </column>
+                <column class="aside-panel aside-panel--fill">
+                  <text class="u-label-cap">LOGS</text>
+                  <text class="u-muted" x-t>Logs de runtime e de build ficam na aba Logs e no histórico de deployments.</text>
+                  <row class="env__add">
+                    <button class="btn btn--ghost" type="button" @click="store.setServiceTab('logs')" x-t>Logs de runtime</button>
+                  </row>
+                </column>
+              </column>
+            </row>
           </column>
         </template>
 

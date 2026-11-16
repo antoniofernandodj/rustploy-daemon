@@ -61,6 +61,15 @@ document.addEventListener("alpine:init", () => {
           this.revealedSecrets = {};
         }
       );
+      // Nome/descrição do cabeçalho seguem o snapshot (exceto durante a edição).
+      this.$watch(
+        () => {
+          const project = this.project;
+          return project ? `${project.id}\u0000${project.name}\u0000${project.description || ""}` : "";
+        },
+        () => this.syncTitleFields()
+      );
+      this.syncTitleFields();
     },
 
     get project() {
@@ -115,20 +124,83 @@ document.addEventListener("alpine:init", () => {
       return jobSummaryRows(list, "", this.store.jobsInflight);
     },
 
-    startEdit() {
+    // ── Nome e descrição editados no lugar (cabeçalho) ───────────────
+    // Porta de handlers/projects.luau::project_title_change: os dois são
+    // inputs disfarçados de texto, sem botão. Cada tecla reinicia o timer de
+    // gravação (0,5 s depois da última) e o do aviso ("Projeto salvo" só sai
+    // depois de 2 s sem nova gravação). Enquanto há texto não gravado
+    // (`titlePending`) ou o campo está em foco, o snapshot não sobrescreve.
+    titlePending: false,
+    titleFocused: false,
+    titleSaveTimer: null,
+    titleToastTimer: null,
+    titleProjectId: null,
+
+    /** Ressincroniza os campos com o servidor (troca de projeto ou snapshot novo). */
+    syncTitleFields() {
       const project = this.project;
-      if (!project) return;
-      this.editName = project.name;
-      this.editDescription = project.description || "";
-      this.editing = true;
+      const projectId = project ? project.id : null;
+      if (projectId !== this.titleProjectId) {
+        this.titleProjectId = projectId;
+        clearTimeout(this.titleSaveTimer);
+        this.titlePending = false;
+      } else if (this.titlePending || this.titleFocused) {
+        return;
+      }
+      this.editName = project ? project.name : "";
+      this.editDescription = project ? project.description || "" : "";
     },
-    cancelEdit() {
-      this.editing = false;
+    titleInput() {
+      this.titlePending = true;
+      clearTimeout(this.titleSaveTimer);
+      this.titleSaveTimer = setTimeout(() => this.titleSave(), 500);
     },
-    async saveEdit() {
-      const updateProjectResult = await this.store.updateProject(this.store.selectedProjectId, this.editName, this.editDescription);
-      if (updateProjectResult.ok) this.editing = false;
+    titleBlur() {
+      this.titleFocused = false;
+      if (!this.titlePending) this.syncTitleFields();
     },
+    async titleSave() {
+      const project = this.project;
+      const name = this.editName.trim();
+      const description = this.editDescription.trim();
+      // Saiu do projeto, nome vazio (nunca é gravado; volta ao nome real) ou nada mudou.
+      if (!project || project.id !== this.titleProjectId || !name ||
+          (name === project.name && description === (project.description || ""))) {
+        this.titlePending = false;
+        if (!this.titleFocused) this.syncTitleFields();
+        return;
+      }
+      const response = await this.store.api.rpcChecked({
+        ProjectUpdate: { id: project.id, name, description: description || null },
+      });
+      this.titlePending = false;
+      if (response.ok) {
+        // Atualiza o snapshot local na hora: a lista de projetos e o "‹ Projeto" do serviço acompanham.
+        project.name = name;
+        project.description = description || null;
+        clearTimeout(this.titleToastTimer);
+        this.titleToastTimer = setTimeout(() => this.store.toastOk(t("Projeto salvo")), 2000);
+      } else {
+        this.store.toastError(String(response.error));
+      }
+    },
+
+    // (legado: o botão "Editar projeto" + modal foi trocado pelo título
+    // editável acima, como na GUI; mantido por referência.)
+    // startEdit() {
+    //   const project = this.project;
+    //   if (!project) return;
+    //   this.editName = project.name;
+    //   this.editDescription = project.description || "";
+    //   this.editing = true;
+    // },
+    // cancelEdit() {
+    //   this.editing = false;
+    // },
+    // async saveEdit() {
+    //   const updateProjectResult = await this.store.updateProject(this.store.selectedProjectId, this.editName, this.editDescription);
+    //   if (updateProjectResult.ok) this.editing = false;
+    // },
 
     // ── Variáveis do projeto ─────────────────────────────────────────
     newEnvKey: "",
@@ -142,16 +214,40 @@ document.addEventListener("alpine:init", () => {
       return envRowsWithComments(project.env_vars, project.env_comments);
     },
 
+    // Modo "usar secret" (porta de handlers/secrets.luau::project_env_secret_toggle):
+    // o campo valor passa a carregar o NOME de um secret do projeto.
+    newEnvIsSecret: false,
+    toggleEnvSecretMode() {
+      this.newEnvIsSecret = !this.newEnvIsSecret;
+      this.newEnvValue = "";
+    },
+    /** Chip de um secret: liga o modo secret e preenche (a chave também, se vazia). */
+    useSecret(name) {
+      this.newEnvIsSecret = true;
+      this.newEnvValue = name;
+      if (!this.newEnvKey.trim()) this.newEnvKey = name;
+    },
     async addEnvVar() {
-      if (!this.newEnvKey.trim()) return;
-      if (!confirmEnvKey(this.store, this.newEnvKey.trim(), this.project.env_vars)) return;
+      const key = this.newEnvKey.trim();
+      if (!key) {
+        this.store.toastWarn(t("Informe a chave"));
+        return;
+      }
+      if (!confirmEnvKey(this.store, key, this.project.env_vars)) return;
+      // Duas formas de virar referência de secret, como na GUI (projects.luau::project_env_add):
+      // o modo "usar secret" ligado, ou `<secret:NOME>`/`secret:NOME` digitado no valor.
+      if (this.newEnvIsSecret && !this.newEnvValue.trim()) {
+        this.store.toastWarn(t("escolha um secret"));
+        return;
+      }
       const project = this.project;
-      const vars = (project.env_vars || []).filter((envVar) => envVar.key !== this.newEnvKey.trim());
-      vars.push({ key: this.newEnvKey.trim(), value: { Plain: this.newEnvValue } });
+      const vars = (project.env_vars || []).filter((envVar) => envVar.key !== key);
+      vars.push({ key, value: envValueFromDraft(this.newEnvValue, this.newEnvIsSecret) });
       const saveProjectEnvResult = await this.store.saveProjectEnv(vars, project.env_comments || []);
       if (saveProjectEnvResult.ok) {
         this.newEnvKey = "";
         this.newEnvValue = "";
+        this.newEnvIsSecret = false;
       }
     },
     async deleteEnvVar(key) {

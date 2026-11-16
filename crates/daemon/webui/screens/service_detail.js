@@ -63,9 +63,27 @@ document.addEventListener("alpine:init", () => {
     // default de `openService()`, que não passa por nenhum clique — daí o
     // watch, pra sincronizar o form assim que `serviceDetail` chega do fetch.
     init() {
+      // Título editável: segue o nome do serviço (exceto durante a edição).
+      this.$watch(
+        () => (this.svc ? `${this.svc.id}\u0000${this.svc.spec.name}` : ""),
+        () => this.syncTitleField()
+      );
+      this.syncTitleField();
+      let detailRef = null; // fora do estado reativo de propósito
+      let detailSignature = "";
       this.$watch(
         () => this.store.serviceDetail,
         () => {
+          // Mesmo objeto, mudado só no nome (titleSave): nada mais a recarregar —
+          // reiniciar o form da aba General perderia o que está sendo digitado lá.
+          // Objeto novo (fetch) sempre recarrega, como antes.
+          const detail = this.store.serviceDetail;
+          const signature = detail ? JSON.stringify({ ...detail, spec: { ...detail.spec, name: null } }) : "";
+          const rawDetail = detail ? Alpine.raw(detail) : null;
+          const sameObject = rawDetail !== null && rawDetail === detailRef;
+          detailRef = rawDetail;
+          if (sameObject && signature === detailSignature) return;
+          detailSignature = signature;
           if (this.store.serviceTab === "general") this.initGeneralForm();
           this.loadConnectionUrl();
           if (this.revealedFor !== this.svc?.id) {
@@ -643,6 +661,68 @@ document.addEventListener("alpine:init", () => {
             t("Outros serviços que usam o nome antigo em variáveis de ambiente precisam ser atualizados.");
     },
 
+    // ── Título do cabeçalho = nome editável no lugar ─────────────────
+    // Porta de handlers/services.luau::service_title_change: sem botão; grava
+    // 0,5 s depois da última tecla e só avisa ("Nome salvo") quando passam 2 s
+    // sem nova gravação. Enquanto há texto não gravado ou o campo está em
+    // foco, o fetch/snapshot não sobrescreve o que está sendo digitado.
+    titleDraft: "",
+    titlePending: false,
+    titleFocused: false,
+    titleSaveTimer: null,
+    titleToastTimer: null,
+    titleServiceId: null,
+
+    syncTitleField() {
+      const svc = this.svc;
+      const serviceId = svc ? svc.id : null;
+      if (serviceId !== this.titleServiceId) {
+        this.titleServiceId = serviceId;
+        clearTimeout(this.titleSaveTimer);
+        this.titlePending = false;
+      } else if (this.titlePending || this.titleFocused) {
+        return;
+      }
+      this.titleDraft = svc ? svc.spec.name : "";
+    },
+    titleInput() {
+      this.titlePending = true;
+      clearTimeout(this.titleSaveTimer);
+      this.titleSaveTimer = setTimeout(() => this.titleSave(), 500);
+    },
+    titleBlur() {
+      this.titleFocused = false;
+      if (!this.titlePending) this.syncTitleField();
+    },
+    async titleSave() {
+      const svc = this.svc;
+      const name = this.titleDraft.trim();
+      // Saiu do serviço, campo vazio (nunca é gravado) ou nada mudou: nada a gravar.
+      if (!svc || svc.id !== this.titleServiceId || !name || name === svc.spec.name) {
+        this.titlePending = false;
+        if (!this.titleFocused) this.syncTitleField();
+        return;
+      }
+      const spec = JSON.parse(JSON.stringify(svc.spec));
+      spec.name = name;
+      const response = await this.store.api.rpcChecked({ ServiceUpdate: { id: svc.id, spec } });
+      this.titlePending = false;
+      if (response.ok) {
+        // Só o nome muda no detalhe local (o watch de serviceDetail ignora
+        // mudança só de nome, então o form da aba General não é reiniciado).
+        if (this.store.serviceDetail && this.store.serviceDetail.id === svc.id) {
+          this.store.serviceDetail.spec.name = name;
+        }
+        this.store.refreshNow();
+        clearTimeout(this.titleToastTimer);
+        this.titleToastTimer = setTimeout(() => this.store.toastOk(t("Nome salvo")), 2000);
+      } else {
+        this.store.toastError(String(response.error));
+      }
+    },
+
+    // (legado: o card "Nome do serviço" + botão "Renomear" da aba General foi
+    // substituído pelo título editável acima, como na GUI; mantido por referência.)
     /** Unicidade dentro do projeto é checada no daemon (a mensagem volta no toast). */
     async renameService() {
       const name = this.editName.trim();

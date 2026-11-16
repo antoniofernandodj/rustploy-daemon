@@ -2531,6 +2531,8 @@ document.addEventListener("alpine:init", () => {
     },
 
     async serviceStop() {
+      // Mesma confirmação da GUI (handlers/services.luau::service_stop).
+      if (!confirm(t("Parar serviço?") + "\n\n" + t("O tráfego para este serviço será interrompido até um novo deploy."))) return;
       const serviceId = this.selectedServiceId;
       const serviceStopResponse = await this.api.rpcChecked({ ServiceStop: { service_id: serviceId } });
       this.toastResult(serviceStopResponse, t("serviço parado"));

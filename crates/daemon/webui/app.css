@@ -846,3 +846,92 @@ button:focus-visible, [tabindex]:focus-visible, select:focus-visible, summary:fo
 
 /* Seletor de idioma (English / Português): dois botões lado a lado. */
 .language-switch { display: flex; gap: 6px; align-items: center; }
+
+/* ── Título editável no lugar (projeto e serviço) ─────────────────────────
+   Porta de .page-head__title-input/.page-head__subtitle-input do app.gss:
+   input sem borda que parece texto; o fundo só aparece com o ponteiro em
+   cima ou em foco. Grava sozinho (ver titleInput em project_detail.js e
+   service_detail.js). */
+.page-head__title-input, .page-head__subtitle-input {
+    width: 100%; min-width: 0; padding: 0 6px; margin-left: -6px;
+    background: var(--bg); border: 0; border-radius: 4px; outline: none;
+    font-family: inherit; transition: background-color .12s;
+}
+.page-head__title-input    { font-size: 30px; font-weight: 700; color: var(--text); line-height: 1.25; }
+.page-head__subtitle-input { font-size: 13px; color: var(--muted); line-height: 1.6; }
+.page-head__title-input:hover, .page-head__title-input:focus,
+.page-head__subtitle-input:hover, .page-head__subtitle-input:focus { background: var(--surface); }
+.page-head__title-input::placeholder, .page-head__subtitle-input::placeholder { color: var(--faint); }
+.service__title-row .page-head__title-input { flex: 1 1 auto; margin-left: 0; }
+@media (max-width: 900px) { .page-head__title-input { font-size: 24px; } }
+
+/* ── Corpo do serviço: aba à esquerda + painel lateral (service__body da GUI) ── */
+.service__body  { width: 100%; gap: 20px; align-items: stretch; margin-top: 4px; }
+.service__main  { flex: 1 1 0; min-width: 0; gap: 12px; }
+.service__aside { flex: 0 0 360px; gap: 16px; }
+.aside-panel    { background: var(--surface); border: 1px solid var(--border); border-radius: 7px; padding: 16px 18px; gap: 8px; }
+.aside-panel--fill { flex: 1 1 auto; }
+.aside-panel__val  { font-size: 16px; font-weight: 700; color: var(--text); }
+@media (max-width: 1240px) { .service__aside { display: none; } }
+
+/* Aba General: só o formulário da fonte, como na GUI (sem o fundo de .panel-pad). */
+.service-general { width: 100%; gap: 12px; }
+.service-general > .form-panel { max-width: 720px; }
+
+/* ── Linhas de variável/secret ─────────────────────────────────────────────
+   `.btn--sm` não existia aqui: os botões de ação herdavam o padding grande do
+   .btn--ghost. Agora são compactos e cinza, com ícone de traço (x-icon.13),
+   como os glifos da GUI (.btn--sm do app.gss). */
+.btn--sm { padding: 5px 9px; font-size: 12px; border-radius: 4px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.btn--sm .ico { display: inline-flex; }
+.btn--sm svg { display: block; }
+.env__del { color: #fff; background: var(--error); border: 0; border-radius: 4px; padding: 5px 9px; font-size: 11px; line-height: 1; flex-shrink: 0; cursor: pointer; }
+.env__del:hover { filter: brightness(1.12); }
+.env__del:disabled { color: var(--faint); background: var(--border); cursor: default; }
+.env__panel { gap: 2px; }
+.env__panel > .kv-list__row, .env__panel > column > .kv-list__row { padding: 9px 0; }
+.env__panel > .env__add { padding: 4px 0; }
+.env__panel > .u-label-cap { margin-top: 4px; }
+.env__panel > .env__rule { margin: 10px 0 8px; }
+.service__title-row > .btn--ghost { white-space: nowrap; flex-shrink: 0; }
+
+/* ── Peças do app.gss que faltavam aqui ──────────────────────────────────── */
+/* Pilha de painéis de uma aba (Domínios, Avançado): .service__main da GUI. */
+.service-stack { width: 100%; gap: 16px; }
+.form-panel--stack { gap: 10px; }
+/* Botão extra pequeno (Copiar/Regenerar/≡/✕ das listas): .btn--xs do app.gss. */
+.btn--xs { padding: 4px 10px !important; font-size: 12px !important; border-radius: 4px !important; line-height: 1.2; flex-shrink: 0; }
+/* Select de formulário: .form-select do app.gss. */
+.form-select {
+    width: 100%; padding: 12px 14px; background: var(--raised); border: 1px solid #30363D; border-radius: 4px;
+    color: var(--text-2); font-family: inherit; font-size: 13px; cursor: pointer;
+}
+.form-select:focus { outline: none; border-color: var(--accent); }
+/* Campo numérico curto (spinbox da GUI, width 90). */
+.field__spin { width: 110px !important; flex: 0 0 auto; }
+/* Interruptor (toggle da GUI): <label class="toggle"><input type=checkbox><span class="toggle__track"></span><span>rótulo</span></label> */
+.toggle { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; font-size: 13px; color: var(--text-2); align-self: flex-start; user-select: none; }
+.toggle > input { position: absolute; opacity: 0; width: 0; height: 0; }
+.toggle__track { position: relative; width: 36px; height: 20px; border-radius: 10px; background: var(--border); flex-shrink: 0; transition: background .15s; }
+.toggle__track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: var(--muted); transition: transform .15s, background .15s; }
+.toggle > input:checked + .toggle__track { background: var(--blue); }
+.toggle > input:checked + .toggle__track::after { transform: translateX(16px); background: #fff; }
+.toggle > input:focus-visible + .toggle__track { outline: 1px solid var(--accent); }
+/* Lista de deployments do serviço (service/deployments.component.gv). */
+.deployments__list { width: 100%; }
+.deployments__list .table__row { padding: 10px 4px; }
+.table__col-dep-id { width: 130px; flex-shrink: 0; }
+.table__col-dep-start { flex: 1 1 auto; min-width: 0; }
+.deployments__image { font-size: 11px; color: var(--faint); padding: 0 4px 8px; word-break: break-all; }
+/* Sugestões de porta: uma por linha. */
+.kv-list--suggestions { gap: 6px; padding: 10px; }
+.kv-list--suggestions > .btn--ghost { text-align: left; }
+/* Card de serviço (service_card.component.gv): nome cresce, selos à direita. */
+.card__name-row { flex: 1 1 auto; min-width: 0; align-items: baseline; gap: 4px; }
+.card__badges   { gap: 12px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.card__container { align-items: center; }
+.env__chips { flex-wrap: wrap; }
+.secrets__intro { gap: 6px; }
+/* Cabeçalho ordenável (tableview da GUI). */
+.table__head-sort { text-align: left; cursor: pointer; padding: 0; background: none; border: 0; font-family: inherit; }
+.table__head-sort:hover { color: var(--text-2); }

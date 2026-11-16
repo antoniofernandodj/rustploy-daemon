@@ -40,4 +40,6 @@ export default {
   "Stop All": "Parar tudo",
   "Support": "Suporte",
   "secret ·": "secret ·",
+  "DEPLOYMENT OPS": "OPERAÇÕES DE DEPLOY",
+  "MANAGEMENT": "GERENCIAMENTO",
 };
