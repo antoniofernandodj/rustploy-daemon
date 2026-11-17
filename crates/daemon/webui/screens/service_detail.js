@@ -15,6 +15,7 @@ import {
   dateDayMonthHourMinuteSecond,
   formatDuration,
   stateLabelKind,
+  deployStateTerminal,
   dotenvFromVars,
   envValueFromDraft,
   parseDotenv,
@@ -1537,7 +1538,7 @@ document.addEventListener("alpine:init", () => {
           stateKind: kind,
           duration: formatDuration(serviceDeployment),
           start: dateDayMonthHourMinuteSecond(serviceDeployment.started_at),
-          terminal: serviceDeployment.state === "Live" || serviceDeployment.state === "Failed" || serviceDeployment.state === "Stopped",
+          terminal: deployStateTerminal(serviceDeployment.state),
         };
       });
     },

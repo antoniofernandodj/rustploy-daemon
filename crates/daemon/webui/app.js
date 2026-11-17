@@ -46,6 +46,7 @@ import {
   logExecutionRows,
   dockerCleanupLastRunSummary,
   shortReason,
+  deployStateTerminal,
   hourMinuteJoin,
   hourMinuteSplit,
   jobSummaryRows,
@@ -310,6 +311,10 @@ document.addEventListener("alpine:init", () => {
     // Serviço cujo deploy foi disparado DESTA aba (ver applyBusEvent):
     // sobrevive à navegação, ao contrário de `selectedServiceId`.
     deployTrackId: null,
+    // service_id → deployment_id do deploy EM VOO daquele serviço, visto num
+    // evento não terminal (ou na resposta do DeployStart). Um evento terminal
+    // só vale como desfecho se for desse deployment: ver applyBusEvent.
+    inFlightDeploymentByService: {},
 
     // ── Detalhe de serviço aberto ────────────────────────────────────
     serviceDetail: null, // Service (ServiceGet)
@@ -531,11 +536,26 @@ document.addEventListener("alpine:init", () => {
         // clientes o lia. Sem isto, a tela do serviço só via a linha do
         // deployment virar `Failed` no snapshot de 2s, sem hipótese nenhuma
         // do porquê. Ver docs/plano-erro-de-deploy-invisivel.md.
+        //
+        // Só o deployment EM VOO conta. Casar só pelo serviço não basta: ao
+        // promover o novo deploy o daemon publica `Pruning` para o ANTERIOR
+        // (mesmo service_id), o Stop/reconcile publicam `Stopped` para o que
+        // estava no ar e religar o serviço publica `Live` para ele. Antes
+        // disto o `Pruning` do antigo chegava logo depois do `Live` e a tela
+        // ficava em "deploy · Pruning"; parar o serviço virava "deploy: Stopped".
         const deployEvent = busEvent.DeployStateChanged;
-        const terminal =
-          deployEvent.state === "Live" || deployEvent.state === "Failed" || deployEvent.state === "Stopped";
+        const serviceId = deployEvent.service_id;
+        if (!serviceId) return;
+        const terminal = deployStateTerminal(deployEvent.state);
+        if (!terminal) {
+          this.inFlightDeploymentByService[serviceId] = deployEvent.deployment_id;
+        } else if (this.inFlightDeploymentByService[serviceId] === deployEvent.deployment_id) {
+          delete this.inFlightDeploymentByService[serviceId];
+        } else {
+          return; // desfecho de outro deployment (o substituído, o religado…)
+        }
         const motivo = shortReason(deployEvent.message);
-        if (deployEvent.service_id && deployEvent.service_id === this.selectedServiceId) {
+        if (serviceId === this.selectedServiceId) {
           if (terminal) {
             this.serviceMessage =
               deployEvent.state === "Live"
@@ -553,7 +573,7 @@ document.addEventListener("alpine:init", () => {
         // outra coisa enquanto o build roda. A GUI desktop resolve isso com
         // notificação do SO mais toast; no browser ficamos no toast (uma
         // Notification exigiria pedir permissão, que ninguém pediu).
-        if (terminal && deployEvent.service_id && deployEvent.service_id === this.deployTrackId) {
+        if (terminal && serviceId === this.deployTrackId) {
           this.deployTrackId = null;
           const nome = this.serviceNameById(deployEvent.service_id);
           if (deployEvent.state === "Live") {
@@ -1047,9 +1067,18 @@ document.addEventListener("alpine:init", () => {
         return;
       }
       const deployStartResponse = await this.api.rpcChecked({ DeployStart: { service_id: serviceId } });
-      if (deployStartResponse.ok) this.deployTrackId = serviceId;
+      if (deployStartResponse.ok) this.trackDeployStart(serviceId, deployStartResponse);
       this.toastResult(deployStartResponse, t("deploy iniciado"));
       await this.refreshNow();
+    },
+
+    /** Arma o acompanhamento do deploy que esta aba disparou: o desfecho vira
+     * toast (`deployTrackId`) e o deployment devolvido já conta como em voo,
+     * antes mesmo do primeiro evento chegar. */
+    trackDeployStart(serviceId, deployStartResponse) {
+      this.deployTrackId = serviceId;
+      const deploymentId = deployStartResponse.value?.Deployment?.id;
+      if (deploymentId) this.inFlightDeploymentByService[serviceId] = deploymentId;
     },
 
     async deployStart() {
@@ -1064,7 +1093,7 @@ document.addEventListener("alpine:init", () => {
       // Guarda quem o USUÁRIO mandou deployar: o desfecho (DeployStateChanged)
       // vira toast mesmo que ele já tenha navegado para outra tela — é o par
       // do `State.deploy_track` da GUI desktop.
-      if (deployStartResponse.ok) this.deployTrackId = serviceId;
+      if (deployStartResponse.ok) this.trackDeployStart(serviceId, deployStartResponse);
       this.toastResult(deployStartResponse, t("deploy iniciado"));
       await this.fetchServiceDetail(serviceId);
       await this.refreshNow();

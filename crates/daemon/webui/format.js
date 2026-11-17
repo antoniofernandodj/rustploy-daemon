@@ -144,13 +144,24 @@ export function formatDuration(deployment) {
   return formatSeconds(secs);
 }
 
-/** DeployState → (rótulo, kind semântico p/ .state_<kind>). */
+/** DeployState → (rótulo, kind semântico p/ .state_<kind>). Todo estado
+ * terminal tem rótulo próprio: `Pruning` (deploy que ficou no ar e foi
+ * substituído por um mais novo) caía no "BUILDING" azul e pulsante. Os rótulos
+ * passam pelo `t()` como os da GUI (que em pt-BR diz "NO AR", não "LIVE").
+ * Par de format/util.luau::state_label_color/state_kind. */
 export function stateLabelKind(state) {
-  if (state === "Live") return ["LIVE", "ok"];
-  if (state === "Stopped") return ["STOPPED", "muted"];
-  if (state === "Failed") return ["FAILED", "bad"];
+  if (state === "Live") return [t("NO AR"), "ok"];
+  if (state === "Stopped") return [t("PARADO"), "muted"];
+  if (state === "Pruning") return [t("SUBSTITUÍDO"), "muted"];
+  if (state === "Failed") return [t("FALHOU"), "bad"];
+  if (state === "RollingBack") return [t("REVERTENDO"), "warn"];
   if (state === "PreDeployCheck") return [t("PRÉ-DEPLOY CHECK"), "info"];
-  return ["BUILDING", "info"];
+  return [t("CONSTRUINDO"), "info"];
+}
+
+/** Estados em que o deployment não anda mais (domain::DeployState::is_terminal). */
+export function deployStateTerminal(state) {
+  return state === "Live" || state === "Stopped" || state === "Failed" || state === "Pruning";
 }
 
 /** ServiceStatus (string ou `{Error: "..."}`) → (rótulo, kind). Porta de
@@ -693,7 +704,7 @@ export function deployDetailRows(info) {
       state: transition.to,
       label: transition.to,
       kind: transition.to === "Failed" ? "bad" : last && info.state === transition.to ? "info" : "ok",
-      dur: last && (transition.to === "Failed" || transition.to === "Live" || transition.to === "Stopped") ? "—" : formatSeconds(secs),
+      dur: last && deployStateTerminal(transition.to) ? "—" : formatSeconds(secs),
       msg: transition.message || "",
     };
   });
