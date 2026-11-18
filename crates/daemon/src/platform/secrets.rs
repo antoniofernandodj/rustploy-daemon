@@ -13,6 +13,7 @@ use ulid::Ulid;
 
 use crate::domain::{EnvVar, EnvVarValue};
 use crate::platform::config::SecretsConfig;
+use crate::protocol::{SecretKind, SecretOnExists};
 use crate::store::Db;
 use crate::store::infra::model::{InfraState, JobInfra, ProjectInfra, SecretInfra, ServiceInfra};
 
@@ -356,6 +357,73 @@ impl SecretsManager {
             }
             Ok(())
         })
+    }
+
+    /// Sorteia um valor e o grava como secret **sem que ele saia do daemon**
+    /// (`Command::SecretGenerate`). A checagem "já existe?" e a gravação acontecem na mesma
+    /// atualização do repositório de infra; a auditoria ganha uma linha `generate` (nunca o valor).
+    pub async fn generate_scoped<'a>(
+        &self,
+        project_id: &str,
+        scope: impl Into<Scope<'a>>,
+        name: &str,
+        kind: SecretKind,
+        length: Option<u32>,
+        on_exists: SecretOnExists,
+    ) -> Result<GenerateOutcome> {
+        let scope = scope.into();
+        valid_secret_name(name)?;
+        let value = generate_secret_value(kind, length)?;
+        let encrypted = self.encrypt(&value)?;
+        // O que a atualização encontrou; o `Kept` traz o cifrado para decifrar fora do lock.
+        enum Stored {
+            Written,
+            Exists,
+            Kept(String),
+        }
+        let stored = self.db.infra().update(|st| {
+            let list = secret_list_mut(st, project_id, scope)?;
+            match list.iter_mut().find(|s| s.key == name) {
+                Some(existing) => match on_exists {
+                    SecretOnExists::Fail => Ok(Stored::Exists),
+                    SecretOnExists::Keep => Ok(Stored::Kept(existing.value.clone())),
+                    SecretOnExists::Replace => {
+                        existing.value = encrypted;
+                        Ok(Stored::Written)
+                    }
+                },
+                None => {
+                    list.push(new_secret(name, encrypted));
+                    Ok(Stored::Written)
+                }
+            }
+        })?;
+        let outcome = match stored {
+            Stored::Written => GenerateOutcome::Created(Generated::of(&value)),
+            Stored::Exists => GenerateOutcome::Exists,
+            Stored::Kept(encrypted) => {
+                GenerateOutcome::KeptExisting(Generated::of(&self.decrypt(&encrypted)?))
+            }
+        };
+        if let GenerateOutcome::Created(_) = outcome {
+            let service_id: Option<String> = match scope {
+                Scope::Project => None,
+                Scope::Service(sid) => Some(sid.to_string()),
+                Scope::Job(jid) => Some(format!("job:{jid}")),
+            };
+            sqlx::query(
+                "INSERT INTO secret_audit (at, action, project_id, service_id, name) VALUES (?, 'generate', ?, ?, ?)",
+            )
+            .bind(chrono::Utc::now())
+            .bind(project_id)
+            .bind(service_id.as_deref())
+            .bind(name)
+            .execute(self.db.pool())
+            .await
+            .context("gravando a auditoria da geração")?;
+            info!(target: "audit", project_id, service_id = ?service_id, secret = name, "secret gerado");
+        }
+        Ok(outcome)
     }
 
     pub async fn delete_scoped<'a>(
@@ -823,6 +891,80 @@ fn valid_env_key(name: &str) -> Result<()> {
         );
     }
     Ok(())
+}
+
+/// Resultado de [`SecretsManager::generate_scoped`]. Nenhuma variante carrega o valor em claro.
+#[derive(Debug, PartialEq, Eq)]
+pub enum GenerateOutcome {
+    /// Gravado (novo, ou trocado com `Replace`).
+    Created(Generated),
+    /// Já existia e `on_exists` era `Fail`: nada mudou.
+    Exists,
+    /// Já existia e `on_exists` era `Keep`: nada mudou (metadados do valor guardado).
+    KeptExisting(Generated),
+}
+
+/// Metadados não sensíveis de um valor: tamanho e impressão digital.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Generated {
+    pub length: u32,
+    /// 8 primeiros hex do SHA-256 do valor: confere "é o mesmo?" sem revelar nada útil.
+    pub fingerprint: String,
+}
+
+impl Generated {
+    fn of(value: &str) -> Self {
+        use sha2::{Digest, Sha256};
+        Self {
+            length: value.chars().count() as u32,
+            fingerprint: hex::encode(Sha256::digest(value.as_bytes()))[..8].to_string(),
+        }
+    }
+}
+
+/// Menor e maior tamanho aceitos por [`generate_secret_value`], em caracteres.
+pub const GENERATED_SECRET_MIN_LENGTH: u32 = 16;
+pub const GENERATED_SECRET_MAX_LENGTH: u32 = 512;
+
+/// Sorteia um valor de `kind` com `length` caracteres (vazio = o padrão do tipo), de `/dev/urandom`.
+///
+/// Amostragem por rejeição: descarta os bytes `>= 256 - 256 % n` para que cada caractere do
+/// alfabeto saia com a mesma probabilidade (um `% n` direto favoreceria os primeiros).
+pub fn generate_secret_value(kind: SecretKind, length: Option<u32>) -> Result<String> {
+    use std::io::Read;
+    let (alphabet, default_length): (&[u8], u32) = match kind {
+        SecretKind::Password => (
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+            32,
+        ),
+        SecretKind::Hex => (b"0123456789abcdef", 64),
+        SecretKind::Base64Url => (
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_",
+            43,
+        ),
+    };
+    let length = length.unwrap_or(default_length);
+    if !(GENERATED_SECRET_MIN_LENGTH..=GENERATED_SECRET_MAX_LENGTH).contains(&length) {
+        bail!(
+            "length deve ficar entre {GENERATED_SECRET_MIN_LENGTH} e {GENERATED_SECRET_MAX_LENGTH} caracteres (veio {length})"
+        );
+    }
+    let limit = 256 - 256 % alphabet.len();
+    let mut urandom =
+        std::fs::File::open("/dev/urandom").context("sem fonte de aleatoriedade (/dev/urandom)")?;
+    let mut out = String::with_capacity(length as usize);
+    let mut buf = [0u8; 64];
+    while out.len() < length as usize {
+        urandom
+            .read_exact(&mut buf)
+            .context("falha ao ler /dev/urandom")?;
+        for &byte in &buf {
+            if (byte as usize) < limit && out.len() < length as usize {
+                out.push(alphabet[byte as usize % alphabet.len()] as char);
+            }
+        }
+    }
+    Ok(out)
 }
 
 /// Nome válido para um secret: não vazio, só `[A-Za-z0-9_.-]` — fica de fora o que quebraria a
@@ -1925,6 +2067,189 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(n, 1);
+    }
+
+    // ---- geração (SecretGenerate) --------------------------------------------------------------
+
+    #[test]
+    fn gerar_valor_respeita_alfabeto_e_tamanho() {
+        let senha = generate_secret_value(SecretKind::Password, None).unwrap();
+        assert_eq!(senha.len(), 32);
+        assert!(senha.chars().all(|c| c.is_ascii_alphanumeric()));
+        let hex = generate_secret_value(SecretKind::Hex, None).unwrap();
+        assert_eq!(hex.len(), 64);
+        assert!(
+            hex.chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+        );
+        let token = generate_secret_value(SecretKind::Base64Url, Some(100)).unwrap();
+        assert_eq!(token.len(), 100);
+        assert!(
+            token
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        );
+        assert_ne!(
+            generate_secret_value(SecretKind::Password, None).unwrap(),
+            senha,
+            "dois sorteios iguais"
+        );
+        assert!(generate_secret_value(SecretKind::Password, Some(15)).is_err());
+        assert!(generate_secret_value(SecretKind::Password, Some(513)).is_err());
+        assert!(generate_secret_value(SecretKind::Password, Some(16)).is_ok());
+    }
+
+    #[tokio::test]
+    async fn gerar_grava_cifrado_audita_e_nao_devolve_o_valor() {
+        let (db, m, _d) = cenario().await;
+        let outcome = m
+            .generate_scoped(
+                "p1",
+                None,
+                "ADMIN_PASSWORD",
+                SecretKind::Password,
+                Some(24),
+                SecretOnExists::Fail,
+            )
+            .await
+            .unwrap();
+        let valor = m.get_scoped("p1", None, "ADMIN_PASSWORD").await.unwrap();
+        assert_eq!(outcome, GenerateOutcome::Created(Generated::of(&valor)));
+        assert_eq!(valor.len(), 24);
+        assert!(
+            !format!("{outcome:?}").contains(&valor),
+            "o resultado não leva o valor"
+        );
+        let tree = db.infra().tree();
+        let tudo: String = tree
+            .list()
+            .unwrap()
+            .iter()
+            .map(|r| String::from_utf8_lossy(&tree.read(r).unwrap().unwrap()).into_owned())
+            .collect();
+        assert!(!tudo.contains(&valor), "o YAML só tem o cifrado");
+        let linhas: Vec<(String, String, Option<String>, String)> =
+            sqlx::query_as("SELECT action, project_id, service_id, name FROM secret_audit")
+                .fetch_all(db.pool())
+                .await
+                .unwrap();
+        assert_eq!(
+            linhas,
+            vec![(
+                "generate".into(),
+                "p1".into(),
+                None,
+                "ADMIN_PASSWORD".into()
+            )]
+        );
+    }
+
+    #[tokio::test]
+    async fn gerar_respeita_on_exists() {
+        let (_db, m, _d) = cenario().await;
+        m.set_scoped("p1", Some("s1"), "JWT_SECRET", "valor-original-em-uso")
+            .await
+            .unwrap();
+        // Fail (padrão): recusa e não toca no valor
+        let falha = m
+            .generate_scoped(
+                "p1",
+                Some("s1"),
+                "JWT_SECRET",
+                SecretKind::Hex,
+                None,
+                SecretOnExists::Fail,
+            )
+            .await
+            .unwrap();
+        assert_eq!(falha, GenerateOutcome::Exists);
+        assert_eq!(
+            m.get_scoped("p1", Some("s1"), "JWT_SECRET").await.unwrap(),
+            "valor-original-em-uso"
+        );
+        // Keep: idempotente, devolve os metadados do que já existe
+        let mantido = m
+            .generate_scoped(
+                "p1",
+                Some("s1"),
+                "JWT_SECRET",
+                SecretKind::Hex,
+                None,
+                SecretOnExists::Keep,
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            mantido,
+            GenerateOutcome::KeptExisting(Generated::of("valor-original-em-uso"))
+        );
+        assert_eq!(
+            m.get_scoped("p1", Some("s1"), "JWT_SECRET").await.unwrap(),
+            "valor-original-em-uso"
+        );
+        // Replace: troca
+        let trocado = m
+            .generate_scoped(
+                "p1",
+                Some("s1"),
+                "JWT_SECRET",
+                SecretKind::Hex,
+                None,
+                SecretOnExists::Replace,
+            )
+            .await
+            .unwrap();
+        let novo = m.get_scoped("p1", Some("s1"), "JWT_SECRET").await.unwrap();
+        assert_ne!(novo, "valor-original-em-uso");
+        assert_eq!(novo.len(), 64);
+        assert_eq!(trocado, GenerateOutcome::Created(Generated::of(&novo)));
+        // o escopo do projeto continua sem o secret
+        assert!(m.get_scoped("p1", None, "JWT_SECRET").await.is_err());
+    }
+
+    #[tokio::test]
+    async fn gerar_recusa_nome_invalido_tamanho_fora_e_escopo_inexistente() {
+        let (_db, m, _d) = cenario().await;
+        for nome in ["", "A B", "a:b", "<x>"] {
+            assert!(
+                m.generate_scoped(
+                    "p1",
+                    None,
+                    nome,
+                    SecretKind::Password,
+                    None,
+                    SecretOnExists::Fail
+                )
+                .await
+                .is_err(),
+                "nome {nome:?}"
+            );
+        }
+        assert!(
+            m.generate_scoped(
+                "p1",
+                None,
+                "CURTO",
+                SecretKind::Password,
+                Some(8),
+                SecretOnExists::Fail
+            )
+            .await
+            .is_err()
+        );
+        assert!(
+            m.generate_scoped(
+                "p1",
+                Some("nao-existe"),
+                "X",
+                SecretKind::Password,
+                None,
+                SecretOnExists::Fail
+            )
+            .await
+            .is_err()
+        );
+        assert!(m.list_names_scoped("p1", None).await.unwrap().is_empty());
     }
 
     // ---- origem da identidade -----------------------------------------------------------------

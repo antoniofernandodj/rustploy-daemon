@@ -42,6 +42,31 @@ pub enum SecretMoveOp {
     JobSecretToProject,
 }
 
+/// O formato do valor que [`Command::SecretGenerate`] sorteia. `length` é sempre em **caracteres**.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum SecretKind {
+    /// `A-Za-z0-9` (padrão 32): seguro em URL, SQL e shell. Para senhas de banco, admin, broker.
+    #[default]
+    Password,
+    /// `0-9a-f` (padrão 64 = 32 bytes): segredo de HMAC/JWT.
+    Hex,
+    /// `A-Za-z0-9-_` (padrão 43 = 32 bytes): tokens e chaves de sessão.
+    Base64Url,
+}
+
+/// O que [`Command::SecretGenerate`] faz quando o secret já existe no escopo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum SecretOnExists {
+    /// Recusa (`SecretExists`), para ninguém trocar por engano uma senha em uso.
+    #[default]
+    Fail,
+    /// Não faz nada e responde `created: false`: o "garanta que exista", idempotente.
+    Keep,
+    /// Troca o valor. Quem usa o secret só recebe o novo no próximo **deploy**, e o sistema de fora
+    /// (o banco, o broker) não é avisado: trocar a senha lá é outro passo.
+    Replace,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Command {
     // Projects
@@ -281,6 +306,25 @@ pub enum Command {
         job_id: Option<String>,
         name: String,
         value: String,
+    },
+    /// Sorteia um valor **dentro do daemon** e o grava como secret cifrado (do projeto, de um serviço
+    /// ou de um job). O valor nunca sai na resposta, só `SecretGenerated` com o tamanho e uma
+    /// impressão digital; uma pessoa o lê pelo "ver valor" (auditado). É o jeito de o agente criar
+    /// senhas sem vê-las. Grava uma linha `generate` na auditoria de secrets.
+    SecretGenerate {
+        project_id: String,
+        #[serde(default)]
+        service_id: Option<String>,
+        #[serde(default)]
+        job_id: Option<String>,
+        name: String,
+        #[serde(default)]
+        kind: SecretKind,
+        /// Em caracteres; vazio = o padrão do `kind`. Mínimo 16, máximo 512.
+        #[serde(default)]
+        length: Option<u32>,
+        #[serde(default)]
+        on_exists: SecretOnExists,
     },
     SecretDelete {
         project_id: String,
@@ -887,6 +931,37 @@ mod tests {
 #[cfg(test)]
 mod secret_tests {
     use super::*;
+
+    #[test]
+    fn secret_generate_so_com_nome_usa_os_padroes() {
+        let c: Command =
+            serde_json::from_str(r#"{"SecretGenerate":{"project_id":"p","name":"JWT_SECRET"}}"#)
+                .unwrap();
+        assert!(matches!(
+            c,
+            Command::SecretGenerate {
+                service_id: None,
+                job_id: None,
+                kind: SecretKind::Password,
+                length: None,
+                on_exists: SecretOnExists::Fail,
+                ..
+            }
+        ));
+        let c: Command = serde_json::from_str(
+            r#"{"SecretGenerate":{"project_id":"p","service_id":"s","name":"K","kind":"Hex","length":64,"on_exists":"Keep"}}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            c,
+            Command::SecretGenerate {
+                kind: SecretKind::Hex,
+                length: Some(64),
+                on_exists: SecretOnExists::Keep,
+                ..
+            }
+        ));
+    }
 
     #[test]
     fn clientes_antigos_sem_service_id_continuam_validos() {

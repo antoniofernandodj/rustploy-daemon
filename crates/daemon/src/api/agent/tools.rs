@@ -901,6 +901,15 @@ mod tests {
                 name: "K".into(),
                 value: "v".into(),
             },
+            Command::SecretGenerate {
+                project_id: "p".into(),
+                service_id: None,
+                job_id: None,
+                name: "K".into(),
+                kind: crate::protocol::SecretKind::Password,
+                length: None,
+                on_exists: crate::protocol::SecretOnExists::Fail,
+            },
         ] {
             assert!(proibido_ao_agente(&ok).is_none());
         }

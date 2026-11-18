@@ -5,6 +5,7 @@ pub mod env_value_set;
 pub mod infra_audit;
 pub mod infra_download;
 pub mod secret_delete;
+pub mod secret_generate;
 pub mod secret_list;
 pub mod secret_move;
 pub mod secret_rename;
@@ -23,6 +24,20 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
             name,
             value,
         } => secret_set::handle(state, project_id, service_id, job_id, name, value).await,
+        Command::SecretGenerate {
+            project_id,
+            service_id,
+            job_id,
+            name,
+            kind,
+            length,
+            on_exists,
+        } => {
+            secret_generate::handle(
+                state, project_id, service_id, job_id, name, kind, length, on_exists,
+            )
+            .await
+        }
         Command::SecretDelete {
             project_id,
             service_id,

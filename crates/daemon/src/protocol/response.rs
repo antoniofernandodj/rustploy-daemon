@@ -60,6 +60,15 @@ pub enum Response {
         registry_domain: Option<String>,
     },
     SecretNames(Vec<String>),
+    /// Resposta de `Command::SecretGenerate`: **nunca** o valor. `created: false` = já existia e foi
+    /// mantido (`on_exists: Keep`). `fingerprint` = 8 primeiros hex do SHA-256 do valor guardado,
+    /// para conferir "é o mesmo valor?" sem revelá-lo.
+    SecretGenerated {
+        name: String,
+        created: bool,
+        length: u32,
+        fingerprint: String,
+    },
     /// Situação da sincronização do estado com o git.
     StateGit(Box<StateGitStatus>),
     /// Resposta de `Command::InfraAudit`: onde há valor em claro (sem o valor).

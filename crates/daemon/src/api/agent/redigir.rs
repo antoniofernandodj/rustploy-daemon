@@ -115,7 +115,10 @@ pub fn mascarar_linhas(texto: &str) -> String {
 
 /// Percorre o JSON de uma resposta escondendo o que não pode chegar ao agente:
 /// - `{"key": K, "value": {"Plain": V}}` (uma env) → `V` mascarado;
-/// - `internal_url` (resposta de `ServiceConnectionInfo`) → senha mascarada.
+/// - **qualquer** texto com `esquema://usuário:senha@` → senha mascarada, seja qual for o campo
+///   (`internal_url`, `connection_url` dos databases gerenciados, um campo que ainda vai existir).
+///   Antes só o `internal_url` era olhado, e o `connection_url` do `ManagedDatabaseListAll` saía
+///   com a senha.
 pub fn redigir(valor: &mut Value) {
     match valor {
         Value::Object(mapa) => {
@@ -126,14 +129,12 @@ pub fn redigir(valor: &mut Value) {
             {
                 *plain = valor_env_para_agente(&chave, plain);
             }
-            if let Some(Value::String(url)) = mapa.get_mut("internal_url") {
-                *url = mascarar_url(url);
-            }
             for filho in mapa.values_mut() {
                 redigir(filho);
             }
         }
         Value::Array(itens) => itens.iter_mut().for_each(redigir),
+        Value::String(texto) if texto.contains("://") => *texto = mascarar_url(texto),
         _ => {}
     }
 }
@@ -250,6 +251,32 @@ mod tests {
         let texto = v.to_string();
         assert!(!texto.contains("SENHA"), "{texto}");
         assert!(texto.contains("rp_db"));
+    }
+
+    #[test]
+    fn database_gerenciado_nao_leva_senha_em_campo_nenhum() {
+        let mut v = json!({"ManagedDatabases": [{
+            "name": "gestao",
+            "env_var": "DATABASE_URL",
+            "connection_url": "postgresql://gestao:SENHA1@rp-shared-pg:5432/gestao"
+        }, {
+            "name": "rdo",
+            "connection_url": "mysql://rdo:SENHA2@rp-shared-my:3306/rdo",
+            "um_campo_futuro": {"lista": ["amqp://u:SENHA3@broker/"]}
+        }]});
+        redigir_resposta(&mut v);
+        let texto = v.to_string();
+        for senha in ["SENHA1", "SENHA2", "SENHA3"] {
+            assert!(!texto.contains(senha), "{texto}");
+        }
+        assert!(
+            texto.contains("postgresql://gestao:***@rp-shared-pg:5432/gestao"),
+            "{texto}"
+        );
+        assert!(
+            texto.contains("\"name\":\"gestao\""),
+            "o resto fica: {texto}"
+        );
     }
 
     #[test]

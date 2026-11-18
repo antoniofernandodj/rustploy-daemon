@@ -82,6 +82,7 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         Command::GetDaemonSettings => "GetDaemonSettings",
         Command::SetDaemonSettings { .. } => "SetDaemonSettings",
         Command::SecretSet { .. } => "SecretSet",
+        Command::SecretGenerate { .. } => "SecretGenerate",
         Command::SecretDelete { .. } => "SecretDelete",
         Command::SecretList { .. } => "SecretList",
         Command::SecretReveal { .. } => "SecretReveal",
@@ -288,6 +289,7 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         | Command::RegistryTokenList
         | Command::RegistryTokenRevoke { .. } => handlers::registry::dispatch(state, cmd).await,
         Command::SecretSet { .. }
+        | Command::SecretGenerate { .. }
         | Command::SecretDelete { .. }
         | Command::SecretList { .. }
         | Command::SecretReveal { .. }

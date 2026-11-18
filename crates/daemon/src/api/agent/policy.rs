@@ -152,6 +152,7 @@ pub fn required_level(cmd: &Command) -> Level {
         | Command::EnvKeyRename { .. }
         | Command::EnvValueSet { .. }
         | Command::SecretSet { .. }
+        | Command::SecretGenerate { .. }
         | Command::SecretDelete { .. }
         | Command::SecretRename { .. }
         | Command::SecretMove { .. }

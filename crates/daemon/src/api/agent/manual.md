@@ -185,6 +185,15 @@ Comandos, por área (campos entre chaves):
   container_ids}` (**apaga** o log dessas execuções — irreversível, vários de uma
   vez; a execução atual é recusada com `ExecutionRunning`)
 - **Segredos**: `SecretList{project_id}` · `SecretSet{project_id, name, value}` ·
+  `SecretGenerate{project_id, service_id?, job_id?, name, kind?, length?, on_exists?}` — **o daemon sorteia
+  o valor** e grava o secret cifrado; a resposta é `SecretGenerated{name, created, length, fingerprint}`,
+  **nunca** o valor. `kind`: `Password` (padrão, `A-Za-z0-9`, 32 caracteres; seguro em URL, SQL e shell),
+  `Hex` (64; segredo de JWT/HMAC) ou `Base64Url` (43; tokens). `length` em caracteres, de 16 a 512.
+  `on_exists`: `Fail` (padrão: recusa com `SecretExists`), `Keep` (mantém o atual e responde
+  `created: false`: o "garanta que exista") ou `Replace` (troca o valor; quem usa só recebe o novo no próximo
+  **deploy**, e o banco/broker **não** é avisado). `fingerprint` = 8 hex do SHA-256 do valor guardado, para
+  conferir "é o mesmo?". Cada geração entra na auditoria de secrets. É **assim** que você cria senhas e
+  chaves: uma pessoa lê o valor depois pelo 👁 da GUI/webui (auditado) ·
   `SecretDelete{project_id, name}` ·
   `SecretMove{project_id, service_id?, name, op}` (`EnvToSecret`, escopos…) ·
   `EnvKeyRename{project_id, service_id?, from, to}` — troca só a **chave** de uma
@@ -329,9 +338,9 @@ existente primeiro (`ServiceGet`, `JobListAll`) e use-o de molde.
   Build log (`GetBuildLogs`/`build_logs`) também fica guardado.
 - **Você não vê senhas — por desenho.** O daemon mascara o que o agente recebe:
   env `Plain` cuja chave parece segredo (`*PASSWORD*`, `*PASS*`, `*SECRET*`,
-  `*TOKEN*`, `*KEY*`) vem como `***`; a senha em qualquer `://user:senha@host`
-  (a `internal_url` do `ServiceConnectionInfo`, `DATABASE_URL`…) vem como
-  `user:***@host`; o `.env` e os YAMLs de exportação seguem a mesma regra. Valor
+  `*TOKEN*`, `*KEY*`) vem como `***`; a senha em qualquer `://user:senha@host`,
+  **em qualquer campo de qualquer resposta** (a `internal_url` do `ServiceConnectionInfo`, a
+  `connection_url` do `ManagedDatabaseList`, `DATABASE_URL`…), vem como `user:***@host`; o `.env` e os YAMLs de exportação seguem a mesma regra. Valor
   `Secret` aparece só como referência. É de propósito generoso (esconde até
   `VAPID_PUBLIC_KEY`). Proibidos ao agente: `SecretReveal`, `SecretMove` com
   `SecretToEnv`, `RegistryTokenCreate` e `ServiceExport` com `include_values`.
@@ -341,10 +350,12 @@ existente primeiro (`ServiceGet`, `JobListAll`) e use-o de molde.
   Isto reduz o risco de engano; não é um cofre (o token é de administrador).
 - **`ServiceReload` NÃO relê variáveis nem secrets**: ele só para e inicia o MESMO container, que guarda o
   ambiente de quando foi criado. Trocou um secret/variável? Faça **redeploy** (`deploy`), que cria um container novo.
-- **Gerar ou rotacionar um segredo SEM ver o valor: ainda não existe comando para isso.** Só dois caminhos servem hoje: o
-  `WizardCreate` de banco/broker/storage, que gera a senha do serviço novo dentro do daemon, e uma pessoa gerando/trocando o
-  secret na GUI/webui. **Não improvise** (nem com serviço descartável, nem escolhendo você a senha com `SecretSet`): isso
-  tira o valor do cofre ou o deixa passar por você. O comando certo está planejado (`SecretGenerate`/`SecretRotate`, ainda não existem); até lá, peça a uma pessoa.
+- **Gerar um segredo SEM ver o valor: `SecretGenerate`.** Nunca escolha você a senha com `SecretSet` (ela
+  passaria pela conversa) nem use serviço descartável como gerador. Para uma senha que uma **pessoa** precisa
+  digitar (o primeiro login de um app), gere com `SecretGenerate` e diga a ela onde ler: projeto → Secrets →
+  👁. **Rotacionar** a senha de um banco ou broker é mais que gerar: `on_exists: Replace` troca só o secret, e
+  o banco continua com a senha antiga até alguém rodar o `ALTER USER` (um job) e redeployar quem usa. O
+  `SecretRotate` com esses passos ainda não existe: combine com uma pessoa antes.
 - **Sem escopo.** O token é o de administrador: não existe modo
   somente-leitura. Comandos destrutivos (`ServiceDelete`, `Prune*`,
   `Remove*`, `StopAllManaged`, `RegistryRepoDelete`) não pedem confirmação —
