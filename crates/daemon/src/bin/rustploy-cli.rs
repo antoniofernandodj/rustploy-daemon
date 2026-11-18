@@ -14,6 +14,10 @@
 // O formato é o mesmo código que o daemon usa para ler: o que o CLI cifra o daemon decifra.
 #[path = "../platform/age_format.rs"]
 mod age_format;
+// `-i` aceita também o arquivo de recuperação (`.rpkit`) que a interface baixa.
+#[path = "../features/data_backup/recovery_kit.rs"]
+#[allow(dead_code)]
+mod recovery_kit;
 
 use age::secrecy::ExposeSecret;
 use age::x25519;
@@ -167,7 +171,15 @@ fn resolve_recipients(o: &Opts) -> Result<Vec<x25519::Recipient>> {
 
 fn resolve_identity(o: &Opts) -> Result<x25519::Identity> {
     if let Some(f) = &o.identity_file {
-        let text = std::fs::read_to_string(f).with_context(|| format!("lendo {}", f.display()))?;
+        let bytes = std::fs::read(f).with_context(|| format!("lendo {}", f.display()))?;
+        // o arquivo de recuperação (binário) que a interface baixa desde a 0.1.67
+        if bytes.starts_with(&recovery_kit::MAGIC[..6]) {
+            let kit = recovery_kit::RecoveryKit::decode(&bytes)
+                .with_context(|| format!("lendo {}", f.display()))?;
+            return age_format::parse_identity(&kit.private_key);
+        }
+        let text = String::from_utf8(bytes)
+            .map_err(|_| anyhow!("{} não é texto nem um arquivo de recuperação", f.display()))?;
         // aceita o arquivo do `keygen` (com a linha de comentário) ou só a chave
         let line = text
             .lines()
@@ -330,6 +342,37 @@ mod tests {
             ..Default::default()
         };
         assert!(resolve_identity(&o).is_ok());
+    }
+
+    /// `-i` com o arquivo de recuperação (`.rpkit`) que a interface baixa: a identidade sai dele, e
+    /// um arquivo danificado dá erro em vez de uma chave errada.
+    #[test]
+    fn identidade_do_arquivo_de_recuperacao() {
+        let identity = x25519::Identity::generate();
+        let kit = recovery_kit::RecoveryKit {
+            infra_remote: "https://g.io/i.git".into(),
+            private_key: identity.to_string().expose_secret().to_string(),
+            public_key: identity.to_public().to_string(),
+            ..Default::default()
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join("x.rpkit");
+        let mut bytes = kit.encode().unwrap();
+        std::fs::write(&f, &bytes).unwrap();
+        let o = Opts {
+            identity_file: Some(f.clone()),
+            ..Default::default()
+        };
+        let read = resolve_identity(&o).unwrap();
+        assert_eq!(
+            read.to_public().to_string(),
+            identity.to_public().to_string()
+        );
+
+        let last = bytes.len() - 1;
+        bytes[last] ^= 1;
+        std::fs::write(&f, &bytes).unwrap();
+        assert!(resolve_identity(&o).is_err());
     }
 
     #[test]

@@ -31,6 +31,10 @@
     --danger:  #DA3633;
     --error:   #F85149;
     --warn:    #D29922;
+    /* Interface em sans; mono só no que é código ou valor (.u-mono e afins)
+       — a mesma divisão da GUI (app.gss, `u-mono`). */
+    --font-ui:   system-ui, -apple-system, "Segoe UI", "Noto Sans", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Consolas, monospace;
 }
 
 * { box-sizing: border-box; }
@@ -42,8 +46,9 @@ html, body {
     padding: 0;
     background: var(--bg);
     color: var(--text-2);
-    font-family: "JetBrains Mono", ui-monospace, "SF Mono", Consolas, monospace;
+    font-family: var(--font-ui);
     font-size: 14px;
+    line-height: 1.45;
     -webkit-font-smoothing: antialiased;
 }
 
@@ -88,7 +93,8 @@ button, input {
 /* ── Typography ───────────────────────────────────────────────────────── */
 .page-head__title      { font-size: 30px; font-weight: 700; color: var(--text); margin: 0; }
 .page-head__subtitle   { font-size: 13px; color: var(--muted); }
-.u-muted      { font-size: 12px; color: var(--muted); }
+.u-muted      { font-size: 13px; color: var(--muted); }
+.u-mono       { font-family: var(--font-mono); font-weight: 400; }
 .u-label-cap  { font-size: 11px; font-weight: 700; color: var(--faint); letter-spacing: .04em; }
 
 /* ── Shell layout ─────────────────────────────────────────────────────── */
@@ -176,7 +182,7 @@ hr, .rule   { width: 100%; height: 1px; border: none; background: var(--border);
 .field { width: 100%; gap: 6px; flex-shrink: 0; }
 .field__row   { width: 100%; justify-content: space-between; }
 .field__label { font-size: 11px; font-weight: 700; color: var(--muted); }
-.field__input { width: 100%; padding: 13px 14px; background: var(--raised); border: 1px solid var(--border); border-radius: 4px; color: var(--text); }
+.field__input { width: 100%; padding: 10px 12px; font-size: 14px; background: var(--raised); border: 1px solid var(--border); border-radius: 4px; color: var(--text); }
 .field__input:focus { outline: none; border-color: var(--accent); }
 /* <input type="file">: o botão nativo é branco no tema escuro; segue o .btn--ghost. */
 .field__input[type="file"] { padding: 8px 10px; color: var(--muted); cursor: pointer; }
@@ -191,7 +197,7 @@ hr, .rule   { width: 100%; height: 1px; border: none; background: var(--border);
 .login__connect:hover { filter: brightness(1.1); }
 .login__connect:disabled { opacity: .6; cursor: default; }
 .login__status  { gap: 14px; align-items: center; }
-.u-error { color: var(--error); font-size: 12px; }
+.u-error { color: var(--error); font-size: 13px; }
 .u-ok  { color: var(--ok); }
 
 /* ── Shell (sidebar / topbar) ─────────────────────────────────────────── */
@@ -420,7 +426,7 @@ hr, .rule   { width: 100%; height: 1px; border: none; background: var(--border);
 .btn--export-on { color: var(--text); background: var(--blue); }
 .env__editor {
     width: 100%; height: 200px; padding: 10px 12px; background: var(--raised); border: 1px solid var(--border);
-    border-radius: 4px; color: var(--text); font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 13px;
+    border-radius: 4px; color: var(--text); font-family: var(--font-mono); font-size: 13px;
     resize: vertical;
 }
 .env__editor:focus { outline: none; border-color: var(--accent); }
@@ -908,8 +914,8 @@ button:focus-visible, [tabindex]:focus-visible, select:focus-visible, summary:fo
 .btn--xs { padding: 4px 10px !important; font-size: 12px !important; border-radius: 4px !important; line-height: 1.2; flex-shrink: 0; }
 /* Select de formulário: .form-select do app.gss. */
 .form-select {
-    width: 100%; padding: 12px 14px; background: var(--raised); border: 1px solid #30363D; border-radius: 4px;
-    color: var(--text-2); font-family: inherit; font-size: 13px; cursor: pointer;
+    width: 100%; padding: 10px 12px; background: var(--raised); border: 1px solid #30363D; border-radius: 4px;
+    color: var(--text-2); font-family: inherit; font-size: 14px; cursor: pointer;
 }
 .form-select:focus { outline: none; border-color: var(--accent); }
 /* Campo numérico curto (spinbox da GUI, width 90). */
@@ -940,3 +946,32 @@ button:focus-visible, [tabindex]:focus-visible, select:focus-visible, summary:fo
 /* Cabeçalho ordenável (tableview da GUI). */
 .table__head-sort { text-align: left; cursor: pointer; padding: 0; background: none; border: 0; font-family: inherit; }
 .table__head-sort:hover { color: var(--text-2); }
+
+/* ── Formulário em grupos (o mesmo do app.gss) ───────────────────────────
+   `.field` = rótulo + controle + ajuda, a 6px entre si (o `field(description
+   = …)` da GUI); `.form-panel--grouped` separa os grupos a 20px. Sem isso a
+   ajuda de um campo ficava tão perto do rótulo seguinte quanto do próprio. */
+.form-panel--grouped { gap: 20px; }
+.form-stack          { width: 100%; gap: 14px; flex-shrink: 0; }
+.form-panel__head    { width: 100%; gap: 6px; flex-shrink: 0; }
+.form-panel__actions { width: 100%; gap: 8px; align-items: center; flex-wrap: wrap; flex-shrink: 0; }
+.form-panel__body    { width: 100%; gap: 20px; flex-shrink: 0; }
+.field-description   { font-size: 13px; color: var(--muted); }
+.prose               { width: 100%; max-width: 760px; gap: 8px; flex-shrink: 0; }
+/* Valor para copiar (URL, token, comando): mono numa caixa + o botão. */
+.copy-row        { width: 100%; gap: 8px; align-items: center; }
+.copy-row__value {
+    flex: 1 1 auto; min-width: 0; padding: 8px 12px; background: var(--bg);
+    border: 1px solid var(--border); border-radius: 4px; font-family: var(--font-mono);
+    font-size: 13px; color: var(--text-2); overflow-wrap: anywhere;
+}
+/* Pares rótulo → valor dentro de um painel (versão, último commit…). */
+.info-list        { width: 100%; gap: 10px; flex-shrink: 0; }
+.info-row         { width: 100%; gap: 12px; align-items: center; }
+.info-row__key    { flex: 1 1 auto; font-size: 13px; color: var(--muted); }
+.info-row__value  { font-size: 13px; color: var(--text); font-family: var(--font-mono); }
+/* Opção que só vale com a de cima marcada: recuada sob ela. */
+.option-group     { width: 100%; gap: 10px; flex-shrink: 0; }
+.option-nested    { width: 100%; gap: 8px; padding-left: 28px; }
+.secrets__form    { width: 100%; gap: 8px; flex-shrink: 0; }
+.secrets__name    { width: 220px; flex: 0 0 auto; font-family: var(--font-mono); }

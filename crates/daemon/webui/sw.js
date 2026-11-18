@@ -21,6 +21,7 @@ const APP_SHELL = [
   "/busy.js",
   "/wm.js",
   "/zip.js",
+  "/recovery_kit.js",
   "/icons.js",
   "/net/api.js",
   "/net/sse.js",

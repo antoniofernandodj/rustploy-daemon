@@ -582,9 +582,21 @@ pub enum Command {
     /// vez** (o servidor não a guarda; quem chama deve baixá-la na hora). Já havendo chave, recusa — a não
     /// ser com `replace: true` (a antiga deixa de cifrar o que for exportado daí em diante). Resposta:
     /// `RecoveryKeyGenerated`.
+    ///
+    /// A privada sai num **arquivo de recuperação** (`.rpkit`, `features::data_backup::recovery_kit`)
+    /// junto com o que a tela Recuperar pede: `infra_remote` (obrigatório), `infra_branch` (opcional) e o
+    /// token da conta Git `provider_id` (obrigatório para `https://`; o token só entra se a URL for do
+    /// host da conta). Tudo é conferido **antes** de gerar: um erro aqui não troca a chave.
+    /// Plano: `docs/plano-arquivo-de-recuperacao.md`.
     RecoveryKeyGenerate {
         #[serde(default)]
         replace: bool,
+        #[serde(default)]
+        infra_remote: String,
+        #[serde(default)]
+        infra_branch: Option<String>,
+        #[serde(default)]
+        provider_id: Option<String>,
     },
     /// Cria UM serviço novo a partir de um pacote, sem sobrescrever nada.
     /// `dry_run` só devolve o relatório. Resposta: `ServiceImportReport`.
@@ -1182,10 +1194,25 @@ mod recovery_key_tests {
     #[test]
     fn gerar_sem_replace_assume_falso() {
         let c: Command = serde_json::from_str(r#"{"RecoveryKeyGenerate":{}}"#).unwrap();
-        assert!(matches!(c, Command::RecoveryKeyGenerate { replace: false }));
+        assert!(matches!(
+            c,
+            Command::RecoveryKeyGenerate { replace: false, .. }
+        ));
         let c: Command =
             serde_json::from_str(r#"{"RecoveryKeyGenerate":{"replace":true}}"#).unwrap();
-        assert!(matches!(c, Command::RecoveryKeyGenerate { replace: true }));
+        assert!(matches!(
+            c,
+            Command::RecoveryKeyGenerate { replace: true, .. }
+        ));
+        let c: Command = serde_json::from_str(
+            r#"{"RecoveryKeyGenerate":{"infra_remote":"https://g.io/i.git","provider_id":"p1"}}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            c,
+            Command::RecoveryKeyGenerate { ref infra_remote, provider_id: Some(_), infra_branch: None, .. }
+                if infra_remote == "https://g.io/i.git"
+        ));
     }
 
     #[test]

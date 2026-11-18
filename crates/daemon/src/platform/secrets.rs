@@ -84,6 +84,12 @@ impl SecretsManager {
         })
     }
 
+    /// Para testes de outros módulos: o `config.toml` onde a chave de recuperação é gravada.
+    #[cfg(test)]
+    pub fn set_config_path_for_tests(&mut self, path: std::path::PathBuf) {
+        self.config_path = Some(path);
+    }
+
     /// Para testes: identidade efêmera (some quando o objeto some), sem tocar na config.
     #[cfg(test)]
     pub fn new(db: Arc<Db>) -> Result<Self> {

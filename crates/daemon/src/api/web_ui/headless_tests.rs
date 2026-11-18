@@ -2168,6 +2168,116 @@ async fn data_tab_backup_policy_form_roundtrips() {
     assert_eq!(v["desligado"], false, "{out}");
 }
 
+/// Arquivo de recuperação (`.rpkit`): "Gerar" manda repositório, branch e conta junto, baixa o binário que
+/// veio em base64, e a aba Recuperar, ao carregar esse arquivo, preenche os quatro campos; um arquivo com
+/// um byte trocado é recusado com mensagem. Plano: docs/plano-arquivo-de-recuperacao.md.
+#[tokio::test]
+async fn recovery_kit_generate_sends_the_fields_and_recover_loads_the_file() {
+    use base64::Engine as _;
+    let kit = crate::features::data_backup::recovery_kit::RecoveryKit {
+        infra_remote: "https://github.com/org/infra.git".into(),
+        infra_branch: "estado".into(),
+        infra_token: "ghp_do_arquivo".into(),
+        private_key: "AGE-SECRET-KEY-1DOARQUIVO".into(),
+        public_key: "age1doarquivo".into(),
+        server: "vps-teste".into(),
+        created_at: "2026-11-18T12:00:00+00:00".into(),
+    };
+    let kit_base64 = base64::prelude::BASE64_STANDARD.encode(kit.encode().unwrap());
+
+    let addr = spawn_static_server().await;
+    let (browser, _handler) = launch().await;
+    let page = open_page(&browser, addr).await;
+    seed_connected(&page).await;
+
+    let script = r#"(async () => {
+        const s = Alpine.store('app');
+        s.view = 'settings'; s.settingsTab = 'recoverykey';
+        const sent = [];
+        const rpc = async (c) => {
+            const name = typeof c === 'string' ? c : Object.keys(c)[0];
+            sent.push(c);
+            if (name === 'RecoveryKeyStatus') return { ok: true, value: { RecoveryKey: { configured: false, public_key: null } } };
+            if (name === 'RecoveryKeyGenerate') return { ok: true, value: { RecoveryKeyGenerated: {
+                public_key: 'age1doarquivo', private_key: 'AGE-SECRET-KEY-1DOARQUIVO',
+                file_base64: '__KIT__', suggested_filename: 'rustploy-recuperacao-vps.rpkit',
+                warning: 'conta OAuth' } } };
+            if (name === 'ServerRecoverStatus') return { ok: true, value: { ServerRecover: { phase: 'idle', projects: 0, services: [] } } };
+            return { ok: true, value: 'Ok' };
+        };
+        s.api = { rpc, rpcChecked: rpc };
+        let baixado = null;
+        s.downloadBytesFile = (nome, bytes) => { baixado = { nome, tamanho: bytes.length, primeiro: bytes[0] }; };
+        // o Git Sync configurado pré-preenche o formulário
+        s.stateGitRemote = 'https://github.com/org/infra.git'; s.stateGitBranch = 'estado'; s.stateGitProviderId = 'p1';
+        await s.recoveryKeyLoad();
+        const preenchido = [s.recoveryKeyInfraRemote, s.recoveryKeyInfraBranch, s.recoveryKeyProviderId];
+        // sem conta: não vai ao daemon
+        s.recoveryKeyProviderId = '';
+        await s.recoveryKeyGenerate();
+        const semConta = sent.filter(c => c.RecoveryKeyGenerate).length;
+        s.recoveryKeyProviderId = 'p1';
+        await s.recoveryKeyGenerate();
+        const gen = sent.filter(c => c.RecoveryKeyGenerate).pop().RecoveryKeyGenerate;
+
+        // aba Recuperar: carrega o mesmo arquivo
+        s.settingsTab = 'recover';
+        await s.recoverStatusLoad();
+        const bin = atob('__KIT__');
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        await s.recoverLoadKit(new File([bytes], 'x.rpkit'));
+        const campos = [s.recoverRemote, s.recoverBranch, s.recoverToken, s.recoverKey];
+        const botao = document.body.innerText.includes('Load recovery file') || document.body.innerText.includes('Carregar arquivo de recuperação');
+        // um byte trocado: recusado, campos limpos não são sobrescritos
+        s.recoverRemote = ''; s.recoverKey = '';
+        const ruim = bytes.slice(); ruim[20] ^= 1;
+        await s.recoverLoadKit(new File([ruim], 'ruim.rpkit'));
+        return JSON.stringify({ preenchido, semConta, gen, baixado, aviso: s.recoveryKeyWarning, campos, botao,
+            depoisDoRuim: [s.recoverRemote, s.recoverKey], mensagemRuim: s.recoverInfo.message || '' });
+    })()"#
+    .replace("__KIT__", &kit_base64);
+    let out = eval_str(&page, &script).await;
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(
+        v["preenchido"],
+        serde_json::json!(["https://github.com/org/infra.git", "estado", "p1"]),
+        "{out}"
+    );
+    assert_eq!(v["semConta"], 0, "sem conta não devia ir ao daemon: {out}");
+    assert_eq!(
+        v["gen"]["infra_remote"], "https://github.com/org/infra.git",
+        "{out}"
+    );
+    assert_eq!(v["gen"]["infra_branch"], "estado", "{out}");
+    assert_eq!(v["gen"]["provider_id"], "p1", "{out}");
+    assert_eq!(
+        v["baixado"]["nome"], "rustploy-recuperacao-vps.rpkit",
+        "{out}"
+    );
+    assert_eq!(
+        v["baixado"]["primeiro"], 0x89,
+        "baixou o binário, não o base64: {out}"
+    );
+    assert_eq!(v["aviso"], "conta OAuth", "{out}");
+    assert_eq!(
+        v["campos"],
+        serde_json::json!([
+            "https://github.com/org/infra.git",
+            "estado",
+            "ghp_do_arquivo",
+            "AGE-SECRET-KEY-1DOARQUIVO"
+        ]),
+        "{out}"
+    );
+    assert_eq!(v["botao"], true, "botão de carregar ausente: {out}");
+    assert_eq!(v["depoisDoRuim"], serde_json::json!(["", ""]), "{out}");
+    assert!(
+        v["mensagemRuim"].as_str().unwrap_or("").contains("corrupt"),
+        "{out}"
+    );
+}
+
 /// Settings → Recuperar (Fase 4): o formulário manda o repositório, o token e a chave; **a chave e o token
 /// somem dos campos** deem certo ou não; o resumo mostra cada serviço com o backup achado; confirmar manda
 /// `ServerRecoverRun` e cancelar volta ao começo.

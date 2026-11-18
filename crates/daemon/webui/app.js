@@ -34,6 +34,7 @@ import { registerWindows } from "./wm.js";
 import { registerIcons } from "./icons.js";
 import { registerBusy } from "./busy.js";
 import { buildZip } from "./zip.js";
+import { base64ToBytes, decodeRecoveryKit } from "./recovery_kit.js";
 import {
   formatUptime,
   formatBytes,
@@ -243,6 +244,12 @@ document.addEventListener("alpine:init", () => {
     recoveryKeyPublic: "",
     recoveryKeyConfirmReplace: false,
     recoveryKeyGenerated: null,
+    // O que vai no arquivo de recuperação (.rpkit) junto com a chave — começa com o do Git Sync.
+    // docs/plano-arquivo-de-recuperacao.md; mesmos nomes da GUI (handlers/recovery_key.luau).
+    recoveryKeyInfraRemote: "",
+    recoveryKeyInfraBranch: "",
+    recoveryKeyProviderId: "",
+    recoveryKeyWarning: "",
     recoverInfo: { phase: "idle", services: [], projects: 0 },
     recoverTimer: null,
     serverSettingsPublicBase: "",
@@ -1996,13 +2003,42 @@ document.addEventListener("alpine:init", () => {
       if (!info) return;
       this.recoveryKeyConfigured = info.configured === true;
       this.recoveryKeyPublic = info.public_key || "";
+      if (!this.recoveryKeyInfraRemote) this.recoveryKeyInfraRemote = this.stateGitRemote || "";
+      if (!this.recoveryKeyInfraBranch) this.recoveryKeyInfraBranch = this.stateGitBranch || "";
+      if (!this.recoveryKeyProviderId) this.recoveryKeyProviderId = this.stateGitProviderId || "";
     },
 
-    /** Gera a chave, baixa o arquivo na hora (pasta de downloads do navegador) e mostra a privada uma vez. */
+    /** O que falta para gerar o arquivo, ou "" — o daemon confere de novo (e recusa antes de trocar a
+     * chave); isto só poupa a ida. Porta de handlers/recovery_key.luau::missing_field. */
+    recoveryKeyMissingField() {
+      const remote = this.recoveryKeyInfraRemote.trim();
+      if (!remote) return t("informe o repositório da infra");
+      const localRemote = remote.startsWith("file://") || remote.startsWith("/");
+      if (!localRemote && !remote.startsWith("https://")) {
+        return t("o repositório da infra precisa ser https://… (endereços SSH, git@…, não são aceitos)");
+      }
+      if (!localRemote && !this.recoveryKeyProviderId) return t("escolha a conta Git cujo token vai no arquivo");
+      return "";
+    },
+
+    /** Gera a chave, baixa o arquivo de recuperação na hora (pasta de downloads do navegador) e mostra a
+     * privada uma vez. */
     async recoveryKeyGenerate() {
       const replace = this.recoveryKeyConfigured;
       if (replace && !this.recoveryKeyConfirmReplace) return;
-      const generateResponse = await this.api.rpcChecked({ RecoveryKeyGenerate: { replace } });
+      const missing = this.recoveryKeyMissingField();
+      if (missing) {
+        this.toastError(missing);
+        return;
+      }
+      const generateResponse = await this.api.rpcChecked({
+        RecoveryKeyGenerate: {
+          replace,
+          infra_remote: this.recoveryKeyInfraRemote.trim(),
+          infra_branch: this.recoveryKeyInfraBranch.trim() || null,
+          provider_id: this.recoveryKeyProviderId || null,
+        },
+      });
       if (!generateResponse.ok) {
         this.toastResult(generateResponse, "");
         return;
@@ -2014,17 +2050,39 @@ document.addEventListener("alpine:init", () => {
       this.recoveryKeyGenerated = {
         private_key: generated.private_key,
         filename: generated.suggested_filename,
-        file_contents: generated.file_contents,
+        file_base64: generated.file_base64 || "",
       };
-      this.downloadTextFile(generated.suggested_filename, generated.file_contents);
+      this.recoveryKeyWarning = generated.warning || "";
+      this.recoveryKeySaveAgain();
       // os avisos de "sem chave" das abas Backups e Sincronização somem sem recarregar
       this.backupDestRecoveryMissing = false;
       if (this.stateGitStatus) this.stateGitStatus.recovery_configured = true;
     },
 
+    /** Baixa (de novo) o arquivo de recuperação: o daemon o manda em base64 dentro do JSON. */
+    recoveryKeySaveAgain() {
+      const generated = this.recoveryKeyGenerated;
+      if (!generated?.file_base64) return;
+      this.downloadBytesFile(generated.filename, base64ToBytes(generated.file_base64));
+    },
+
     /** "Já guardei": esquece a privada da memória da página. */
     recoveryKeyDismiss() {
       this.recoveryKeyGenerated = null;
+      this.recoveryKeyWarning = "";
+    },
+
+    /** Baixa bytes como arquivo (binário: o arquivo de recuperação). */
+    downloadBytesFile(filename, bytes) {
+      const url = URL.createObjectURL(new Blob([bytes], { type: "application/octet-stream" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      this.toastOk(t`baixado pelo navegador: ${filename}`);
     },
 
     /** Baixa um texto como arquivo (o navegador grava na pasta de downloads). Só o navegador sabe o
@@ -2052,6 +2110,27 @@ document.addEventListener("alpine:init", () => {
       if (this.recoverInfo.phase === "running" && this.settingsTab === "recover") {
         this.recoverTimer = setTimeout(() => this.recoverStatusLoad(), 3000);
       }
+    },
+
+    /** "Carregar arquivo de recuperação": lê o `.rpkit` escolhido e preenche repositório, branch, token e
+     * chave. Porta de handlers/recover.luau::recover_load_kit. */
+    async recoverLoadKit(file) {
+      if (!file) return;
+      let kit;
+      try {
+        kit = decodeRecoveryKit(new Uint8Array(await file.arrayBuffer()));
+      } catch (error) {
+        this.recoverInfo = { ...this.recoverInfo, message: error.message };
+        this.toastError(error.message);
+        return;
+      }
+      this.recoverRemote = kit.infra_remote;
+      this.recoverBranch = kit.infra_branch;
+      this.recoverToken = kit.infra_token;
+      this.recoverKey = kit.private_key;
+      const message = t`arquivo de recuperação de ${kit.server || "?"} (${kit.created_at.slice(0, 10)}) carregado: confira e restaure`;
+      this.recoverInfo = { ...this.recoverInfo, message };
+      this.toastOk(message);
     },
 
     /** Passo 1: traz a infra do git, recifra os segredos e lista o que foi achado. Não toca em dado. */

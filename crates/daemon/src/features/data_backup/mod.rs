@@ -7,5 +7,6 @@
 pub mod destination;
 pub mod policy;
 pub mod recover;
+pub mod recovery_kit;
 pub mod scheduler;
 pub mod service_backup;

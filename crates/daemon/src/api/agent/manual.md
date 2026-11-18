@@ -283,9 +283,12 @@ Comandos, por área (campos entre chaves):
   `ServerRecoverStatus` / `ServerRecoverCancel`): traz a infra do git, recifra os segredos para o servidor e
   restaura os dados do S3 subindo na ordem das dependências. **Proibidos ao agente** (levam a chave de
   recuperação e um token): é ação de uma pessoa em Settings → Recuperar.
-  **Chave de recuperação** (`RecoveryKeyStatus` → `{configured, public_key}`; `RecoveryKeyGenerate{replace?}`):
-  o status só mostra a chave **pública**. **`RecoveryKeyGenerate` é proibido ao agente** (devolve a chave
-  privada uma única vez): é ação de uma pessoa em Settings → Chave de recuperação, que a baixa na hora.
+  **Chave de recuperação** (`RecoveryKeyStatus` → `{configured, public_key}`;
+  `RecoveryKeyGenerate{replace?, infra_remote, infra_branch?, provider_id}`): o status só mostra a chave
+  **pública**. **`RecoveryKeyGenerate` é proibido ao agente** (devolve a chave privada uma única vez, dentro
+  do arquivo de recuperação `.rpkit` com o repositório da infra, a branch e o token da conta escolhida): é
+  ação de uma pessoa em Settings → Chave de recuperação, que o baixa na hora. Em Settings → Recuperar,
+  "Carregar arquivo de recuperação" preenche os quatro campos.
 - **Provedores git**: `GitProviderList` · `GitProviderCreate{…}` ·
   `GitProviderDelete{id, force?}` (**recusa** com `InUse` e a lista enquanto serviços ou jobs ainda usam a conta; `force: true` remove mesmo assim — eles deixam de clonar até serem reapontados) · `GitRepoList{provider_id}` ·
   `GitBranchList{provider_id, repo_full_name}`

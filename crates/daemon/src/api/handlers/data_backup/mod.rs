@@ -37,7 +37,15 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         Command::ServerRecoverRun => server_recover::run(state).await,
         Command::ServerRecoverCancel => server_recover::cancel(state).await,
         Command::RecoveryKeyStatus => recovery_key_status::handle(&state),
-        Command::RecoveryKeyGenerate { replace } => recovery_key_generate::handle(&state, replace),
+        Command::RecoveryKeyGenerate {
+            replace,
+            infra_remote,
+            infra_branch,
+            provider_id,
+        } => {
+            recovery_key_generate::handle(&state, replace, infra_remote, infra_branch, provider_id)
+                .await
+        }
         Command::ServiceBackupList { service_id } => {
             service_backup_list::handle(state, service_id).await
         }

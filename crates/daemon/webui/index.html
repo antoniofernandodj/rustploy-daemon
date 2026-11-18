@@ -1582,68 +1582,90 @@
           </column>
         </column>
 
-        <!-- Web Server -->
+        <!-- Web Server (porta de home/settings/web.component.gv) -->
         <column class="u-fill-all" x-show="store.settingsTab === 'web'">
-          <column class="form-panel">
-            <text class="u-label-cap" x-t>URL PÚBLICA DA API</text>
-            <row class="kv-list__row">
-              <text class="kv-list__val kv-list__val--compact" x-text="store.serverSettingsPublicBase || '—'"></text>
-              <button class="btn btn--copy" type="button" @click="$store.app.copyText(store.serverSettingsPublicBase, 'texto')" x-t>Copiar</button>
-            </row>
-            <text class="u-muted" x-t>
-              Derivada de [api] domain/port no daemon — é a base das URLs de webhook dos serviços e
-              do callback OAuth (mesma porta da API). Para mudá-la, configure api.domain e reinicie o daemon.
-            </text>
+          <column class="form-stack">
+          <column class="form-panel form-panel--grouped">
+            <column class="field">
+              <text class="u-label-cap" x-t>URL PÚBLICA DA API</text>
+              <row class="copy-row">
+                <text class="copy-row__value" x-text="store.serverSettingsPublicBase || '—'"></text>
+                <button class="btn btn--copy" type="button" @click="$store.app.copyText(store.serverSettingsPublicBase, 'texto')" x-t>Copiar</button>
+              </row>
+              <text class="field-description" x-t>
+                Derivada de [api] domain/port no daemon — é a base das URLs de webhook dos serviços e
+                do callback OAuth (mesma porta da API). Para mudá-la, configure api.domain e reinicie o daemon.
+              </text>
+            </column>
 
-            <text class="u-label-cap" style="margin-top:14px" x-t>TOKEN DE CONEXÃO</text>
-            <row class="kv-list__row">
-              <text class="kv-list__val kv-list__val--compact" x-text="store.serverAccessKey ? store.serverAccessKey.slice(0, 12) + '…' + store.serverAccessKey.slice(-6) : '—'"></text>
-              <button class="btn btn--copy" type="button" :disabled="!store.serverAccessKey"
-                      @click="$store.app.copyText(store.serverAccessKey, 'token')" x-t>Copiar</button>
-            </row>
-            <text class="u-muted" x-t>
-              base64 de host:porta::token — endereço do servidor + token numa string só. É o que se cola
-              no login da GUI e da webui, e o que um agente de IA usa em POST /api/login. O daemon também
-              o deixa no config.toml, em [api].connection_token. Vale tanto quanto o token: não compartilhe à toa.
-            </text>
+            <column class="field">
+              <text class="u-label-cap" x-t>TOKEN DE CONEXÃO</text>
+              <row class="copy-row">
+                <text class="copy-row__value" x-text="store.serverAccessKey ? store.serverAccessKey.slice(0, 12) + '…' + store.serverAccessKey.slice(-6) : '—'"></text>
+                <button class="btn btn--copy" type="button" :disabled="!store.serverAccessKey"
+                        @click="$store.app.copyText(store.serverAccessKey, 'token')" x-t>Copiar</button>
+              </row>
+              <text class="field-description" x-t>
+                base64 de host:porta::token — endereço do servidor + token numa string só. É o que se cola
+                no login da GUI e da webui, e o que um agente de IA usa em POST /api/login. O daemon também
+                o deixa no config.toml, em [api].connection_token. Vale tanto quanto o token: não compartilhe à toa.
+              </text>
+            </column>
 
-            <text class="u-label-cap" style="margin-top:14px" x-t>CONECTAR UM AGENTE DE IA — CLAUDE CODE</text>
-            <row class="kv-list__row">
-              <text class="kv-list__val kv-list__val--compact">claude mcp add … rustploy …/mcp</text>
-              <button class="btn btn--copy" type="button" @click="store.copyText(store.serverMcpCommand, 'comando')" x-t>Copiar</button>
-            </row>
-            <text class="u-label-cap" style="margin-top:14px">CODEX (~/.codex/config.toml)</text>
-            <row class="kv-list__row">
-              <text class="kv-list__val kv-list__val--compact">[mcp_servers.rustploy] url = …/mcp</text>
-              <button class="btn btn--copy" type="button" @click="store.copyText(store.serverMcpCommandCodex, 'comando')" x-t>Copiar</button>
-            </row>
-            <text class="u-label-cap" style="margin-top:14px">GEMINI CLI</text>
-            <row class="kv-list__row">
-              <text class="kv-list__val kv-list__val--compact">gemini mcp add … rustploy …/mcp</text>
-              <button class="btn btn--copy" type="button" @click="store.copyText(store.serverMcpCommandGemini, 'comando')" x-t>Copiar</button>
-            </row>
-            <text class="u-muted" x-t>
-              Cada botão copia o registro do MCP deste servidor para o agente correspondente, já com o
-              token. Claude Code e Gemini: cole num terminal; Codex: acrescente o bloco ao
-              ~/.codex/config.toml. Abra uma sessão nova do agente e confira com /mcp. Contém o token:
-              não cole em lugar público.
-            </text>
+            <column class="field">
+              <text class="u-label-cap" x-t>E-MAIL LET'S ENCRYPT (HTTPS AUTOMÁTICO)</text>
+              <input class="field__input" type="text" x-model="store.serverSettingsEmail" placeholder="voce@exemplo.com" x-t:placeholder />
+              <text class="field-description" x-t>Certificados TLS emitidos automaticamente. Requer restart do daemon.</text>
+            </column>
 
-            <text class="u-label-cap" style="margin-top:14px" x-t>E-MAIL LET'S ENCRYPT (HTTPS AUTOMÁTICO)</text>
-            <input class="field__input" type="text" x-model="store.serverSettingsEmail" placeholder="voce@exemplo.com" x-t:placeholder />
-            <text class="u-muted" x-t>Certificados TLS emitidos automaticamente. Requer restart do daemon.</text>
+            <column class="field">
+              <text class="u-label-cap" x-t>DOMÍNIO DO REGISTRY (EXPOSIÇÃO PÚBLICA)</text>
+              <input class="field__input" type="text" x-model="store.serverSettingsRegistryDomain" placeholder="registry.meusite.com" x-t:placeholder />
+              <text class="field-description" x-t>
+                Expõe o registry Docker embutido via ingress + certificado automático. Requer [registry]
+                enabled = true na config. Vazio = só acessível em 127.0.0.1.
+              </text>
+            </column>
 
-            <text class="u-label-cap" style="margin-top:14px" x-t>DOMÍNIO DO REGISTRY (EXPOSIÇÃO PÚBLICA)</text>
-            <input class="field__input" type="text" x-model="store.serverSettingsRegistryDomain" placeholder="registry.meusite.com" x-t:placeholder />
-            <text class="u-muted" x-t>
-              Expõe o registry Docker embutido via ingress + certificado automático. Requer [registry]
-              enabled = true na config. Vazio = só acessível em 127.0.0.1.
-            </text>
-
-            <row class="env__add" style="margin-top:14px">
+            <row class="form-panel__actions">
               <button class="btn btn--primary" type="button" @click="store.settingsSave()" x-t>Salvar</button>
               <text class="u-muted" x-text="store.settingsMessage"></text>
             </row>
+          </column>
+
+          <column class="form-panel form-panel--grouped">
+            <column class="form-panel__head">
+              <text class="u-label-cap" x-t>CONECTAR UM AGENTE DE IA (MCP)</text>
+              <text class="u-muted" x-t>
+                Cada botão copia o registro do MCP deste servidor para o agente correspondente, já com o
+                token. Claude Code e Gemini: cole num terminal; Codex: acrescente o bloco ao
+                ~/.codex/config.toml. Abra uma sessão nova do agente e confira com /mcp. Contém o token:
+                não cole em lugar público.
+              </text>
+            </column>
+
+            <column class="field">
+              <text class="u-label-cap">CLAUDE CODE</text>
+              <row class="copy-row">
+                <text class="copy-row__value">claude mcp add … rustploy …/mcp</text>
+                <button class="btn btn--copy" type="button" @click="store.copyText(store.serverMcpCommand, 'comando')" x-t>Copiar</button>
+              </row>
+            </column>
+            <column class="field">
+              <text class="u-label-cap">CODEX (~/.codex/config.toml)</text>
+              <row class="copy-row">
+                <text class="copy-row__value">[mcp_servers.rustploy] url = …/mcp</text>
+                <button class="btn btn--copy" type="button" @click="store.copyText(store.serverMcpCommandCodex, 'comando')" x-t>Copiar</button>
+              </row>
+            </column>
+            <column class="field">
+              <text class="u-label-cap">GEMINI CLI</text>
+              <row class="copy-row">
+                <text class="copy-row__value">gemini mcp add … rustploy …/mcp</text>
+                <button class="btn btn--copy" type="button" @click="store.copyText(store.serverMcpCommandGemini, 'comando')" x-t>Copiar</button>
+              </row>
+            </column>
+          </column>
           </column>
         </column>
 
@@ -1756,12 +1778,15 @@
         <!-- Sincronização do estado com o git (Fases 6 e 7 de docs/plano-backup-estado-em-git.md).
              O status vem no snapshot (store.stateGitStatus); aqui só o formulário e as ações. -->
         <column class="u-fill-all" x-show="store.settingsTab === 'gitsync'">
-          <column class="form-panel">
-            <text class="u-label-cap" x-t>SINCRONIZAÇÃO COM O GIT</text>
-            <text class="u-muted" x-t>
-              Versiona o estado (projetos, serviços, jobs e secrets cifrados) num repositório privado do
-              seu provedor Git. Desligada por padrão. Só liga se não houver nenhum valor em claro.
-            </text>
+          <column class="form-stack">
+          <column class="form-panel form-panel--grouped">
+            <column class="form-panel__head">
+              <text class="u-label-cap" x-t>SINCRONIZAÇÃO COM O GIT</text>
+              <text class="u-muted" x-t>
+                Versiona o estado (projetos, serviços, jobs e secrets cifrados) num repositório privado do
+                seu provedor Git. Desligada por padrão. Só liga se não houver nenhum valor em claro.
+              </text>
+            </column>
             <text class="banner banner--warn" x-show="store.stateGitStatus && !store.stateGitStatus.git_available" x-t>
               O programa git não está instalado neste servidor.
             </text>
@@ -1772,7 +1797,8 @@
               <button class="btn btn--ghost" type="button" @click="store.recoveryKeyOpen()" x-t>Gerar chave de recuperação</button>
             </row>
 
-            <text class="u-label-cap" style="margin-top:10px" x-t>MODO</text>
+            <column class="field">
+            <text class="u-label-cap" x-t>MODO</text>
             <row class="tabs">
               <button type="button" :class="store.stateGitMode === 'off' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'" @click="store.stateGitMode = 'off'" x-t>Desligado</button>
               <button type="button" :class="store.stateGitMode === 'commit' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'" @click="store.stateGitMode = 'commit'" x-t>Só commit (local)</button>
@@ -1780,25 +1806,30 @@
             </row>
             <text class="u-muted" x-show="store.stateGitMode === 'commit'" x-t>Faz um commit local a cada mudança. Não usa a rede.</text>
             <text class="u-muted" x-show="store.stateGitMode === 'sync'" x-t>Commita, envia ao repositório e busca o que foi mudado por fora (a cada 60 s, ou em "Sincronizar agora").</text>
-
-            <column x-show="store.stateGitMode === 'sync'" style="gap:10px">
-              <text class="u-label-cap" x-t>REPOSITÓRIO (https://…)</text>
-              <input class="field__input" type="text" x-model="store.stateGitRemote" placeholder="https://github.com/org/rustploy-estado.git" />
-              <text class="u-label-cap" x-t>CONTA GIT (credencial)</text>
-              <select class="field__input" x-model="store.stateGitProviderId">
-                <option value="" x-t>selecione a conta</option>
-                <template x-for="gitProviderRow in gitProviderRows" :key="gitProviderRow.id">
-                  <option :value="gitProviderRow.id" x-text="gitProviderRow.name"></option>
-                </template>
-              </select>
-              <text class="u-muted" x-t>Conecte contas na aba Git. Endereços SSH (git@…) não são aceitos.</text>
             </column>
-            <column x-show="store.stateGitMode !== 'off'" style="gap:10px">
+
+            <column class="form-panel__body" x-show="store.stateGitMode === 'sync'">
+              <column class="field">
+                <text class="u-label-cap" x-t>REPOSITÓRIO (https://…)</text>
+                <input class="field__input u-mono" type="text" x-model="store.stateGitRemote" placeholder="https://github.com/org/rustploy-estado.git" />
+              </column>
+              <column class="field">
+                <text class="u-label-cap" x-t>CONTA GIT (credencial)</text>
+                <select class="field__input" x-model="store.stateGitProviderId">
+                  <option value="" x-t>selecione a conta</option>
+                  <template x-for="gitProviderRow in gitProviderRows" :key="gitProviderRow.id">
+                    <option :value="gitProviderRow.id" x-text="gitProviderRow.name"></option>
+                  </template>
+                </select>
+                <text class="field-description" x-t>Conecte contas na aba Git. Endereços SSH (git@…) não são aceitos.</text>
+              </column>
+            </column>
+            <column class="field" x-show="store.stateGitMode !== 'off'">
               <text class="u-label-cap" x-t>BRANCH</text>
-              <input class="field__input" type="text" x-model="store.stateGitBranch" placeholder="main" />
+              <input class="field__input u-mono" type="text" x-model="store.stateGitBranch" placeholder="main" />
             </column>
 
-            <row style="gap:8px; margin-top:6px">
+            <row class="form-panel__actions">
               <button class="btn btn--primary" type="button" @click="store.stateGitConfigure()" x-t>Salvar e aplicar</button>
               <button class="btn btn--copy" type="button" x-show="store.stateGitStatus && store.stateGitStatus.mode === 'sync'"
                       @click="store.stateGitSyncNow()" x-t>Sincronizar agora</button>
@@ -1808,33 +1839,33 @@
           </column>
 
           <!-- Situação -->
-          <column class="form-panel" x-show="store.stateGitStatus && store.stateGitStatus.mode !== 'off'" style="margin-top:12px">
+          <column class="form-panel form-panel--grouped" x-show="store.stateGitStatus && store.stateGitStatus.mode !== 'off'">
             <text class="u-label-cap" x-t>SITUAÇÃO</text>
-            <column class="kv-list">
-              <row class="kv-list__row">
-                <text class="kv-list__key" x-t>Último commit</text>
-                <text class="kv-list__val kv-list__val--compact"
+            <column class="info-list">
+              <row class="info-row">
+                <text class="info-row__key" x-t>Último commit</text>
+                <text class="info-row__value"
                       x-text="store.stateGitStatus?.last_commit ? (store.stateGitStatus.last_commit.sha.slice(0, 7) + ' · ' + store.stateGitStatus.last_commit.subject) : '—'"></text>
               </row>
-              <row class="kv-list__row" x-show="store.stateGitStatus && store.stateGitStatus.mode === 'sync'">
-                <text class="kv-list__key" x-t>Último envio</text>
-                <text class="kv-list__val kv-list__val--compact"
+              <row class="info-row" x-show="store.stateGitStatus && store.stateGitStatus.mode === 'sync'">
+                <text class="info-row__key" x-t>Último envio</text>
+                <text class="info-row__value"
                       x-text="store.stateGitStatus?.last_push_at ? ((store.stateGitStatus.last_push_ok ? $t('ok') : $t('falhou')) + ' · ' + store.stateGitTimeLabel(store.stateGitStatus.last_push_at)) : '—'"></text>
               </row>
-              <row class="kv-list__row" x-show="store.stateGitStatus && store.stateGitStatus.mode === 'sync'">
-                <text class="kv-list__key" x-t>Última consulta ao repositório</text>
-                <text class="kv-list__val kv-list__val--compact" x-text="store.stateGitTimeLabel(store.stateGitStatus?.last_fetch_at)"></text>
+              <row class="info-row" x-show="store.stateGitStatus && store.stateGitStatus.mode === 'sync'">
+                <text class="info-row__key" x-t>Última consulta ao repositório</text>
+                <text class="info-row__value" x-text="store.stateGitTimeLabel(store.stateGitStatus?.last_fetch_at)"></text>
               </row>
-              <row class="kv-list__row" x-show="store.stateGitStatus && store.stateGitStatus.mode === 'sync'">
-                <text class="kv-list__key" x-t>À frente / atrás do repositório</text>
-                <text class="kv-list__val kv-list__val--compact" x-text="(store.stateGitStatus?.ahead || 0) + ' / ' + (store.stateGitStatus?.behind || 0)"></text>
+              <row class="info-row" x-show="store.stateGitStatus && store.stateGitStatus.mode === 'sync'">
+                <text class="info-row__key" x-t>À frente / atrás do repositório</text>
+                <text class="info-row__value" x-text="(store.stateGitStatus?.ahead || 0) + ' / ' + (store.stateGitStatus?.behind || 0)"></text>
               </row>
             </column>
             <text class="banner banner--warn" x-show="store.stateGitStatus && store.stateGitStatus.last_error" x-text="store.stateGitStatus?.last_error"></text>
           </column>
 
           <!-- Divergência -->
-          <column class="form-panel" x-show="store.stateGitStatus && store.stateGitStatus.paused_reason" style="margin-top:12px">
+          <column class="form-panel form-panel--grouped" x-show="store.stateGitStatus && store.stateGitStatus.paused_reason">
             <text class="u-label-cap" x-t>HISTÓRICO DIVERGIDO — SINCRONIZAÇÃO PAUSADA</text>
             <text class="u-muted" x-text="store.stateGitStatus?.paused_reason"></text>
             <text class="u-muted" x-t>
@@ -1852,7 +1883,7 @@
           </column>
 
           <!-- Commit do repositório recusado -->
-          <column class="form-panel" x-show="store.stateGitStatus && store.stateGitStatus.incoming_rejected" style="margin-top:12px">
+          <column class="form-panel form-panel--grouped" x-show="store.stateGitStatus && store.stateGitStatus.incoming_rejected">
             <text class="u-label-cap" x-t>COMMIT DO REPOSITÓRIO RECUSADO</text>
             <text class="u-muted" x-text="$t('Commit') + ' ' + (store.stateGitStatus?.incoming_rejected?.sha || '').slice(0, 12)"></text>
             <text class="banner banner--warn" x-text="store.stateGitStatus?.incoming_rejected?.reason"></text>
@@ -1860,13 +1891,15 @@
           </column>
 
           <!-- Removidos no git -->
-          <column class="form-panel" x-show="store.stateGitStatus && store.stateGitStatus.removed_in_git && store.stateGitStatus.removed_in_git.length" style="margin-top:12px">
+          <column class="form-panel form-panel--grouped" x-show="store.stateGitStatus && store.stateGitStatus.removed_in_git && store.stateGitStatus.removed_in_git.length">
+            <column class="form-panel__head">
             <text class="u-label-cap" x-t>REMOVIDOS NO GIT</text>
             <text class="u-muted" x-t>
               Estes itens sumiram do estado por um commit do repositório. O container, os volumes e os dados NÃO foram tocados.
               O domínio sai do ar. Para limpar: Runtime → Containers → Parar → Remover (e Volumes, se houver dados).
               Se foi engano, desfaça o commit no Git: o serviço volta e reencontra o container.
             </text>
+            </column>
             <column class="kv-list">
               <template x-for="removal in (store.stateGitStatus?.removed_in_git || [])" :key="removal.id">
                 <row class="kv-list__row">
@@ -1881,12 +1914,14 @@
           </column>
 
           <!-- Auditoria de valores em claro -->
-          <column class="form-panel" style="margin-top:12px">
+          <column class="form-panel form-panel--grouped">
+            <column class="form-panel__head">
             <text class="u-label-cap" x-text="$t('VALORES EM CLARO (') + store.stateGitAuditFindings.length + ')'"></text>
             <text class="u-muted" x-t>
               A sincronização só liga, e só commita, sem nenhum destes. Mova-os para secret (na tela de variáveis de ambiente).
               Uma suspeita que na verdade não é segredo pode ser marcada como "não é segredo"; certezas não.
             </text>
+            </column>
             <text class="u-muted" x-fallback="store.stateGitAuditFindings" x-t>Nenhum valor em claro encontrado.</text>
             <column class="kv-list" x-show="store.stateGitAuditFindings.length">
               <template x-for="finding in store.stateGitAuditFindings" :key="finding.project + '|' + finding.scope + '|' + finding.what">
@@ -1905,17 +1940,20 @@
           </column>
 
           <!-- Baixar a infra: os mesmos arquivos que vão para o repositório (secrets como ENC[age:…]). -->
-          <column class="form-panel">
+          <column class="form-panel form-panel--grouped">
+            <column class="form-panel__head">
             <text class="u-label-cap" x-t>BAIXAR A INFRA</text>
             <text class="u-muted" x-t>
               Baixa um .zip com os mesmos arquivos que a sincronização grava no repositório (settings.yml, providers.yml e
               projects/&lt;id&gt;/project.yml), com os secrets cifrados. Serve de cópia fora do GitHub. Para restaurar,
               ponha a árvore num repositório e sincronize.
             </text>
-            <row class="form-actions">
+            </column>
+            <row class="form-panel__actions">
               <button class="btn btn--primary" type="button" @click="store.infraDownload()" x-t>Baixar infra</button>
               <text class="u-muted" x-text="store.infraDownloadMessage"></text>
             </row>
+          </column>
           </column>
         </column>
 
@@ -1924,35 +1962,39 @@
              botões manuais da aba Runtime, disparadas por agendamento em vez
              de clique. -->
         <column class="u-fill-all" x-show="store.settingsTab === 'maintenance'">
-          <column class="form-panel">
-            <text class="u-label-cap" x-t>LIMPEZA AUTOMÁTICA</text>
-            <label class="check-row">
-              <input type="checkbox" x-model="store.dockerCleanupEnabled" /><span x-t>Ativar limpeza automática</span>
-            </label>
-            <text class="u-muted" x-t>
-              Roda sozinha, no horário abaixo, os recursos marcados nesta tela.
-              Desligada por padrão — nada é removido até você marcar pelo menos
-              um recurso e ativar.
-            </text>
+          <column class="form-stack">
+          <!-- Quando -->
+          <column class="form-panel form-panel--grouped">
+            <column class="field">
+              <text class="u-label-cap" x-t>LIMPEZA AUTOMÁTICA</text>
+              <label class="toggle">
+                <input type="checkbox" x-model="store.dockerCleanupEnabled" /><span class="toggle__track"></span><span x-t>Ativar limpeza automática</span>
+              </label>
+              <text class="field-description" x-t>
+                Roda sozinha, no horário abaixo, os recursos marcados nesta tela.
+                Desligada por padrão — nada é removido até você marcar pelo menos
+                um recurso e ativar.
+              </text>
+            </column>
 
-            <text class="u-label-cap" style="margin-top:14px" x-t>FREQUÊNCIA</text>
-            <row class="tabs">
-              <button type="button" :class="store.dockerCleanupKind === 'interval' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'"
-                      @click="store.dockerCleanupKind = 'interval'" x-t>A cada N horas</button>
-              <button type="button" :class="store.dockerCleanupKind === 'daily' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'"
-                      @click="store.dockerCleanupKind = 'daily'" x-t>Todo dia</button>
-              <button type="button" :class="store.dockerCleanupKind === 'weekly' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'"
-                      @click="store.dockerCleanupKind = 'weekly'" x-t>Toda semana</button>
-            </row>
+            <column class="field">
+              <text class="u-label-cap" x-t>FREQUÊNCIA</text>
+              <row class="tabs">
+                <button type="button" :class="store.dockerCleanupKind === 'interval' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'"
+                        @click="store.dockerCleanupKind = 'interval'" x-t>A cada N horas</button>
+                <button type="button" :class="store.dockerCleanupKind === 'daily' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'"
+                        @click="store.dockerCleanupKind = 'daily'" x-t>Todo dia</button>
+                <button type="button" :class="store.dockerCleanupKind === 'weekly' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'"
+                        @click="store.dockerCleanupKind = 'weekly'" x-t>Toda semana</button>
+              </row>
+            </column>
 
-            <row class="healthcheck__grid" x-show="store.dockerCleanupKind === 'interval'" style="margin-top:8px">
-              <column class="healthcheck__field">
-                <text class="u-label-cap" x-t>A CADA (HORAS)</text>
-                <input class="field__input" type="number" min="1" max="168" x-model="store.dockerCleanupHours" placeholder="6" />
-              </column>
-            </row>
+            <column class="field" x-show="store.dockerCleanupKind === 'interval'">
+              <text class="u-label-cap" x-t>A CADA (HORAS)</text>
+              <input class="field__input field__spin" type="number" min="1" max="168" x-model="store.dockerCleanupHours" placeholder="6" />
+            </column>
 
-            <row class="tabs" x-show="store.dockerCleanupKind === 'weekly'" style="margin-top:8px">
+            <row class="tabs" x-show="store.dockerCleanupKind === 'weekly'">
               <button type="button" :class="store.dockerCleanupWeekday === '0' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'" @click="store.dockerCleanupWeekday = '0'" x-t>Seg</button>
               <button type="button" :class="store.dockerCleanupWeekday === '1' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'" @click="store.dockerCleanupWeekday = '1'" x-t>Ter</button>
               <button type="button" :class="store.dockerCleanupWeekday === '2' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'" @click="store.dockerCleanupWeekday = '2'" x-t>Qua</button>
@@ -1964,96 +2006,121 @@
 
             <!-- Mesma troca da tela de jobs: os dois campos de texto livre
                  viraram um <input type="time">, com a chave única "HH:MM". -->
-            <row class="healthcheck__grid" x-show="store.dockerCleanupKind !== 'interval'" style="margin-top:8px">
-              <column class="healthcheck__field">
-                <text class="u-label-cap" x-t>HORÁRIO</text>
-                <input class="field__input" type="time" x-model="store.dockerCleanupTime" />
-              </column>
-            </row>
+            <column class="field">
+              <template x-if="store.dockerCleanupKind !== 'interval'">
+                <column class="field">
+                  <text class="u-label-cap" x-t>HORÁRIO</text>
+                  <input class="field__input field__spin" type="time" x-model="store.dockerCleanupTime" />
+                </column>
+              </template>
+              <text class="field-description" x-text="$t('Próxima execução agendada: ') + store.dockerCleanupNextRunLabel"></text>
+            </column>
+          </column>
 
-            <text class="u-muted" style="margin-top:8px" x-text="$t('Próxima execução agendada: ') + store.dockerCleanupNextRunLabel"></text>
-
-            <hr class="rule" />
+          <!-- O que limpar -->
+          <column class="form-panel form-panel--grouped">
             <text class="u-label-cap" x-t>O QUE LIMPAR</text>
 
             <label class="check-row">
               <input type="checkbox" x-model="store.dockerCleanupContainers" /><span x-t>Containers parados</span>
             </label>
 
-            <label class="check-row">
-              <input type="checkbox" x-model="store.dockerCleanupImages" /><span x-t>Imagens sem uso</span>
-            </label>
-            <label class="check-row" x-show="store.dockerCleanupImages" style="margin-left:20px">
-              <input type="checkbox" x-model="store.dockerCleanupImagesAll" /><span x-t>incluir todas as não usadas (não só as sem tag)</span>
-            </label>
-            <row class="healthcheck__grid" x-show="store.dockerCleanupImages" style="margin-left:20px">
-              <column class="healthcheck__field">
-                <text class="u-label-cap" x-t>SÓ IMAGENS CRIADAS HÁ MAIS DE (HORAS)</text>
-                <input class="field__input" type="number" min="0" max="8760" x-model="store.dockerCleanupImagesOlderThanHours" placeholder="168" />
-                <text class="u-muted" x-t>0 não filtra por idade. O runtime olha a data de criação da imagem, não a do último uso: as imagens base antigas continuam elegíveis.</text>
+            <column class="option-group">
+              <label class="check-row">
+                <input type="checkbox" x-model="store.dockerCleanupImages" /><span x-t>Imagens sem uso</span>
+              </label>
+              <column class="option-nested" x-show="store.dockerCleanupImages">
+                <label class="check-row">
+                  <input type="checkbox" x-model="store.dockerCleanupImagesAll" /><span x-t>incluir todas as não usadas (não só as sem tag)</span>
+                </label>
+                <column class="field">
+                  <text class="u-label-cap" x-t>SÓ IMAGENS CRIADAS HÁ MAIS DE (HORAS)</text>
+                  <input class="field__input field__spin" type="number" min="0" max="8760" x-model="store.dockerCleanupImagesOlderThanHours" placeholder="168" />
+                  <text class="field-description" x-t>0 não filtra por idade. O runtime olha a data de criação da imagem, não a do último uso: as imagens base antigas continuam elegíveis.</text>
+                </column>
               </column>
-            </row>
+            </column>
 
             <label class="check-row">
               <input type="checkbox" x-model="store.dockerCleanupNetworks" /><span x-t>Redes sem uso</span>
             </label>
 
-            <label class="check-row">
-              <input type="checkbox" x-model="store.dockerCleanupBuildCache" /><span x-t>Cache de build</span>
-            </label>
-            <row class="healthcheck__grid" x-show="store.dockerCleanupBuildCache" style="margin-left:20px">
-              <column class="healthcheck__field">
-                <text class="u-label-cap" x-t>MANTER O CACHE USADO NAS ÚLTIMAS (HORAS)</text>
-                <input class="field__input" type="number" min="0" max="8760" x-model="store.dockerCleanupBuildCacheOlderThanHours" placeholder="168" />
-                <text class="u-muted" x-t>0 remove todo o cache sem uso. Com um prazo, o cache de um job ou deploy recente sobrevive e o próximo build não recomeça do zero.</text>
+            <column class="option-group">
+              <label class="check-row">
+                <input type="checkbox" x-model="store.dockerCleanupBuildCache" /><span x-t>Cache de build</span>
+              </label>
+              <column class="option-nested" x-show="store.dockerCleanupBuildCache">
+                <column class="field">
+                  <text class="u-label-cap" x-t>MANTER O CACHE USADO NAS ÚLTIMAS (HORAS)</text>
+                  <input class="field__input field__spin" type="number" min="0" max="8760" x-model="store.dockerCleanupBuildCacheOlderThanHours" placeholder="168" />
+                  <text class="field-description" x-t>0 remove todo o cache sem uso. Com um prazo, o cache de um job ou deploy recente sobrevive e o próximo build não recomeça do zero.</text>
+                </column>
               </column>
-            </row>
+            </column>
 
-            <label class="check-row">
-              <input type="checkbox" x-model="store.dockerCleanupWarmAfter" /><span x-t>Aquecer os builds depois da limpeza</span>
-            </label>
-            <text class="u-muted" style="margin-left:20px" x-t>
-              Depois de limpar, reconstrói a imagem de cada serviço com repositório Git ou zip, um de cada vez, na
-              fila de deploy. Sem isso, o primeiro deploy depois da limpeza paga o build inteiro.
-            </text>
+            <column class="option-group">
+              <label class="check-row">
+                <input type="checkbox" x-model="store.dockerCleanupWarmAfter" /><span x-t>Aquecer os builds depois da limpeza</span>
+              </label>
+              <column class="option-nested">
+                <text class="u-muted" x-t>
+                  Depois de limpar, reconstrói a imagem de cada serviço com repositório Git ou zip, um de cada vez, na
+                  fila de deploy. Sem isso, o primeiro deploy depois da limpeza paga o build inteiro.
+                </text>
+              </column>
+            </column>
+          </column>
 
-            <hr class="rule" />
-            <text class="u-label-cap u-error" x-t>VOLUMES — CUIDADO</text>
-            <text class="u-muted" x-t>
-              Volumes sem uso criados por fora do rustploy (não pelos seus
-              serviços, que só usam bind mount) podem conter dado que ninguém
-              recriaria sozinho. Confirme que sabe o que existe no host antes
-              de ativar.
-            </text>
-            <label class="check-row">
-              <input type="checkbox" x-model="store.dockerCleanupVolumes" /><span x-t>Volumes sem uso</span>
-            </label>
-            <label class="check-row" x-show="store.dockerCleanupVolumes" style="margin-left:20px">
-              <input type="checkbox" x-model="store.dockerCleanupVolumesAll" /><span x-t>incluir todos os sem uso (não só os anônimos)</span>
-            </label>
+          <!-- Volumes -->
+          <column class="form-panel form-panel--grouped">
+            <column class="form-panel__head">
+              <text class="u-label-cap u-error" x-t>VOLUMES — CUIDADO</text>
+              <text class="u-muted" x-t>
+                Volumes sem uso criados por fora do rustploy (não pelos seus
+                serviços, que só usam bind mount) podem conter dado que ninguém
+                recriaria sozinho. Confirme que sabe o que existe no host antes
+                de ativar.
+              </text>
+            </column>
+            <column class="option-group">
+              <label class="check-row">
+                <input type="checkbox" x-model="store.dockerCleanupVolumes" /><span x-t>Volumes sem uso</span>
+              </label>
+              <column class="option-nested" x-show="store.dockerCleanupVolumes">
+                <label class="check-row">
+                  <input type="checkbox" x-model="store.dockerCleanupVolumesAll" /><span x-t>incluir todos os sem uso (não só os anônimos)</span>
+                </label>
+              </column>
+            </column>
+          </column>
 
-            <row class="env__add" style="margin-top:14px">
+          <!-- Salvar / última execução -->
+          <column class="form-panel form-panel--grouped">
+            <row class="form-panel__actions">
               <button class="btn btn--primary" type="button" @click="store.dockerCleanupSave()" x-t>Salvar</button>
-              <button class="tabs__tab" type="button" x-show="!store.dockerCleanupRunning" @click="store.dockerCleanupRunNow()" x-t>Executar agora</button>
-              <button class="tabs__tab" type="button" x-show="store.dockerCleanupRunning" disabled x-t>Executando…</button>
+              <button class="btn btn--ghost" type="button" x-show="!store.dockerCleanupRunning" @click="store.dockerCleanupRunNow()" x-t>Executar agora</button>
+              <button class="btn btn--ghost" type="button" x-show="store.dockerCleanupRunning" disabled x-t>Executando…</button>
               <text class="u-muted" x-text="store.dockerCleanupMessage"></text>
             </row>
-
-            <hr class="rule" />
-            <text class="u-label-cap" x-t>ÚLTIMA EXECUÇÃO</text>
-            <text class="u-muted" x-text="store.dockerCleanupLastRunText"></text>
+            <column class="field">
+              <text class="u-label-cap" x-t>ÚLTIMA EXECUÇÃO</text>
+              <text class="u-muted" x-text="store.dockerCleanupLastRunText"></text>
+            </column>
+          </column>
           </column>
         </column>
 
         <!-- Atualizações: Command::CheckUpdate (só consulta; instalar é manual por enquanto) -->
         <column class="u-fill-all" x-show="store.settingsTab === 'backups'">
-          <column class="form-panel">
-            <text class="u-label-cap" x-t>DESTINO S3 DOS BACKUPS</text>
-            <text class="u-muted" x-t>
-              Para onde os dados dos seus serviços são copiados. Qualquer armazenamento compatível com S3 serve
-              (AWS, Backblaze, Cloudflare R2, MinIO, RustFS). Um destino por servidor; cada serviço escolhe o
-              próprio agendamento na aba Dados.
-            </text>
+          <column class="form-panel form-panel--grouped">
+            <column class="form-panel__head">
+              <text class="u-label-cap" x-t>DESTINO S3 DOS BACKUPS</text>
+              <text class="u-muted" x-t>
+                Para onde os dados dos seus serviços são copiados. Qualquer armazenamento compatível com S3 serve
+                (AWS, Backblaze, Cloudflare R2, MinIO, RustFS). Um destino por servidor; cada serviço escolhe o
+                próprio agendamento na aba Dados.
+              </text>
+            </column>
             <text class="banner banner--warn" x-show="store.backupDestRecoveryMissing" x-t>
               Não há chave de recuperação configurada. Os backups são cifrados: sem ela, só este servidor os abriria e eles não restaurariam um servidor novo. Gere a chave na aba Chave de recuperação.
             </text>
@@ -2061,38 +2128,48 @@
               <button class="btn btn--ghost" type="button" @click="store.recoveryKeyOpen()" x-t>Gerar chave de recuperação</button>
             </row>
 
-            <text class="u-label-cap" style="margin-top:10px" x-t>ENDEREÇO (ENDPOINT)</text>
-            <input class="field__input" type="text" x-model="store.backupDestEndpoint" placeholder="https://s3.us-east-005.backblazeb2.com" />
+            <column class="field">
+              <text class="u-label-cap" x-t>ENDEREÇO (ENDPOINT)</text>
+              <input class="field__input u-mono" type="text" x-model="store.backupDestEndpoint" placeholder="https://s3.us-east-005.backblazeb2.com" />
+            </column>
 
             <row class="healthcheck__grid">
-              <column class="healthcheck__field">
+              <column class="healthcheck__field field">
                 <text class="u-label-cap" x-t>BUCKET</text>
                 <input class="field__input" type="text" x-model="store.backupDestBucket" placeholder="meu-bucket" />
               </column>
-              <column class="healthcheck__field">
+              <column class="healthcheck__field field">
                 <text class="u-label-cap" x-t>REGIÃO</text>
                 <input class="field__input" type="text" x-model="store.backupDestRegion" placeholder="us-east-1" />
               </column>
             </row>
 
-            <text class="u-label-cap" x-t>PASTA NO BUCKET (OPCIONAL)</text>
-            <input class="field__input" type="text" x-model="store.backupDestPrefix" placeholder="rustploy/meu-servidor" />
+            <column class="field">
+              <text class="u-label-cap" x-t>PASTA NO BUCKET (OPCIONAL)</text>
+              <input class="field__input" type="text" x-model="store.backupDestPrefix" placeholder="rustploy/meu-servidor" />
+            </column>
 
-            <label class="check-row">
-              <input type="checkbox" x-model="store.backupDestPathStyle" />
-              <span x-t>Endereçamento path-style</span>
-            </label>
-            <text class="u-muted" x-t>Ligado para MinIO, RustFS, R2 e Backblaze (host/bucket/chave). Desligado para AWS S3 (bucket.host/chave).</text>
+            <column class="field">
+              <label class="toggle">
+                <input type="checkbox" x-model="store.backupDestPathStyle" /><span class="toggle__track"></span>
+                <span x-t>Endereçamento path-style</span>
+              </label>
+              <text class="field-description" x-t>Ligado para MinIO, RustFS, R2 e Backblaze (host/bucket/chave). Desligado para AWS S3 (bucket.host/chave).</text>
+            </column>
 
-            <text class="u-label-cap" x-t>CHAVE DE ACESSO</text>
-            <input class="field__input" type="text" x-model="store.backupDestAccessKey" autocomplete="off" />
+            <column class="field">
+              <text class="u-label-cap" x-t>CHAVE DE ACESSO</text>
+              <input class="field__input" type="text" x-model="store.backupDestAccessKey" autocomplete="off" />
+            </column>
 
-            <text class="u-label-cap" x-t>CHAVE SECRETA</text>
-            <input class="field__input" type="password" x-model="store.backupDestSecretKey" autocomplete="new-password"
-                   placeholder="Deixe vazio para manter a chave gravada" x-t:placeholder />
-            <text class="u-muted" x-show="store.backupDestSecretSet" x-t>Há uma chave secreta gravada no servidor. Ela nunca é mostrada de novo.</text>
+            <column class="field">
+              <text class="u-label-cap" x-t>CHAVE SECRETA</text>
+              <input class="field__input" type="password" x-model="store.backupDestSecretKey" autocomplete="new-password"
+                     placeholder="Deixe vazio para manter a chave gravada" x-t:placeholder />
+              <text class="field-description" x-show="store.backupDestSecretSet" x-t>Há uma chave secreta gravada no servidor. Ela nunca é mostrada de novo.</text>
+            </column>
 
-            <row style="gap:8px; margin-top:6px">
+            <row class="form-panel__actions">
               <button class="btn btn--primary" type="button" @click="store.backupDestinationSave()" x-t>Salvar</button>
               <button class="btn btn--copy" type="button" @click="store.backupDestinationTest()" x-t>Testar conexão</button>
               <button class="btn btn--danger" type="button" x-show="store.backupDestConfigured" @click="store.backupDestinationClear()" x-t>Remover</button>
@@ -2102,22 +2179,24 @@
         </column>
 
         <column class="u-fill-all" x-show="store.settingsTab === 'recoverykey'">
-          <column class="form-panel">
-            <text class="u-label-cap" x-t>CHAVE DE RECUPERAÇÃO</text>
-            <text class="u-muted" x-t>
-              Os backups e o repositório git guardam segredos cifrados. Se este servidor for perdido, só a chave de
-              recuperação os abre num servidor novo. O servidor guarda apenas a parte pública; a privada aparece uma
-              única vez, ao gerar, e é baixada na hora. Guarde-a em um cofre ou gerenciador de senhas.
-            </text>
+          <column class="form-panel form-panel--grouped">
+            <column class="form-panel__head">
+              <text class="u-label-cap" x-t>CHAVE DE RECUPERAÇÃO</text>
+              <text class="u-muted" x-t>
+                Os backups e o repositório git guardam segredos cifrados. Se este servidor for perdido, só a chave de
+                recuperação os abre num servidor novo. O servidor guarda apenas a parte pública; a privada aparece uma
+                única vez, ao gerar, e é baixada na hora. Guarde-a em um cofre ou gerenciador de senhas.
+              </text>
+            </column>
             <text class="banner banner--warn" x-show="!store.recoveryKeyConfigured" x-t>
               Este servidor ainda não tem chave de recuperação.
             </text>
-            <column x-show="store.recoveryKeyConfigured" style="gap:6px">
+            <column class="field" x-show="store.recoveryKeyConfigured">
               <text class="u-label-cap" x-t>CHAVE PÚBLICA</text>
-              <pre class="log-panel__pre" x-text="store.recoveryKeyPublic"></pre>
+              <text class="copy-row__value" x-text="store.recoveryKeyPublic"></text>
             </column>
 
-            <column x-show="store.recoveryKeyConfigured &amp;&amp; !store.recoveryKeyGenerated" style="gap:6px; margin-top:6px">
+            <column class="field" x-show="store.recoveryKeyConfigured &amp;&amp; !store.recoveryKeyGenerated">
               <text class="banner banner--warn" x-t>
                 Gerar outra chave troca a atual. Os segredos de hoje são recifrados para a nova, mas os backups de
                 dados que já estão no S3 e o histórico do git NÃO mudam: continuam abrindo só com a chave antiga.
@@ -2129,49 +2208,96 @@
               </label>
             </column>
 
-            <row style="gap:8px; margin-top:6px" x-show="!store.recoveryKeyGenerated">
-              <button class="btn btn--sm-primary" type="button"
+            <!-- O que vai no arquivo junto com a chave: o que a aba Recuperar pede. -->
+            <column class="form-panel__body" x-show="!store.recoveryKeyGenerated">
+              <column class="form-panel__head">
+                <text class="u-label-cap" x-t>ARQUIVO DE RECUPERAÇÃO</text>
+                <text class="u-muted" x-t>A chave sai num arquivo só (.rpkit), junto com o que a tela Recuperar pede: o repositório da infra, a branch e o token da conta escolhida. Num desastre, basta carregar este arquivo. Ele não é cifrado: quem o tem abre a infra e os segredos. Guarde-o num cofre.</text>
+              </column>
+              <column class="field">
+                <text class="u-label-cap" x-t>REPOSITÓRIO DA INFRA</text>
+                <input class="field__input u-mono" type="text" x-model="store.recoveryKeyInfraRemote" placeholder="https://github.com/org/rustploy-estado.git" />
+              </column>
+              <column class="field">
+                <text class="u-label-cap" x-t>BRANCH (OPCIONAL)</text>
+                <input class="field__input u-mono" type="text" x-model="store.recoveryKeyInfraBranch" placeholder="main" />
+              </column>
+              <column class="field">
+                <text class="u-label-cap" x-t>CONTA GIT (O TOKEN VAI NO ARQUIVO)</text>
+                <select class="field__input" x-model="store.recoveryKeyProviderId">
+                  <option value="" x-t>selecione a conta</option>
+                  <template x-for="gitProviderRow in gitProviderRows" :key="gitProviderRow.id">
+                    <option :value="gitProviderRow.id" x-text="gitProviderRow.name"></option>
+                  </template>
+                </select>
+                <text class="field-description" x-t>O token desta conta só entra se o repositório for do host dela. Prefira uma conta com token pessoal (PAT) só de leitura do repositório da infra: tokens OAuth podem expirar antes do desastre.</text>
+              </column>
+            </column>
+
+            <row class="form-panel__actions" x-show="!store.recoveryKeyGenerated">
+              <button class="btn btn--primary" type="button"
                       :disabled="store.recoveryKeyConfigured &amp;&amp; !store.recoveryKeyConfirmReplace"
                       @click="store.recoveryKeyGenerate()"
                       x-text="store.recoveryKeyConfigured ? $t('Gerar outra chave') : $t('Gerar e baixar')"></button>
             </row>
 
-            <column x-show="store.recoveryKeyGenerated" style="gap:8px; margin-top:6px">
+            <column class="field" x-show="store.recoveryKeyGenerated">
               <text class="u-ok" x-text="$t('Chave gerada e baixada pelo navegador: ') + (store.recoveryKeyGenerated ? store.recoveryKeyGenerated.filename : '')"></text>
+              <text class="banner banner--warn" x-show="store.recoveryKeyWarning" x-text="store.recoveryKeyWarning"></text>
               <text class="banner banner--warn" x-t>
                 Esta é a única cópia: o servidor não a guarda e ela não será mostrada de novo. Mova o arquivo para
                 um cofre; não deixe só na pasta de downloads.
               </text>
-              <pre class="log-panel__pre" x-text="store.recoveryKeyGenerated ? store.recoveryKeyGenerated.private_key : ''"></pre>
-              <row style="gap:8px">
-                <button class="btn btn--sm-ghost" type="button" @click="store.copyText(store.recoveryKeyGenerated.private_key, 'chave')" x-t>Copiar</button>
-                <button class="btn btn--sm-ghost" type="button" @click="store.downloadTextFile(store.recoveryKeyGenerated.filename, store.recoveryKeyGenerated.file_contents)" x-t>Baixar de novo</button>
-                <button class="btn btn--sm-primary" type="button" @click="store.recoveryKeyDismiss()" x-t>Guardei em lugar seguro</button>
+              <text class="copy-row__value" x-text="store.recoveryKeyGenerated ? store.recoveryKeyGenerated.private_key : ''"></text>
+              <row class="form-panel__actions">
+                <button class="btn btn--ghost" type="button" @click="store.copyText(store.recoveryKeyGenerated.private_key, 'chave')" x-t>Copiar</button>
+                <button class="btn btn--ghost" type="button" @click="store.recoveryKeySaveAgain()" x-t>Baixar de novo</button>
+                <button class="btn btn--primary" type="button" @click="store.recoveryKeyDismiss()" x-t>Guardei em lugar seguro</button>
               </row>
             </column>
           </column>
         </column>
 
         <column class="u-fill-all" x-show="store.settingsTab === 'recover'">
-          <column class="form-panel">
-            <text class="u-label-cap" x-t>RECUPERAR ESTE SERVIDOR</text>
-            <text class="u-muted" x-t>
-              Num servidor novo e limpo: traz a infraestrutura do repositório git, restaura os dados dos
-              backups no S3 e sobe tudo na ordem das dependências. Só funciona num servidor sem projetos.
-            </text>
+          <column class="form-panel form-panel--grouped">
+            <column class="form-panel__head">
+              <text class="u-label-cap" x-t>RECUPERAR ESTE SERVIDOR</text>
+              <text class="u-muted" x-t>
+                Num servidor novo e limpo: traz a infraestrutura do repositório git, restaura os dados dos
+                backups no S3 e sobe tudo na ordem das dependências. Só funciona num servidor sem projetos.
+              </text>
+            </column>
 
-            <column style="gap:10px" x-show="store.recoverInfo.phase === 'idle' || store.recoverInfo.phase === 'failed'">
+            <column class="form-panel__body" x-show="store.recoverInfo.phase === 'idle' || store.recoverInfo.phase === 'failed'">
+              <column class="field">
+                <row class="form-panel__actions">
+                  <label class="btn btn--ghost">
+                    <span x-t>Carregar arquivo de recuperação…</span>
+                    <input type="file" accept=".rpkit" hidden
+                           @change="store.recoverLoadKit($event.target.files[0]); $event.target.value = ''" />
+                  </label>
+                </row>
+                <text class="field-description" x-t>O arquivo .rpkit gerado junto com a chave de recuperação preenche os quatro campos abaixo.</text>
+              </column>
               <text class="u-muted" x-show="store.recoverInfo.message" x-text="store.recoverInfo.message"></text>
-              <text class="u-label-cap" x-t>REPOSITÓRIO DA INFRA</text>
-              <input class="field__input" type="text" x-model="store.recoverRemote" placeholder="https://github.com/org/rustploy-estado.git" />
-              <text class="u-label-cap" x-t>TOKEN DE ACESSO AO REPOSITÓRIO</text>
-              <input class="field__input" type="password" autocomplete="new-password" x-model="store.recoverToken" />
-              <text class="u-label-cap" x-t>BRANCH (OPCIONAL)</text>
-              <input class="field__input" type="text" x-model="store.recoverBranch" placeholder="main" />
-              <text class="u-label-cap" x-t>CHAVE DE RECUPERAÇÃO (PRIVADA)</text>
-              <input class="field__input" type="password" autocomplete="new-password" x-model="store.recoverKey" placeholder="AGE-SECRET-KEY-1…" />
-              <text class="u-muted" x-t>A chave privada só fica na memória do servidor durante a recuperação e é descartada ao fim. Só a chave pública vai para o config.toml.</text>
-              <row style="gap:8px; margin-top:6px">
+              <column class="field">
+                <text class="u-label-cap" x-t>REPOSITÓRIO DA INFRA</text>
+                <input class="field__input u-mono" type="text" x-model="store.recoverRemote" placeholder="https://github.com/org/rustploy-estado.git" />
+              </column>
+              <column class="field">
+                <text class="u-label-cap" x-t>TOKEN DE ACESSO AO REPOSITÓRIO</text>
+                <input class="field__input" type="password" autocomplete="new-password" x-model="store.recoverToken" />
+              </column>
+              <column class="field">
+                <text class="u-label-cap" x-t>BRANCH (OPCIONAL)</text>
+                <input class="field__input u-mono" type="text" x-model="store.recoverBranch" placeholder="main" />
+              </column>
+              <column class="field">
+                <text class="u-label-cap" x-t>CHAVE DE RECUPERAÇÃO (PRIVADA)</text>
+                <input class="field__input u-mono" type="password" autocomplete="new-password" x-model="store.recoverKey" placeholder="AGE-SECRET-KEY-1…" />
+                <text class="field-description" x-t>A chave privada só fica na memória do servidor durante a recuperação e é descartada ao fim. Só a chave pública vai para o config.toml.</text>
+              </column>
+              <row class="form-panel__actions">
                 <button class="btn btn--primary" type="button" @click="store.recoverStart()" x-t>Restaurar a infraestrutura</button>
               </row>
             </column>
@@ -2193,7 +2319,7 @@
               <text class="u-muted" x-show="store.recoverInfo.phase === 'running'" x-t>Recuperação em andamento…</text>
               <text class="u-muted" x-show="store.recoverInfo.phase === 'done'" x-t>Recuperação concluída: tudo no ar.</text>
               <text class="banner banner--warn" x-show="(store.recoverInfo.phase === 'failed' || store.recoverInfo.phase === 'ready') && store.recoverInfo.message" x-text="store.recoverInfo.message"></text>
-              <row style="gap:8px; margin-top:6px" x-show="store.recoverInfo.phase === 'ready'">
+              <row class="form-panel__actions" x-show="store.recoverInfo.phase === 'ready'">
                 <button class="btn btn--primary" type="button" @click="store.recoverRun()" x-t>Restaurar os dados e subir</button>
                 <button class="btn btn--ghost" type="button" @click="store.recoverCancel()" x-t>Cancelar</button>
               </row>
@@ -2202,57 +2328,65 @@
         </column>
 
         <column class="u-fill-all" x-show="store.settingsTab === 'updates'">
-          <column class="form-panel">
+          <column class="form-panel form-panel--grouped">
             <text class="u-label-cap">DAEMON</text>
-            <row class="kv-list__row">
-              <text class="kv-list__key" x-t>Versão instalada</text>
-              <text class="kv-list__val kv-list__val--compact" x-text="store.updateCurrentVersion || '—'"></text>
+            <column class="info-list">
+              <row class="info-row">
+                <text class="info-row__key" x-t>Versão instalada</text>
+                <text class="info-row__value" x-text="store.updateCurrentVersion || '—'"></text>
+              </row>
+              <row class="info-row">
+                <text class="info-row__key" x-t>Última versão</text>
+                <text class="info-row__value" x-text="store.updateLatestVersion || '—'"></text>
+              </row>
+              <row class="info-row">
+                <text class="info-row__key" x-t>Verificado em</text>
+                <text class="info-row__value" x-text="store.updateCheckedAtLabel || '—'"></text>
+              </row>
+            </column>
+            <row class="form-panel__actions">
+              <button class="btn btn--ghost" type="button" @click="$store.app.updateCheckNow()" x-t>Verificar atualizações</button>
+              <text class="u-muted" x-text="store.updateMessage"></text>
             </row>
-            <row class="kv-list__row">
-              <text class="kv-list__key" x-t>Última versão</text>
-              <text class="kv-list__val kv-list__val--compact" x-text="store.updateLatestVersion || '—'"></text>
-            </row>
-            <row class="kv-list__row">
-              <text class="kv-list__key" x-t>Verificado em</text>
-              <text class="kv-list__val kv-list__val--compact" x-text="store.updateCheckedAtLabel || '—'"></text>
-            </row>
-            <row class="healthcheck__grid">
-              <button class="btn btn--ghost btn--sm" type="button" @click="$store.app.updateCheckNow()" x-t>Verificar atualizações</button>
-            </row>
-            <text class="u-muted" x-text="store.updateMessage"></text>
 
-            <column x-show="store.updateIsHelperAvailable">
-              <text class="u-label-cap" style="margin-top:14px" x-t>ATUALIZAR PELO APP</text>
-              <text class="u-muted" x-t>
-                O daemon baixa a versão nova, confere a assinatura e a instala por um helper root do próprio
-                pacote. O daemon reinicia (os containers dos serviços continuam rodando) e esta tela fica sem
-                resposta por alguns segundos. Antes, o daemon guarda um snapshot do banco.
-              </text>
-              <row class="healthcheck__grid">
-                <button class="btn btn--primary btn--sm" type="button" x-show="store.updateIsAvailable"
+            <column class="form-panel__body" x-show="store.updateIsHelperAvailable">
+              <column class="form-panel__head">
+                <text class="u-label-cap" x-t>ATUALIZAR PELO APP</text>
+                <text class="u-muted" x-t>
+                  O daemon baixa a versão nova, confere a assinatura e a instala por um helper root do próprio
+                  pacote. O daemon reinicia (os containers dos serviços continuam rodando) e esta tela fica sem
+                  resposta por alguns segundos. Antes, o daemon guarda um snapshot do banco.
+                </text>
+              </column>
+              <row class="form-panel__actions">
+                <button class="btn btn--primary" type="button" x-show="store.updateIsAvailable"
                         @click="$store.app.updateApply()" x-t>Atualizar daemon</button>
-                <button class="btn btn--ghost btn--sm" type="button"
+                <button class="btn btn--ghost" type="button"
                         @click="$store.app.updateRollback()" x-t>Reverter para a versão anterior</button>
               </row>
             </column>
-            <text class="u-muted" x-text="store.updateProgressMessage"></text>
+            <text class="u-muted" x-show="store.updateProgressMessage" x-text="store.updateProgressMessage"></text>
 
-            <column x-show="store.updateIsAvailable">
-              <text class="u-label-cap" style="margin-top:14px" x-t>COMO ATUALIZAR À MÃO</text>
-              <text class="u-muted" x-t>
-                Há uma versão nova. Por enquanto a atualização é manual: rode o comando abaixo na VPS.
-                Seus dados, o config.toml e o age.key são preservados, e os containers dos serviços
-                continuam rodando.
-              </text>
-              <row class="kv-list__row">
-                <text class="kv-list__val kv-list__val--compact" x-text="store.updateInstallCommand"></text>
-                <button class="btn btn--copy" type="button" @click="$store.app.copyText(store.updateInstallCommand, 'comando')" x-t>Copiar</button>
-              </row>
-              <row class="kv-list__row">
-                <text class="kv-list__key" x-t>Notas da release</text>
-                <text class="kv-list__val kv-list__val--compact" x-text="store.updateReleaseUrl"></text>
-                <button class="btn btn--copy" type="button" @click="$store.app.copyText(store.updateReleaseUrl, 'endereço')" x-t>Copiar</button>
-              </row>
+            <column class="form-panel__body" x-show="store.updateIsAvailable">
+              <column class="field">
+                <text class="u-label-cap" x-t>COMO ATUALIZAR À MÃO</text>
+                <text class="field-description" x-t>
+                  Há uma versão nova. Por enquanto a atualização é manual: rode o comando abaixo na VPS.
+                  Seus dados, o config.toml e o age.key são preservados, e os containers dos serviços
+                  continuam rodando.
+                </text>
+                <row class="copy-row">
+                  <text class="copy-row__value" x-text="store.updateInstallCommand"></text>
+                  <button class="btn btn--copy" type="button" @click="$store.app.copyText(store.updateInstallCommand, 'comando')" x-t>Copiar</button>
+                </row>
+              </column>
+              <column class="field">
+                <text class="u-label-cap" x-t>Notas da release</text>
+                <row class="copy-row">
+                  <text class="copy-row__value" x-text="store.updateReleaseUrl"></text>
+                  <button class="btn btn--copy" type="button" @click="$store.app.copyText(store.updateReleaseUrl, 'endereço')" x-t>Copiar</button>
+                </row>
+              </column>
             </column>
           </column>
         </column>
@@ -2503,27 +2637,31 @@
         </column>
 
         <!-- Secrets do projeto — ordem de shell/project_secrets.component.gv: os três
-             avisos, "mover para o serviço", NOME numa linha e valor + salvar na outra. -->
+             avisos, o formulário (nome | valor | salvar numa linha só) e, só com
+             algum secret na lista, "mover para o serviço" logo acima dela. -->
         <column class="env" x-show="projectTab === 'secrets'">
-          <column class="secrets__intro">
+          <column class="prose">
             <text class="u-muted-grow" x-t>Valores sensíveis (tokens, senhas, chaves de API) cifrados com a chave do servidor. Para ver um valor use o botão 👁 (o acesso fica registrado na auditoria); para trocá-lo, salve um novo com o mesmo nome.</text>
             <text class="u-muted-grow" x-t>Para usar num serviço: na aba Variáveis, ligue "usar secret" e escolha o nome; ou escreva &lt;secret:NOME&gt; (ou secret:NOME) como valor, no editor .env do projeto ou do serviço. Para clonar um repositório Git privado, use o nome do secret puro, sem prefixo, no campo Credentials da aba General do serviço.</text>
             <text class="u-muted-grow" x-t>O valor real só é decifrado em memória, na hora do deploy.</text>
           </column>
-          <row class="env__add">
-            <text class="u-muted" style="flex-shrink:0" x-t>Mover para o serviço:</text>
+          <column class="secrets__form">
+            <text class="u-label-cap" x-t>NOVO SECRET</text>
+            <row class="env__add">
+              <input class="env__input secrets__name" type="text" placeholder="nome" x-t:placeholder x-model="newSecretName"
+                     @keydown.enter.prevent="submitSecret()" />
+              <input class="env__input" type="password" placeholder="valor (cifrado ao salvar)" x-t:placeholder x-model="newSecretValue"
+                     @keydown.enter.prevent="submitSecret()" />
+              <button class="btn btn--primary" type="button" @click="submitSecret()" x-t>Salvar secret</button>
+            </row>
+          </column>
+          <hr class="rule" />
+          <row class="env__add" x-show="secrets.length">
+            <text class="env__use-secret" x-t>Mover para o serviço:</text>
             <select class="form-select" x-model="moveTargetServiceId">
               <option value="" x-t>escolha o serviço de destino</option>
               <template x-for="serviceOption in serviceOptions" :key="serviceOption.id"><option :value="serviceOption.id" x-text="serviceOption.name"></option></template>
             </select>
-          </row>
-          <row class="env__add">
-            <input class="env__input" type="text" placeholder="NOME" x-t:placeholder x-model="newSecretName" />
-          </row>
-          <row class="env__add">
-            <input class="env__input" type="password" placeholder="valor (cifrado ao salvar)" x-t:placeholder x-model="newSecretValue"
-                   @keydown.enter.prevent="submitSecret()" />
-            <button class="btn btn--primary" type="button" @click="submitSecret()" x-t>Salvar secret</button>
           </row>
           <column class="kv-list">
             <template x-for="secret in secrets" :key="secret.name">

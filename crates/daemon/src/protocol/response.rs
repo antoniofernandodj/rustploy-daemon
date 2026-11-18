@@ -192,13 +192,17 @@ pub enum Response {
         public_key: Option<String>,
     },
     /// Resposta de `RecoveryKeyGenerate` — `private_key` (`AGE-SECRET-KEY-1…`) só aparece aqui, uma vez.
-    /// `file_contents` é o texto pronto para salvar (o mesmo formato do `rustploy-cli keygen`) e
-    /// `suggested_filename` o nome sugerido, para os clientes baixarem sem remontar nada.
+    /// `file_base64` é o arquivo de recuperação pronto para salvar e `suggested_filename` o nome
+    /// sugerido, para os clientes baixarem sem remontar nada.
     RecoveryKeyGenerated {
         public_key: String,
         private_key: String,
-        file_contents: String,
+        /// O arquivo de recuperação (`.rpkit`, binário) em base64: o cliente decodifica e grava os bytes.
+        file_base64: String,
         suggested_filename: String,
+        /// Aviso para mostrar junto (ex.: token OAuth, que pode expirar antes do desastre).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        warning: Option<String>,
     },
 
     Err {
