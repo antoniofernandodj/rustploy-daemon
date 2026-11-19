@@ -2772,14 +2772,12 @@ dependencies = [
 name = "rustploy-import"
 version = "0.1.0"
 dependencies = [
- "age",
  "anyhow",
  "chrono",
  "clap",
  "hex",
  "serde",
  "serde_json",
- "serde_yaml",
  "sqlx",
  "tokio",
  "tracing",
