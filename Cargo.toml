@@ -17,8 +17,13 @@ codegen-units = 1
 # e o desenrolamento vira `panic_cannot_unwind` → SIGABRT. Na prática, QUALQUER
 # erro de Lua num callback matava o app em release (o crash era ao abrir a janela
 # de logs: `require("fmt")` durante `open_child` → `build_engine`), enquanto em
-# debug o mesmo erro era tratado normalmente. Se o daemon precisar de `abort`
-# algum dia, tem que ser num profile só dele — não neste, compartilhado.
+# debug o mesmo erro era tratado normalmente.
+#
+# Desde que a GUI virou repo próprio (o `rustploy-gui` tem o seu `Cargo.toml`) este
+# perfil é só do daemon, e o motivo acima não vale mais aqui. Mesmo assim, fique em
+# `unwind`: hoje um `panic` numa task do tokio derruba só aquela task; com `abort`,
+# derrubaria o daemon inteiro (proxy, deploys, tudo). Um binário ~10% menor não paga
+# isso (docs/estudo-consumo-de-ram.md, seção 4).
 
 # Compile heavy dependencies at opt-level 2 even in debug builds so
 # that SurrealDB / bollard don't dominate incremental rebuilds.

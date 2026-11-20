@@ -479,7 +479,9 @@ document.addEventListener("alpine:init", () => {
 
     openStream() {
       this.stream?.close();
-      this.stream = openStream(this.api.baseUrl, this.api.token, "/api/events", {
+      // `patch=1`: depois do primeiro snapshot, só as seções que mudaram (`snapshot_patch`).
+      // Um daemon antigo ignora o parâmetro e segue mandando o snapshot inteiro.
+      this.stream = openStream(this.api.baseUrl, this.api.token, "/api/events?patch=1", {
         onEvent: (kind, data) => this.onStreamEvent(data),
         onError: (message) => {
           this.statusLine = "stream: " + message;
@@ -498,7 +500,14 @@ document.addEventListener("alpine:init", () => {
     onStreamEvent(streamMessage) {
       if (!streamMessage || typeof streamMessage !== "object") return;
       if (streamMessage.kind === "snapshot") this.applySnapshot(streamMessage);
-      else if (streamMessage.kind === "bus") this.applyBusEvent(streamMessage.event);
+      else if (streamMessage.kind === "snapshot_patch") {
+        if (!this.snap) return;
+        // Seção trocada inteira; `removed` lista as que sumiram.
+        const { kind, removed, ...sections } = streamMessage;
+        const merged = { ...this.snap, ...sections };
+        for (const name of removed || []) delete merged[name];
+        this.applySnapshot(merged);
+      } else if (streamMessage.kind === "bus") this.applyBusEvent(streamMessage.event);
     },
 
     /** Um evento do bus (mesmo formato que stream.luau::apply_bus trata) —

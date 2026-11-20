@@ -7,7 +7,7 @@ use crate::{platform::event_bus::EventBus, store::Db};
 use bollard::Docker;
 use chrono::Utc;
 use std::{collections::HashMap, sync::Arc, time::Duration};
-use sysinfo::System;
+use sysinfo::{CpuRefreshKind, Disks, MemoryRefreshKind, RefreshKind, System};
 use tokio::time::interval;
 use tracing::warn;
 
@@ -19,13 +19,32 @@ pub async fn collect_loop(
 ) {
     let mut ticker = interval(Duration::from_secs(interval_secs));
     let mut prev_cpu: HashMap<String, (u64, u64)> = HashMap::new();
-    let mut sys = System::new_all();
+    // Só CPU e memória: `System::new_all()` carregaria (e guardaria para sempre)
+    // a lista de TODOS os processos do host — nome, cmdline, ambiente — que este
+    // laço nunca usa. Num servidor com centenas de processos são alguns MB parados.
+    let mut sys = System::new_with_specifics(
+        RefreshKind::nothing()
+            .with_cpu(CpuRefreshKind::nothing().with_cpu_usage())
+            .with_memory(MemoryRefreshKind::nothing().with_ram()),
+    );
+    // A lista de discos é montada uma vez; a cada tick só os números são relidos.
+    let mut disks = Disks::new_with_refreshed_list();
 
     loop {
         ticker.tick().await;
 
+        // Ninguém escutando (nenhum cliente SSE conectado) → não coleta: as
+        // métricas só existem para as telas de Monitoring/Em execução, e cada
+        // tick custa um `docker stats` por serviço. O primeiro tick depois de um
+        // cliente conectar mede a CPU média desde a última coleta — aceitável.
+        if bus.receiver_count() == 0 {
+            continue;
+        }
+
         // ── Métricas do SO ───────────────────────────────────────────────────
-        bus.publish(Event::SystemMetrics(collect_system_metrics(&mut sys)));
+        bus.publish(Event::SystemMetrics(collect_system_metrics(
+            &mut sys, &mut disks,
+        )));
 
         // ── Métricas por container ───────────────────────────────────────────
         let services = match crate::store::services::get_running(&db).await {
@@ -53,7 +72,7 @@ pub async fn collect_loop(
     }
 }
 
-fn collect_system_metrics(sys: &mut System) -> SystemMetricsPoint {
+fn collect_system_metrics(sys: &mut System, disks: &mut Disks) -> SystemMetricsPoint {
     sys.refresh_cpu_usage();
     sys.refresh_memory();
 
@@ -63,8 +82,7 @@ fn collect_system_metrics(sys: &mut System) -> SystemMetricsPoint {
 
     // Disco: usa o mount com mais espaço total (normalmente /)
     let (disk_used, disk_total) = {
-        use sysinfo::Disks;
-        let disks = Disks::new_with_refreshed_list();
+        disks.refresh(true);
         disks
             .iter()
             .max_by_key(|d| d.total_space())

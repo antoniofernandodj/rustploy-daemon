@@ -69,6 +69,8 @@ pub struct AppState {
     pub update_applier: Arc<crate::features::update::UpdateApplier>,
     /// Sincronização do estado de infra com o git (Fase 6 do plano de estado em git).
     pub state_git: Arc<crate::features::state_git::StateGit>,
+    /// O produtor único do snapshot do SSE (ver `api::http::snapshot`).
+    pub snapshot_hub: Arc<crate::api::http::snapshot::SnapshotHub>,
 }
 
 impl AppState {
@@ -91,6 +93,7 @@ impl AppState {
         let state_git = crate::features::state_git::StateGit::new(db.clone(), secrets.clone());
         Self {
             state_git,
+            snapshot_hub: crate::api::http::snapshot::SnapshotHub::new(),
             db,
             docker,
             ingress,

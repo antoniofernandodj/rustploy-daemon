@@ -28,6 +28,12 @@ impl EventBus {
         let _ = self.sender.send(event);
     }
 
+    /// Quantos assinantes vivos (clientes SSE conectados). Zero = ninguém olha,
+    /// e quem produz só para as telas (métricas) pode pular o trabalho.
+    pub fn receiver_count(&self) -> usize {
+        self.sender.receiver_count()
+    }
+
     pub fn subscribe(&self) -> broadcast::Receiver<Event> {
         self.sender.subscribe()
     }

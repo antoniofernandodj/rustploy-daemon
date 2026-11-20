@@ -12,7 +12,9 @@
 //!   JSON-encoded [`Response`](crate::protocol::Response). One endpoint covers every
 //!   command; the client reshapes the (externally tagged) JSON in Luau.
 //! - `GET /api/events` — Server-Sent Events. Emits a `snapshot` record with the
-//!   full dashboard state every 2s (replacing the old client-side 2s poll) plus
+//!   full dashboard state whenever it changes (computed once for every client by
+//!   [`snapshot::SnapshotHub`], every 2s; with `?patch=1` only the changed
+//!   sections, as `snapshot_patch`, after the first full one) plus
 //!   a `bus` record for each live [`Event`](crate::protocol::Event) from the event bus
 //!   (logs, metrics, deploy progress). One connection replaces poll + stream.
 //!   Each record is **self-describing**: its JSON `data` carries a `kind` field
@@ -23,12 +25,13 @@
 
 pub mod dashboard;
 pub mod public_routes;
+pub mod snapshot;
 
 use std::convert::Infallible;
 use std::sync::Arc;
 
 use crate::platform::config::ApiConfig;
-use crate::protocol::{Command, Event, Response as RpResponse};
+use crate::protocol::{Command, Event};
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full, StreamBody, combinators::BoxBody};
 use hyper::body::{Frame, Incoming};
@@ -353,7 +356,14 @@ async fn handle(
             "o fluxo de eventos (traz variáveis em claro)",
             Level::Observer,
         ),
-        (&Method::GET, "/api/events") => events(state),
+        (&Method::GET, "/api/events") => {
+            // `?patch=1`: o cliente sabe juntar `snapshot_patch` (só as seções que mudaram).
+            let patch = req
+                .uri()
+                .query()
+                .is_some_and(|q| q.split('&').any(|kv| kv == "patch=1"));
+            events(state, patch)
+        }
         (&Method::GET, "/api/health") => text(StatusCode::OK, "ok"),
         // SSE dedicado de logs de runtime de um serviço: `/api/services/<id>/logs`.
         (&Method::GET, p) if p.starts_with("/api/services/") && p.ends_with("/logs") => {
@@ -708,23 +718,24 @@ async fn rpc(req: Request<Incoming>, state: AppState, caller: Caller) -> Respons
 /// `GET /api/events`: SSE stream. A producer task feeds an mpsc channel with the
 /// periodic snapshot and every live bus event; the response body streams those
 /// frames out until the client disconnects (which closes the channel).
-fn events(state: AppState) -> Response<ApiBody> {
+fn events(state: AppState, patch: bool) -> Response<ApiBody> {
     let (tx, rx) = tokio::sync::mpsc::channel::<Bytes>(64);
 
     tokio::spawn(async move {
         use tokio::sync::broadcast::error::RecvError;
         let mut bus_rx = state.bus.subscribe();
-        let mut ticker = tokio::time::interval(std::time::Duration::from_secs(2));
-        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        // O snapshot vem do produtor único (`snapshot::SnapshotHub`): esta conexão só repassa.
+        let (mut snapshots, first) = state.snapshot_hub.subscribe(&state).await;
 
-        // Snapshot inicial imediato, para o cliente pintar sem esperar o 1º tick.
+        // Snapshot inicial imediato e completo, para o cliente pintar sem esperar o 1º tick.
         if tx
-            .send(sse_frame("snapshot", &snapshot(&state).await))
+            .send(sse_frame("snapshot", first.full_json()))
             .await
             .is_err()
         {
             return;
         }
+        let mut last_sent = first;
 
         // Firehose do dashboard: NÃO carrega logs de container (`LogLine`) nem de
         // build (`BuildLog`). Um serviço verborrágico (logando por request) emite
@@ -738,12 +749,31 @@ fn events(state: AppState) -> Response<ApiBody> {
         // todos de baixa frequência e enviados imediatamente.
         loop {
             tokio::select! {
-                _ = ticker.tick() => {
-                    if tx.send(
-                        sse_frame("snapshot", &snapshot(&state).await)
-                    ).await.is_err() {
+                changed = snapshots.changed() => {
+                    if changed.is_err() {
                         break;
                     }
+                    let Some(current) = snapshots.borrow_and_update().clone() else {
+                        continue;
+                    };
+                    if Arc::ptr_eq(&current, &last_sent) {
+                        continue;
+                    }
+                    let frame = if patch {
+                        match current.patch_json(&last_sent) {
+                            Some(json) => sse_frame("snapshot", &json),
+                            None => {
+                                last_sent = current;
+                                continue;
+                            }
+                        }
+                    } else {
+                        sse_frame("snapshot", current.full_json())
+                    };
+                    if tx.send(frame).await.is_err() {
+                        break;
+                    }
+                    last_sent = current;
                 }
                 r = bus_rx.recv() => match r {
                     Ok(ev) => {
@@ -1056,183 +1086,16 @@ fn sse_response(mut rx: tokio::sync::mpsc::Receiver<Bytes>) -> Response<ApiBody>
         .unwrap()
 }
 
-/// Builds the full dashboard snapshot as one JSON object, reusing `dispatch`
-/// for each piece — the same bundle the old client-side 2s poll fetched. The
-/// client (Luau) reshapes/filters it. `services` fans out one `ServiceList` per
-/// project, tagging each service with its project name.
+/// O snapshot completo do painel (o `Command::Snapshot`, que os clientes pedem depois de uma
+/// mutação para a tela refletir na hora). Passa pelo [`snapshot::SnapshotHub`]: calcula agora e,
+/// se algo mudou, já empurra para todas as conexões SSE abertas.
 pub(crate) async fn snapshot(state: &AppState) -> String {
-    use serde_json::{Map, Value, json};
-    let mut obj = Map::new();
-    // Self-describing record (see module docs): the SSE client only sees the
-    // `data:` payload, so the `snapshot`/`bus` discriminator lives here.
-    obj.insert("kind".into(), Value::String("snapshot".into()));
-
-    if let RpResponse::DaemonStatus(d) = dispatch(state.clone(), Command::DaemonStatus).await {
-        obj.insert(
-            "status".into(),
-            serde_json::to_value(d).unwrap_or(Value::Null),
-        );
-    }
-    if let RpResponse::DeploymentSummaries(list) =
-        dispatch(state.clone(), Command::RecentDeployments { limit: 40 }).await
-    {
-        obj.insert(
-            "deployments".into(),
-            serde_json::to_value(list).unwrap_or(Value::Null),
-        );
-    }
-    if let RpResponse::Projects(projects) = dispatch(state.clone(), Command::ProjectList).await {
-        // Uma única listagem do Docker indexa todos os containers por service_id
-        // e por projeto Compose, para anexar a cada serviço os containers reais
-        // em execução (id + nome + estado) — cobre réplicas, staging e Compose.
-        let container_index =
-            crate::engine::containers::index_containers(&state.docker.inner).await;
-        let mut services = Vec::new();
-        let mut projects_json = Vec::new();
-        for p in &projects {
-            // Só os NOMES dos secrets do projeto (o blob cifrado nunca sai do
-            // daemon). Anexados ao objeto do projeto como `containers` é
-            // anexado ao do serviço logo abaixo — é dado só do snapshot, então
-            // não vira campo do model `Project` de `shared`.
-            let mut pv = serde_json::to_value(p).unwrap_or(Value::Null);
-            if let RpResponse::SecretNames(names) = dispatch(
-                state.clone(),
-                Command::SecretList {
-                    project_id: p.id.clone(),
-                    service_id: None,
-                    job_id: None,
-                },
-            )
-            .await
-                && let Value::Object(m) = &mut pv
-            {
-                m.insert(
-                    "secrets".into(),
-                    serde_json::to_value(names).unwrap_or(Value::Null),
-                );
-            }
-            projects_json.push(pv);
-
-            if let RpResponse::Services(svcs) = dispatch(
-                state.clone(),
-                Command::ServiceList {
-                    project_id: p.id.clone(),
-                },
-            )
-            .await
-            {
-                for s in svcs {
-                    let conts = container_index.for_service(&s);
-                    let mut sv = serde_json::to_value(&s).unwrap_or(Value::Null);
-                    if let Value::Object(m) = &mut sv {
-                        m.insert(
-                            "containers".into(),
-                            serde_json::to_value(conts).unwrap_or(Value::Null),
-                        );
-                    }
-                    services.push(json!({ "project_name": p.name, "service": sv }));
-                }
-            }
-        }
-
-        obj.insert("projects".into(), Value::Array(projects_json));
-
-        obj.insert("services".into(), Value::Array(services));
-    }
-    // Última consulta de versão nova (sem ir ao GitHub): acende o selo nas UIs abertas
-    // quando a consulta periódica acha uma release. `null` enquanto ninguém consultou.
-    obj.insert(
-        "update".into(),
-        serde_json::to_value(state.update_checker.cached_info().await).unwrap_or(Value::Null),
-    );
-    // Painel "Em execução": projetos e serviços rodando, já classificados.
-    obj.insert(
-        "dashboard".into(),
-        serde_json::to_value(dashboard::load(state).await).unwrap_or(Value::Null),
-    );
-    // Selo "aquecido/frio" de cada serviço com build (Git/zip); as telas só exibem.
-    if let RpResponse::ServiceWarmStatuses(list) =
-        dispatch(state.clone(), Command::ServiceWarmStatusList).await
-    {
-        obj.insert(
-            "service_warm".into(),
-            serde_json::to_value(list).unwrap_or(Value::Null),
-        );
-    }
-    if let RpResponse::DockerImages(list) = dispatch(state.clone(), Command::DockerImages).await {
-        obj.insert(
-            "docker_images".into(),
-            serde_json::to_value(list).unwrap_or(Value::Null),
-        );
-    }
-    if let RpResponse::DockerVolumes(list) = dispatch(state.clone(), Command::DockerVolumes).await {
-        obj.insert(
-            "docker_volumes".into(),
-            serde_json::to_value(list).unwrap_or(Value::Null),
-        );
-    }
-    if let RpResponse::DockerNetworks(list) = dispatch(state.clone(), Command::DockerNetworks).await
-    {
-        obj.insert(
-            "docker_networks".into(),
-            serde_json::to_value(list).unwrap_or(Value::Null),
-        );
-    }
-    if let RpResponse::DockerContainers(list) =
-        dispatch(state.clone(), Command::DockerContainers).await
-    {
-        obj.insert(
-            "docker_containers".into(),
-            serde_json::to_value(list).unwrap_or(Value::Null),
-        );
-    }
-    if let RpResponse::JobSummaries(list) = dispatch(state.clone(), Command::JobListAll).await {
-        obj.insert(
-            "jobs".into(),
-            serde_json::to_value(list).unwrap_or(Value::Null),
-        );
-    }
-    if let RpResponse::DeployEngineStatus(eng) =
-        dispatch(state.clone(), Command::DeployEngineStatus).await
-    {
-        obj.insert(
-            "engine".into(),
-            serde_json::to_value(eng).unwrap_or(Value::Null),
-        );
-    }
-    if let RpResponse::RegistryStatus(info) = dispatch(state.clone(), Command::RegistryStatus).await
-    {
-        obj.insert(
-            "registry_status".into(),
-            serde_json::to_value(info).unwrap_or(Value::Null),
-        );
-    }
-    if let RpResponse::RegistryRepos(list) =
-        dispatch(state.clone(), Command::RegistryRepoList).await
-    {
-        obj.insert(
-            "registry_repos".into(),
-            serde_json::to_value(list).unwrap_or(Value::Null),
-        );
-    }
-    // O que está em claro (ou parece) no estado: a trava da sincronização com o git. Vem no snapshot
-    // (e não num RPC à parte) para os dois clientes mostrarem a lista sem polling próprio.
-    if let RpResponse::InfraAudit(list) = dispatch(state.clone(), Command::InfraAudit).await {
-        obj.insert(
-            "infra_audit".into(),
-            serde_json::to_value(list).unwrap_or(Value::Null),
-        );
-    }
-    // Situação da sincronização do estado com o git: alimenta o aviso do topo, os selos "mudança
-    // pendente de deploy" e a tela Settings → Sincronização, nos dois clientes, sem polling próprio.
-    if let RpResponse::StateGit(status) = dispatch(state.clone(), Command::StateGitStatus).await {
-        obj.insert(
-            "state_git".into(),
-            serde_json::to_value(status).unwrap_or(Value::Null),
-        );
-    }
-
-    Value::Object(obj).to_string()
+    state
+        .snapshot_hub
+        .refresh(state)
+        .await
+        .full_json()
+        .to_owned()
 }
 
 /// Formats one SSE record. `data` is single-line JSON (`serde_json::to_string`

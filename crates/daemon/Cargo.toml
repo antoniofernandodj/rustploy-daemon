@@ -1,6 +1,6 @@
 [package]
 name = "rustploy"
-version = "0.1.67"
+version = "0.1.68"
 edition = "2024"
 default-run = "rustployd"
 description = "Rustploy PaaS daemon — lightweight self-hosted deployment platform"
@@ -70,7 +70,7 @@ serde_json = "1"
 serde_yaml = "0.9"
 
 # Database
-sqlx = { version = "0.8", features = ["runtime-tokio-native-tls", "sqlite", "chrono"] }
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "chrono"] }  # sem TLS: o SQLite não usa rede (antes puxava OpenSSL)
 
 # Docker
 bollard = "0.17"
