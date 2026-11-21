@@ -144,7 +144,16 @@ pub async fn connect(db_path: &std::path::Path) -> Result<Db> {
         .create_if_missing(true)
         .journal_mode(SqliteJournalMode::Wal)
         .foreign_keys(true);
-    let pool = SqlitePool::connect_with(opts).await?;
+    // Uma conexão só. O padrão do sqlx (até 10) deixava as 10 abertas num servidor de produção
+    // (2026-11-20, `ps -T`: 10 threads `sqlx-sqlite-worker`), e cada uma custa uma thread, um
+    // cache de páginas do SQLite (até ~2 MB) e um cache de comandos preparados. O daemon não
+    // precisa de paralelismo no banco: as consultas são curtas e o banco é pequeno.
+    // Pré-requisito, conferido: nenhuma transação consulta pelo pool antes do `commit` (com uma
+    // conexão, isso esperaria para sempre). Os testes já rodam com `max_connections(1)`.
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect_with(opts)
+        .await?;
     migrate(&pool).await?;
     // O YAML de infra mora ao lado do banco (`<db_path>/infra`). Na primeira subida depois da
     // atualização, os dados de infra que estavam no SQL são migrados para lá (uma vez só).

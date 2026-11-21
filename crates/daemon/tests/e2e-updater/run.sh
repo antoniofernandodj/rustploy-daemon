@@ -238,6 +238,16 @@ check "o binário do daemon voltou ao do backup" "VERSION=1.1.0-1" "$(binary_mar
 check "o serviço está ativo" "active" "$(service_state)"
 check "resultado gravado" "rolled_back" "$(last_json_field kind)"
 
+say "S10b. depois do rollback, a mesma versão pode ser reinstalada (o dpkg não soube do rollback)"
+check "o dpkg segue dizendo a versão revertida" "1.6.0-1" "$(installed_version)"
+reply="$(send_install v8)"
+contains "o helper aceita reinstalar a 1.6.0" '"ok":true' "$reply"
+wait_outcome || fail "a reinstalação não terminou"
+check "resultado gravado" "installed" "$(last_json_field kind)"
+check "o serviço roda a 1.6.0 de novo" "1.6.0-1" "$(running_version)"
+check "o backup leva a versão que rodava, não a do dpkg" "1.1.0-1" "$(sh_in 'cat /var/lib/rustploy-update/backup/version')"
+check "e o binário dela" "VERSION=1.1.0-1" "$(sh_in "grep -o 'VERSION=[^ ]*' /var/lib/rustploy-update/backup/rustployd")"
+
 say "S11. rollback sem backup é recusado"
 sh_in 'rm -rf /var/lib/rustploy-update/backup'
 reply="$(send_as rustploy '{"op":"rollback"}')"
