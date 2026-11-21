@@ -8,6 +8,10 @@
 //!
 //! → {"op":"rollback"}
 //! ← {"ok":true}                            (restaurou os binários do backup)
+//!
+//! → {"op":"install_app","deb":"/var/lib/rustploy/updates/rustploy-gui_0.1.79-1_amd64.deb",
+//!    "sig":"/var/lib/rustploy/updates/rustploy-gui_0.1.79-1_amd64.deb.minisig"}
+//! ← {"ok":true,"version":"0.1.79-1"}       (aceito; o app desktop desta máquina, sem reinício)
 //! ```
 //!
 //! O resultado final da instalação NÃO volta por aqui: o `dpkg` reinicia o daemon,
@@ -18,8 +22,18 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
-    Install { deb: String, sig: String },
+    Install {
+        deb: String,
+        sig: String,
+    },
     Rollback,
+    /// Instala o pacote do **app desktop** (`rustploy-gui`) desta máquina, com as mesmas regras
+    /// (assinatura, nome do pacote, sem downgrade) e um backup próprio. Existe para atualizar o
+    /// app por comando, sem a senha que o `pkexec` do próprio app pede.
+    InstallApp {
+        deb: String,
+        sig: String,
+    },
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
@@ -60,7 +74,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_both_verbs() {
+    fn parses_the_verbs() {
         assert_eq!(
             serde_json::from_str::<Request>(
                 r#"{"op":"install","deb":"/a.deb","sig":"/a.deb.minisig"}"#
@@ -74,6 +88,16 @@ mod tests {
         assert_eq!(
             serde_json::from_str::<Request>(r#"{"op":"rollback"}"#).unwrap(),
             Request::Rollback
+        );
+        assert_eq!(
+            serde_json::from_str::<Request>(
+                r#"{"op":"install_app","deb":"/g.deb","sig":"/g.deb.minisig"}"#
+            )
+            .unwrap(),
+            Request::InstallApp {
+                deb: "/g.deb".into(),
+                sig: "/g.deb.minisig".into()
+            }
         );
     }
 

@@ -58,3 +58,24 @@ pub async fn handle(state: AppState, allow_active_deploys: bool) -> RpResponse {
     tokio::spawn(async move { applier.run(plan).await });
     RpResponse::Ok
 }
+
+/// `Command::ApplyAppUpdate`: atualiza o app desktop desta máquina e espera o resultado.
+pub async fn handle_app(state: AppState) -> RpResponse {
+    if let Err(error) = state.update_checker.check(false).await {
+        return RpResponse::err("UpdateCheckFailed", error.to_string());
+    }
+    let Some(release) = state.update_checker.cached_release().await else {
+        return RpResponse::err(
+            "UpdateCheckFailed",
+            "não há release consultada; verifique de novo",
+        );
+    };
+    let repo = state.update_checker.repo().to_string();
+    match state.update_applier.apply_app(&release, &repo).await {
+        Ok((from, to)) => RpResponse::AppUpdated { from, to },
+        Err(message) if message.contains("versão mais recente") => {
+            RpResponse::err("NoUpdateAvailable", message)
+        }
+        Err(message) => RpResponse::err("AppUpdateFailed", message),
+    }
+}

@@ -91,16 +91,77 @@ pub struct ServiceSpec {
     /// servidor). Opt-in; padrão `false`. Ver `docs/plano-registry-embutido.md` (Fase 4).
     #[serde(default)]
     pub registry_auto_deploy: bool,
+    /// **Vínculos**: os serviços que este **usa** (o banco, o S3, a fila). Cada vínculo conta como
+    /// dependência (ordem no deploy e no boot) e, no deploy, entrega a este serviço as variáveis
+    /// de conexão do outro (`<PREFIXO>_HOST`, `_PORT`, `_URL`) com a **menor** precedência: as
+    /// variáveis digitadas no projeto ou no serviço sempre ganham. De outro projeto, só um banco
+    /// compartilhado. Ver `docs/plano-recursos-e-vinculos.md`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub links: Vec<ServiceLink>,
 }
 
 fn default_autostart() -> bool {
     true
 }
 
-/// Configuração de um servidor de banco compartilhado. Hoje só marca o serviço
-/// como tal; é struct (e não `bool`) para receber opções sem quebrar o spec.
+/// "Este serviço usa aquele": ver [`ServiceSpec::links`].
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-pub struct SharedServerConfig {}
+pub struct ServiceLink {
+    /// O serviço usado (o provedor).
+    pub service_id: String,
+    /// Prefixo das variáveis entregues (`S3` → `S3_HOST`…). `None` = o nome do provedor em
+    /// maiúsculas ([`link_env_prefix`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub env_prefix: Option<String>,
+}
+
+/// O prefixo padrão das variáveis de um vínculo: o nome do provedor em maiúsculas, com tudo que
+/// não for letra ou dígito virando `_` (`landing page` → `LANDING_PAGE`, `pg-central` → `PG_CENTRAL`).
+pub fn link_env_prefix(provider_name: &str) -> String {
+    let mut out: String = provider_name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_uppercase()
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if out.starts_with(|c: char| c.is_ascii_digit()) {
+        out.insert(0, '_');
+    }
+    out
+}
+
+/// Um prefixo escrito pela pessoa é aceito? Só `A-Z`, `0-9` e `_`, sem começar por dígito.
+pub fn is_valid_env_prefix(prefix: &str) -> bool {
+    !prefix.is_empty()
+        && !prefix.starts_with(|c: char| c.is_ascii_digit())
+        && prefix
+            .chars()
+            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+}
+
+/// Configuração de um servidor de banco compartilhado. É struct (e não `bool`) para receber
+/// opções sem quebrar o spec.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SharedServerConfig {
+    /// A trava: aceita **vínculos novos** de serviços de outros projetos? Padrão `true` (um servidor
+    /// compartilhado existe para ser usado). Desligada, os vínculos que já existem continuam.
+    #[serde(default = "default_accept_links")]
+    pub accept_links: bool,
+}
+
+impl Default for SharedServerConfig {
+    fn default() -> Self {
+        Self { accept_links: true }
+    }
+}
+
+fn default_accept_links() -> bool {
+    true
+}
 
 /// Uma rota HTTP de domínio de um serviço: qual domínio, para qual porta do
 /// container e com ou sem TLS.
@@ -426,6 +487,7 @@ mod dependencias_tests {
             depends_on: vec!["svc_db".into()],
             registry_auto_deploy: false,
             autostart: false,
+            links: Vec::new(),
         }
     }
 

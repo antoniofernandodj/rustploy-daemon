@@ -98,6 +98,25 @@ CONTROL
     minisign -S -s "$key" -t "package=$package version=$version arch=amd64" -m "$out" >/dev/null
 }
 
+# make_gui_deb <arquivo> <versão> <chave>: o app desktop de mentira (sem serviço, sem postinst).
+make_gui_deb() {
+    local out="$1" version="$2" key="$3" dir
+    dir="$(mktemp -d "$WORK/gui.XXXXXX")"
+    mkdir -p "$dir/DEBIAN" "$dir/usr/bin" "$dir/usr/libexec"
+    printf '#!/bin/sh\n# VERSION=%s\necho app\n' "$version" > "$dir/usr/bin/rustploy-gui"
+    printf '#!/bin/sh\n# VERSION=%s\n' "$version" > "$dir/usr/libexec/rustploy-gui-update"
+    chmod 755 "$dir/usr/bin/rustploy-gui" "$dir/usr/libexec/rustploy-gui-update"
+    cat > "$dir/DEBIAN/control" <<CONTROL
+Package: rustploy-gui
+Version: $version
+Architecture: amd64
+Maintainer: e2e <e2e@example.invalid>
+Description: app desktop de mentira do teste de atualização
+CONTROL
+    dpkg-deb --build --root-owner-group "$dir" "$out" >/dev/null
+    minisign -S -s "$key" -t "package=rustploy-gui version=$version arch=amd64" -m "$out" >/dev/null
+}
+
 say "montando os pacotes"
 mkdir -p "$WORK/debs"
 make_deb "$WORK/debs/v1.deb"  rustployd 1.0.0-1 normal "$WORK/e2e.key"
@@ -108,7 +127,9 @@ make_deb "$WORK/debs/downgrade.deb" rustployd 0.9.0-1 normal "$WORK/e2e.key"
 make_deb "$WORK/debs/broken-postinst.deb" rustployd 1.2.0-1 postinst-quebrado "$WORK/e2e.key"
 make_deb "$WORK/debs/crash.deb" rustployd 1.3.0-1 daemon-cai "$WORK/e2e.key"
 make_deb "$WORK/debs/v8.deb" rustployd 1.6.0-1 normal "$WORK/e2e.key"
-pass "8 pacotes assinados"
+make_gui_deb "$WORK/debs/gui-v1.deb" 0.5.0-1 "$WORK/e2e.key"
+make_gui_deb "$WORK/debs/gui-v2.deb" 0.6.0-1 "$WORK/e2e.key"
+pass "10 pacotes assinados"
 
 # ── o "servidor" ─────────────────────────────────────────────────────────────────
 say "subindo o contêiner com systemd"
@@ -247,6 +268,38 @@ check "resultado gravado" "installed" "$(last_json_field kind)"
 check "o serviço roda a 1.6.0 de novo" "1.6.0-1" "$(running_version)"
 check "o backup leva a versão que rodava, não a do dpkg" "1.1.0-1" "$(sh_in 'cat /var/lib/rustploy-update/backup/version')"
 check "e o binário dela" "VERSION=1.1.0-1" "$(sh_in "grep -o 'VERSION=[^ ]*' /var/lib/rustploy-update/backup/rustployd")"
+
+say "S12. install_app: o helper do daemon atualiza o app desktop (sem senha, sem reiniciar o daemon)"
+podman cp "$WORK/debs/gui-v1.deb" "$CONTAINER:/tmp/gui-v1.deb"
+sh_in 'dpkg -i /tmp/gui-v1.deb >/dev/null 2>&1'
+check "app de partida instalado" "0.5.0-1" "$(sh_in "dpkg-query -W -f='\${Version}' rustploy-gui")"
+daemon_before="$(running_version)"
+sh_in 'rm -f /var/lib/rustploy-update/app/last.json; find /var/lib/rustploy/updates -type f -delete'
+podman cp "$WORK/debs/gui-v2.deb" "$CONTAINER:/var/lib/rustploy/updates/gui.deb"
+podman cp "$WORK/debs/gui-v2.deb.minisig" "$CONTAINER:/var/lib/rustploy/updates/gui.deb.minisig"
+sh_in 'chown rustploy:rustploy /var/lib/rustploy/updates/*'
+reply="$(send_as rustploy '{"op":"install_app","deb":"/var/lib/rustploy/updates/gui.deb","sig":"/var/lib/rustploy/updates/gui.deb.minisig"}')"
+contains "o helper aceita o pacote do app" '"ok":true' "$reply"
+for _ in $(seq 1 60); do
+    kind="$(sh_in "grep -o '\"kind\": *\"[^\"]*\"' /var/lib/rustploy-update/app/last.json 2>/dev/null | sed 's/.*: *\"//; s/\"\$//'" || true)"
+    case "$kind" in installed|failed|rolled_back) break ;; esac
+    sleep 1
+done
+check "resultado do app gravado no estado próprio" "installed" "$kind"
+check "app atualizado" "0.6.0-1" "$(sh_in "dpkg-query -W -f='\${Version}' rustploy-gui")"
+check "binário do app trocado" "VERSION=0.6.0-1" "$(sh_in "grep -o 'VERSION=[^ ]*' /usr/bin/rustploy-gui")"
+check "o daemon não foi reiniciado nem trocado" "$daemon_before" "$(running_version)"
+check "backup do app separado do backup do daemon" "VERSION=0.5.0-1" "$(sh_in "grep -o 'VERSION=[^ ]*' /var/lib/rustploy-update/app/backup/rustploy-gui")"
+
+say "S12b. install_app recusa um pacote do daemon (e install recusa o do app)"
+sh_in 'find /var/lib/rustploy/updates -type f -delete'
+podman cp "$WORK/debs/v8.deb" "$CONTAINER:/var/lib/rustploy/updates/pkg.deb"
+podman cp "$WORK/debs/v8.deb.minisig" "$CONTAINER:/var/lib/rustploy/updates/pkg.deb.minisig"
+sh_in 'chown rustploy:rustploy /var/lib/rustploy/updates/*'
+reply="$(send_as rustploy '{"op":"install_app","deb":"/var/lib/rustploy/updates/pkg.deb","sig":"/var/lib/rustploy/updates/pkg.deb.minisig"}')"
+contains "install_app com o pacote do daemon é recusado" "pacote errado" "$reply"
+reply="$(send_install gui-v2)"
+contains "install com o pacote do app é recusado" "pacote errado" "$reply"
 
 say "S11. rollback sem backup é recusado"
 sh_in 'rm -rf /var/lib/rustploy-update/backup'

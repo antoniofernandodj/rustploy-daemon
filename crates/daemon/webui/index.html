@@ -4249,6 +4249,68 @@
               </column>
 
               <column class="form-panel">
+                <text class="u-label-cap" x-text="$t('USA (') + linkRows.length + ')'"></text>
+                <text class="u-muted" x-t>Os serviços que este usa (banco, S3, fila, cache). Cada vínculo faz este serviço esperar o outro subir e, no deploy, entrega as variáveis de conexão dele (PREFIXO_HOST, _PORT e _URL). As variáveis digitadas no projeto ou no serviço sempre ganham. De outro projeto, só um banco compartilhado.</text>
+                <column class="kv-list">
+                  <template x-for="link in linkRows" :key="link.id">
+                    <row class="kv-list__row">
+                      <button class="env__del" type="button" @click="linkDelete(link.id)">✕</button>
+                      <text class="env__sep"></text>
+                      <text class="env__key" x-text="link.index + '.'"></text>
+                      <text class="kv-list__val kv-list__val--compact" x-text="link.name"></text>
+                      <text class="u-muted" x-text="link.vars"></text>
+                    </row>
+                  </template>
+                  <text class="u-muted" x-fallback="linkRows" x-t>Nenhum vínculo.</text>
+                </column>
+                <text class="u-label-cap" x-t>VINCULAR A</text>
+                <select class="form-select" x-model="advancedLinkAddId">
+                  <option value="" x-t>escolha um serviço</option>
+                  <template x-for="linkOption in linkOptions" :key="linkOption.id">
+                    <option :value="linkOption.id" x-text="linkOption.name"></option>
+                  </template>
+                </select>
+                <text class="u-label-cap" x-t>PREFIXO DAS VARIÁVEIS (OPCIONAL)</text>
+                <input class="field__input" type="text" x-model="advancedLinkPrefix" :placeholder="$t('padrão: o nome do serviço em maiúsculas')">
+                <row class="env__add">
+                  <button class="btn btn--primary" type="button" :disabled="!advancedLinkAddId" @click="linkAdd()" x-t>Vincular</button>
+                </row>
+              </column>
+
+              <column class="form-panel">
+                <text class="u-label-cap" x-text="$t('QUEM USA ESTE SERVIÇO (') + consumerRows.length + ')'"></text>
+                <text class="u-muted" x-t>Os serviços que têm um vínculo com este. Adicionar ou tirar daqui grava no outro serviço.</text>
+                <column class="kv-list">
+                  <template x-for="consumer in consumerRows" :key="consumer.id">
+                    <row class="kv-list__row">
+                      <button class="env__del" type="button" @click="consumerDelete(consumer.id)">✕</button>
+                      <text class="env__sep"></text>
+                      <text class="kv-list__val kv-list__val--compact" x-text="consumer.name"></text>
+                    </row>
+                  </template>
+                  <text class="u-muted" x-fallback="consumerRows" x-t>Nenhum serviço usa este.</text>
+                </column>
+                <text class="u-label-cap" x-t>PASSA A USAR ESTE SERVIÇO</text>
+                <select class="form-select" x-model="advancedConsumerAddId">
+                  <option value="" x-t>escolha um serviço</option>
+                  <template x-for="consumerOption in consumerOptions" :key="consumerOption.id">
+                    <option :value="consumerOption.id" x-text="consumerOption.name"></option>
+                  </template>
+                </select>
+                <row class="env__add">
+                  <button class="btn btn--primary" type="button" :disabled="!advancedConsumerAddId" @click="consumerAdd()" x-t>Adicionar</button>
+                </row>
+                <template x-if="isSharedServer">
+                  <column>
+                    <label class="toggle">
+                      <input type="checkbox" :checked="acceptLinks" @change="toggleAcceptLinks($event.target.checked)" /><span class="toggle__track"></span><span x-t>Aceita vínculos de outros projetos</span>
+                    </label>
+                    <text class="u-muted" x-t>Desligado, este banco compartilhado recusa vínculos novos de serviços de outros projetos. Os que já existem continuam funcionando.</text>
+                  </column>
+                </template>
+              </column>
+
+              <column class="form-panel">
                 <text class="u-label-cap" x-text="$t('FILA DE PRÉ-DEPLOY (') + preDeployChecks.length + ')'"></text>
                 <text class="u-muted" x-t>
                   Roda esses Jobs em ORDEM antes do deploy (manual ou webhook),

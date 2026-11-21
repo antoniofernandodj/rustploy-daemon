@@ -13,6 +13,7 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         Command::DaemonStatus => "DaemonStatus",
         Command::CheckUpdate { .. } => "CheckUpdate",
         Command::ApplyUpdate { .. } => "ApplyUpdate",
+        Command::ApplyAppUpdate => "ApplyAppUpdate",
         Command::UpdateStatus => "UpdateStatus",
         Command::UpdateRollback => "UpdateRollback",
         Command::DeployEngineStatus => "DeployEngineStatus",
@@ -264,6 +265,7 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         | Command::ApplyUpdate { .. }
         | Command::UpdateStatus
         | Command::UpdateRollback
+        | Command::ApplyAppUpdate
         | Command::IngressRoutes
         | Command::IngressReconcile { .. }
         | Command::LogsGet { .. }

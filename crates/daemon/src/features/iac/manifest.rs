@@ -178,6 +178,7 @@ impl ServiceManifest {
             registry_auto_deploy: false,
             autostart: true,
             shared: self.shared.then(crate::domain::SharedServerConfig::default),
+            links: Vec::new(),
         }
     }
 

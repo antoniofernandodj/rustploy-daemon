@@ -138,6 +138,7 @@ mod pre_deploy_check_tests {
             registry_auto_deploy: false,
             autostart: true,
             shared: None,
+            links: Vec::new(),
         }
     }
 

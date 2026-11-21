@@ -5,9 +5,10 @@
 //! `/run/rustploy/update.sock`, `root:rustploy 0660`), e tem superfície mínima por construção:
 //!
 //! - **não abre conexão de rede**: quem baixa é o daemon; aqui só se confere e instala;
-//! - só dois verbos (`install` e `rollback`, ver `protocol.rs`);
-//! - só instala o pacote `rustployd`, só o que estiver assinado por uma chave de confiança
-//!   embutida, e nunca uma versão que não seja mais nova que a instalada;
+//! - três verbos (`install`, `rollback` e `install_app`, ver `protocol.rs`);
+//! - só instala o pacote `rustployd` (e, com `install_app`, o `rustploy-gui` desta máquina), só o
+//!   que estiver assinado por uma chave de confiança embutida, e nunca uma versão que não seja
+//!   mais nova que a instalada;
 //! - nenhuma string do cliente chega a um shell (argv direto, sem `sh -c`).
 //!
 //! Atende **um** pedido por ativação e sai: o systemd o sobe de novo no próximo.
@@ -109,15 +110,47 @@ fn main() {
         settings: &settings,
         system: &system,
     };
+    // O app desktop: outro pacote, outro backup (subdiretório do estado), sem serviço a reiniciar.
+    let app_paths = Paths {
+        allowed_dir: paths.allowed_dir.clone(),
+        state_dir: paths.state_dir.join("app"),
+        managed_binaries: vec![
+            PathBuf::from("/usr/bin/rustploy-gui"),
+            PathBuf::from("/usr/libexec/rustploy-gui-update"),
+        ],
+    };
+    let app_settings = Settings {
+        package: "rustploy-gui".into(),
+        service: None,
+        ..settings_like(&settings)
+    };
+    let app_updater = Updater {
+        paths: &app_paths,
+        settings: &app_settings,
+        system: &system,
+    };
 
     eprintln!("rustployd-update: pronto (atende um pedido e sai)");
     match listener.accept() {
-        Ok((stream, _)) => serve(stream, &updater),
+        Ok((stream, _)) => serve(stream, &updater, &app_updater),
         Err(error) => eprintln!("rustployd-update: accept: {error}"),
     }
 }
 
-fn serve<S: System>(stream: UnixStream, updater: &Updater<'_, S>) {
+/// As mesmas chaves e limites do daemon (o `Settings` não é `Clone`).
+fn settings_like(settings: &Settings) -> Settings {
+    Settings {
+        package: settings.package.clone(),
+        service: settings.service.clone(),
+        trusted_keys: settings.trusted_keys.clone(),
+        max_deb_bytes: settings.max_deb_bytes,
+        poll_interval: settings.poll_interval,
+        stable_polls: settings.stable_polls,
+        max_polls: settings.max_polls,
+    }
+}
+
+fn serve<S: System>(stream: UnixStream, updater: &Updater<'_, S>, app_updater: &Updater<'_, S>) {
     let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
     let Ok(mut writer) = stream.try_clone() else {
         eprintln!("rustployd-update: não consegui clonar a conexão");
@@ -136,7 +169,7 @@ fn serve<S: System>(stream: UnixStream, updater: &Updater<'_, S>) {
         );
         return;
     }
-    handle_line(updater, &line, &mut |response| {
+    handle_line(updater, app_updater, &line, &mut |response| {
         let _ = writer.write_all(response.to_line().as_bytes());
         let _ = writer.flush();
     });
@@ -144,7 +177,12 @@ fn serve<S: System>(stream: UnixStream, updater: &Updater<'_, S>) {
 
 /// Um pedido. Para `install` a resposta "aceito" sai **antes** de instalar: o `dpkg` reinicia o
 /// daemon, que é o cliente desta conexão, e o resultado final vai para o `last.json`.
-fn handle_line<S: System>(updater: &Updater<'_, S>, line: &str, reply: &mut dyn FnMut(Response)) {
+fn handle_line<S: System>(
+    updater: &Updater<'_, S>,
+    app_updater: &Updater<'_, S>,
+    line: &str,
+    reply: &mut dyn FnMut(Response),
+) {
     let request = match serde_json::from_str::<Request>(line.trim()) {
         Ok(request) => request,
         Err(error) => {
@@ -165,6 +203,26 @@ fn handle_line<S: System>(updater: &Updater<'_, S>, line: &str, reply: &mut dyn 
             }
             Err(message) => {
                 eprintln!("rustployd-update: recusado: {message}");
+                reply(Response::failed(message));
+            }
+        },
+        // Sem serviço a reiniciar: o daemon (cliente desta conexão) segue vivo e lê o resultado
+        // no `last.json` do estado do app.
+        Request::InstallApp { deb, sig } => match app_updater.prepare(&deb, &sig) {
+            Ok(prepared) => {
+                eprintln!(
+                    "rustployd-update: app aceito {}, instalando",
+                    prepared.facts.version
+                );
+                reply(Response::accepted(Some(prepared.facts.version.clone())));
+                let outcome = app_updater.execute(prepared);
+                eprintln!(
+                    "rustployd-update: app {:?}: {}",
+                    outcome.kind, outcome.message
+                );
+            }
+            Err(message) => {
+                eprintln!("rustployd-update: app recusado: {message}");
                 reply(Response::failed(message));
             }
         },
@@ -230,7 +288,7 @@ mod tests {
     fn replies(line: &str) -> Vec<Response> {
         with_updater(|updater| {
             let collected = RefCell::new(vec![]);
-            handle_line(updater, line, &mut |response| {
+            handle_line(updater, updater, line, &mut |response| {
                 collected.borrow_mut().push(response)
             });
             collected.into_inner()
@@ -264,6 +322,17 @@ mod tests {
             assert_eq!(replies.len(), 1, "{line:?}");
             assert!(!replies[0].ok, "{line:?}");
         }
+    }
+
+    /// O verbo do app segue as mesmas recusas do daemon: caminho fora do diretório, numa resposta.
+    #[test]
+    fn install_app_refuses_a_path_outside_the_updates_dir() {
+        let outside = replies(r#"{"op":"install_app","deb":"/etc/passwd","sig":"/etc/shadow"}"#);
+        assert_eq!(outside.len(), 1);
+        assert!(!outside[0].ok);
+        let missing = replies(r#"{"op":"install_app"}"#);
+        assert_eq!(missing.len(), 1);
+        assert!(!missing[0].ok);
     }
 
     #[test]

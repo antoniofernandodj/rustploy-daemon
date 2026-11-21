@@ -159,6 +159,14 @@ Comandos, por área (campos entre chaves):
   `ServiceDelete{id}` · `ServiceStop{service_id}` · `ServiceReload{service_id}` ·
   `ServiceConnectionInfo{service_id}` · `GetWebhookUrl{service_id}` ·
   `RegenerateWebhookToken{service_id}`
+- **Vínculos** (campo `links` do `ServiceSpec`, editado pelo `ServiceUpdate`): `links:
+  [{service_id, env_prefix?}]` diz quais serviços este **usa**. Cada vínculo vira dependência
+  (ordem do deploy em árvore e do boot) e, no deploy, entrega `<PREFIXO>_HOST`, `_PORT` e `_URL`
+  do outro (prefixo padrão: o nome dele em maiúsculas), com a **menor** precedência: as variáveis
+  do projeto e do serviço ganham. De outro projeto, só um banco compartilhado, e só se a trava dele
+  (`shared.accept_links`) aceitar; o daemon concede o acesso entre projetos sozinho. Recusas:
+  `LinkNotAllowed`, `LinkRefused`, `DependencyCycle`. Num serviço **Compose**, as variáveis só
+  chegam ao container se o YAML as referenciar (`${DB_URL}`), como qualquer variável.
 - **Deploys**: `DeployStart{service_id}` (só aquele serviço) ·
   `DeployWithDependencies{service_id, skip_running?}` (o serviço **e a árvore de dependências dele**,
   na ordem: quem não depende de ninguém primeiro; resposta `DeployBatch` com cada serviço e seu
@@ -299,7 +307,8 @@ Comandos, por área (campos entre chaves):
   `EnvBackupRestore{snapshot}` · `UpdateStatus` (andamento ou resultado da última
   atualização) · `ApplyUpdate{allow_active_deploys?}` e `UpdateRollback` (instalam/
   desfazem uma versão: **recusados** ao agente, a menos que o dono ligue
-  `[update] allow_agent_apply`)
+  `[update] allow_agent_apply`) · `ApplyAppUpdate` (atualiza o app desktop **desta
+  máquina** pelo helper root, sem senha; mesma trava; responde `AppUpdated{from,to}`)
 - **Estado em git (`state_git`)**: `StateGitStatus` (situação da sincronização) ·
   `StateGitConfigure{mode, remote?, branch?, provider_id?}` (`off` | `commit` |
   `sync`; ligar é recusado enquanto houver valor em claro, veja `InfraAudit`) ·

@@ -2470,10 +2470,14 @@ async fn tcp_ports_editor_lists_adds_deletes_and_suggests() {
     // Apagar: a lista volta sem a porta, também com `host_port` nulo.
     let deleted = eval_str(
         &page,
-        &format!("(async () => {{ const s = Alpine.store('app'); s.serviceDetail.spec.tcp_ports = [{{ host_port: 20002 }}, {{ host_port: 20003, container_port: 9001, label: 'console' }}]; s.serviceDetail.spec.host_port = 20002; await {d}.deleteTcpPort(20002); const x = window.__saved[window.__saved.length - 1]; return JSON.stringify({{ msg: x.msg, host_port: x.spec.host_port, tcp: x.spec.tcp_ports }}); }})()"),
+        &format!("(async () => {{ const s = Alpine.store('app'); s.serviceDetail.spec.tcp_ports = [{{ host_port: 20002 }}, {{ host_port: 20003, container_port: 9001, label: 'console' }}]; s.serviceDetail.spec.host_port = 20002; const before = window.__saved.length; window.confirm = () => false; await {d}.deleteTcpPort(20002); const refused = window.__saved.length === before; window.confirm = () => true; await {d}.deleteTcpPort(20002); const x = window.__saved[window.__saved.length - 1]; return JSON.stringify({{ refused, msg: x.msg, host_port: x.spec.host_port, tcp: x.spec.tcp_ports }}); }})()"),
     )
     .await;
     let del: serde_json::Value = serde_json::from_str(&deleted).unwrap();
+    assert_eq!(
+        del["refused"], true,
+        "recusar a confirmação não remove a porta"
+    );
     assert_eq!(del["msg"], "port removed");
     assert!(del["host_port"].is_null());
     assert_eq!(
@@ -2504,4 +2508,93 @@ async fn tcp_ports_editor_lists_adds_deletes_and_suggests() {
         Vec::<String>::new(),
         "sem erros de JS no console"
     );
+}
+
+/// Vínculos (aba Advanced, docs/plano-recursos-e-vinculos.md): as opções são o mesmo projeto e só o
+/// banco compartilhado destravado de outro projeto; vincular grava `links` com o prefixo em
+/// maiúsculas; desfazer pede confirmação (recusar não grava); "quem usa" lista os consumidores.
+#[tokio::test]
+async fn links_section_lists_options_saves_and_confirms() {
+    let addr = spawn_static_server().await;
+    let (browser, _handler) = launch().await;
+    let page = open_page(&browser, addr).await;
+    seed_connected(&page).await;
+
+    page.evaluate(
+        r#"(() => {
+            const s = Alpine.store('app');
+            const svc = (id, name, project_id, extra) => ({ service: { id, status: 'Running',
+                spec: Object.assign({ name, project_id, port: 5432, links: [] }, extra || {}) },
+                project_name: project_id === 'prj_1' ? 'loja' : 'infra' });
+            s.snap.services = [
+                svc('svc_api', 'api', 'prj_1'),
+                svc('svc_db', 'db', 'prj_1'),
+                svc('svc_worker', 'worker', 'prj_1', { links: [{ service_id: 'svc_db' }] }),
+                svc('svc_outro', 'outro', 'prj_2'),
+                svc('svc_pg', 'pg', 'prj_2', { shared: { accept_links: true } }),
+                svc('svc_pg_trancado', 'pg2', 'prj_2', { shared: { accept_links: false } }),
+            ];
+            s.view = 'service';
+            s.selectedServiceId = 'svc_api';
+            s.serviceTab = 'advanced';
+            s.serviceLoading = false;
+            s.serviceDeployments = [];
+            s.serviceDetail = {
+                id: 'svc_api', status: 'Running', live_container_id: null,
+                spec: { name: 'api', port: 3000, replicas: 1, project_id: 'prj_1', env_vars: [], domains: [],
+                    links: [], depends_on: [],
+                    source: { Registry: { image: 'nginx' } },
+                    healthcheck: { kind: 'None', interval_secs: 5, timeout_secs: 3, retries: 10, start_period_secs: 5 } },
+            };
+            window.__saved = [];
+            s.saveServiceSpec = async (spec, msg) => { window.__saved.push({ spec, msg }); return { ok: true }; };
+        })()"#,
+    )
+    .await
+    .expect("abre a aba Advanced do api");
+
+    let d = "Alpine.$data(document.querySelector('[x-data=\"serviceDetail\"]'))";
+    let options: Vec<String> = serde_json::from_str(
+        &eval_str(
+            &page,
+            &format!("(() => JSON.stringify({d}.linkOptions.map((o) => o.id)))()"),
+        )
+        .await,
+    )
+    .unwrap();
+    assert_eq!(
+        options,
+        vec!["svc_db", "svc_worker", "svc_pg"],
+        "mesmo projeto + compartilhado aberto"
+    );
+    assert!(
+        visible(
+            &page,
+            "[x-data=\"serviceDetail\"] button[\\@click=\"linkAdd()\"]"
+        )
+        .await,
+        "a aba Advanced deveria mostrar a seção de vínculos"
+    );
+
+    let saved = eval_str(
+        &page,
+        &format!("(async () => {{ {d}.advancedLinkAddId = 'svc_db'; {d}.advancedLinkPrefix = 'main'; await {d}.linkAdd(); const x = window.__saved.at(-1); return JSON.stringify(x.spec.links); }})()"),
+    )
+    .await;
+    assert_eq!(saved, r#"[{"service_id":"svc_db","env_prefix":"MAIN"}]"#);
+
+    let deleted = eval_str(
+        &page,
+        &format!("(async () => {{ Alpine.store('app').serviceDetail.spec.links = [{{ service_id: 'svc_db' }}]; const before = window.__saved.length; window.confirm = () => false; await {d}.linkDelete('svc_db'); const refused = window.__saved.length === before; window.confirm = () => true; await {d}.linkDelete('svc_db'); return JSON.stringify({{ refused, links: window.__saved.at(-1).spec.links }}); }})()"),
+    )
+    .await;
+    assert_eq!(deleted, r#"{"refused":true,"links":[]}"#);
+
+    // "Quem usa": do lado do db, o worker aparece.
+    let consumers = eval_str(
+        &page,
+        r#"(() => { const s = Alpine.store('app'); s.selectedServiceId = 'svc_db'; s.serviceDetail = Object.assign({}, s.serviceDetail, { id: 'svc_db', spec: Object.assign({}, s.serviceDetail.spec, { name: 'db', links: [] }) }); return JSON.stringify(Alpine.$data(document.querySelector('[x-data="serviceDetail"]')).consumerRows.map((c) => c.id)); })()"#,
+    )
+    .await;
+    assert_eq!(consumers, r#"["svc_worker"]"#);
 }

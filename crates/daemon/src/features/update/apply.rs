@@ -26,7 +26,7 @@ use tokio::{
 };
 use update_core::{
     outcome::{OutcomeKind, UpdateOutcome, read_outcome},
-    release::{debian_architecture, select_package_assets},
+    release::{debian_architecture, package_version, select_package_assets},
 };
 
 /// Onde o helper escuta (`rustployd-update.socket`).
@@ -324,6 +324,133 @@ impl UpdateApplier {
             Err(message)
         }
     }
+}
+
+/// Quanto o `ApplyAppUpdate` espera o helper terminar o `dpkg -i` do app.
+const APP_INSTALL_TIMEOUT: Duration = Duration::from_secs(300);
+
+impl UpdateApplier {
+    /// `ApplyAppUpdate`: atualiza o **app desktop** (`rustploy-gui`) desta máquina pelo helper
+    /// root do daemon, sem a senha que o `pkexec` do próprio app pede. Só faz sentido onde o app
+    /// está instalado (um desktop que também roda um daemon); num servidor sem o app, recusa.
+    ///
+    /// Diferente do `ApplyUpdate`, o daemon não reinicia: espera o helper terminar e devolve o
+    /// resultado final. Devolve `(versão instalada antes, versão nova)`.
+    pub async fn apply_app(
+        &self,
+        release: &LatestRelease,
+        repo: &str,
+    ) -> Result<(String, String), String> {
+        if !self.is_helper_available() {
+            return Err("o helper de atualização não está disponível nesta máquina".into());
+        }
+        let installed = installed_package_version("rustploy-gui")
+            .await
+            .ok_or("o app desktop (rustploy-gui) não está instalado nesta máquina")?;
+        let architecture = debian_architecture()?;
+        let available = package_version(&release.assets, repo, "rustploy-gui", architecture)
+            .ok_or_else(|| {
+                format!(
+                    "a release {} não traz o pacote do app para {architecture}",
+                    release.tag
+                )
+            })?;
+        if !update_core::dpkg_version::is_newer(&available.full, &installed).unwrap_or(false) {
+            return Err(format!(
+                "o app já está na versão mais recente ({installed})"
+            ));
+        }
+
+        let (deb_asset, signature_asset) = select_package_assets(
+            &release.assets,
+            repo,
+            "rustploy-gui",
+            architecture,
+            &release.tag,
+        )?;
+        prepare_updates_dir(&self.paths.updates_dir)
+            .map_err(|error| format!("diretório de atualizações: {error}"))?;
+        let deb_path = self.paths.updates_dir.join(&deb_asset.name);
+        let signature_path = self.paths.updates_dir.join(&signature_asset.name);
+        let user_agent = format!("rustployd/{}", env!("CARGO_PKG_VERSION"));
+        let headers = [("user-agent", user_agent.as_str())];
+        https_client::download(
+            &deb_asset.url,
+            &headers,
+            &deb_path,
+            MAX_DEB_BYTES,
+            DOWNLOAD_TIMEOUT,
+            DOWNLOAD_HOSTS,
+        )
+        .await
+        .map_err(|error| format!("download do pacote do app: {error}"))?;
+        https_client::download(
+            &signature_asset.url,
+            &headers,
+            &signature_path,
+            MAX_SIGNATURE_BYTES,
+            DOWNLOAD_TIMEOUT,
+            DOWNLOAD_HOSTS,
+        )
+        .await
+        .map_err(|error| format!("download da assinatura do app: {error}"))?;
+
+        let started = now_unix();
+        let request = serde_json::json!({
+            "op": "install_app",
+            "deb": deb_path.to_string_lossy(),
+            "sig": signature_path.to_string_lossy(),
+        });
+        let reply = helper_call(&self.paths.socket, &request, HELPER_ACCEPT_TIMEOUT).await?;
+        if !reply.ok {
+            return Err(reply
+                .error
+                .unwrap_or_else(|| "o helper recusou o pacote do app".into()));
+        }
+
+        // O helper responde "aceito" antes do `dpkg -i`; o resultado vai para o last.json do app.
+        let outcome_file = self.app_outcome_file();
+        let deadline = tokio::time::Instant::now() + APP_INSTALL_TIMEOUT;
+        loop {
+            if let Ok(Some(outcome)) = read_outcome(&outcome_file)
+                && outcome.at_unix >= started
+                && outcome.kind != OutcomeKind::InProgress
+            {
+                return match outcome.kind {
+                    OutcomeKind::Installed => Ok((installed, outcome.version)),
+                    _ => Err(format!("a instalação do app falhou: {}", outcome.message)),
+                };
+            }
+            if tokio::time::Instant::now() >= deadline {
+                return Err(
+                    "o helper não terminou a instalação do app a tempo; veja o journal de \
+                     rustployd-update"
+                        .into(),
+                );
+            }
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+    }
+
+    /// O `last.json` do app: o helper guarda o estado dele num subdiretório (`app/`) do seu.
+    fn app_outcome_file(&self) -> PathBuf {
+        self.paths
+            .outcome_file
+            .parent()
+            .map(|dir| dir.join("app").join("last.json"))
+            .unwrap_or_else(|| PathBuf::from("/var/lib/rustploy-update/app/last.json"))
+    }
+}
+
+/// A versão instalada de um pacote (`dpkg-query`), ou `None` se ele não está instalado.
+async fn installed_package_version(package: &str) -> Option<String> {
+    let output = tokio::process::Command::new("dpkg-query")
+        .args(["-W", "-f=${Version}", package])
+        .output()
+        .await
+        .ok()?;
+    let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    (output.status.success() && !version.is_empty()).then_some(version)
 }
 
 fn from_outcome(

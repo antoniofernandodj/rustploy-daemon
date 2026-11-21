@@ -479,6 +479,7 @@ fn test_compose_spec(name: String, project_id: String) -> ServiceSpec {
         registry_auto_deploy: false,
         autostart: true,
         shared: None,
+        links: Vec::new(),
     }
 }
 
@@ -516,6 +517,7 @@ mod tests {
             registry_auto_deploy: false,
             autostart: true,
             shared: None,
+            links: Vec::new(),
         }
     }
 

@@ -797,6 +797,11 @@ pub enum Command {
     /// Volta os binários para os do backup da última atualização (o único caminho que aceita
     /// uma versão menor). Mesma trava do agente MCP que `ApplyUpdate`. Resposta: `Ok`.
     UpdateRollback,
+    /// Atualiza o **app desktop** (`rustploy-gui`) desta máquina para o da última release, pelo
+    /// helper root do daemon (sem a senha do `pkexec`). Recusa se o app não está instalado aqui ou
+    /// já está na versão mais nova. Espera a instalação terminar. Mesma trava do agente MCP que
+    /// `ApplyUpdate`. O app aberto segue na versão antiga até ser reaberto. Resposta: `AppUpdated`.
+    ApplyAppUpdate,
 
     // Git providers (Gitea OAuth2 / PAT)
     GitProviderList,

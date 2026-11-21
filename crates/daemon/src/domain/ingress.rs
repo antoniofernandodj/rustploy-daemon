@@ -67,6 +67,7 @@ mod ingress_tests {
             depends_on: vec![],
             registry_auto_deploy: false,
             autostart: true,
+            links: Vec::new(),
         }
     }
 

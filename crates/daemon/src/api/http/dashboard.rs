@@ -248,6 +248,7 @@ mod tests {
                 registry_auto_deploy: false,
                 autostart: true,
                 shared: None,
+                links: Vec::new(),
             },
             compose_project: None,
             status,

@@ -253,8 +253,10 @@ pub async fn rpc(state: &AppState, command: Value) -> Result<Value, ToolError> {
         .map_err(|e| ToolError::bad_request(format!("Command inválido: {e}")))?;
     // Atualizar derruba a API e troca o binário: é decisão de uma pessoa, na UI. O agente só
     // pode se o dono ligar `[update] allow_agent_apply` no config.toml.
-    if matches!(cmd, Command::ApplyUpdate { .. } | Command::UpdateRollback)
-        && !state.update_applier.allow_agent_apply()
+    if matches!(
+        cmd,
+        Command::ApplyUpdate { .. } | Command::UpdateRollback | Command::ApplyAppUpdate
+    ) && !state.update_applier.allow_agent_apply()
     {
         return Err(ToolError::new(
             "forbidden",

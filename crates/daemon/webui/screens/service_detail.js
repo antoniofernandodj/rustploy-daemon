@@ -1230,6 +1230,8 @@ document.addEventListener("alpine:init", () => {
     },
 
     async deleteDomain(domain) {
+
+      if (!confirm(t`Remover o domínio ${domain}?` + "\n\n" + t("O domínio deixa de apontar para este serviço agora."))) return;
       // JSON round-trip (não structuredClone): this.svc.spec é um Proxy
       // reativo do Alpine — o clonador estrutural nativo do browser não
       // sabe copiá-lo (DataCloneError). O JSON round-trip descarta a
@@ -1297,6 +1299,8 @@ document.addEventListener("alpine:init", () => {
     },
 
     async deleteTcpPort(hostPort) {
+
+      if (!confirm(t`Remover a porta TCP ${hostPort}?` + "\n\n" + t("A porta do host deixa de encaminhar para este serviço agora."))) return;
       const spec = this.tcpSpec();
       spec.tcp_ports = spec.tcp_ports.filter((route) => route.host_port !== hostPort);
       await this.store.saveServiceSpec(spec, t("porta removida"));
@@ -1384,6 +1388,9 @@ document.addEventListener("alpine:init", () => {
     advancedAutostart: true,
     advancedRegistryAutoDeploy: false,
     advancedDependencyAddId: "",
+    advancedLinkAddId: "",
+    advancedLinkPrefix: "",
+    advancedConsumerAddId: "",
 
     initAdvancedForm() {
       const spec = this.svc?.spec;
@@ -1393,6 +1400,9 @@ document.addEventListener("alpine:init", () => {
       this.advancedAutostart = spec.autostart !== false;
       this.advancedRegistryAutoDeploy = spec.registry_auto_deploy === true;
       this.advancedDependencyAddId = "";
+      this.advancedLinkAddId = "";
+      this.advancedLinkPrefix = "";
+      this.advancedConsumerAddId = "";
       this.advancedPreDeployCheckAddJobId = "";
     },
 
@@ -1445,9 +1455,144 @@ document.addEventListener("alpine:init", () => {
       if (saveServiceSpecResult.ok) this.advancedDependencyAddId = "";
     },
     async dependencyDelete(dependencyId) {
+      if (!confirm(t("Remover dependência?") + "\n\n" + t("Este serviço deixa de esperar essa dependência subir antes dele."))) return;
       const spec = JSON.parse(JSON.stringify(this.svc.spec));
       spec.depends_on = (spec.depends_on || []).filter((existingId) => existingId !== dependencyId);
       await this.store.saveServiceSpec(spec, t("dependência removida"));
+    },
+
+    // ── Vínculos (spec.links): os serviços que este USA ─────────────────────
+    // Ver docs/plano-recursos-e-vinculos.md. Candidatos de TODOS os projetos (snapshot): de outro
+    // projeto, só banco compartilhado com a trava aceitando. Efeito imediato, como as dependências.
+    get allServicesForLinks() {
+      return ((this.store.snap && this.store.snap.services) || []).map((entry) => ({
+        svc: entry.service,
+        proj: entry.project_name || "",
+      }));
+    },
+    linkEnvPrefix(name) {
+      let prefix = String(name || "").replace(/[^A-Za-z0-9]/g, "_").toUpperCase();
+      if (/^[0-9]/.test(prefix)) prefix = "_" + prefix;
+      return prefix;
+    },
+    linkDisplayName(pair) {
+      const name = pair.svc.spec.name;
+      if (pair.svc.spec.project_id !== this.svc?.spec?.project_id) return t`${name} (projeto ${pair.proj})`;
+      return name;
+    },
+    get linkRows() {
+      const byId = new Map(this.allServicesForLinks.map((pair) => [pair.svc.id, pair]));
+      return (this.svc?.spec?.links || []).map((link, index) => {
+        const pair = byId.get(link.service_id);
+        const prefix = link.env_prefix || this.linkEnvPrefix(pair ? pair.svc.spec.name : "");
+        return {
+          id: link.service_id,
+          index: index + 1,
+          name: pair ? this.linkDisplayName(pair) : t`(serviço removido: ${link.service_id})`,
+          vars: `${prefix}_HOST · ${prefix}_PORT · ${prefix}_URL`,
+        };
+      });
+    },
+    get linkOptions() {
+      const already = new Set((this.svc?.spec?.links || []).map((link) => link.service_id));
+      const projectId = this.svc?.spec?.project_id;
+      return this.allServicesForLinks
+        .filter((pair) => pair.svc.id !== this.svc?.id && !already.has(pair.svc.id))
+        .filter((pair) => {
+          if (pair.svc.spec.project_id === projectId) return true;
+          const shared = pair.svc.spec.shared;
+          return shared != null && shared.accept_links !== false;
+        })
+        .map((pair) => ({ id: pair.svc.id, name: this.linkDisplayName(pair) }));
+    },
+    get consumerRows() {
+      return this.allServicesForLinks
+        .filter((pair) => (pair.svc.spec.links || []).some((link) => link.service_id === this.svc?.id))
+        .map((pair) => ({ id: pair.svc.id, name: this.linkDisplayName(pair) }));
+    },
+    get consumerOptions() {
+      const projectId = this.svc?.spec?.project_id;
+      const isShared = this.svc?.spec?.shared != null;
+      return this.allServicesForLinks
+        .filter((pair) => pair.svc.id !== this.svc?.id)
+        .filter((pair) => !(pair.svc.spec.links || []).some((link) => link.service_id === this.svc?.id))
+        .filter((pair) => pair.svc.spec.project_id === projectId || isShared)
+        .map((pair) => ({ id: pair.svc.id, name: this.linkDisplayName(pair) }));
+    },
+    get isSharedServer() {
+      return this.svc?.spec?.shared != null;
+    },
+    get acceptLinks() {
+      return this.svc?.spec?.shared?.accept_links !== false;
+    },
+    async linkAdd() {
+      const targetId = this.advancedLinkAddId;
+      if (!targetId) return;
+      const prefix = (this.advancedLinkPrefix || "").trim().toUpperCase();
+      const spec = JSON.parse(JSON.stringify(this.svc.spec));
+      const link = { service_id: targetId };
+      if (prefix) link.env_prefix = prefix;
+      spec.links = [...(spec.links || []).filter((existing) => existing.service_id !== targetId), link];
+      const result = await this.store.saveServiceSpec(spec, t("vínculo adicionado"));
+      if (result.ok) {
+        this.advancedLinkAddId = "";
+        this.advancedLinkPrefix = "";
+      }
+    },
+    async linkDelete(targetId) {
+      if (!confirm(t("Desfazer o vínculo?") + "\n\n" + t("Este serviço deixa de esperar o outro subir e, no próximo deploy, deixa de receber as variáveis de conexão dele. As variáveis que você digitou continuam."))) return;
+      const spec = JSON.parse(JSON.stringify(this.svc.spec));
+      spec.links = (spec.links || []).filter((link) => link.service_id !== targetId);
+      await this.store.saveServiceSpec(spec, t("vínculo desfeito"));
+    },
+    // "Quem usa este serviço": grava no serviço consumidor.
+    async updateOtherSpec(otherId, mutate, okMessage) {
+      const getResponse = await this.store.api.rpcChecked({ ServiceGet: { id: otherId } });
+      if (!getResponse.ok || !getResponse.value?.Service) {
+        this.store.toastError(t("erro ao carregar o serviço"));
+        return getResponse;
+      }
+      const spec = getResponse.value.Service.spec;
+      mutate(spec);
+      const updateResponse = await this.store.api.rpcChecked({ ServiceUpdate: { id: otherId, spec } });
+      if (updateResponse.ok) {
+        this.store.toastOk(okMessage);
+        await this.store.refreshNow();
+        await this.store.fetchServiceDetail(this.svc.id);
+      } else {
+        this.store.toastError("erro: " + updateResponse.error);
+      }
+      return updateResponse;
+    },
+    async consumerAdd() {
+      const consumerId = this.advancedConsumerAddId;
+      const selfId = this.svc?.id;
+      if (!consumerId || !selfId) return;
+      const result = await this.updateOtherSpec(
+        consumerId,
+        (spec) => {
+          spec.links = [...(spec.links || []).filter((link) => link.service_id !== selfId), { service_id: selfId }];
+        },
+        t("vínculo adicionado")
+      );
+      if (result.ok) this.advancedConsumerAddId = "";
+    },
+    async consumerDelete(consumerId) {
+      const selfId = this.svc?.id;
+      if (!confirm(t("Desfazer o vínculo?") + "\n\n" + t("O outro serviço deixa de esperar este subir e, no próximo deploy, deixa de receber as variáveis de conexão dele. As variáveis que foram digitadas lá continuam."))) return;
+      await this.updateOtherSpec(
+        consumerId,
+        (spec) => {
+          spec.links = (spec.links || []).filter((link) => link.service_id !== selfId);
+        },
+        t("vínculo desfeito")
+      );
+    },
+    async toggleAcceptLinks(accept) {
+      if (!this.isSharedServer) return;
+      const spec = JSON.parse(JSON.stringify(this.svc.spec));
+      spec.shared = { ...(spec.shared || {}), accept_links: !!accept };
+      await this.store.saveServiceSpec(spec, t("salvo"));
     },
 
     // ── Fila de pré-deploy check ────────────────────────────────────────
@@ -1508,6 +1653,8 @@ document.addEventListener("alpine:init", () => {
     },
 
     async preDeployCheckDelete(jobId) {
+
+      if (!confirm(t("Remover o check da fila?") + "\n\n" + t("O job deixa de rodar antes de cada deploy deste serviço. O job em si não é apagado."))) return;
       const spec = JSON.parse(JSON.stringify(this.svc.spec));
       spec.pre_deploy_job_ids = this.preDeployQueueIds.filter((preDeployQueueId) => preDeployQueueId !== jobId);
       spec.pre_deploy_job_id = null;

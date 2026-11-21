@@ -15,6 +15,9 @@ use crate::protocol::{Command, Response as RpResponse};
 pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
     match cmd {
         Command::ServiceCreate(spec) => {
+            if let Err(resp) = prepare_links(&state, &spec, None).await {
+                return resp;
+            }
             crate::features::services::create::handle(state.services_ctx(), spec).await
         }
         Command::ServiceList { project_id } => service_list::handle(state, project_id).await,
@@ -23,6 +26,9 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         }
         Command::ServiceGet { id } => service_get::handle(state, id).await,
         Command::ServiceUpdate { id, spec } => {
+            if let Err(resp) = prepare_links(&state, &spec, Some(&id)).await {
+                return resp;
+            }
             crate::features::services::update::handle(state.services_ctx(), id, spec).await
         }
         Command::ServiceDelete { id } => {
@@ -42,4 +48,28 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         // ProjectList/…), então boxamos o future para quebrar a recursão async.
         _ => RpResponse::err("NotImplemented", "command not yet implemented"),
     }
+}
+
+/// Antes de gravar um spec: valida os vínculos e concede ao projeto o acesso aos bancos
+/// compartilhados de outros projetos que ele passa a usar (o mesmo `SharedAccessGrant` da tela do
+/// banco, que liga a rede e recusa ciclo). Conceder antes de gravar: se a gravação falhar depois, o
+/// acesso fica, o que é inofensivo; o contrário deixaria um vínculo sem rede.
+async fn prepare_links(
+    state: &AppState,
+    spec: &crate::domain::ServiceSpec,
+    self_id: Option<&str>,
+) -> Result<(), RpResponse> {
+    let plan = crate::features::services::links::check(&state.db, spec, self_id).await?;
+    for server_id in plan.grant_servers {
+        let granted = crate::api::handlers::databases::shared_access::grant(
+            state.clone(),
+            server_id,
+            spec.project_id.clone(),
+        )
+        .await;
+        if let RpResponse::Err { .. } = granted {
+            return Err(granted);
+        }
+    }
+    Ok(())
 }

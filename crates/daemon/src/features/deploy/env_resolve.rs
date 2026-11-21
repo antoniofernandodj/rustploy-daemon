@@ -91,6 +91,117 @@ pub async fn resolve(
     secrets: &SecretsManager,
     svc: &Service,
 ) -> Result<Vec<(String, String)>> {
+    // Vínculos primeiro, com a menor precedência: o que o projeto e o serviço definem por cima ganha.
+    let mut env_map: HashMap<String, String> =
+        link_env(db, secrets, svc).await.into_iter().collect();
+    env_map.extend(resolve_own(db, secrets, svc).await?);
+    Ok(env_map.into_iter().collect())
+}
+
+/// As variáveis que os **vínculos** do serviço entregam (`<PREFIXO>_HOST`, `_PORT`, `_URL`). Um alvo
+/// que sumiu é pulado com aviso (o deploy não falha por isso). Ver `docs/plano-recursos-e-vinculos.md`.
+///
+/// - **Mesmo projeto**: host = o nome interno do provedor; a URL usa as credenciais dele (as mesmas que
+///   a aba Conexão mostra).
+/// - **Banco compartilhado de outro projeto**: host = o alias global; a URL é a do **database
+///   gerenciado deste projeto** nesse servidor (nunca a do superusuário do servidor). Sem database
+///   gerenciado, ou com mais de um, só `HOST` e `PORT`.
+/// - Provedor HTTP (S3, um app): `http://host:porta`, sem credenciais na URL.
+pub async fn link_env(db: &Db, secrets: &SecretsManager, svc: &Service) -> Vec<(String, String)> {
+    use crate::platform::connection::{self, ConnTarget};
+    let mut out = Vec::new();
+    for link in &svc.spec.links {
+        let target = match crate::store::services::get(db, &link.service_id).await {
+            Ok(Some(t)) => t,
+            _ => {
+                warn!(service_id = %svc.id, linked = %link.service_id, "vínculo para um serviço que não existe; ignorado");
+                continue;
+            }
+        };
+        let prefix = link
+            .env_prefix
+            .clone()
+            .unwrap_or_else(|| crate::domain::link_env_prefix(&target.spec.name));
+        let product = target.spec.product.as_deref();
+        let port = target.spec.port;
+        let other_project = target.spec.project_id != svc.spec.project_id;
+
+        let host = if other_project {
+            crate::features::deploy::shared_net::alias_of(&target)
+        } else {
+            match &target.spec.source {
+                crate::domain::ServiceSource::Compose(c) => {
+                    connection::compose_host(&c.content, c.ingress_service.as_deref(), product)
+                        .unwrap_or_else(|| crate::domain::app_network_alias(&target.spec.name))
+                }
+                _ => crate::domain::app_network_alias(&target.spec.name),
+            }
+        };
+
+        let url = if connection::scheme(product) == Some("http") {
+            Some(format!("http://{host}:{port}"))
+        } else if other_project {
+            managed_url_for(db, &target, &svc.spec.project_id).await
+        } else {
+            // As credenciais do provedor, lidas sem os vínculos dele (não há recursão).
+            match resolve_own(db, secrets, &target).await {
+                Ok(target_env) => {
+                    let target_env: HashMap<String, String> = target_env.into_iter().collect();
+                    let (database, user, password, auth_source) =
+                        connection::credentials(product, |k| target_env.get(k).cloned());
+                    connection::scheme(product).map(|_| {
+                        connection::connection_url(
+                            product,
+                            &ConnTarget {
+                                host: &host,
+                                port,
+                                database: database.as_deref(),
+                                user: user.as_deref(),
+                                password: password.as_deref(),
+                                auth_source,
+                            },
+                        )
+                    })
+                }
+                Err(e) => {
+                    warn!(service_id = %svc.id, linked = %target.id, error = %e, "vínculo: não consegui ler as variáveis do provedor; sem _URL");
+                    None
+                }
+            }
+        };
+
+        out.push((format!("{prefix}_HOST"), host));
+        out.push((format!("{prefix}_PORT"), port.to_string()));
+        if let Some(url) = url {
+            out.push((format!("{prefix}_URL"), url));
+        }
+    }
+    out
+}
+
+/// A URL do database gerenciado de `project_id` no servidor compartilhado `server`, se houver
+/// exatamente um.
+async fn managed_url_for(db: &Db, server: &Service, project_id: &str) -> Option<String> {
+    let engine =
+        crate::features::databases::shared_db::Engine::from_kind(server.spec.product.as_deref())?;
+    let rows = crate::store::managed_database::list(db, &server.id)
+        .await
+        .ok()?;
+    let mine: Vec<_> = rows.iter().filter(|r| r.project_id == project_id).collect();
+    match mine.as_slice() {
+        [only] => Some(
+            crate::features::databases::managed_view::to_view(server, engine, only).connection_url,
+        ),
+        _ => None,
+    }
+}
+
+/// Projeto + serviço, **sem** os vínculos (o que o serviço declara por si).
+pub(crate) async fn resolve_own(
+    db: &Db,
+    secrets: &SecretsManager,
+    svc: &Service,
+) -> Result<Vec<(String, String)>> {
     let mut env_map = resolve_project_env(db, secrets, &svc.spec.project_id).await?;
 
     for ev in &svc.spec.env_vars {
@@ -205,6 +316,85 @@ pub async fn resolve_job(
 mod tests {
     use super::*;
     use std::sync::Arc;
+
+    /// Vínculo no mesmo projeto: o `api` recebe `DB_HOST`/`DB_PORT`/`DB_URL` do `db` (Postgres em
+    /// Compose), e a variável que a pessoa digitou ganha da injetada.
+    #[tokio::test]
+    async fn vinculo_entrega_host_porta_e_url_e_a_variavel_digitada_ganha() {
+        use crate::domain::{ComposeSource, EnvVar, EnvVarValue, ServiceLink, ServiceSource};
+        let dir = tempfile::tempdir().unwrap();
+        let db = Arc::new(crate::store::connect(dir.path()).await.unwrap());
+        db.seed_project_for_test("p1");
+        db.seed_service_for_test("p1", "s_db");
+        db.seed_service_for_test("p1", "s_api");
+        let plain = |k: &str, v: &str| EnvVar {
+            key: k.into(),
+            value: EnvVarValue::Plain(v.into()),
+        };
+        db.infra()
+            .update(|st| {
+                for svc in &mut st.projects[0].services {
+                    if svc.id == "s_db" {
+                        svc.spec.name = "db".into();
+                        svc.spec.port = 5432;
+                        svc.spec.product = Some("postgres".into());
+                        svc.spec.source = ServiceSource::Compose(ComposeSource {
+                            content: "services:\n  rp_db:\n    image: postgres:18\n".into(),
+                            ingress_service: None,
+                        });
+                        svc.spec.env_vars = vec![
+                            plain("POSTGRES_USER", "app"),
+                            plain("POSTGRES_PASSWORD", "segredo"),
+                            plain("POSTGRES_DB", "loja"),
+                        ];
+                    } else {
+                        svc.spec.name = "api".into();
+                        svc.spec.links = vec![ServiceLink {
+                            service_id: "s_db".into(),
+                            env_prefix: None,
+                        }];
+                        svc.spec.env_vars = vec![plain("DB_PORT", "6543")];
+                    }
+                }
+                Ok(())
+            })
+            .unwrap();
+        let secrets = SecretsManager::new(db.clone()).unwrap();
+        let api = crate::store::services::get(&db, "s_api")
+            .await
+            .unwrap()
+            .unwrap();
+        let map: HashMap<_, _> = resolve(&db, &secrets, &api)
+            .await
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(map["DB_HOST"], "rp_db");
+        assert_eq!(
+            map["DB_PORT"], "6543",
+            "a variável digitada ganha da injetada"
+        );
+        assert!(
+            map["DB_URL"].starts_with("postgresql://app:segredo@rp_db:5432/loja"),
+            "{}",
+            map["DB_URL"]
+        );
+
+        // O provedor não recebe nada do consumidor, e um vínculo para um serviço apagado é pulado.
+        let db_svc = crate::store::services::get(&db, "s_db")
+            .await
+            .unwrap()
+            .unwrap();
+        let own: HashMap<_, _> = resolve(&db, &secrets, &db_svc)
+            .await
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert!(!own.contains_key("API_HOST"));
+        let mut orphan = api.clone();
+        orphan.spec.links[0].service_id = "nao_existe".into();
+        assert!(link_env(&db, &secrets, &orphan).await.is_empty());
+    }
 
     #[tokio::test]
     async fn secret_ausente_vira_erro_que_diz_qual_e_onde() {

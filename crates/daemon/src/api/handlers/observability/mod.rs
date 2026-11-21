@@ -23,6 +23,7 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         } => apply_update::handle(state, allow_active_deploys).await,
         Command::UpdateStatus => update_status::handle(state).await,
         Command::UpdateRollback => update_status::rollback(state).await,
+        Command::ApplyAppUpdate => apply_update::handle_app(state).await,
         Command::IngressRoutes => ingress::routes(state).await,
         Command::IngressReconcile { service_id } => ingress::reconcile(state, service_id).await,
         Command::LogsGet { service_id, tail } => logs_get::handle(state, service_id, tail).await,

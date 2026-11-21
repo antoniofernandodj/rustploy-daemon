@@ -210,8 +210,11 @@ pub async fn orchestrate(
     }
 }
 
-/// Arestas `(dependente, dependência)` derivadas de `shared_access`: todo serviço de um projeto
-/// autorizado espera o servidor de banco compartilhado.
+/// Arestas `(dependente, dependência)` que não estão no `depends_on`:
+/// - de `shared_access`: todo serviço de um projeto autorizado espera o servidor compartilhado;
+/// - dos **vínculos** (`ServiceSpec::links`): quem usa espera quem é usado, no mesmo projeto ou não.
+///
+/// Só aresta entre serviços que existem: um vínculo para um serviço apagado não trava nada.
 pub fn implicit_edges(
     access: &[(String, String)],
     all_services: &[Service],
@@ -221,6 +224,22 @@ pub fn implicit_edges(
         for svc in all_services {
             if &svc.spec.project_id == project_id && &svc.id != server_id {
                 out.push((svc.id.clone(), server_id.clone()));
+            }
+        }
+    }
+    out.extend(link_edges(all_services));
+    out
+}
+
+/// Só as arestas dos vínculos (ver [`implicit_edges`]).
+pub fn link_edges(all_services: &[Service]) -> Vec<(String, String)> {
+    let ids: std::collections::BTreeSet<&str> =
+        all_services.iter().map(|s| s.id.as_str()).collect();
+    let mut out = Vec::new();
+    for svc in all_services {
+        for link in &svc.spec.links {
+            if link.service_id != svc.id && ids.contains(link.service_id.as_str()) {
+                out.push((svc.id.clone(), link.service_id.clone()));
             }
         }
     }
@@ -485,6 +504,7 @@ mod tests {
                 depends_on: deps.iter().map(|d| d.to_string()).collect(),
                 registry_auto_deploy: false,
                 autostart: true,
+                links: Vec::new(),
             },
             compose_project: None,
             status: ServiceStatus::Stopped,

@@ -1133,6 +1133,8 @@ document.addEventListener("alpine:init", () => {
     // },
 
     async deleteDeployment(deploymentId) {
+
+      if (!confirm(t("Remover deployment?") + "\n\n" + t("O registro do deployment e seus build logs serão removidos. Essa ação não pode ser desfeita."))) return;
       const deployDeleteResponse = await this.api.rpcChecked({ DeployDelete: { deployment_id: deploymentId } });
       this.toastResult(deployDeleteResponse, t("deployment removido"));
       if (deployDeleteResponse.ok) await this.fetchServiceDetail(this.selectedServiceId);
@@ -1146,6 +1148,7 @@ document.addEventListener("alpine:init", () => {
     /** Cancela um deploy que ainda espera na fila — reaproveita DeployAbort
      * (o daemon já trata remoção da fila como caso do abort). */
     async queueCancel(deploymentId) {
+      if (!confirm(t("Cancelar este deploy?") + "\n\n" + t("O deploy sai da fila, ou é interrompido se já começou. A versão que está no ar continua."))) return;
       const deployAbortResponse = await this.api.rpcChecked({ DeployAbort: { deployment_id: deploymentId } });
       this.toastResult(deployAbortResponse, t("deploy cancelado"));
       await this.refreshNow();
@@ -1189,21 +1192,26 @@ document.addEventListener("alpine:init", () => {
     },
 
     async dockerPruneContainers() {
+
+      if (!confirm(t("Limpar containers parados?") + "\n\n" + t("Todos os containers parados serão removidos (docker container prune). Ação irreversível."))) return;
       const pruneContainersResponse = await this.api.rpcChecked("PruneContainers");
       this.toastPrune(pruneContainersResponse);
       await this.refreshNow();
     },
     async dockerPruneImages() {
+      if (!confirm(t("Limpar imagens sem uso?") + "\n\n" + t("As imagens sem uso serão removidas agora. Essa limpeza não pode ser desfeita."))) return;
       const pruneImagesResponse = await this.api.rpcChecked({ PruneImages: { all: this.pruneAllImages } });
       this.toastPrune(pruneImagesResponse);
       await this.refreshNow();
     },
     async dockerPruneVolumes() {
+      if (!confirm(t("Limpar volumes sem uso?") + "\n\n" + t("Os volumes sem uso serão removidos agora. Essa limpeza não pode ser desfeita."))) return;
       const pruneVolumesResponse = await this.api.rpcChecked({ PruneVolumes: { all: this.pruneAllVolumes } });
       this.toastPrune(pruneVolumesResponse);
       await this.refreshNow();
     },
     async dockerPruneNetworks() {
+      if (!confirm(t("Limpar redes sem uso?") + "\n\n" + t("As redes sem uso serão removidas agora. Essa limpeza não pode ser desfeita."))) return;
       const pruneNetworksResponse = await this.api.rpcChecked("PruneNetworks");
       this.toastPrune(pruneNetworksResponse);
       await this.refreshNow();
@@ -1211,26 +1219,31 @@ document.addEventListener("alpine:init", () => {
 
     /** Para um container órfão ("removido no git"). O daemon recusa o que ainda pertence a um serviço. */
     async dockerStopContainer(containerId) {
+      if (!confirm(t("Parar container?") + "\n\n" + t("O container será parado (docker stop). Se for de um serviço, ele fica fora do ar até o próximo deploy."))) return;
       const stopContainerResponse = await this.api.rpcChecked({ StopContainer: { id: containerId } });
       this.toastResult(stopContainerResponse, t("parado"));
       if (stopContainerResponse.ok) await this.refreshNow();
     },
     async dockerRemoveContainer(containerId) {
+      if (!confirm(t("Remover container?") + "\n\n" + t("O container parado será removido (docker rm). Ação irreversível."))) return;
       const removeContainerResponse = await this.api.rpcChecked({ RemoveContainer: { id: containerId } });
       this.toastResult(removeContainerResponse, t("removido"));
       if (removeContainerResponse.ok) await this.refreshNow();
     },
     async dockerRemoveImage(imageId) {
+      if (!confirm(t("Remover imagem?") + "\n\n" + t("A imagem será removida (docker rmi). Falha se algum container a referencia."))) return;
       const removeImageResponse = await this.api.rpcChecked({ RemoveImage: { id: imageId } });
       this.toastResult(removeImageResponse, t("removido"));
       if (removeImageResponse.ok) await this.refreshNow();
     },
     async dockerRemoveVolume(name) {
+      if (!confirm(t("Remover volume?") + "\n\n" + t("O volume será removido (docker volume rm). Falha se estiver em uso. Ação irreversível."))) return;
       const removeVolumeResponse = await this.api.rpcChecked({ RemoveVolume: { name } });
       this.toastResult(removeVolumeResponse, t("removido"));
       if (removeVolumeResponse.ok) await this.refreshNow();
     },
     async dockerRemoveNetwork(networkId) {
+      if (!confirm(t("Remover rede?") + "\n\n" + t("A rede será removida (docker network rm). Falha se houver container anexado."))) return;
       const removeNetworkResponse = await this.api.rpcChecked({ RemoveNetwork: { id: networkId } });
       this.toastResult(removeNetworkResponse, t("removido"));
       if (removeNetworkResponse.ok) await this.refreshNow();
@@ -1265,6 +1278,8 @@ document.addEventListener("alpine:init", () => {
     },
 
     async registryRemoveTag(tag) {
+
+      if (!confirm(t("Remover tag?") + "\n\n" + t("A tag será removida. Se outra tag apontar pro mesmo manifest (mesma imagem), ela também é removida — o delete é por digest, não por tag. O disco é liberado pelo botão \"Executar GC\". Ação irreversível."))) return;
       const repo = this.registrySelectedRepo;
       const registryTagDeleteResponse = await this.api.rpcChecked({ RegistryTagDelete: { repo, tag } });
       this.toastResult(registryTagDeleteResponse, t`tag ${tag} removida`);
@@ -1274,6 +1289,7 @@ document.addEventListener("alpine:init", () => {
       }
     },
     async registryRemoveRepo(name) {
+      if (!confirm(t("Remover repositório?") + "\n\n" + t("Todas as tags e manifests do repositório serão removidos. O disco é liberado pelo botão \"Executar GC\". Ação irreversível."))) return;
       const registryRepoDeleteResponse = await this.api.rpcChecked({ RegistryRepoDelete: { repo: name } });
       this.toastResult(registryRepoDeleteResponse, t`repositório ${name} removido`);
       if (registryRepoDeleteResponse.ok) {
@@ -1301,6 +1317,7 @@ document.addEventListener("alpine:init", () => {
       if (registryRetentionSetResponse.ok) await this.refreshNow();
     },
     async registryRemoveToken(name) {
+      if (!confirm(t("Revogar token?") + "\n\n" + t("Qualquer `docker login`/push/pull usando esse token deixa de funcionar imediatamente. Ação irreversível."))) return;
       const registryTokenRevokeResponse = await this.api.rpcChecked({ RegistryTokenRevoke: { name } });
       this.toastResult(registryTokenRevokeResponse, t`token ${name} revogado`);
       if (registryTokenRevokeResponse.ok) await this.registryRefreshTokens();
@@ -1337,6 +1354,7 @@ document.addEventListener("alpine:init", () => {
      * o job_run novo), pode ainda apontar pro run ANTERIOR; o daemon devolve
      * NotFound nesse caso (inofensivo, só a mensagem de erro). */
     async jobRunCancel(jobRunId) {
+      if (!confirm(t("Cancelar a execução?") + "\n\n" + t("A execução em andamento será interrompida. O que ela já fez não é desfeito."))) return;
       if (!jobRunId) return;
       const jobRunCancelResponse = await this.api.rpcChecked({ JobRunCancel: { job_run_id: jobRunId } });
       this.toastResult(jobRunCancelResponse, t("cancelamento solicitado"));
@@ -2077,6 +2095,7 @@ document.addEventListener("alpine:init", () => {
 
     /** "Já guardei": esquece a privada da memória da página. */
     recoveryKeyDismiss() {
+      if (!confirm(t("Fechar a chave de recuperação?") + "\n\n" + t("A chave privada não será mostrada de novo. Confirme que você já a guardou num lugar seguro."))) return;
       this.recoveryKeyGenerated = null;
       this.recoveryKeyWarning = "";
     },
@@ -2171,6 +2190,8 @@ document.addEventListener("alpine:init", () => {
     },
 
     async recoverCancel() {
+
+      if (!confirm(t("Cancelar a recuperação?") + "\n\n" + t("A recuperação do servidor será interrompida e os passos que ainda não rodaram não serão feitos."))) return;
       const cancelResponse = await this.api.rpcChecked("ServerRecoverCancel");
       if (cancelResponse.ok && cancelResponse.value?.ServerRecover) this.recoverInfo = cancelResponse.value.ServerRecover;
       this.toastResult(cancelResponse, t("recuperação cancelada"));
@@ -2351,6 +2372,7 @@ document.addEventListener("alpine:init", () => {
 
     /** Esquece a marca "removido no git" (a pessoa decidiu manter o que ainda roda, ou já limpou). */
     async stateGitDismissRemoval(removalId) {
+      if (!confirm(t("Esquecer este aviso?") + "\n\n" + t("A marca de removido no git sai da lista. Nada é apagado no servidor nem no repositório."))) return;
       const dismissResponse = await this.api.rpcChecked({ StateGitDismissRemoval: { id: removalId } });
       this.toastResult(dismissResponse);
       await this.refreshNow();
@@ -2491,6 +2513,7 @@ document.addEventListener("alpine:init", () => {
         const list = users.join(", ");
         if (!confirm(t`Esta conta é usada por ${count} item(ns): ${list}. Sem ela, eles deixam de conseguir clonar o repositório até serem reapontados para outra conta (aba General → Git de cada serviço). Remover mesmo assim?`)) return;
       }
+      else if (!confirm(t("Remover a conta Git?") + "\n\n" + t("A conta será removida deste servidor. Nenhum serviço ou job a usa hoje."))) return;
       const gitProviderDeleteResponse = await this.api.rpcChecked({ GitProviderDelete: { id: providerId, force: users.length > 0 } });
       this.gitProviderMessage = "";
       this.toastResult(gitProviderDeleteResponse, t("provider removido"));

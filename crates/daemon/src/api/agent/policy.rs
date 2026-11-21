@@ -201,6 +201,7 @@ pub fn required_level(cmd: &Command) -> Level {
         | Command::StopAllManaged
         | Command::ApplyUpdate { .. }
         | Command::UpdateRollback
+        | Command::ApplyAppUpdate
         | Command::GitProviderCreate { .. }
         | Command::GitProviderDelete { .. }
         | Command::GitOAuthStart { .. }

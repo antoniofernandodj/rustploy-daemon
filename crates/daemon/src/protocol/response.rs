@@ -35,6 +35,11 @@ pub enum Response {
     DaemonStatus(DaemonStatus),
     UpdateInfo(Box<UpdateInfo>),
     UpdateProgress(Box<UpdateProgress>),
+    /// `ApplyAppUpdate`: o app desktop desta máquina foi de `from` para `to` (versões do pacote).
+    AppUpdated {
+        from: String,
+        to: String,
+    },
     DeployEngineStatus(Box<DeployEngineSummary>),
     Pong {
         uptime_secs: u64,

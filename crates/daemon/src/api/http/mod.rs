@@ -1974,7 +1974,7 @@ mod tests {
             .infra()
             .update(|st| {
                 for svc in st.projects.iter_mut().flat_map(|p| p.services.iter_mut()) {
-                    svc.spec.shared = Some(crate::domain::SharedServerConfig {});
+                    svc.spec.shared = Some(crate::domain::SharedServerConfig::default());
                 }
                 Ok(())
             })
