@@ -34,7 +34,7 @@ mod state_machine;
 
 #[cfg(test)]
 use {
-    rollback::{rollback_cause, truncate_chars},
+    rollback::{compose_stack_was_touched, rollback_cause, truncate_chars},
     source::missing_dockerfile_msg,
     state_machine::failure_log_lines,
 };

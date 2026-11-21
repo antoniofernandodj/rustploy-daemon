@@ -12,16 +12,37 @@ impl DeployExecutor {
             .await;
         if let ServiceSource::Compose(compose) = &svc.spec.source {
             let project_name = svc.compose_project_name();
-            info!(
-                deployment_id = %dep.id,
-                project = %project_name,
-                "step[RollingBack]: derrubando compose stack"
-            );
-            let network_name = self.network_name(&svc.spec.project_id).await?;
-            let env_vars = self.resolve_env(svc).await.unwrap_or_default();
-            let _ =
-                engine::compose::down(&compose.content, &project_name, &network_name, &env_vars)
-                    .await;
+            if compose_stack_was_touched(dep) {
+                info!(
+                    deployment_id = %dep.id,
+                    project = %project_name,
+                    "step[RollingBack]: derrubando compose stack"
+                );
+                let network_name = self.network_name(&svc.spec.project_id).await?;
+                let env_vars = self.resolve_env(svc).await.unwrap_or_default();
+                let _ = engine::compose::down(
+                    &compose.content,
+                    &project_name,
+                    &network_name,
+                    &env_vars,
+                )
+                .await;
+            } else {
+                // Falhou antes de mexer no stack (pré-deploy check, dependências): o que estava no
+                // ar continua no ar. Derrubar aqui foi o que tirou o S3 do Chiquitos do ar em
+                // 2026-11-20 — um job de pré-deploy falhou e o rollback apagou o stack que servia.
+                info!(
+                    deployment_id = %dep.id,
+                    project = %project_name,
+                    "step[RollingBack]: falhou antes do compose up; stack anterior preservado"
+                );
+                self.log_step(
+                    &dep.id,
+                    &svc.id,
+                    "==> O stack que estava no ar não foi tocado (a falha foi antes do compose up)",
+                )
+                .await;
+            }
             let err_status = ServiceStatus::Error(rollback_cause(dep));
             let _ =
                 crate::store::services::update_status(&self.db, &svc.id, &err_status, None).await;
@@ -103,6 +124,14 @@ impl DeployExecutor {
         let _ = std::fs::remove_dir_all(self.clone_dir(&dep.id));
         Ok(DeployState::Failed)
     }
+}
+
+/// O deploy chegou a mexer no stack Compose (entrou em `ComposingUp`)? Antes disso — pré-deploy
+/// check, resolução de dependências — nada do stack mudou, e o rollback não pode derrubá-lo.
+pub(super) fn compose_stack_was_touched(dep: &Deployment) -> bool {
+    dep.states_log
+        .iter()
+        .any(|t| t.to == DeployState::ComposingUp)
 }
 
 /// Texto que vai para `ServiceStatus::Error` quando um deploy cai em rollback.

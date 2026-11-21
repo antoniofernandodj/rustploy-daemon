@@ -353,6 +353,56 @@ mod failure_log_tests {
         assert_eq!(rollback_cause(&dep), "deploy failed");
     }
 
+    // ── compose_stack_was_touched ──────────────────────────────────────────
+
+    fn dep_com_estados(estados: &[DeployState]) -> Deployment {
+        let mut dep = Deployment {
+            id: "dep_1".into(),
+            service_id: "svc_1".into(),
+            image: "compose".into(),
+            state: DeployState::RollingBack,
+            states_log: vec![],
+            started_at: Utc::now(),
+            finished_at: None,
+        };
+        let mut de = DeployState::Pending;
+        for para in estados {
+            dep.states_log.push(StateTransition {
+                from: de.clone(),
+                to: para.clone(),
+                at: Utc::now(),
+                message: None,
+            });
+            de = para.clone();
+        }
+        dep
+    }
+
+    /// O caso do Chiquitos (2026-11-20): o pré-deploy check falhou e o rollback derrubava o stack
+    /// Compose que estava servindo. Sem ter passado por `ComposingUp`, o stack não foi tocado.
+    #[test]
+    fn falha_no_pre_deploy_nao_mexeu_no_stack_compose() {
+        let dep = dep_com_estados(&[DeployState::PreDeployCheck, DeployState::RollingBack]);
+        assert!(!compose_stack_was_touched(&dep));
+        let dep = dep_com_estados(&[
+            DeployState::PreDeployCheck,
+            DeployState::ResolvingDeps,
+            DeployState::RollingBack,
+        ]);
+        assert!(!compose_stack_was_touched(&dep));
+    }
+
+    #[test]
+    fn falha_no_compose_up_mexeu_no_stack() {
+        let dep = dep_com_estados(&[
+            DeployState::PreDeployCheck,
+            DeployState::ResolvingDeps,
+            DeployState::ComposingUp,
+            DeployState::RollingBack,
+        ]);
+        assert!(compose_stack_was_touched(&dep));
+    }
+
     #[test]
     fn causa_longa_e_truncada_por_caractere() {
         let longa = "ç".repeat(400);
