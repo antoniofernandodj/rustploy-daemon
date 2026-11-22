@@ -659,6 +659,38 @@ async fn deploy_plan_modal_lists_order_and_buttons() {
     assert_eq!(errors(&page).await, Vec::<String>::new(), "sem erros de JS");
 }
 
+/// Deploy Engine → Executando → "Detalhes": o clique de verdade abre o modal com os passos e o
+/// histórico do deploy, e "Fechar" o esconde (o mesmo botão não abria nada no app desktop).
+#[tokio::test]
+async fn deploy_engine_details_button_opens_and_closes() {
+    let addr = spawn_static_server().await;
+    let (browser, _handler) = launch().await;
+    let page = open_page(&browser, addr).await;
+    seed_connected(&page).await;
+
+    page.evaluate(
+        r#"(() => {
+            const s = Alpine.store('app');
+            s.snap.engine = { active: [{ deployment_id: 'dep_1', service_id: 'svc_lento', service_name: 'lento',
+                project_name: 'detalhes', kind: 'Deploy', state: 'HealthcheckPolling', elapsed_secs: 25,
+                current_state_secs: 20, started_at: '2026-11-22T19:00:00Z',
+                states: [{ at: '2026-11-22T19:00:01Z', from: 'Pending', to: 'PreDeployCheck', message: null },
+                         { at: '2026-11-22T19:00:05Z', from: 'Staging', to: 'HealthcheckPolling', message: 'esperando a porta' }] }],
+                queued: [], recent: [], paused: false, successful_24h: 0, failed_24h: 0, total_24h: 1, uptime_secs: 60 };
+            s.view = 'deploy_engine';
+        })()"#,
+    )
+    .await
+    .expect("deploy em andamento");
+    let result = eval_str(
+        &page,
+        "(async () => { [...document.querySelectorAll('[x-data=\"deployEngine\"] button')].find((b) => b.textContent.trim().startsWith('Running')).click(); await new Promise((r) => setTimeout(r, 100)); const button = [...document.querySelectorAll('[x-data=\"deployEngine\"] button')].find((b) => b.offsetParent !== null && b.textContent.trim() === 'Details'); if (!button) return 'sem botão: ' + JSON.stringify([...document.querySelectorAll('[x-data=\"deployEngine\"] button')].map((b) => [b.textContent.trim(), b.offsetParent !== null])); button.click(); await new Promise((r) => setTimeout(r, 100)); const box = document.querySelector('[x-win=\"\\'deploy_detail\\'\"]'); const shown = () => { const backdrop = box.closest('.modal__backdrop'); return getComputedStyle(backdrop).display !== 'none' && box.getClientRects().length > 0; }; const opened = shown() ? box.innerText : ''; box.querySelector('.win__dot--close').click(); await new Promise((r) => setTimeout(r, 100)); return JSON.stringify({ title: opened.includes('lento'), message: opened.includes('esperando a porta'), closed: !shown() }); })()",
+    )
+    .await;
+    assert_eq!(result, r#"{"title":true,"message":true,"closed":true}"#);
+    assert_eq!(errors(&page).await, Vec::<String>::new(), "sem erros de JS");
+}
+
 /// Modal "reordenar serviços": mover (↑/↓ e arrastar) muda só a ordem em edição;
 /// Cancelar descarta e o RPC vai com os ids na nova ordem.
 #[tokio::test]
