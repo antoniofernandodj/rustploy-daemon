@@ -317,6 +317,7 @@ hr, .rule   { width: 100%; height: 1px; border: none; background: var(--border);
    visualmente por cima do texto seguinte (overflow:visible). Só o scroll
    deve ceder espaço, nunca o conteúdo. */
 .form-panel { width: 100%; max-width: 640px; flex-shrink: 0; background: var(--surface); border-radius: 7px; border: 1px solid var(--border); padding: 24px; gap: 10px; }
+.link-resource { gap: 10px; flex-shrink: 0; }
 
 /* ── Listas chave/valor (env vars / domínios) ───────────────────────────
    Compartilhado por Environment e Domains, mesmo padrão do client iced.

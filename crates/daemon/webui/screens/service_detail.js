@@ -1509,6 +1509,15 @@ document.addEventListener("alpine:init", () => {
         return { id: link.service_id, index: index + 1, name, vars };
       });
     },
+    // O que o serviço escolhido em "Vincular a" oferece: decide qual campo de recurso aparece.
+    get linkTargetKind() {
+      const pair = this.allServicesForLinks.find((p) => p.svc.id === this.advancedLinkAddId);
+      return pair ? this.resourceKind(pair.svc.spec.product) : null;
+    },
+    linkTargetChanged() {
+      this.advancedLinkResource = "";
+      this.advancedLinkPublicRead = false;
+    },
     get linkOptions() {
       const already = new Set((this.svc?.spec?.links || []).map((link) => link.service_id));
       const projectId = this.svc?.spec?.project_id;
@@ -1549,8 +1558,9 @@ document.addEventListener("alpine:init", () => {
       const link = { service_id: targetId };
       if (prefix) link.env_prefix = prefix;
       // Recurso (Fase 2): o daemon valida o nome e cria no próximo deploy.
-      const resourceName = (this.advancedLinkResource || "").trim().toLowerCase();
-      if (resourceName) link.resource = { name: resourceName, public_read: !!this.advancedLinkPublicRead };
+      const kind = this.linkTargetKind;
+      const resourceName = kind ? (this.advancedLinkResource || "").trim().toLowerCase() : "";
+      if (resourceName) link.resource = { name: resourceName, public_read: kind === "bucket" && !!this.advancedLinkPublicRead };
       spec.links = [...(spec.links || []).filter((existing) => existing.service_id !== targetId), link];
       const result = await this.store.saveServiceSpec(spec, t("vínculo adicionado"));
       if (result.ok) {

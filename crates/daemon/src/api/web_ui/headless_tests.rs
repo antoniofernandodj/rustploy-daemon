@@ -2528,7 +2528,7 @@ async fn links_section_lists_options_saves_and_confirms() {
                 project_name: project_id === 'prj_1' ? 'loja' : 'infra' });
             s.snap.services = [
                 svc('svc_api', 'api', 'prj_1'),
-                svc('svc_db', 'db', 'prj_1'),
+                svc('svc_db', 'db', 'prj_1', { product: 'postgres' }),
                 svc('svc_worker', 'worker', 'prj_1', { links: [{ service_id: 'svc_db' }] }),
                 svc('svc_outro', 'outro', 'prj_2'),
                 svc('svc_pg', 'pg', 'prj_2', { shared: { accept_links: true } }),
@@ -2576,9 +2576,29 @@ async fn links_section_lists_options_saves_and_confirms() {
         "a aba Advanced deveria mostrar a seção de vínculos"
     );
 
+    // O campo de recurso segue o serviço escolhido: database num Postgres,
+    // nenhum num serviço sem recurso.
+    let fields = eval_str(
+        &page,
+        &format!("(async () => {{ const shown = () => [...document.querySelectorAll('[x-data=\"serviceDetail\"] .link-resource')].filter((e) => e.offsetParent !== null).map((e) => e.querySelector('text').textContent.trim()); {d}.advancedLinkAddId = 'svc_db'; await Alpine.nextTick(); const db = shown(); {d}.advancedLinkAddId = 'svc_worker'; await Alpine.nextTick(); const worker = shown(); return JSON.stringify({{ db, worker, kind: {d}.linkTargetKind }}); }})()"),
+    )
+    .await;
+    assert_eq!(
+        fields,
+        r#"{"db":["DATABASE (OPTIONAL)"],"worker":[],"kind":null}"#
+    );
+    let ignored = eval_str(
+        &page,
+        &format!("(async () => {{ {d}.advancedLinkAddId = 'svc_worker'; {d}.advancedLinkResource = 'x'; await {d}.linkAdd(); return JSON.stringify(window.__saved.at(-1).spec.links); }})()"),
+    )
+    .await;
+    assert_eq!(
+        ignored, r#"[{"service_id":"svc_worker"}]"#,
+        "sem recurso no serviço escolhido, o texto digitado é ignorado"
+    );
     let saved = eval_str(
         &page,
-        &format!("(async () => {{ {d}.advancedLinkAddId = 'svc_db'; {d}.advancedLinkPrefix = 'main'; {d}.advancedLinkResource = ' Pedidos '; {d}.advancedLinkPublicRead = false; await {d}.linkAdd(); const x = window.__saved.at(-1); return JSON.stringify(x.spec.links); }})()"),
+        &format!("(async () => {{ {d}.advancedLinkAddId = 'svc_db'; {d}.advancedLinkPrefix = 'main'; {d}.advancedLinkResource = ' Pedidos '; {d}.advancedLinkPublicRead = true; await {d}.linkAdd(); const x = window.__saved.at(-1); return JSON.stringify(x.spec.links); }})()"),
     )
     .await;
     assert_eq!(

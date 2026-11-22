@@ -4264,7 +4264,7 @@
                   <text class="u-muted" x-fallback="linkRows" x-t>Nenhum vínculo.</text>
                 </column>
                 <text class="u-label-cap" x-t>VINCULAR A</text>
-                <select class="form-select" x-model="advancedLinkAddId">
+                <select class="form-select" x-model="advancedLinkAddId" @change="linkTargetChanged()">
                   <option value="" x-t>escolha um serviço</option>
                   <template x-for="linkOption in linkOptions" :key="linkOption.id">
                     <option :value="linkOption.id" x-text="linkOption.name"></option>
@@ -4272,10 +4272,21 @@
                 </select>
                 <text class="u-label-cap" x-t>PREFIXO DAS VARIÁVEIS (OPCIONAL)</text>
                 <input class="field__input" type="text" x-model="advancedLinkPrefix" :placeholder="$t('padrão: o nome do serviço em maiúsculas')">
-                <text class="u-label-cap" x-t>RECURSO (OPCIONAL)</text>
-                <input class="field__input" type="text" x-model="advancedLinkResource" :placeholder="$t('nome do bucket ou do database')">
-                <label class="toggle"><input type="checkbox" x-model="advancedLinkPublicRead" /><span class="toggle__track"></span><span x-t>Bucket com leitura pública</span></label>
-                <text class="u-muted" x-t>Num S3 (RustFS, MinIO), o recurso é um bucket; num Postgres, MySQL ou MariaDB, um database. É criado no próximo deploy deste serviço, se ainda não existir, e entrega PREFIXO_BUCKET ou PREFIXO_DATABASE. Desfazer o vínculo não apaga o recurso.</text>
+                <template x-if="linkTargetKind === 'bucket'">
+                  <column class="link-resource">
+                    <text class="u-label-cap" x-t>BUCKET (OPCIONAL)</text>
+                    <input class="field__input" type="text" x-model="advancedLinkResource" :placeholder="$t('nome do bucket, ex.: uploads')">
+                    <label class="toggle"><input type="checkbox" x-model="advancedLinkPublicRead" /><span class="toggle__track"></span><span x-t>Leitura pública (qualquer um lê os arquivos, para servir imagens)</span></label>
+                    <text class="u-muted" x-t>O bucket é criado neste S3 no próximo deploy deste serviço, se ainda não existir, e este serviço recebe PREFIXO_BUCKET. Desfazer o vínculo não apaga o bucket.</text>
+                  </column>
+                </template>
+                <template x-if="linkTargetKind === 'database'">
+                  <column class="link-resource">
+                    <text class="u-label-cap" x-t>DATABASE (OPCIONAL)</text>
+                    <input class="field__input" type="text" x-model="advancedLinkResource" :placeholder="$t('nome do database, ex.: pedidos')">
+                    <text class="u-muted" x-t>O database é criado neste banco no próximo deploy deste serviço, antes das migrações, se ainda não existir. Este serviço recebe PREFIXO_DATABASE, e a PREFIXO_URL passa a apontar para ele. Desfazer o vínculo não apaga o database.</text>
+                  </column>
+                </template>
                 <row class="env__add">
                   <button class="btn btn--primary" type="button" :disabled="!advancedLinkAddId" @click="linkAdd()" x-t>Vincular</button>
                 </row>
