@@ -10,7 +10,8 @@
 //! - nenhum ciclo, contando `depends_on`, os vínculos de todos e os acessos ao banco compartilhado.
 
 use crate::domain::{
-    ResourceKind, Service, ServiceSpec, is_valid_env_prefix, is_valid_resource_name, resource_kind,
+    LINK_ENV_SUFFIXES, ResourceKind, Service, ServiceSpec, is_valid_env_prefix,
+    is_valid_resource_name, link_env_prefix, resource_kind,
 };
 use crate::protocol::Response as RpResponse;
 use crate::store::Db;
@@ -85,6 +86,8 @@ pub(crate) fn plan_links(
 ) -> Result<LinkPlan, RpResponse> {
     let mut seen = BTreeSet::new();
     let mut plan = LinkPlan::default();
+    // (nome entregue, foi renomeado?) de todos os vínculos, para achar nomes repetidos.
+    let mut delivered: Vec<(String, bool)> = Vec::new();
     for link in &spec.links {
         if self_id == Some(link.service_id.as_str()) {
             return Err(RpResponse::err(
@@ -108,12 +111,46 @@ pub(crate) fn plan_links(
                 ),
             ));
         }
+        for (suffix, name) in &link.env_names {
+            if !LINK_ENV_SUFFIXES.contains(&suffix.as_str()) {
+                return Err(RpResponse::err(
+                    "InvalidInput",
+                    format!(
+                        "variável de vínculo desconhecida: \"{suffix}\" (use {})",
+                        LINK_ENV_SUFFIXES.join(", ")
+                    ),
+                ));
+            }
+            if !name.is_empty() && !is_valid_env_prefix(name) {
+                return Err(RpResponse::err(
+                    "InvalidInput",
+                    format!(
+                        "nome de variável inválido: \"{name}\" (use só A-Z, 0-9 e _, sem começar por dígito)"
+                    ),
+                ));
+            }
+        }
         let Some(target) = all.iter().find(|s| s.id == link.service_id) else {
             return Err(RpResponse::err(
                 "NotFound",
                 format!("o serviço vinculado {} não existe", link.service_id),
             ));
         };
+        let default_prefix = link_env_prefix(&target.spec.name);
+        let resource_suffix = match (
+            &link.resource,
+            resource_kind(target.spec.product.as_deref()),
+        ) {
+            (Some(_), Some(ResourceKind::Bucket)) => Some("BUCKET"),
+            (Some(_), Some(ResourceKind::Database)) => Some("DATABASE"),
+            _ => None,
+        };
+        let suffixes = ["HOST", "PORT", "URL"].into_iter().chain(resource_suffix);
+        for suffix in suffixes {
+            if let Some(name) = link.env_name(&default_prefix, suffix) {
+                delivered.push((name, link.env_names.contains_key(suffix)));
+            }
+        }
         if let Some(resource) = &link.resource {
             if target.spec.project_id != spec.project_id {
                 return Err(RpResponse::err(
@@ -187,6 +224,18 @@ pub(crate) fn plan_links(
             plan.grant_servers.push(target.id.clone());
         }
     }
+    // Um nome renomeado não pode repetir outro nome entregue (um apagaria o outro). Só os renomeados:
+    // dois vínculos antigos com o mesmo prefixo continuam gravando como antes.
+    for (name, renamed) in &delivered {
+        if *renamed && delivered.iter().filter(|(other, _)| other == name).count() > 1 {
+            return Err(RpResponse::err(
+                "InvalidInput",
+                format!(
+                    "a variável {name} seria entregue duas vezes pelos vínculos; escolha outro nome"
+                ),
+            ));
+        }
+    }
     Ok(plan)
 }
 
@@ -218,6 +267,7 @@ mod tests {
                 service_id: (*t).into(),
                 env_prefix: None,
                 resource: None,
+                ..Default::default()
             })
             .collect();
         spec
@@ -457,6 +507,61 @@ mod tests {
         assert!(!is_valid_env_prefix(""));
     }
 
+    #[test]
+    fn nomes_trocados_das_variaveis() {
+        let all = vec![service("db", "p1", None), service("s3", "p1", None)];
+        let none = BTreeSet::new();
+        let names = |pairs: &[(&str, &str)]| {
+            pairs
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect()
+        };
+        // válido: renomear e não entregar
+        let mut spec = with_links("p1", &["db"]);
+        spec.links[0].env_names = names(&[("URL", "DATABASE_URL"), ("PORT", "")]);
+        assert!(plan_links(&spec, Some("api"), &all, &[], &none).is_ok());
+        // sufixo desconhecido e nome inválido
+        spec.links[0].env_names = names(&[("SENHA", "X")]);
+        assert_eq!(
+            code(plan_links(&spec, Some("api"), &all, &[], &none)),
+            "InvalidInput"
+        );
+        spec.links[0].env_names = names(&[("URL", "database_url")]);
+        assert_eq!(
+            code(plan_links(&spec, Some("api"), &all, &[], &none)),
+            "InvalidInput"
+        );
+        // um nome trocado que repete outro nome entregue (S3_HOST do outro vínculo)
+        let mut spec = with_links("p1", &["db", "s3"]);
+        spec.links[0].env_names = names(&[("HOST", "S3_HOST")]);
+        assert_eq!(
+            code(plan_links(&spec, Some("api"), &all, &[], &none)),
+            "InvalidInput"
+        );
+        // dois vínculos antigos com o mesmo prefixo (nada renomeado) continuam gravando
+        let mut spec = with_links("p1", &["db", "s3"]);
+        spec.links[0].env_prefix = Some("X".into());
+        spec.links[1].env_prefix = Some("X".into());
+        assert!(plan_links(&spec, Some("api"), &all, &[], &none).is_ok());
+    }
+
+    #[test]
+    fn env_name_padrao_prefixo_e_troca() {
+        let mut link = ServiceLink {
+            service_id: "s3".into(),
+            ..Default::default()
+        };
+        assert_eq!(link.env_name("S3", "URL").as_deref(), Some("S3_URL"));
+        link.env_prefix = Some("STORAGE".into());
+        assert_eq!(link.env_name("S3", "URL").as_deref(), Some("STORAGE_URL"));
+        link.env_names.insert("URL".into(), "S3_ENDPOINT".into());
+        link.env_names.insert("PORT".into(), String::new());
+        assert_eq!(link.env_name("S3", "URL").as_deref(), Some("S3_ENDPOINT"));
+        assert_eq!(link.env_name("S3", "PORT"), None);
+        assert_eq!(link.env_name("S3", "HOST").as_deref(), Some("STORAGE_HOST"));
+    }
+
     /// O vínculo vira aresta de dependência (a ordem do deploy em árvore e do boot).
     #[test]
     fn vinculo_vira_aresta() {
@@ -465,6 +570,7 @@ mod tests {
             service_id: "db".into(),
             env_prefix: None,
             resource: None,
+            ..Default::default()
         }];
         let all = vec![service("db", "p1", None), api];
         let edges = crate::features::deploy::autostart::implicit_edges(&[], &all);

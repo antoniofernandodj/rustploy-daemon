@@ -160,7 +160,7 @@ Comandos, por área (campos entre chaves):
   `ServiceConnectionInfo{service_id}` · `GetWebhookUrl{service_id}` ·
   `RegenerateWebhookToken{service_id}`
 - **Vínculos** (campo `links` do `ServiceSpec`, editado pelo `ServiceUpdate`): `links:
-  [{service_id, env_prefix?}]` diz quais serviços este **usa**. Cada vínculo vira dependência
+  [{service_id, env_prefix?, resource?, env_names?}]` diz quais serviços este **usa**. Cada vínculo vira dependência
   (ordem do deploy em árvore e do boot) e, no deploy, entrega `<PREFIXO>_HOST`, `_PORT` e `_URL`
   do outro (prefixo padrão: o nome dele em maiúsculas), com a **menor** precedência: as variáveis
   do projeto e do serviço ganham. De outro projeto, só um banco compartilhado, e só se a trava dele
@@ -173,6 +173,11 @@ Comandos, por área (campos entre chaves):
   do consumidor, antes dos pré-deploy checks, se não existir (idempotente; teto de 60 s), e entrega
   `<PREFIXO>_BUCKET` ou `<PREFIXO>_DATABASE` (a `_URL` passa a apontar para o database).
   `public_read` (só bucket) aplica a política de leitura anônima. Desfazer o vínculo não apaga o recurso.
+  **Nomes das variáveis** (`env_names: {SUFIXO: NOME}` no vínculo): troca o nome com que cada variável
+  entra no container (`{"URL":"S3_ENDPOINT","BUCKET":"S3_BUCKET_NAME_1"}`); valor `""` = não entregar;
+  sufixo ausente = o nome padrão (prefixo + sufixo). Sufixos: `HOST`, `PORT`, `URL`, `BUCKET`,
+  `DATABASE`. Um nome trocado não pode repetir outro nome entregue pelos vínculos do serviço
+  (`InvalidInput`). A precedência não muda: uma variável digitada com o mesmo nome ganha.
 - **Deploys**: `DeployStart{service_id}` (só aquele serviço) ·
   `DeployWithDependencies{service_id, skip_running?}` (o serviço **e a árvore de dependências dele**,
   na ordem: quem não depende de ninguém primeiro; resposta `DeployBatch` com cada serviço e seu

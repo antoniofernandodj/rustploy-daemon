@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 use crate::domain::normalize_name;
 use crate::domain::*;
@@ -117,6 +118,29 @@ pub struct ServiceLink {
     /// se ainda não existir. Ver [`resource_kind`] e `docs/plano-recursos-e-vinculos.md` §7.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resource: Option<LinkResource>,
+    /// O nome com que cada variável entra no container, pelo sufixo (`URL` → `S3_ENDPOINT`). Sufixo
+    /// fora do mapa = o nome padrão (prefixo + sufixo); valor vazio = não entregar. Ver
+    /// `docs/plano-nomes-das-variaveis-do-vinculo.md`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub env_names: BTreeMap<String, String>,
+}
+
+/// Os sufixos das variáveis que um vínculo pode entregar, na ordem em que aparecem na tela.
+pub const LINK_ENV_SUFFIXES: [&str; 5] = ["HOST", "PORT", "URL", "BUCKET", "DATABASE"];
+
+impl ServiceLink {
+    /// O nome com que a variável `suffix` entra no container, ou `None` se não deve ser entregue.
+    /// `default_prefix` é o prefixo padrão (o nome do provedor), usado quando não há `env_prefix`.
+    pub fn env_name(&self, default_prefix: &str, suffix: &str) -> Option<String> {
+        match self.env_names.get(suffix) {
+            Some(name) if name.is_empty() => None,
+            Some(name) => Some(name.clone()),
+            None => {
+                let prefix = self.env_prefix.as_deref().unwrap_or(default_prefix);
+                Some(format!("{prefix}_{suffix}"))
+            }
+        }
+    }
 }
 
 /// O recurso de um vínculo: o nome dele no provedor.

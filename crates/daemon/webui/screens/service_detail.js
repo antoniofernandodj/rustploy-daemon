@@ -1392,6 +1392,10 @@ document.addEventListener("alpine:init", () => {
     advancedLinkPrefix: "",
     advancedLinkResource: "",
     advancedLinkPublicRead: false,
+    // Editar um vínculo (o service_id dele) em vez de adicionar; nomes trocados e o que não entregar.
+    advancedLinkEditing: "",
+    advancedLinkNames: { HOST: "", PORT: "", URL: "", BUCKET: "", DATABASE: "" },
+    advancedLinkDeliver: { HOST: true, PORT: true, URL: true, BUCKET: true, DATABASE: true },
     advancedConsumerAddId: "",
 
     initAdvancedForm() {
@@ -1402,10 +1406,7 @@ document.addEventListener("alpine:init", () => {
       this.advancedAutostart = spec.autostart !== false;
       this.advancedRegistryAutoDeploy = spec.registry_auto_deploy === true;
       this.advancedDependencyAddId = "";
-      this.advancedLinkAddId = "";
-      this.advancedLinkPrefix = "";
-      this.advancedLinkResource = "";
-      this.advancedLinkPublicRead = false;
+      this.linkFormReset();
       this.advancedConsumerAddId = "";
       this.advancedPreDeployCheckAddJobId = "";
     },
@@ -1491,23 +1492,99 @@ document.addEventListener("alpine:init", () => {
       if (["postgres", "postgresql", "mysql", "mariadb"].includes(p)) return "database";
       return null;
     },
+    // O nome com que a variável `suffix` entra no container (o mesmo de `ServiceLink::env_name`):
+    // trocado em `env_names` ("" = não entregar → null), senão prefixo + sufixo.
+    linkEnvName(link, defaultPrefix, suffix) {
+      const names = link.env_names || {};
+      if (Object.prototype.hasOwnProperty.call(names, suffix)) return names[suffix] || null;
+      return `${link.env_prefix || defaultPrefix}_${suffix}`;
+    },
+    // As variáveis digitadas no serviço e no projeto: nome → onde ("serviço"/"projeto"). Elas ganham
+    // das do vínculo, então um nome entregue que está aqui não chega ao container.
+    get typedEnvOrigins() {
+      const origins = new Map();
+      const projectId = this.svc?.spec?.project_id;
+      const project = ((this.store.snap && this.store.snap.projects) || []).find((p) => p.id === projectId);
+      for (const variable of project?.env_vars || []) origins.set(variable.key, t("projeto"));
+      for (const variable of this.svc?.spec?.env_vars || []) origins.set(variable.key, t("serviço"));
+      return origins;
+    },
+    linkShadowWarning(names) {
+      const origins = this.typedEnvOrigins;
+      const shadowed = names.filter((name) => origins.has(name)).map((name) => `${name} (${origins.get(name)})`);
+      if (!shadowed.length) return "";
+      return t("Já digitada, a digitada ganha: ") + shadowed.join(", ");
+    },
+    linkSuffixes(kind, hasResource) {
+      const suffixes = ["HOST", "PORT", "URL"];
+      if (hasResource && kind === "bucket") suffixes.push("BUCKET");
+      if (hasResource && kind === "database") suffixes.push("DATABASE");
+      return suffixes;
+    },
     get linkRows() {
       const byId = new Map(this.allServicesForLinks.map((pair) => [pair.svc.id, pair]));
       return (this.svc?.spec?.links || []).map((link, index) => {
         const pair = byId.get(link.service_id);
-        const prefix = link.env_prefix || this.linkEnvPrefix(pair ? pair.svc.spec.name : "");
+        const defaultPrefix = this.linkEnvPrefix(pair ? pair.svc.spec.name : "");
         let name = pair ? this.linkDisplayName(pair) : t`(serviço removido: ${link.service_id})`;
-        let vars = `${prefix}_HOST · ${prefix}_PORT · ${prefix}_URL`;
         const kind = this.resourceKind(pair?.svc?.spec?.product);
         if (link.resource && kind === "bucket") {
-          vars += ` · ${prefix}_BUCKET`;
           name += ` · bucket ${link.resource.name}` + (link.resource.public_read ? ` (${t("leitura pública")})` : "");
         } else if (link.resource && kind === "database") {
-          vars += ` · ${prefix}_DATABASE`;
           name += ` · database ${link.resource.name}`;
         }
-        return { id: link.service_id, index: index + 1, name, vars };
+        const names = this.linkSuffixes(kind, !!link.resource)
+          .map((suffix) => this.linkEnvName(link, defaultPrefix, suffix))
+          .filter((envName) => envName);
+        const vars = names.length ? names.join(" · ") : t("nenhuma variável");
+        return { id: link.service_id, index: index + 1, name, vars, warning: this.linkShadowWarning(names) };
       });
+    },
+    // O formulário: uma linha por variável que o serviço escolhido entrega, com o nome padrão como dica.
+    get linkNameRows() {
+      const pair = this.allServicesForLinks.find((p) => p.svc.id === this.advancedLinkAddId);
+      if (!pair) return [];
+      const prefix = (this.advancedLinkPrefix || "").trim().toUpperCase() || this.linkEnvPrefix(pair.svc.spec.name);
+      const kind = this.linkTargetKind;
+      return this.linkSuffixes(kind, !!kind).map((suffix) => {
+        const typed = (this.advancedLinkNames[suffix] || "").trim().toUpperCase();
+        const deliver = this.advancedLinkDeliver[suffix];
+        const effective = deliver ? typed || `${prefix}_${suffix}` : null;
+        return {
+          suffix,
+          placeholder: `${prefix}_${suffix}`,
+          warning: effective ? this.linkShadowWarning([effective]) : "",
+        };
+      });
+    },
+    get linkEditingName() {
+      const pair = this.allServicesForLinks.find((p) => p.svc.id === this.advancedLinkEditing);
+      return pair ? this.linkDisplayName(pair) : this.advancedLinkEditing;
+    },
+    linkFormReset() {
+      this.advancedLinkEditing = "";
+      this.advancedLinkAddId = "";
+      this.advancedLinkPrefix = "";
+      this.advancedLinkResource = "";
+      this.advancedLinkPublicRead = false;
+      this.advancedLinkNames = { HOST: "", PORT: "", URL: "", BUCKET: "", DATABASE: "" };
+      this.advancedLinkDeliver = { HOST: true, PORT: true, URL: true, BUCKET: true, DATABASE: true };
+    },
+    // "Editar": carrega o vínculo no formulário; salvar substitui o vínculo inteiro.
+    linkEdit(targetId) {
+      const link = (this.svc?.spec?.links || []).find((existing) => existing.service_id === targetId);
+      if (!link) return;
+      this.linkFormReset();
+      this.advancedLinkEditing = targetId;
+      this.advancedLinkAddId = targetId;
+      this.advancedLinkPrefix = link.env_prefix || "";
+      this.advancedLinkResource = link.resource ? link.resource.name : "";
+      this.advancedLinkPublicRead = !!(link.resource && link.resource.public_read);
+      for (const [suffix, name] of Object.entries(link.env_names || {})) {
+        if (!(suffix in this.advancedLinkNames)) continue;
+        this.advancedLinkNames[suffix] = name || "";
+        this.advancedLinkDeliver[suffix] = name !== "";
+      }
     },
     // O que o serviço escolhido em "Vincular a" oferece: decide qual campo de recurso aparece.
     get linkTargetKind() {
@@ -1517,6 +1594,8 @@ document.addEventListener("alpine:init", () => {
     linkTargetChanged() {
       this.advancedLinkResource = "";
       this.advancedLinkPublicRead = false;
+      this.advancedLinkNames = { HOST: "", PORT: "", URL: "", BUCKET: "", DATABASE: "" };
+      this.advancedLinkDeliver = { HOST: true, PORT: true, URL: true, BUCKET: true, DATABASE: true };
     },
     get linkOptions() {
       const already = new Set((this.svc?.spec?.links || []).map((link) => link.service_id));
@@ -1561,14 +1640,22 @@ document.addEventListener("alpine:init", () => {
       const kind = this.linkTargetKind;
       const resourceName = kind ? (this.advancedLinkResource || "").trim().toLowerCase() : "";
       if (resourceName) link.resource = { name: resourceName, public_read: kind === "bucket" && !!this.advancedLinkPublicRead };
-      spec.links = [...(spec.links || []).filter((existing) => existing.service_id !== targetId), link];
-      const result = await this.store.saveServiceSpec(spec, t("vínculo adicionado"));
-      if (result.ok) {
-        this.advancedLinkAddId = "";
-        this.advancedLinkPrefix = "";
-        this.advancedLinkResource = "";
-        this.advancedLinkPublicRead = false;
+      // Nomes trocados: só os que a pessoa mexeu (em branco + entregar = o padrão, fica fora do mapa).
+      const envNames = {};
+      for (const row of this.linkNameRows) {
+        const typed = (this.advancedLinkNames[row.suffix] || "").trim().toUpperCase();
+        if (!this.advancedLinkDeliver[row.suffix]) envNames[row.suffix] = "";
+        else if (typed) envNames[row.suffix] = typed;
       }
+      if (Object.keys(envNames).length) link.env_names = envNames;
+      // Editar mantém a posição do vínculo na lista; adicionar põe no fim.
+      const links = spec.links || [];
+      const position = links.findIndex((existing) => existing.service_id === targetId);
+      if (position >= 0) links[position] = link;
+      else links.push(link);
+      spec.links = links;
+      const result = await this.store.saveServiceSpec(spec, this.advancedLinkEditing ? t("vínculo salvo") : t("vínculo adicionado"));
+      if (result.ok) this.linkFormReset();
     },
     async linkDelete(targetId) {
       if (!confirm(t("Desfazer o vínculo?") + "\n\n" + t("Este serviço deixa de esperar o outro subir e, no próximo deploy, deixa de receber as variáveis de conexão dele. As variáveis que você digitou continuam."))) return;

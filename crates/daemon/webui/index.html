@@ -4253,23 +4253,37 @@
                 <text class="u-muted" x-t>Os serviços que este usa (banco, S3, fila, cache). Cada vínculo faz este serviço esperar o outro subir e, no deploy, entrega as variáveis de conexão dele (PREFIXO_HOST, _PORT e _URL). As variáveis digitadas no projeto ou no serviço sempre ganham. De outro projeto, só um banco compartilhado.</text>
                 <column class="kv-list">
                   <template x-for="link in linkRows" :key="link.id">
-                    <row class="kv-list__row">
-                      <button class="env__del" type="button" @click="linkDelete(link.id)">✕</button>
-                      <text class="env__sep"></text>
-                      <text class="env__key" x-text="link.index + '.'"></text>
-                      <text class="kv-list__val kv-list__val--compact" x-text="link.name"></text>
-                      <text class="u-muted" x-text="link.vars"></text>
-                    </row>
+                    <column class="link-row">
+                      <row class="kv-list__row">
+                        <button class="env__del" type="button" @click="linkDelete(link.id)">✕</button>
+                        <text class="env__sep"></text>
+                        <text class="env__key" x-text="link.index + '.'"></text>
+                        <text class="kv-list__val kv-list__val--compact" x-text="link.name"></text>
+                        <text class="u-muted" x-text="link.vars"></text>
+                        <button class="btn btn--sm-ghost" type="button" @click="linkEdit(link.id)" x-t>Editar</button>
+                      </row>
+                      <text class="link-row__warning" x-show="link.warning" x-text="link.warning"></text>
+                    </column>
                   </template>
                   <text class="u-muted" x-fallback="linkRows" x-t>Nenhum vínculo.</text>
                 </column>
-                <text class="u-label-cap" x-t>VINCULAR A</text>
-                <select class="form-select" x-model="advancedLinkAddId" @change="linkTargetChanged()">
-                  <option value="" x-t>escolha um serviço</option>
-                  <template x-for="linkOption in linkOptions" :key="linkOption.id">
-                    <option :value="linkOption.id" x-text="linkOption.name"></option>
-                  </template>
-                </select>
+                <template x-if="!advancedLinkEditing">
+                  <column class="link-form">
+                    <text class="u-label-cap" x-t>VINCULAR A</text>
+                    <select class="form-select" x-model="advancedLinkAddId" @change="linkTargetChanged()">
+                      <option value="" x-t>escolha um serviço</option>
+                      <template x-for="linkOption in linkOptions" :key="linkOption.id">
+                        <option :value="linkOption.id" x-text="linkOption.name"></option>
+                      </template>
+                    </select>
+                  </column>
+                </template>
+                <template x-if="advancedLinkEditing">
+                  <row class="env__add">
+                    <text class="u-label-cap" x-text="$t('EDITANDO O VÍNCULO COM ') + linkEditingName"></text>
+                    <button class="btn btn--sm-ghost" type="button" @click="linkFormReset()" x-t>Cancelar</button>
+                  </row>
+                </template>
                 <text class="u-label-cap" x-t>PREFIXO DAS VARIÁVEIS (OPCIONAL)</text>
                 <input class="field__input" type="text" x-model="advancedLinkPrefix" :placeholder="$t('padrão: o nome do serviço em maiúsculas')">
                 <template x-if="linkTargetKind === 'bucket'">
@@ -4287,8 +4301,24 @@
                     <text class="u-muted" x-t>O database é criado neste banco no próximo deploy deste serviço, antes das migrações, se ainda não existir. Este serviço recebe PREFIXO_DATABASE, e a PREFIXO_URL passa a apontar para ele. Desfazer o vínculo não apaga o database.</text>
                   </column>
                 </template>
+                <template x-if="advancedLinkAddId">
+                  <column class="link-names">
+                    <text class="u-label-cap" x-t>NOMES DAS VARIÁVEIS</text>
+                    <text class="u-muted" x-t>Em branco, vale o nome padrão (o prefixo + o sufixo). Troque para o nome que o seu código lê, ou desligue para não entregar.</text>
+                    <template x-for="nameRow in linkNameRows" :key="nameRow.suffix">
+                      <column class="link-name">
+                        <row class="link-name__row">
+                          <text class="env__key link-name__suffix" x-text="nameRow.suffix"></text>
+                          <input class="field__input" type="text" x-model="advancedLinkNames[nameRow.suffix]" :placeholder="nameRow.placeholder" :disabled="!advancedLinkDeliver[nameRow.suffix]">
+                          <label class="toggle"><input type="checkbox" x-model="advancedLinkDeliver[nameRow.suffix]" /><span class="toggle__track"></span><span x-t>Entregar</span></label>
+                        </row>
+                        <text class="link-row__warning" x-show="nameRow.warning" x-text="nameRow.warning"></text>
+                      </column>
+                    </template>
+                  </column>
+                </template>
                 <row class="env__add">
-                  <button class="btn btn--primary" type="button" :disabled="!advancedLinkAddId" @click="linkAdd()" x-t>Vincular</button>
+                  <button class="btn btn--primary" type="button" :disabled="!advancedLinkAddId" @click="linkAdd()" x-text="advancedLinkEditing ? $t('Salvar vínculo') : $t('Vincular')"></button>
                 </row>
               </column>
 

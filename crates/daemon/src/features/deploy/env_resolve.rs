@@ -118,10 +118,13 @@ pub async fn link_env(db: &Db, secrets: &SecretsManager, svc: &Service) -> Vec<(
                 continue;
             }
         };
-        let prefix = link
-            .env_prefix
-            .clone()
-            .unwrap_or_else(|| crate::domain::link_env_prefix(&target.spec.name));
+        // O prefixo padrão; `env_name` aplica o prefixo escrito e os nomes trocados um a um.
+        let default_prefix = crate::domain::link_env_prefix(&target.spec.name);
+        let mut push = |suffix: &str, value: String| {
+            if let Some(name) = link.env_name(&default_prefix, suffix) {
+                out.push((name, value));
+            }
+        };
         let product = target.spec.product.as_deref();
         let port = target.spec.port;
         let other_project = target.spec.project_id != svc.spec.project_id;
@@ -175,18 +178,16 @@ pub async fn link_env(db: &Db, secrets: &SecretsManager, svc: &Service) -> Vec<(
             }
         };
 
-        out.push((format!("{prefix}_HOST"), host));
-        out.push((format!("{prefix}_PORT"), port.to_string()));
+        push("HOST", host);
+        push("PORT", port.to_string());
         if let Some(url) = url {
-            out.push((format!("{prefix}_URL"), url));
+            push("URL", url);
         }
         if let Some(resource) = &link.resource {
             match crate::domain::resource_kind(product) {
-                Some(crate::domain::ResourceKind::Bucket) => {
-                    out.push((format!("{prefix}_BUCKET"), resource.name.clone()))
-                }
+                Some(crate::domain::ResourceKind::Bucket) => push("BUCKET", resource.name.clone()),
                 Some(crate::domain::ResourceKind::Database) => {
-                    out.push((format!("{prefix}_DATABASE"), resource.name.clone()))
+                    push("DATABASE", resource.name.clone())
                 }
                 None => {}
             }
@@ -369,6 +370,7 @@ mod tests {
                             service_id: "s_db".into(),
                             env_prefix: None,
                             resource: None,
+                            ..Default::default()
                         }];
                         svc.spec.env_vars = vec![plain("DB_PORT", "6543")];
                     }
@@ -424,6 +426,29 @@ mod tests {
             "{}",
             res["DB_URL"]
         );
+
+        // Nomes trocados: `URL` entra como DATABASE_URL, `PORT` não é entregue, o resto segue o padrão.
+        let mut renamed = with_db.clone();
+        renamed.spec.links[0].env_names = [
+            ("URL".to_string(), "DATABASE_URL".to_string()),
+            ("PORT".to_string(), String::new()),
+        ]
+        .into_iter()
+        .collect();
+        let res: HashMap<_, _> = link_env(&db, &secrets, &renamed)
+            .await
+            .into_iter()
+            .collect();
+        assert!(
+            res["DATABASE_URL"].ends_with("@rp_db:5432/pedidos"),
+            "{res:?}"
+        );
+        assert!(
+            !res.contains_key("DB_URL") && !res.contains_key("DB_PORT"),
+            "{res:?}"
+        );
+        assert_eq!(res["DB_HOST"], "rp_db");
+        assert_eq!(res["DB_DATABASE"], "pedidos");
 
         let mut orphan = api.clone();
         orphan.spec.links[0].service_id = "nao_existe".into();

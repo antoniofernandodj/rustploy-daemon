@@ -2606,6 +2606,28 @@ async fn links_section_lists_options_saves_and_confirms() {
         r#"[{"service_id":"svc_db","env_prefix":"MAIN","resource":{"name":"pedidos","public_read":false}}]"#
     );
 
+    // Nomes das variáveis: trocar a URL, não entregar a PORT; o resto fica fora do mapa (padrão).
+    let renamed = eval_str(
+        &page,
+        &format!("(async () => {{ {d}.linkFormReset(); {d}.advancedLinkAddId = 'svc_db'; {d}.linkTargetChanged(); await Alpine.nextTick(); const rows = {d}.linkNameRows.map((r) => r.suffix + '=' + r.placeholder); {d}.advancedLinkNames.URL = 'database_url'; {d}.advancedLinkDeliver.PORT = false; await {d}.linkAdd(); return JSON.stringify({{ rows, links: window.__saved.at(-1).spec.links }}); }})()"),
+    )
+    .await;
+    assert_eq!(
+        renamed,
+        r#"{"rows":["HOST=DB_HOST","PORT=DB_PORT","URL=DB_URL","DATABASE=DB_DATABASE"],"links":[{"service_id":"svc_db","env_names":{"PORT":"","URL":"DATABASE_URL"}}]}"#
+    );
+    // Na lista: os nomes efetivos, e o aviso quando um deles está digitado no serviço (ele ganha).
+    // Editar carrega o vínculo no formulário e salvar o substitui no mesmo lugar.
+    let listed = eval_str(
+        &page,
+        &format!("(async () => {{ const sd = Alpine.store('app').serviceDetail; sd.spec.links = [{{ service_id: 'svc_db', env_names: {{ URL: 'DATABASE_URL', PORT: '' }} }}, {{ service_id: 'svc_worker' }}]; sd.spec.env_vars = [{{ key: 'DATABASE_URL', value: {{ Plain: 'x' }} }}]; await Alpine.nextTick(); const rows = {d}.linkRows.map((r) => [r.vars, r.warning]); const warnShown = [...document.querySelectorAll('[x-data=\"serviceDetail\"] .link-row__warning')].some((e) => e.offsetParent !== null && e.textContent.includes('DATABASE_URL')); {d}.linkEdit('svc_db'); await Alpine.nextTick(); const loaded = [{d}.advancedLinkEditing, {d}.advancedLinkNames.URL, {d}.advancedLinkDeliver.PORT, {d}.advancedLinkDeliver.HOST]; {d}.advancedLinkNames.URL = ''; {d}.advancedLinkDeliver.PORT = true; await {d}.linkAdd(); return JSON.stringify({{ rows, warnShown, loaded, links: window.__saved.at(-1).spec.links, msg: window.__saved.at(-1).msg, after: {d}.advancedLinkEditing }}); }})()"),
+    )
+    .await;
+    assert_eq!(
+        listed,
+        r#"{"rows":[["DB_HOST · DATABASE_URL","Already typed, the typed one wins: DATABASE_URL (service)"],["WORKER_HOST · WORKER_PORT · WORKER_URL",""]],"warnShown":true,"loaded":["svc_db","DATABASE_URL",false,true],"links":[{"service_id":"svc_db"},{"service_id":"svc_worker"}],"msg":"link saved","after":""}"#
+    );
+
     let deleted = eval_str(
         &page,
         &format!("(async () => {{ Alpine.store('app').serviceDetail.spec.links = [{{ service_id: 'svc_db' }}]; const before = window.__saved.length; window.confirm = () => false; await {d}.linkDelete('svc_db'); const refused = window.__saved.length === before; window.confirm = () => true; await {d}.linkDelete('svc_db'); return JSON.stringify({{ refused, links: window.__saved.at(-1).spec.links }}); }})()"),
