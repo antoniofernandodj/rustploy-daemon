@@ -1142,4 +1142,9 @@ export default {
   "vínculo desfeito": "link removed",
   "{0} (projeto {1})": "{0} (project {1})",
   "erro ao carregar o serviço": "error loading the service",
+  "RECURSO (OPCIONAL)": "RESOURCE (OPTIONAL)",
+  "nome do bucket ou do database": "bucket or database name",
+  "Bucket com leitura pública": "Bucket with public read",
+  "Num S3 (RustFS, MinIO), o recurso é um bucket; num Postgres, MySQL ou MariaDB, um database. É criado no próximo deploy deste serviço, se ainda não existir, e entrega PREFIXO_BUCKET ou PREFIXO_DATABASE. Desfazer o vínculo não apaga o recurso.": "On an S3 (RustFS, MinIO), the resource is a bucket; on a Postgres, MySQL or MariaDB, a database. It is created on this service's next deploy, if it does not exist yet, and hands over PREFIX_BUCKET or PREFIX_DATABASE. Removing the link does not delete the resource.",
+  "leitura pública": "public read",
 };

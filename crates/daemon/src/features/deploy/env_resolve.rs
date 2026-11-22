@@ -155,7 +155,12 @@ pub async fn link_env(db: &Db, secrets: &SecretsManager, svc: &Service) -> Vec<(
                             &ConnTarget {
                                 host: &host,
                                 port,
-                                database: database.as_deref(),
+                                // Com um database de recurso, a URL aponta para ele.
+                                database: link
+                                    .resource
+                                    .as_ref()
+                                    .map(|r| r.name.as_str())
+                                    .or(database.as_deref()),
                                 user: user.as_deref(),
                                 password: password.as_deref(),
                                 auth_source,
@@ -174,6 +179,17 @@ pub async fn link_env(db: &Db, secrets: &SecretsManager, svc: &Service) -> Vec<(
         out.push((format!("{prefix}_PORT"), port.to_string()));
         if let Some(url) = url {
             out.push((format!("{prefix}_URL"), url));
+        }
+        if let Some(resource) = &link.resource {
+            match crate::domain::resource_kind(product) {
+                Some(crate::domain::ResourceKind::Bucket) => {
+                    out.push((format!("{prefix}_BUCKET"), resource.name.clone()))
+                }
+                Some(crate::domain::ResourceKind::Database) => {
+                    out.push((format!("{prefix}_DATABASE"), resource.name.clone()))
+                }
+                None => {}
+            }
         }
     }
     out
@@ -352,6 +368,7 @@ mod tests {
                         svc.spec.links = vec![ServiceLink {
                             service_id: "s_db".into(),
                             env_prefix: None,
+                            resource: None,
                         }];
                         svc.spec.env_vars = vec![plain("DB_PORT", "6543")];
                     }
@@ -391,6 +408,23 @@ mod tests {
             .into_iter()
             .collect();
         assert!(!own.contains_key("API_HOST"));
+        // Fase 2: com um database de recurso, a URL aponta para ele e vem `DB_DATABASE`.
+        let mut with_db = api.clone();
+        with_db.spec.links[0].resource = Some(crate::domain::LinkResource {
+            name: "pedidos".into(),
+            public_read: false,
+        });
+        let res: HashMap<_, _> = link_env(&db, &secrets, &with_db)
+            .await
+            .into_iter()
+            .collect();
+        assert_eq!(res["DB_DATABASE"], "pedidos");
+        assert!(
+            res["DB_URL"].ends_with("@rp_db:5432/pedidos"),
+            "{}",
+            res["DB_URL"]
+        );
+
         let mut orphan = api.clone();
         orphan.spec.links[0].service_id = "nao_existe".into();
         assert!(link_env(&db, &secrets, &orphan).await.is_empty());

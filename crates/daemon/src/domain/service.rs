@@ -113,6 +113,61 @@ pub struct ServiceLink {
     /// maiúsculas ([`link_env_prefix`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub env_prefix: Option<String>,
+    /// Um **recurso** que o provedor guarda para este serviço (um bucket, um database), criado no deploy
+    /// se ainda não existir. Ver [`resource_kind`] e `docs/plano-recursos-e-vinculos.md` §7.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resource: Option<LinkResource>,
+}
+
+/// O recurso de um vínculo: o nome dele no provedor.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct LinkResource {
+    pub name: String,
+    /// Só bucket: deixa qualquer um **ler** os objetos (servir imagens, por exemplo).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub public_read: bool,
+}
+
+/// Que tipo de recurso um provedor oferece, pelo `product` dele.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResourceKind {
+    /// RustFS/MinIO: um bucket S3.
+    Bucket,
+    /// Postgres/MySQL/MariaDB: um database.
+    Database,
+}
+
+pub fn resource_kind(product: Option<&str>) -> Option<ResourceKind> {
+    match product?.to_ascii_lowercase().as_str() {
+        "rustfs" | "minio" => Some(ResourceKind::Bucket),
+        "postgres" | "postgresql" | "mysql" | "mariadb" => Some(ResourceKind::Database),
+        _ => None,
+    }
+}
+
+/// O nome do recurso é válido para o tipo? É a única barreira antes de ele entrar numa URL S3 ou num
+/// SQL, então é estrita: bucket `[a-z0-9.-]`, 3–63, começa e termina com letra ou dígito; database
+/// `[a-z][a-z0-9_]*`, até 32.
+pub fn is_valid_resource_name(kind: ResourceKind, name: &str) -> bool {
+    match kind {
+        ResourceKind::Bucket => {
+            (3..=63).contains(&name.len())
+                && name
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '.' || c == '-')
+                && name.starts_with(|c: char| c.is_ascii_alphanumeric())
+                && name.ends_with(|c: char| c.is_ascii_alphanumeric())
+                && !name.contains("..")
+        }
+        ResourceKind::Database => {
+            !name.is_empty()
+                && name.len() <= 32
+                && name.starts_with(|c: char| c.is_ascii_lowercase())
+                && name
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+        }
+    }
 }
 
 /// O prefixo padrão das variáveis de um vínculo: o nome do provedor em maiúsculas, com tudo que

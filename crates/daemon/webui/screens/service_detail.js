@@ -1390,6 +1390,8 @@ document.addEventListener("alpine:init", () => {
     advancedDependencyAddId: "",
     advancedLinkAddId: "",
     advancedLinkPrefix: "",
+    advancedLinkResource: "",
+    advancedLinkPublicRead: false,
     advancedConsumerAddId: "",
 
     initAdvancedForm() {
@@ -1402,6 +1404,8 @@ document.addEventListener("alpine:init", () => {
       this.advancedDependencyAddId = "";
       this.advancedLinkAddId = "";
       this.advancedLinkPrefix = "";
+      this.advancedLinkResource = "";
+      this.advancedLinkPublicRead = false;
       this.advancedConsumerAddId = "";
       this.advancedPreDeployCheckAddJobId = "";
     },
@@ -1480,17 +1484,29 @@ document.addEventListener("alpine:init", () => {
       if (pair.svc.spec.project_id !== this.svc?.spec?.project_id) return t`${name} (projeto ${pair.proj})`;
       return name;
     },
+    // Que recurso um provedor oferece (o mesmo de `domain::resource_kind`): "bucket", "database" ou null.
+    resourceKind(product) {
+      const p = String(product || "").toLowerCase();
+      if (p === "rustfs" || p === "minio") return "bucket";
+      if (["postgres", "postgresql", "mysql", "mariadb"].includes(p)) return "database";
+      return null;
+    },
     get linkRows() {
       const byId = new Map(this.allServicesForLinks.map((pair) => [pair.svc.id, pair]));
       return (this.svc?.spec?.links || []).map((link, index) => {
         const pair = byId.get(link.service_id);
         const prefix = link.env_prefix || this.linkEnvPrefix(pair ? pair.svc.spec.name : "");
-        return {
-          id: link.service_id,
-          index: index + 1,
-          name: pair ? this.linkDisplayName(pair) : t`(serviço removido: ${link.service_id})`,
-          vars: `${prefix}_HOST · ${prefix}_PORT · ${prefix}_URL`,
-        };
+        let name = pair ? this.linkDisplayName(pair) : t`(serviço removido: ${link.service_id})`;
+        let vars = `${prefix}_HOST · ${prefix}_PORT · ${prefix}_URL`;
+        const kind = this.resourceKind(pair?.svc?.spec?.product);
+        if (link.resource && kind === "bucket") {
+          vars += ` · ${prefix}_BUCKET`;
+          name += ` · bucket ${link.resource.name}` + (link.resource.public_read ? ` (${t("leitura pública")})` : "");
+        } else if (link.resource && kind === "database") {
+          vars += ` · ${prefix}_DATABASE`;
+          name += ` · database ${link.resource.name}`;
+        }
+        return { id: link.service_id, index: index + 1, name, vars };
       });
     },
     get linkOptions() {
@@ -1532,11 +1548,16 @@ document.addEventListener("alpine:init", () => {
       const spec = JSON.parse(JSON.stringify(this.svc.spec));
       const link = { service_id: targetId };
       if (prefix) link.env_prefix = prefix;
+      // Recurso (Fase 2): o daemon valida o nome e cria no próximo deploy.
+      const resourceName = (this.advancedLinkResource || "").trim().toLowerCase();
+      if (resourceName) link.resource = { name: resourceName, public_read: !!this.advancedLinkPublicRead };
       spec.links = [...(spec.links || []).filter((existing) => existing.service_id !== targetId), link];
       const result = await this.store.saveServiceSpec(spec, t("vínculo adicionado"));
       if (result.ok) {
         this.advancedLinkAddId = "";
         this.advancedLinkPrefix = "";
+        this.advancedLinkResource = "";
+        this.advancedLinkPublicRead = false;
       }
     },
     async linkDelete(targetId) {

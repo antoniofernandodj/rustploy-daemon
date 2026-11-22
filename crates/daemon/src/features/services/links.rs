@@ -9,7 +9,9 @@
 //!   existia continua mesmo com ela desligada;
 //! - nenhum ciclo, contando `depends_on`, os vínculos de todos e os acessos ao banco compartilhado.
 
-use crate::domain::{Service, ServiceSpec, is_valid_env_prefix};
+use crate::domain::{
+    ResourceKind, Service, ServiceSpec, is_valid_env_prefix, is_valid_resource_name, resource_kind,
+};
 use crate::protocol::Response as RpResponse;
 use crate::store::Db;
 use std::collections::BTreeSet;
@@ -112,6 +114,48 @@ pub(crate) fn plan_links(
                 format!("o serviço vinculado {} não existe", link.service_id),
             ));
         };
+        if let Some(resource) = &link.resource {
+            if target.spec.project_id != spec.project_id {
+                return Err(RpResponse::err(
+                    "InvalidInput",
+                    format!(
+                        "recurso só em serviço do mesmo projeto; num banco compartilhado de outro \
+                         projeto (\"{}\"), use um database gerenciado",
+                        target.spec.name
+                    ),
+                ));
+            }
+            let Some(kind) = resource_kind(target.spec.product.as_deref()) else {
+                return Err(RpResponse::err(
+                    "InvalidInput",
+                    format!(
+                        "\"{}\" não oferece recursos (só S3 — RustFS, MinIO — e Postgres, MySQL, MariaDB)",
+                        target.spec.name
+                    ),
+                ));
+            };
+            if !is_valid_resource_name(kind, &resource.name) {
+                let rule = match kind {
+                    ResourceKind::Bucket => {
+                        "bucket: 3 a 63 caracteres, minúsculas, dígitos, ponto e hífen, começando e \
+                         terminando com letra ou dígito"
+                    }
+                    ResourceKind::Database => {
+                        "database: até 32 caracteres, minúsculas, dígitos e _, começando com letra"
+                    }
+                };
+                return Err(RpResponse::err(
+                    "InvalidInput",
+                    format!("nome de recurso inválido \"{}\" ({rule})", resource.name),
+                ));
+            }
+            if resource.public_read && kind != ResourceKind::Bucket {
+                return Err(RpResponse::err(
+                    "InvalidInput",
+                    "leitura pública só vale para bucket",
+                ));
+            }
+        }
         if target.spec.project_id == spec.project_id {
             continue;
         }
@@ -173,6 +217,7 @@ mod tests {
             .map(|t| ServiceLink {
                 service_id: (*t).into(),
                 env_prefix: None,
+                resource: None,
             })
             .collect();
         spec
@@ -299,6 +344,106 @@ mod tests {
         );
     }
 
+    /// Fase 2: recurso só no mesmo projeto, só em provedor que oferece, com nome válido; leitura
+    /// pública só para bucket.
+    #[test]
+    fn regras_do_recurso() {
+        use crate::domain::LinkResource;
+        let mut s3 = service("s3", "p1", None);
+        s3.spec.product = Some("rustfs".into());
+        let mut pg = service("pg", "p1", None);
+        pg.spec.product = Some("postgres".into());
+        let mut pg_fora = service("pg_fora", "p2", Some(true));
+        pg_fora.spec.product = Some("postgres".into());
+        let all = vec![s3, pg, pg_fora, service("app", "p1", None)];
+        let none = BTreeSet::new();
+        let with = |target: &str, name: &str, public_read: bool| {
+            let mut spec = with_links("p1", &[target]);
+            spec.links[0].resource = Some(LinkResource {
+                name: name.into(),
+                public_read,
+            });
+            spec
+        };
+        assert!(
+            plan_links(
+                &with("s3", "chickie-uploads", true),
+                Some("api"),
+                &all,
+                &[],
+                &none
+            )
+            .is_ok()
+        );
+        assert!(plan_links(&with("pg", "loja", false), Some("api"), &all, &[], &none).is_ok());
+        assert_eq!(
+            code(plan_links(
+                &with("pg", "loja", true),
+                Some("api"),
+                &all,
+                &[],
+                &none
+            )),
+            "InvalidInput"
+        );
+        assert_eq!(
+            code(plan_links(
+                &with("s3", "Maiuscula", false),
+                Some("api"),
+                &all,
+                &[],
+                &none
+            )),
+            "InvalidInput"
+        );
+        assert_eq!(
+            code(plan_links(
+                &with("pg", "1abc", false),
+                Some("api"),
+                &all,
+                &[],
+                &none
+            )),
+            "InvalidInput"
+        );
+        assert_eq!(
+            code(plan_links(
+                &with("app", "x123", false),
+                Some("api"),
+                &all,
+                &[],
+                &none
+            )),
+            "InvalidInput"
+        );
+        let access = vec![("pg_fora".to_string(), "p1".to_string())];
+        assert_eq!(
+            code(plan_links(
+                &with("pg_fora", "loja", false),
+                Some("api"),
+                &all,
+                &access,
+                &none
+            )),
+            "InvalidInput"
+        );
+    }
+
+    #[test]
+    fn nomes_de_recurso() {
+        use crate::domain::{ResourceKind::*, is_valid_resource_name as ok};
+        assert!(ok(Bucket, "chickie-uploads"));
+        assert!(ok(Bucket, "a.b-c"));
+        assert!(!ok(Bucket, "ab"));
+        assert!(!ok(Bucket, "-ab"));
+        assert!(!ok(Bucket, "a..b"));
+        assert!(!ok(Bucket, "ABC"));
+        assert!(ok(Database, "loja_2"));
+        assert!(!ok(Database, "loja-2"));
+        assert!(!ok(Database, "\"; DROP"));
+        assert!(!ok(Database, &"a".repeat(33)));
+    }
+
     #[test]
     fn prefixo_padrao_e_validacao() {
         use crate::domain::{is_valid_env_prefix, link_env_prefix};
@@ -319,6 +464,7 @@ mod tests {
         api.spec.links = vec![ServiceLink {
             service_id: "db".into(),
             env_prefix: None,
+            resource: None,
         }];
         let all = vec![service("db", "p1", None), api];
         let edges = crate::features::deploy::autostart::implicit_edges(&[], &all);

@@ -166,7 +166,13 @@ Comandos, por área (campos entre chaves):
   do projeto e do serviço ganham. De outro projeto, só um banco compartilhado, e só se a trava dele
   (`shared.accept_links`) aceitar; o daemon concede o acesso entre projetos sozinho. Recusas:
   `LinkNotAllowed`, `LinkRefused`, `DependencyCycle`. Num serviço **Compose**, as variáveis só
-  chegam ao container se o YAML as referenciar (`${DB_URL}`), como qualquer variável.
+  chegam ao container se o YAML as referenciar (`${DB_URL}`), como qualquer variável. Jobs com
+  serviço gatilho também recebem as variáveis dos vínculos dele.
+  **Recurso** (`resource: {name, public_read?}` no vínculo, só no mesmo projeto): num S3 (`product`
+  `rustfs`/`minio`) é um bucket, num `postgres`/`mysql`/`mariadb` um database. O daemon cria no deploy
+  do consumidor, antes dos pré-deploy checks, se não existir (idempotente; teto de 60 s), e entrega
+  `<PREFIXO>_BUCKET` ou `<PREFIXO>_DATABASE` (a `_URL` passa a apontar para o database).
+  `public_read` (só bucket) aplica a política de leitura anônima. Desfazer o vínculo não apaga o recurso.
 - **Deploys**: `DeployStart{service_id}` (só aquele serviço) ·
   `DeployWithDependencies{service_id, skip_running?}` (o serviço **e a árvore de dependências dele**,
   na ordem: quem não depende de ninguém primeiro; resposta `DeployBatch` com cada serviço e seu

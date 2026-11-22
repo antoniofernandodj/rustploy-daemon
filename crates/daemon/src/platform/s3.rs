@@ -183,14 +183,17 @@ fn target(cfg: &S3Config, key: &str) -> Result<Target> {
     let port = uri.port_u16().unwrap_or(if tls { 443 } else { 80 });
     let default_port = if tls { 443 } else { 80 };
     let (connect_host, path) = if cfg.path_style {
-        (
-            base_host.to_string(),
+        // Chave vazia = operação no bucket (criar, conferir, política): `/bucket`, sem a barra final.
+        let path = if key.is_empty() {
+            format!("/{}", uri_encode(&cfg.bucket, false))
+        } else {
             format!(
                 "/{}/{}",
                 uri_encode(&cfg.bucket, false),
                 uri_encode(key, true)
-            ),
-        )
+            )
+        };
+        (base_host.to_string(), path)
     } else {
         (
             format!("{}.{base_host}", cfg.bucket),
@@ -618,6 +621,38 @@ pub async fn list(cfg: &S3Config, prefix: &str) -> Result<Vec<Object>> {
 pub async fn delete(cfg: &S3Config, key: &str) -> Result<()> {
     let reply = send(cfg, "DELETE", key, &[], Bytes::new()).await?;
     expect_ok(reply, "apagar o objeto").await?;
+    Ok(())
+}
+
+/// Garante que o bucket existe: confere (`HEAD`) e, se não existe, cria (`PUT`). Devolve `true` se
+/// criou. Usado pelos recursos dos vínculos (`docs/plano-recursos-e-vinculos.md` §7).
+pub async fn ensure_bucket(cfg: &S3Config) -> Result<bool> {
+    cfg.validate()?;
+    let head = send(cfg, "HEAD", "", &[], Bytes::new()).await?;
+    if (200..300).contains(&head.status) {
+        return Ok(false);
+    }
+    if head.status != 404 {
+        let status = head.status;
+        bail!("conferir o bucket: o S3 respondeu {status}");
+    }
+    let reply = send(cfg, "PUT", "", &[], Bytes::new()).await?;
+    expect_ok(reply, "criar o bucket").await?;
+    Ok(true)
+}
+
+/// Política que deixa qualquer um **ler** os objetos do bucket (`s3:GetObject` para `*`).
+pub fn public_read_policy(bucket: &str) -> String {
+    format!(
+        r#"{{"Version":"2012-10-17","Statement":[{{"Effect":"Allow","Principal":{{"AWS":["*"]}},"Action":["s3:GetObject"],"Resource":["arn:aws:s3:::{bucket}/*"]}}]}}"#
+    )
+}
+
+/// Aplica a [`public_read_policy`] ao bucket (`PUT ?policy`).
+pub async fn set_public_read(cfg: &S3Config) -> Result<()> {
+    let body = Bytes::from(public_read_policy(&cfg.bucket));
+    let reply = send(cfg, "PUT", "", &[("policy", "")], body).await?;
+    expect_ok(reply, "aplicar a leitura pública").await?;
     Ok(())
 }
 

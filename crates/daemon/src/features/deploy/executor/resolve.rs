@@ -33,6 +33,9 @@ impl DeployExecutor {
         // índice): o loop de `execute()` não impõe timeout por step, e
         // manter a fila num só `PreDeployCheck` evita precisar persistir
         // "em qual item da fila estamos" (sem mudança de schema/wire).
+        // Os recursos dos vínculos (bucket, database) vêm antes dos checks: um job de migração já
+        // encontra o database. Erro aqui para o deploy antes de tocar em qualquer coisa.
+        self.ensure_link_resources(dep, svc).await?;
         let checks = svc.spec.pre_deploy_checks();
         if checks.is_empty() {
             return Ok(DeployState::ResolvingDeps);

@@ -2578,10 +2578,13 @@ async fn links_section_lists_options_saves_and_confirms() {
 
     let saved = eval_str(
         &page,
-        &format!("(async () => {{ {d}.advancedLinkAddId = 'svc_db'; {d}.advancedLinkPrefix = 'main'; await {d}.linkAdd(); const x = window.__saved.at(-1); return JSON.stringify(x.spec.links); }})()"),
+        &format!("(async () => {{ {d}.advancedLinkAddId = 'svc_db'; {d}.advancedLinkPrefix = 'main'; {d}.advancedLinkResource = ' Pedidos '; {d}.advancedLinkPublicRead = false; await {d}.linkAdd(); const x = window.__saved.at(-1); return JSON.stringify(x.spec.links); }})()"),
     )
     .await;
-    assert_eq!(saved, r#"[{"service_id":"svc_db","env_prefix":"MAIN"}]"#);
+    assert_eq!(
+        saved,
+        r#"[{"service_id":"svc_db","env_prefix":"MAIN","resource":{"name":"pedidos","public_read":false}}]"#
+    );
 
     let deleted = eval_str(
         &page,

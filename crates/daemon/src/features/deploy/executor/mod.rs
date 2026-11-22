@@ -26,6 +26,7 @@ mod compose_flow;
 mod drain;
 mod healthcheck;
 mod promote;
+mod provision;
 mod resolve;
 mod rollback;
 mod source;
