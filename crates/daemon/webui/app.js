@@ -326,6 +326,8 @@ document.addEventListener("alpine:init", () => {
     // ── Detalhe de serviço aberto ────────────────────────────────────
     serviceDetail: null, // Service (ServiceGet)
     serviceDeployments: [], // Vec<Deployment> (DeployHistory)
+    serviceReleases: [], // Vec<Release> (ReleaseList): o "v12" de cada deploy que chegou a Live
+    releaseDiff: null, // { release, diff } aberto na janela "Comparar"; null = fechada
     serviceTab: "general",
     serviceMessage: "",
     serviceLoading: false,
@@ -861,6 +863,8 @@ document.addEventListener("alpine:init", () => {
       this.serviceTab = "general";
       this.serviceMessage = "";
       this.serviceDeployments = [];
+      this.serviceReleases = [];
+      this.releaseDiff = null;
       this.serviceLoading = true;
       this.nav("service");
       await this.fetchServiceDetail(serviceId);
@@ -876,7 +880,45 @@ document.addEventListener("alpine:init", () => {
       this.serviceDetail = serviceGetResponse.value.Service;
       const deployHistoryResponse = await this.api.rpc({ DeployHistory: { service_id: serviceId, limit: 30 } });
       this.serviceDeployments = (deployHistoryResponse.ok && deployHistoryResponse.value?.Deployments) || [];
+      const releaseListResponse = await this.api.rpc({ ReleaseList: { service_id: serviceId } });
+      this.serviceReleases = (releaseListResponse.ok && releaseListResponse.value?.Releases) || [];
       this.serviceLoading = false;
+    },
+
+    /** "Comparar": o que um "voltar para esta" mudaria (do declarado agora para a release). */
+    async releaseCompare(releaseId) {
+      const release = this.serviceReleases.find((candidate) => candidate.id === releaseId);
+      const releaseDiffResponse = await this.api.rpcChecked({ ReleaseDiff: { release_id: releaseId } });
+      if (releaseDiffResponse.ok && releaseDiffResponse.value?.ReleaseDiff) {
+        this.releaseDiff = { release, diff: releaseDiffResponse.value.ReleaseDiff };
+      } else {
+        this.toastError("erro: " + releaseDiffResponse.error);
+      }
+      return releaseDiffResponse;
+    },
+
+    closeReleaseDiff() {
+      this.releaseDiff = null;
+    },
+
+    /** "Voltar para esta": sobrescreve a configuração do serviço com a da release e faz o deploy
+     * com a imagem dela, sem build. Pede confirmação (é uma sobrescrita). */
+    async releaseRollback(releaseId) {
+      const release = this.serviceReleases.find((candidate) => candidate.id === releaseId);
+      if (!release) return;
+      const message = t`Voltar para a v${release.number}?`
+        + "\n\n" + t("A configuração do serviço será substituída pela desta release e o deploy usará a imagem dela, sem build. As variáveis do projeto não voltam, e os secrets valem com o valor atual.");
+      if (!confirm(message)) return;
+      const serviceId = this.selectedServiceId;
+      const releaseRollbackResponse = await this.api.rpcChecked({ ReleaseRollback: { release_id: releaseId } });
+      if (releaseRollbackResponse.ok) this.deployTrackId = serviceId;
+      this.toastResult(releaseRollbackResponse, t`voltando para a v${release.number}`);
+      if (releaseRollbackResponse.ok) {
+        this.releaseDiff = null;
+        await this.fetchServiceDetail(serviceId);
+        await this.refreshNow();
+      }
+      return releaseRollbackResponse;
     },
 
     async saveServiceSpec(spec, okMessage) {

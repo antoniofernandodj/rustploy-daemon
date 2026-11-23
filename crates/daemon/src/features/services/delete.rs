@@ -66,6 +66,10 @@ pub async fn handle(state: ServicesContext, id: String) -> RpResponse {
     }
     match crate::store::services::delete(&state.db, &id).await {
         Ok(true) => {
+            // As releases (o "voltar para a vN") não têm mais a que voltar.
+            if let Err(e) = crate::store::releases::delete_for_service(&state.db, &id).await {
+                tracing::warn!(service_id = %id, error = %e, "service_delete: falha ao remover as releases");
+            }
             // O histórico de log do serviço vai junto.
             if let Some(store) = crate::platform::log_store::global() {
                 store.delete_service(&id);

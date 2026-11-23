@@ -57,6 +57,9 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         Command::DeployDelete { .. } => "DeployDelete",
         Command::DeployHistory { .. } => "DeployHistory",
         Command::DeployRollback { .. } => "DeployRollback",
+        Command::ReleaseList { .. } => "ReleaseList",
+        Command::ReleaseDiff { .. } => "ReleaseDiff",
+        Command::ReleaseRollback { .. } => "ReleaseRollback",
         Command::ServiceStop { .. } => "ServiceStop",
         Command::ServiceReload { .. } => "ServiceReload",
         Command::LogsGet { .. } => "LogsGet",
@@ -190,6 +193,9 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         | Command::DeployDelete { .. }
         | Command::DeployHistory { .. }
         | Command::DeployRollback { .. }
+        | Command::ReleaseList { .. }
+        | Command::ReleaseDiff { .. }
+        | Command::ReleaseRollback { .. }
         | Command::RecentDeployments { .. }
         | Command::GetBuildLogs { .. } => handlers::deploys::dispatch(state, cmd).await,
         Command::PruneContainers

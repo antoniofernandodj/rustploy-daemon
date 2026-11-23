@@ -129,13 +129,16 @@ pub fn required_level(cmd: &Command) -> Level {
         | Command::MetricsUnsubscribe { .. }
         | Command::DeployWithDependenciesPlan { .. }
         | Command::ProjectDeployPlan { .. }
-        | Command::ServiceBackupList { .. } => Level::Observer,
+        | Command::ServiceBackupList { .. }
+        | Command::ReleaseList { .. }
+        | Command::ReleaseDiff { .. } => Level::Observer,
         Command::DeployStart { .. }
         | Command::DeployWithDependencies { .. }
         | Command::ProjectDeploy { .. }
         | Command::DeployAbort { .. }
         | Command::DeployDelete { .. }
         | Command::DeployRollback { .. }
+        | Command::ReleaseRollback { .. }
         | Command::ServiceStop { .. }
         | Command::ServiceReload { .. }
         | Command::ServiceWarm { .. }

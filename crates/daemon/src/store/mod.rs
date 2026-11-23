@@ -15,6 +15,7 @@ pub mod migration;
 pub mod projects;
 pub mod registry;
 pub mod registry_tokens;
+pub mod releases;
 pub mod services;
 pub mod shared_access;
 pub mod state_git_marks;
@@ -436,6 +437,35 @@ async fn migrate(pool: &SqlitePool) -> Result<()> {
     // não derivados (ver `docs/plano-nome-gravado-rede-e-stack.md`).
     add_column_if_missing(pool, "ALTER TABLE project ADD COLUMN network_name TEXT").await?;
     add_column_if_missing(pool, "ALTER TABLE service ADD COLUMN compose_project TEXT").await?;
+
+    // Releases: o que rodou em cada deploy Live, e o deploy que é um "voltar para a vN" (ver
+    // `store::releases` e `docs/plano-releases-ambientes-rotas-volumes.md` §1). Aditivo: um daemon
+    // anterior ignora a tabela e a coluna.
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS release (
+            id                   TEXT PRIMARY KEY,
+            service_id           TEXT NOT NULL,
+            deployment_id        TEXT NOT NULL UNIQUE,
+            number               INTEGER NOT NULL,
+            image                TEXT NOT NULL,
+            image_ref            TEXT,
+            spec                 TEXT NOT NULL,
+            project_env          TEXT NOT NULL DEFAULT '[]',
+            restored_from_number INTEGER,
+            created_at           TEXT NOT NULL,
+            UNIQUE (service_id, number)
+        )",
+    )
+    .execute(pool)
+    .await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_release_service ON release(service_id)")
+        .execute(pool)
+        .await?;
+    add_column_if_missing(
+        pool,
+        "ALTER TABLE deployment ADD COLUMN from_release_id TEXT",
+    )
+    .await?;
 
     // Fase 4d do plano `docs/plano-backup-estado-em-git.md`: a config do git provider vai para o
     // YAML; os tokens de login ficam aqui (nunca vão ao git). Preenche a partir da tabela antiga.

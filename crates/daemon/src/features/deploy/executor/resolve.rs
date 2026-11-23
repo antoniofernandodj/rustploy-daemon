@@ -152,6 +152,10 @@ impl DeployExecutor {
         dep: &Deployment,
         svc: &Service,
     ) -> Result<DeployState> {
+        // "Voltar para a vN": a imagem da release já está pronta com o nome que o staging usa.
+        if self.prepare_release_image(dep, svc).await? {
+            return Ok(DeployState::Staging);
+        }
         let next = match &svc.spec.source {
             ServiceSource::Registry { image } => {
                 info!(

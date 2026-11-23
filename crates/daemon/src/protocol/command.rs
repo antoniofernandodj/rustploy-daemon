@@ -153,8 +153,30 @@ pub enum Command {
     DeployAbort {
         deployment_id: String,
     },
+    /// Legado: só **consulta** o deploy Live anterior (não redeploya). O rollback de verdade é o
+    /// `ReleaseRollback`.
     DeployRollback {
         service_id: String,
+    },
+    /// As releases do serviço (o que rodou em cada deploy que chegou a Live), da mais nova para a
+    /// mais velha, com `is_current` e `image_status`. Resposta: `Releases`.
+    ReleaseList {
+        service_id: String,
+    },
+    /// O que muda indo de `against_release_id` para `release_id`; sem `against_release_id`, indo do
+    /// que está **declarado agora** para a release (o que um `ReleaseRollback` mudaria). Secrets
+    /// aparecem como `secret:NOME`, nunca o valor. Resposta: `ReleaseDiff`.
+    ReleaseDiff {
+        release_id: String,
+        #[serde(default)]
+        against_release_id: Option<String>,
+    },
+    /// **Voltar para uma release**: grava o spec dela como o spec atual do serviço (sobrescreve; o
+    /// anterior fica no histórico do git de infra) e dispara um deploy que usa a imagem dela, sem
+    /// build. As variáveis do projeto **não** voltam; os secrets valem com o valor atual. Compose:
+    /// refaz o `compose up` com o conteúdo da release. Resposta: `Deployment`.
+    ReleaseRollback {
+        release_id: String,
     },
     DeployHistory {
         service_id: String,

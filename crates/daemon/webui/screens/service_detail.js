@@ -1794,9 +1794,20 @@ document.addEventListener("alpine:init", () => {
     },
 
     get deployments() {
+      const releaseByDeployment = new Map(
+        (this.store.serviceReleases || []).map((release) => [release.deployment_id, release]),
+      );
       return (this.store.serviceDeployments || []).map((serviceDeployment) => {
         const [label, kind] = stateLabelKind(serviceDeployment.state);
+        const release = releaseByDeployment.get(serviceDeployment.id);
         return {
+          releaseId: release?.id || null,
+          releaseLabel: release ? "v" + release.number : "",
+          releaseIsCurrent: !!release?.is_current,
+          releaseRestoredLabel: release?.restored_from_number
+            ? t`volta da v${release.restored_from_number}` : "",
+          releaseCanRollback: !!release && !release.is_current && release.image_status !== "Missing",
+          releaseImageMissing: release?.image_status === "Missing",
           id: serviceDeployment.id,
           image: serviceDeployment.image,
           stateLabel: label,
@@ -1827,6 +1838,47 @@ document.addEventListener("alpine:init", () => {
     },
     async removeDeployment(deploymentId) {
       await this.store.deleteDeployment(deploymentId);
+    },
+    /** As mudanças da janela "Comparar", agrupadas como a tela mostra. */
+    get releaseDiffGroups() {
+      const opened = this.store.releaseDiff;
+      if (!opened) return [];
+      const titles = {
+        image: t("Imagem"),
+        service: t("Configuração do serviço"),
+        service_env: t("Variáveis do serviço"),
+        project_env: t("Variáveis do projeto (não voltam)"),
+      };
+      return ["image", "service", "service_env", "project_env"]
+        .map((scope) => ({
+          scope,
+          title: titles[scope],
+          changes: opened.diff.changes
+            .filter((change) => change.scope === scope)
+            .map((change) => ({
+              key: scope + ":" + change.field,
+              field: change.field,
+              before: change.before ?? t("(não existia)"),
+              after: change.after ?? t("(removida)"),
+            })),
+        }))
+        .filter((group) => group.changes.length > 0);
+    },
+    get releaseDiffTitle() {
+      const opened = this.store.releaseDiff;
+      if (!opened) return "";
+      return t`Atual → v${opened.release?.number ?? "?"}`;
+    },
+    get releaseDiffCanRollback() {
+      const release = this.store.releaseDiff?.release;
+      return !!release && !release.is_current && release.image_status !== "Missing";
+    },
+
+    async compareRelease(releaseId) {
+      return this.store.releaseCompare(releaseId);
+    },
+    async rollbackRelease(releaseId) {
+      return this.store.releaseRollback(releaseId);
     },
   }));
 });

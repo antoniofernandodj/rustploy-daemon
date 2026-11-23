@@ -193,7 +193,19 @@ Comandos, por área (campos entre chaves):
   `DeployQueuePause{paused}`. A fila também leva **execuções de job** (`jrun_…`) e **aquecimentos**
   (`jwarm_…`): em `DeployEngineStatus` cada item traz `kind` (`Deploy`, `Job` ou `Warm`) e o `deployment_id`
   é o id do item, que serve a `DeployQueuePromote`/`Reorder` e a `DeployAbort` (cancela o job, na fila ou
-  rodando; `jwarm_…` só sai da fila antes de começar).
+  rodando; `jwarm_…` só sai da fila antes de começar). `DeployRollback` só **consulta** o deploy Live
+  anterior; para voltar de verdade, use as releases (abaixo).
+- **Releases** (o que rodou em cada deploy que chegou a Live: imagem fixada por digest/id + o spec e as
+  variáveis do projeto daquele momento): `ReleaseList{service_id}` (da mais nova para a mais velha;
+  `number` é o "v12", `is_current` marca a que está no ar, `image_status` = `Local`, `Pullable` (será
+  baixada pelo digest), `Missing` (não dá para voltar) ou `NotApplicable` (Compose)) ·
+  `ReleaseDiff{release_id, against_release_id?}` (sem `against_release_id`: o que muda indo do que está
+  declarado **agora** para a release, ou seja, o que um rollback mudaria; secrets aparecem como
+  `secret:NOME`) · `ReleaseRollback{release_id}` (**sobrescreve** o spec do serviço com o da release,
+  mantendo nome e projeto, e dispara um deploy **sem build** com a imagem dela; resposta `Deployment`).
+  O rollback **não** volta as variáveis do projeto e usa o valor **atual** de cada secret. Confira o
+  `ReleaseDiff` antes. As imagens das 3 releases mais novas de cada serviço são poupadas pela limpeza
+  do Docker.
 - **Logs de container**: `LogsGet{service_id, tail}` (ao vivo; para acompanhar,
   use o SSE `/api/services/<id>/logs`) · `LogsHistory{service_id, before?, limit,
   container_id?, container_ids?}` (o log **persistido**, que atravessa deploys e

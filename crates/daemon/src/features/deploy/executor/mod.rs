@@ -27,6 +27,7 @@ mod drain;
 mod healthcheck;
 mod promote;
 mod provision;
+mod release;
 mod resolve;
 mod rollback;
 mod source;

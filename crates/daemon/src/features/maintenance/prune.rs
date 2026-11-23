@@ -72,6 +72,20 @@ pub async fn prune_images_core(
     all: bool,
     older_than_hours: u32,
 ) -> Result<PruneStat, String> {
+    // As imagens das releases mais novas de cada serviço não podem sair: são o "voltar para a vN".
+    // O `image prune` do Docker não aceita exceção por imagem, então, havendo o que proteger, a
+    // limpeza escolhe e remove uma a uma (ver `docs/plano-releases-ambientes-rotas-volumes.md` §1.4).
+    let protected = crate::store::releases::protected_image_refs(
+        &state.db,
+        crate::domain::PROTECTED_RELEASES_PER_SERVICE,
+    )
+    .await
+    .unwrap_or_default();
+    if !protected.is_empty() {
+        let result = prune_images_sparing(state, all, older_than_hours, &protected).await;
+        state.docker_cache.df.invalidate().await;
+        return result;
+    }
     let result = state
         .docker
         .inner
@@ -87,6 +101,108 @@ pub async fn prune_images_core(
         }),
         Err(e) => Err(e.to_string()),
     }
+}
+
+/// Uma imagem do inventário, só com o que a escolha da limpeza precisa.
+pub(crate) struct ImageCandidate {
+    pub id: String,
+    pub repo_tags: Vec<String>,
+    pub repo_digests: Vec<String>,
+    /// Criação, em segundos desde a época.
+    pub created: i64,
+    pub size: u64,
+}
+
+/// Quais imagens a limpeza remove, poupando as protegidas: só as sem container (nem parado); com
+/// `all = false`, só as sem tag (dangling); com idade mínima, só as criadas antes do corte.
+pub(crate) fn images_to_remove<'a>(
+    images: &'a [ImageCandidate],
+    used_image_ids: &std::collections::HashSet<String>,
+    protected: &[String],
+    all: bool,
+    created_before: Option<i64>,
+) -> Vec<&'a ImageCandidate> {
+    images
+        .iter()
+        .filter(|image| !used_image_ids.contains(&image.id))
+        .filter(|image| {
+            !protected
+                .iter()
+                .any(|reference| reference == &image.id || image.repo_digests.contains(reference))
+        })
+        .filter(|image| {
+            all || image.repo_tags.is_empty()
+                || image.repo_tags.iter().all(|tag| tag == "<none>:<none>")
+        })
+        .filter(|image| created_before.is_none_or(|cutoff| image.created < cutoff))
+        .collect()
+}
+
+async fn prune_images_sparing(
+    state: &MaintenanceContext,
+    all: bool,
+    older_than_hours: u32,
+    protected: &[String],
+) -> Result<PruneStat, String> {
+    let docker = &state.docker.inner;
+    let images: Vec<ImageCandidate> = docker
+        .list_images(Some(bollard::image::ListImagesOptions::<String> {
+            all: false,
+            ..Default::default()
+        }))
+        .await
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .map(|image| ImageCandidate {
+            id: image.id,
+            repo_tags: image.repo_tags,
+            repo_digests: image.repo_digests,
+            created: image.created,
+            size: image.size.max(0) as u64,
+        })
+        .collect();
+    let used_image_ids: std::collections::HashSet<String> = docker
+        .list_containers(Some(bollard::container::ListContainersOptions::<String> {
+            all: true,
+            ..Default::default()
+        }))
+        .await
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .filter_map(|container| container.image_id)
+        .collect();
+    let created_before =
+        (older_than_hours > 0).then(|| Utc::now().timestamp() - i64::from(older_than_hours) * 3600);
+    let mut stat = PruneStat {
+        count: 0,
+        reclaimed_bytes: 0,
+    };
+    for image in images_to_remove(&images, &used_image_ids, protected, all, created_before) {
+        let removed = docker
+            .remove_image(
+                &image.id,
+                Some(bollard::image::RemoveImageOptions {
+                    force: true,
+                    noprune: false,
+                }),
+                None,
+            )
+            .await;
+        match removed {
+            Ok(_) => {
+                stat.count += 1;
+                stat.reclaimed_bytes += image.size;
+            }
+            // Uma imagem que é base de outra não sai: o Docker recusa, e está certo.
+            Err(e) => tracing::debug!(image = %image.id, error = %e, "prune: imagem mantida"),
+        }
+    }
+    tracing::info!(
+        removed = stat.count,
+        protected = protected.len(),
+        "prune: imagens removidas poupando as das releases"
+    );
+    Ok(stat)
 }
 
 fn image_prune_filters(
@@ -234,6 +350,47 @@ pub async fn prune_networks_core(state: &MaintenanceContext) -> Result<PruneStat
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn image(id: &str, tags: &[&str], digests: &[&str], created: i64) -> ImageCandidate {
+        ImageCandidate {
+            id: id.into(),
+            repo_tags: tags.iter().map(|tag| tag.to_string()).collect(),
+            repo_digests: digests.iter().map(|digest| digest.to_string()).collect(),
+            created,
+            size: 10,
+        }
+    }
+
+    #[test]
+    fn limpeza_poupa_release_em_uso_e_recente() {
+        let images = vec![
+            image("sha256:release", &["rp_api:01a"], &[], 100),
+            image("sha256:pulled", &[], &["app@sha256:d1"], 100),
+            image("sha256:used", &["nginx:1"], &[], 100),
+            image("sha256:old", &["rp_api:01b"], &[], 100),
+            image("sha256:dangling", &[], &[], 100),
+            image("sha256:new", &[], &[], 900),
+        ];
+        let used = std::collections::HashSet::from(["sha256:used".to_string()]);
+        let protected = vec!["sha256:release".to_string(), "app@sha256:d1".to_string()];
+        let ids = |list: Vec<&ImageCandidate>| -> Vec<String> {
+            list.into_iter().map(|image| image.id.clone()).collect()
+        };
+        assert_eq!(
+            ids(images_to_remove(
+                &images,
+                &used,
+                &protected,
+                true,
+                Some(500)
+            )),
+            vec!["sha256:old", "sha256:dangling"]
+        );
+        assert_eq!(
+            ids(images_to_remove(&images, &used, &protected, false, None)),
+            vec!["sha256:dangling", "sha256:new"]
+        );
+    }
 
     #[test]
     fn build_cache_prune_podman_usa_system_prune() {

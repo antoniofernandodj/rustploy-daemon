@@ -11,6 +11,7 @@ pub mod deploy_rollback;
 pub mod get_build_logs;
 pub mod recent_deployments;
 pub mod reconcile;
+pub mod releases;
 
 use crate::bootstrap::state::AppState;
 use crate::protocol::{Command, Response as RpResponse};
@@ -78,6 +79,12 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
             deploy_history::handle(state, service_id, limit).await
         }
         Command::DeployRollback { service_id } => deploy_rollback::handle(state, service_id).await,
+        Command::ReleaseList { service_id } => releases::list(state, service_id).await,
+        Command::ReleaseDiff {
+            release_id,
+            against_release_id,
+        } => releases::diff(state, release_id, against_release_id).await,
+        Command::ReleaseRollback { release_id } => releases::rollback(state, release_id).await,
         Command::RecentDeployments { limit } => recent_deployments::handle(state, limit).await,
         Command::GetBuildLogs { deployment_id } => {
             get_build_logs::handle(state, deployment_id).await

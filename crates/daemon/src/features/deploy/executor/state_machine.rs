@@ -67,8 +67,12 @@ impl DeployExecutor {
                         to = next_state.label(),
                         "executor: transição de estado"
                     );
+                    let became_live = next_state == DeployState::Live;
                     self.transition(deployment_id, &deployment.state, next_state, None)
                         .await?;
+                    if became_live {
+                        self.record_release(&deployment, &service).await;
+                    }
                 }
                 Err(e) => {
                     warn!(

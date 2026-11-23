@@ -4086,6 +4086,10 @@
                 <column class="list-row">
                   <row class="table__row">
                     <text class="table__cell table__cell--key table__col-dep-id" x-text="deployment.id.slice(0, 12)" :title="deployment.id"></text>
+                    <row class="release-badge">
+                      <text class="release-badge__number" x-show="deployment.releaseLabel" x-text="deployment.releaseLabel"></text>
+                      <text class="release-badge__current" x-show="deployment.releaseIsCurrent" x-t>atual</text>
+                    </row>
                     <row class="state-cell table__col-state" :class="'state-cell--' + deployment.stateKind">
                       <text class="status-dot">●</text>
                       <text class="state-cell__label" x-text="deployment.stateLabel"></text>
@@ -4099,6 +4103,12 @@
                     </row>
                   </row>
                   <text class="deployments__image" x-show="deployment.image" x-text="deployment.image"></text>
+                  <text class="deployments__image" x-show="deployment.releaseRestoredLabel" x-text="deployment.releaseRestoredLabel"></text>
+                  <row class="deployments__release-actions" x-show="deployment.releaseId">
+                    <button class="btn btn--ghost btn--xs" type="button" @click="compareRelease(deployment.releaseId)" title="Comparar esta release com a configuração atual" x-t:title x-t>Comparar</button>
+                    <button class="btn btn--ghost btn--xs" type="button" x-show="deployment.releaseCanRollback" @click="rollbackRelease(deployment.releaseId)" title="Voltar o serviço para esta release (configuração e imagem)" x-t:title x-t>Voltar para esta</button>
+                  </row>
+                  <text class="deployments__image" x-show="deployment.releaseImageMissing" x-t>A imagem desta release foi apagada: dá para comparar, mas não para voltar.</text>
                   <hr class="rule" />
                 </column>
               </template>
@@ -4423,6 +4433,34 @@
              fora da área rolável (sempre visível), scroll 2D contido no
              <pre> — build logs têm linhas longas sem quebra (barras de
              progresso do docker pull) que antes vazavam da tela. -->
+        <!-- Janela "Comparar" de uma release: o que um "voltar para esta" mudaria. -->
+        <column class="modal__backdrop" x-show="store.releaseDiff">
+          <column class="modal__box" x-win="'release_diff'" data-w="760" data-h="560">
+            <row class="modal__head">
+              <text class="u-label-cap" x-text="releaseDiffTitle"></text>
+              <button class="btn btn--ghost" type="button" @click="store.closeReleaseDiff()" x-t>Fechar</button>
+            </row>
+            <column class="modal__body release-diff">
+              <text class="u-muted" x-show="releaseDiffGroups.length === 0" x-t>Nada muda: a configuração atual já é a desta release.</text>
+              <template x-for="group in releaseDiffGroups" :key="group.scope">
+                <column class="release-diff__group">
+                  <text class="u-label-cap" x-text="group.title"></text>
+                  <template x-for="change in group.changes" :key="change.key">
+                    <column class="release-diff__change">
+                      <text class="release-diff__field" x-text="change.field"></text>
+                      <text class="release-diff__before" x-text="'− ' + change.before"></text>
+                      <text class="release-diff__after" x-text="'+ ' + change.after"></text>
+                    </column>
+                  </template>
+                </column>
+              </template>
+              <row class="release-diff__actions" x-show="releaseDiffCanRollback">
+                <button class="btn btn--primary" type="button" @click="rollbackRelease(store.releaseDiff.release.id)" x-t>Voltar para esta</button>
+              </row>
+            </column>
+          </column>
+        </column>
+
         <column class="modal__backdrop" x-show="buildLogFor">
           <column class="modal__box" x-win="'build_log'" data-w="900" data-h="600">
             <row class="modal__head">

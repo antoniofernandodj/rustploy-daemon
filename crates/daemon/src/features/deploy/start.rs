@@ -18,6 +18,25 @@ pub async fn handle_with_waits(
     service_id: String,
     waits: Vec<String>,
 ) -> RpResponse {
+    start(state, service_id, waits, None).await
+}
+
+/// Deploy que é um "voltar para a release `release_id`": o executor pula pull e build e usa a
+/// imagem da release (ver `executor::release`). Quem chama já gravou o spec da release no serviço.
+pub async fn handle_from_release(
+    state: DeployContext,
+    service_id: String,
+    release_id: String,
+) -> RpResponse {
+    start(state, service_id, Vec::new(), Some(release_id)).await
+}
+
+async fn start(
+    state: DeployContext,
+    service_id: String,
+    waits: Vec<String>,
+    from_release_id: Option<String>,
+) -> RpResponse {
     info!(service_id = %service_id, "deploy_start: solicitação recebida");
 
     let svc = match services::get(&state.db, &service_id).await {
@@ -124,6 +143,14 @@ pub async fn handle_with_waits(
             return RpResponse::err("DatabaseError", e.to_string());
         }
     };
+
+    if let Some(release_id) = &from_release_id
+        && let Err(e) =
+            crate::store::releases::set_deployment_source(&state.db, &dep.id, release_id).await
+    {
+        error!(deployment_id = %dep.id, error = %e, "deploy_start: falha ao marcar a release de origem");
+        return RpResponse::err("DatabaseError", e.to_string());
+    }
 
     info!(service_id = %service_id, "deploy_start: atualizando status para Queued");
     let _ =

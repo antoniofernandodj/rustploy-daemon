@@ -940,6 +940,18 @@ button:focus-visible, [tabindex]:focus-visible, select:focus-visible, summary:fo
 .deployments__list .table__row { padding: 10px 4px; }
 .table__col-dep-id { width: 130px; flex-shrink: 0; }
 .table__col-dep-start { flex: 1 1 auto; min-width: 0; }
+.release-badge { gap: 6px; align-items: center; flex-shrink: 0; width: 104px; }
+.release-badge__number { font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 4px; background: var(--raised); border: 1px solid var(--border); }
+.release-badge__current { font-size: 11px; color: var(--ok); }
+.deployments__release-actions { gap: 8px; padding: 0 4px 8px; flex-shrink: 0; }
+.release-diff { gap: 14px; }
+.release-diff__group { gap: 6px; flex-shrink: 0; }
+.release-diff__change { gap: 2px; padding: 6px 8px; border-radius: 6px; background: var(--raised); flex-shrink: 0; }
+.release-diff__field { font-weight: 600; font-size: 12px; }
+.release-diff__before, .release-diff__after { font-family: var(--font-mono); font-size: 12px; word-break: break-all; }
+.release-diff__before { color: var(--error); }
+.release-diff__after { color: var(--ok); }
+.release-diff__actions { justify-content: flex-end; flex-shrink: 0; }
 .deployments__image { font-size: 11px; color: var(--faint); padding: 0 4px 8px; word-break: break-all; }
 /* Sugestões de porta: uma por linha. */
 .kv-list--suggestions { gap: 6px; padding: 10px; }
