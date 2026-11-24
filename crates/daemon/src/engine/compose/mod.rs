@@ -100,6 +100,7 @@ mod tests {
         let bus = EventBus::new();
         let db = crate::store::Db::lazy_for_test();
         let tail = Mutex::new(VecDeque::new());
+        let main_lines = std::sync::atomic::AtomicUsize::new(0);
         let input: &[u8] =
             b"main-1  | hello\nside-1  | ignored\n\x1b[31mfailed to bind port 5432\x1b[0m\n\n";
         read_compose_output(
@@ -112,12 +113,15 @@ mod tests {
             "jrun_x",
             None,
             &tail,
+            &main_lines,
         )
         .await;
         assert_eq!(
             tail.into_inner().unwrap(),
             VecDeque::from(["failed to bind port 5432".to_string()])
         );
+        // Só a linha do `main_service` conta: é o que diz ao vigia se o compose transmitiu a saída.
+        assert_eq!(main_lines.load(std::sync::atomic::Ordering::Relaxed), 1);
     }
 
     #[tokio::test]

@@ -24,6 +24,21 @@ impl DeployExecutor {
         .await?
         .ok_or_else(|| anyhow!("staging container not found"))?;
         let net = self.network_name(&svc.spec.project_id).await?;
+        // Um container que já morreu é retirado da rede pelo motor: pedir o IP falharia com
+        // "container não encontrado na rede", e o rollback o removeria sem ninguém ver por que
+        // ele morreu. Confere antes e, se for o caso, guarda a saída dele no build log.
+        let inspect = containers::inspect(&self.docker.inner, &cid).await?;
+        if !inspect
+            .state
+            .as_ref()
+            .and_then(|s| s.running)
+            .unwrap_or(false)
+        {
+            let exit_code = inspect.state.as_ref().and_then(|s| s.exit_code);
+            return Err(self
+                .report_stopped_container(dep, svc, &cid, exit_code, "antes do healthcheck")
+                .await);
+        }
         info!(
             deployment_id = %dep.id,
             container_id = %cid,
@@ -145,6 +160,42 @@ impl DeployExecutor {
         .await;
     }
 
+    /// O container de staging parou: grava as últimas linhas dele no build log (antes do
+    /// rollback removê-lo) e devolve o erro do deploy, com o exit code e a última linha.
+    pub(super) async fn report_stopped_container(
+        &self,
+        dep: &Deployment,
+        svc: &Service,
+        container_id: &str,
+        exit_code: Option<i64>,
+        quando: &str,
+    ) -> anyhow::Error {
+        error!(
+            deployment_id = %dep.id,
+            container_id = %container_id,
+            exit_code = ?exit_code,
+            quando,
+            "healthcheck: container parou inesperadamente"
+        );
+        let crash_logs = containers::get_container_logs(&self.docker.inner, container_id, 50).await;
+        if crash_logs.is_empty() {
+            self.log_step(&dep.id, &svc.id, "  [sem output do container]")
+                .await;
+        } else {
+            self.log_step(&dep.id, &svc.id, "--- output do container ---")
+                .await;
+            for line in &crash_logs {
+                self.log_step(&dep.id, &svc.id, line).await;
+            }
+            self.log_step(&dep.id, &svc.id, "--------------------------")
+                .await;
+        }
+        anyhow!(
+            "{}",
+            stopped_container_message(exit_code, quando, crash_logs.last().map(String::as_str))
+        )
+    }
+
     pub(super) async fn poll_healthcheck(
         &self,
         ip: &str,
@@ -185,28 +236,15 @@ impl DeployExecutor {
 
             if !running {
                 let exit_code = inspect.state.as_ref().and_then(|s| s.exit_code);
-                error!(
-                    deployment_id = %dep.id,
-                    container_id = %container_id,
-                    exit_code = ?exit_code,
-                    "healthcheck: container parou inesperadamente"
-                );
-                // Captura as últimas linhas do container antes do rollback removê-lo
-                let crash_logs =
-                    containers::get_container_logs(&self.docker.inner, container_id, 50).await;
-                if crash_logs.is_empty() {
-                    self.log_step(&dep.id, &svc.id, "  [sem output do container]")
-                        .await;
-                } else {
-                    self.log_step(&dep.id, &svc.id, "--- output do container ---")
-                        .await;
-                    for line in &crash_logs {
-                        self.log_step(&dep.id, &svc.id, line).await;
-                    }
-                    self.log_step(&dep.id, &svc.id, "--------------------------")
-                        .await;
-                }
-                return Err(anyhow!("container stopped during healthcheck"));
+                return Err(self
+                    .report_stopped_container(
+                        dep,
+                        svc,
+                        container_id,
+                        exit_code,
+                        "durante o healthcheck",
+                    )
+                    .await);
             }
 
             let ok = match &hc.kind {
@@ -275,5 +313,51 @@ impl DeployExecutor {
             "healthcheck: esgotou todas as tentativas"
         );
         Err(anyhow!("healthcheck failed after {max} retries"))
+    }
+}
+
+/// Mensagem do deploy que falhou porque o container de staging parou.
+pub(super) fn stopped_container_message(
+    exit_code: Option<i64>,
+    quando: &str,
+    last_line: Option<&str>,
+) -> String {
+    let code = exit_code
+        .map(|c| format!(" com código {c}"))
+        .unwrap_or_default();
+    let tail = last_line
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(|l| format!(": {l}"))
+        .unwrap_or_default();
+    format!("o container saiu{code} {quando}{tail}")
+}
+
+#[cfg(test)]
+mod stopped_container_tests {
+    use super::stopped_container_message;
+
+    #[test]
+    fn mensagem_traz_codigo_momento_e_ultima_linha() {
+        assert_eq!(
+            stopped_container_message(
+                Some(1),
+                "antes do healthcheck",
+                Some("Error: DATABASE_URL não definida")
+            ),
+            "o container saiu com código 1 antes do healthcheck: Error: DATABASE_URL não definida"
+        );
+    }
+
+    #[test]
+    fn sem_codigo_nem_log_ainda_diz_o_que_houve() {
+        assert_eq!(
+            stopped_container_message(None, "durante o healthcheck", None),
+            "o container saiu durante o healthcheck"
+        );
+        assert_eq!(
+            stopped_container_message(Some(0), "antes do healthcheck", Some("   ")),
+            "o container saiu com código 0 antes do healthcheck"
+        );
     }
 }

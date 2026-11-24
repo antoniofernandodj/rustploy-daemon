@@ -5,7 +5,9 @@ use anyhow::{Result, anyhow};
 use bollard::Docker;
 use std::collections::VecDeque;
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use tokio::fs::{File, remove_file};
 use tokio::io::AsyncWriteExt;
 use tracing::info;
@@ -370,9 +372,146 @@ pub async fn run_once(
     up_result.map(|exit_code| (exit_code, images))
 }
 
+/// De quanto em quanto tempo o vigia olha o container do `main_service`.
+const EXIT_WATCH_INTERVAL: Duration = Duration::from_secs(5);
+/// Quanto tempo o `docker compose up` tem para sair sozinho depois que o
+/// `main_service` terminou. Passou disso, o compose travou (visto com Podman:
+/// o compose não recebe o evento de saída e espera para sempre).
+const EXIT_GRACE: Duration = Duration::from_secs(30);
+
+/// Estado do container do `main_service` como o motor o vê.
+#[derive(Debug, Clone, PartialEq)]
+pub(super) enum MainServiceState {
+    /// Ainda não existe (o compose está compilando ou baixando) ou está rodando.
+    NotExited,
+    Exited {
+        container_id: String,
+        exit_code: i32,
+    },
+}
+
+/// Interpreta a saída de `inspect --format '{{.State.Status}}|{{.State.ExitCode}}'`.
+/// `exited`/`dead`/`stopped` (Podman) contam como saída; o resto, não.
+pub(super) fn parse_container_state(container_id: &str, inspect_out: &str) -> MainServiceState {
+    let (status, code) = inspect_out
+        .trim()
+        .split_once('|')
+        .unwrap_or((inspect_out.trim(), ""));
+    let saiu = matches!(status.trim(), "exited" | "dead" | "stopped");
+    match (saiu, code.trim().parse::<i32>()) {
+        (true, Ok(exit_code)) => MainServiceState::Exited {
+            container_id: container_id.to_string(),
+            exit_code,
+        },
+        _ => MainServiceState::NotExited,
+    }
+}
+
+/// Decide quando o compose travou: o `main_service` saiu e continua saído por
+/// `grace` sem o compose sair junto. Volta a zero se o container reaparecer
+/// rodando (um `restart:` no compose).
+#[derive(Debug, Default)]
+pub(super) struct ExitWatch {
+    exited_since: Option<Instant>,
+}
+
+impl ExitWatch {
+    pub(super) fn observe(
+        &mut self,
+        state: &MainServiceState,
+        now: Instant,
+        grace: Duration,
+    ) -> bool {
+        match state {
+            MainServiceState::NotExited => {
+                self.exited_since = None;
+                false
+            }
+            MainServiceState::Exited { .. } => {
+                let since = *self.exited_since.get_or_insert(now);
+                now.duration_since(since) >= grace
+            }
+        }
+    }
+}
+
+/// Olha o container do `main_service` pelos rótulos que o compose põe (nos dois
+/// motores). Qualquer falha do CLI vira `NotExited`: o vigia nunca encerra um job
+/// por não conseguir olhar.
+async fn main_service_state(project_name: &str, main_service: &str) -> MainServiceState {
+    let ps = crate::engine::cli()
+        .args([
+            "ps",
+            "-a",
+            "--filter",
+            &format!("label=com.docker.compose.project={project_name}"),
+            "--filter",
+            &format!("label=com.docker.compose.service={main_service}"),
+            "--format",
+            "{{.ID}}",
+        ])
+        .kill_on_drop(true)
+        .output()
+        .await;
+    let Ok(ps) = ps else {
+        return MainServiceState::NotExited;
+    };
+    let ids = String::from_utf8_lossy(&ps.stdout);
+    let Some(id) = ids.lines().map(str::trim).find(|l| !l.is_empty()) else {
+        return MainServiceState::NotExited;
+    };
+    let inspect = crate::engine::cli()
+        .args([
+            "inspect",
+            "--format",
+            "{{.State.Status}}|{{.State.ExitCode}}",
+            id,
+        ])
+        .kill_on_drop(true)
+        .output()
+        .await;
+    match inspect {
+        Ok(out) if out.status.success() => {
+            parse_container_state(id, &String::from_utf8_lossy(&out.stdout))
+        }
+        _ => MainServiceState::NotExited,
+    }
+}
+
+/// Espera até o compose ser dado como travado; devolve o container e o exit code.
+async fn wait_for_stuck_compose(project_name: &str, main_service: &str) -> (String, i32) {
+    let mut watch = ExitWatch::default();
+    loop {
+        tokio::time::sleep(EXIT_WATCH_INTERVAL).await;
+        let state = main_service_state(project_name, main_service).await;
+        if watch.observe(&state, Instant::now(), EXIT_GRACE)
+            && let MainServiceState::Exited {
+                container_id,
+                exit_code,
+            } = state
+        {
+            return (container_id, exit_code);
+        }
+    }
+}
+
+/// Últimas linhas de saída de um container (stdout e stderr juntos), pelo CLI.
+async fn container_log_lines(container_id: &str, tail: usize) -> Vec<String> {
+    let out = crate::engine::cli()
+        .args(["logs", "--tail", &tail.to_string(), container_id])
+        .kill_on_drop(true)
+        .output()
+        .await;
+    let Ok(out) = out else { return Vec::new() };
+    let mut text = String::from_utf8_lossy(&out.stdout).into_owned();
+    text.push_str(&String::from_utf8_lossy(&out.stderr));
+    text.lines().filter_map(clean_compose_line).collect()
+}
+
 /// Roda o `docker compose up` de um job até o `main_service` sair, transmitindo
 /// stdout/stderr para o log e matando o processo se chegar o sinal de
-/// cancelamento.
+/// cancelamento. Um vigia (`wait_for_stuck_compose`) encerra o compose se ele
+/// não sair sozinho depois que o `main_service` terminou.
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn run_once_up(
     project_name: &str,
@@ -405,6 +544,8 @@ pub(super) async fn run_once_up(
         .current_dir(build_dir)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
+        // Deploy abortado (a future do gate de pré-deploy é derrubada): o compose morre junto.
+        .kill_on_drop(true)
         .spawn()
         .map_err(|e| anyhow!("falha ao iniciar docker compose: {e}"))?;
 
@@ -413,6 +554,7 @@ pub(super) async fn run_once_up(
 
     let mirror = mirror_deployment.as_ref();
     let compose_tail = Mutex::new(VecDeque::new());
+    let main_lines = AtomicUsize::new(0);
     let read_stdout = read_compose_output(
         stdout,
         crate::protocol::LogStream::Stdout,
@@ -423,6 +565,7 @@ pub(super) async fn run_once_up(
         job_run_id,
         mirror,
         &compose_tail,
+        &main_lines,
     );
     let read_stderr = read_compose_output(
         stderr,
@@ -434,6 +577,7 @@ pub(super) async fn run_once_up(
         job_run_id,
         mirror,
         &compose_tail,
+        &main_lines,
     );
 
     // Sem cancelamento: espera os readers normalmente (eles só terminam
@@ -443,19 +587,23 @@ pub(super) async fn run_once_up(
     // de esperar `read_stdout`/`read_stderr` até o fim (que só terminariam
     // quando o processo sair por conta própria — exatamente o que o
     // cancelamento quer evitar).
-    let mut cancelado = false;
-    match cancel_rx {
-        Some(mut rx) => {
-            tokio::select! {
-                _ = async { tokio::join!(read_stdout, read_stderr) } => {}
-                _ = wait_for_cancel(&mut rx) => {
-                    cancelado = true;
-                    let _ = child.start_kill();
-                }
-            }
+    let cancel = async {
+        match cancel_rx {
+            Some(mut rx) => wait_for_cancel(&mut rx).await,
+            None => std::future::pending().await,
         }
-        None => {
-            tokio::join!(read_stdout, read_stderr);
+    };
+    let mut cancelado = false;
+    let mut travado: Option<(String, i32)> = None;
+    tokio::select! {
+        _ = async { tokio::join!(read_stdout, read_stderr) } => {}
+        _ = cancel => {
+            cancelado = true;
+            let _ = child.start_kill();
+        }
+        parado = wait_for_stuck_compose(project_name, main_service) => {
+            travado = Some(parado);
+            let _ = child.start_kill();
         }
     }
 
@@ -466,6 +614,39 @@ pub(super) async fn run_once_up(
 
     if cancelado {
         return Ok(CANCELLED_EXIT_CODE);
+    }
+
+    if let Some((container_id, exit_code)) = travado {
+        // O compose não transmitiu a saída do container: busca no motor.
+        if main_lines.load(Ordering::Relaxed) == 0 {
+            for line in container_log_lines(&container_id, 200).await {
+                record_job_line(
+                    bus,
+                    db,
+                    job_id,
+                    job_run_id,
+                    mirror,
+                    crate::protocol::LogStream::Stdout,
+                    line,
+                )
+                .await;
+            }
+        }
+        record_job_line(
+            bus,
+            db,
+            job_id,
+            job_run_id,
+            mirror,
+            crate::protocol::LogStream::Stderr,
+            format!(
+                "==> {main_service} terminou com código {exit_code}, mas o docker compose não saiu em {}s; \
+                 o rustploy encerrou o compose e usou o código do container",
+                EXIT_GRACE.as_secs()
+            ),
+        )
+        .await;
+        return Ok(exit_code);
     }
 
     // `--exit-code-from` propaga o exit code de `main_service` como o do
@@ -510,6 +691,102 @@ pub(super) async fn run_once_up(
     }
 
     Ok(exit_code)
+}
+
+#[cfg(test)]
+mod exit_watch_tests {
+    use super::*;
+
+    #[test]
+    fn exited_e_dead_contam_como_saida() {
+        assert_eq!(
+            parse_container_state("abc", "exited|0\n"),
+            MainServiceState::Exited {
+                container_id: "abc".into(),
+                exit_code: 0
+            }
+        );
+        assert_eq!(
+            parse_container_state("abc", "dead|137"),
+            MainServiceState::Exited {
+                container_id: "abc".into(),
+                exit_code: 137
+            }
+        );
+        assert_eq!(
+            parse_container_state("abc", "stopped|3"),
+            MainServiceState::Exited {
+                container_id: "abc".into(),
+                exit_code: 3
+            }
+        );
+    }
+
+    #[test]
+    fn rodando_ou_saida_ilegivel_nao_e_saida() {
+        assert_eq!(
+            parse_container_state("abc", "running|0"),
+            MainServiceState::NotExited
+        );
+        assert_eq!(
+            parse_container_state("abc", "created|0"),
+            MainServiceState::NotExited
+        );
+        assert_eq!(
+            parse_container_state("abc", ""),
+            MainServiceState::NotExited
+        );
+        assert_eq!(
+            parse_container_state("abc", "exited|"),
+            MainServiceState::NotExited
+        );
+    }
+
+    #[test]
+    fn so_declara_travado_depois_da_carencia() {
+        let grace = Duration::from_secs(30);
+        let t0 = Instant::now();
+        let saiu = MainServiceState::Exited {
+            container_id: "c".into(),
+            exit_code: 0,
+        };
+        let mut w = ExitWatch::default();
+        assert!(!w.observe(&MainServiceState::NotExited, t0, grace));
+        assert!(
+            !w.observe(&saiu, t0 + Duration::from_secs(5), grace),
+            "acabou de sair"
+        );
+        assert!(
+            !w.observe(&saiu, t0 + Duration::from_secs(30), grace),
+            "25 s depois ainda é carência"
+        );
+        assert!(
+            w.observe(&saiu, t0 + Duration::from_secs(35), grace),
+            "30 s saído: travado"
+        );
+    }
+
+    #[test]
+    fn container_que_volta_a_rodar_zera_a_contagem() {
+        let grace = Duration::from_secs(30);
+        let t0 = Instant::now();
+        let saiu = MainServiceState::Exited {
+            container_id: "c".into(),
+            exit_code: 1,
+        };
+        let mut w = ExitWatch::default();
+        assert!(!w.observe(&saiu, t0, grace));
+        assert!(!w.observe(
+            &MainServiceState::NotExited,
+            t0 + Duration::from_secs(20),
+            grace
+        ));
+        assert!(
+            !w.observe(&saiu, t0 + Duration::from_secs(40), grace),
+            "recomeçou a contar"
+        );
+        assert!(w.observe(&saiu, t0 + Duration::from_secs(70), grace));
+    }
 }
 
 #[cfg(test)]

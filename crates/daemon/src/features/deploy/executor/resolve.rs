@@ -63,6 +63,13 @@ impl DeployExecutor {
             .await;
 
             let run = crate::store::job_run::create(&self.db, &job.id).await?;
+            // Deploy abortado no meio do job: o guarda fecha o `job_run` como cancelado.
+            let mut run_guard = crate::features::jobs::runner::PreDeployRunGuard::new(
+                self.db.clone(),
+                self.bus.clone(),
+                &job.id,
+                &run.id,
+            );
             self.bus.publish(Event::JobRunStateChanged {
                 job_id: job.id.clone(),
                 job_run_id: run.id.clone(),
@@ -81,6 +88,7 @@ impl DeployExecutor {
             let result = runner
                 .run_inner_mirrored(&job, &run.id, Some((dep.id.clone(), svc.id.clone())), None)
                 .await;
+            run_guard.disarm();
 
             let mut failure_cause: Option<String> = None;
             let (exit_code, success) = match &result {

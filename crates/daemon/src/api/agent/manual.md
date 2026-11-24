@@ -148,6 +148,11 @@ valor direto (`{"ServiceCreate":{…spec…}}`). Falha do daemon vem como
 `{"Err":{"code":"…","message":"…"}}` (a ferramenta `rpc` devolve isso como
 `isError`).
 
+Na ferramenta `rpc`, o argumento `command` pode ir como valor JSON (o nome
+`ProjectList`, ou o objeto) **ou** como texto JSON (`"\"ProjectList\""`,
+`"{\"ServiceGet\":…}"`): o daemon decodifica o texto antes de interpretar. Se o
+seu cliente MCP mandar o nome com aspas, funciona igual.
+
 Comandos, por área (campos entre chaves):
 
 - **Projetos**: `ProjectList` · `ProjectCreate{name, description?}` ·
@@ -159,6 +164,11 @@ Comandos, por área (campos entre chaves):
   `ServiceDelete{id}` · `ServiceStop{service_id}` · `ServiceReload{service_id}` ·
   `ServiceConnectionInfo{service_id}` · `GetWebhookUrl{service_id}` ·
   `RegenerateWebhookToken{service_id}`
+- **Healthcheck** (campo `healthcheck` do `ServiceSpec`): `{kind, interval_secs, timeout_secs, retries,
+  start_period_secs}`, com `kind` = `"None"` · `"Tcp"` (a `port` do serviço aceita conexão) ·
+  `{"Http":{"path":"/health","expected_status":200}}` (os dois campos são obrigatórios) ·
+  `"DockerNative"` (o `HEALTHCHECK` da imagem). O deploy só promove o container novo depois que o
+  healthcheck passa; prefira `Http` num endpoint que confira as dependências (banco, cache).
 - **Vínculos** (campo `links` do `ServiceSpec`, editado pelo `ServiceUpdate`): `links:
   [{service_id, env_prefix?, resource?, env_names?}]` diz quais serviços este **usa**. Cada vínculo vira dependência
   (ordem do deploy em árvore e do boot) e, no deploy, entrega `<PREFIXO>_HOST`, `_PORT` e `_URL`
@@ -266,8 +276,14 @@ Comandos, por área (campos entre chaves):
   `MigrationRollback{id}` · `MigrationDiscard{id}`
 - **Templates e wizard**: `WizardCatalog{search}` · `WizardCreate(…)`. O `WizardCreate` com
   `kind` = `database`, `broker` ou `storage` (RustFS, MinIO) **gera a senha** quando você
-  manda `password` vazio e a guarda como secret do serviço: a resposta traz só a referência,
-  nunca o valor. É o jeito de criar infra sem ver credencial.
+  manda `password` vazio (ou omitido) e a guarda como secret do serviço: a resposta traz só a
+  referência, nunca o valor. É o jeito de criar infra sem ver credencial. Só `kind`, `project_id`
+  e `name` são obrigatórios; `id` é o motor (`postgres`, `mysql`, `mariadb`, `mongodb`, `redis`;
+  brokers `rabbitmq`, `kafka`, `nats`; storages `rustfs`, `minio`; ou o id do template). O que
+  faltar recebe o padrão da GUI: usuário do motor, banco `app`, imagem do catálogo. Mínimo que
+  funciona: `{"WizardCreate":{"kind":"database","id":"postgres","project_id":"prj_…","name":"db"}}`.
+  Opcionais: `db_name`, `user`, `password`, `root_password`, `image`, `app_name`, `use_replica`,
+  `template_values`, `expose_external` (porta TCP do host escolhida pelo daemon).
   **Bucket num Storage:** o Storage não cria bucket sozinho, e a aplicação não deve criá-lo na subida. O jeito certo é um
   **passo de provisionamento do próprio repositório da app** (idempotente: cria o bucket se faltar), executado por um job
   `git_source` (`JobCreate` com `git_source` + `compose_path`, e `build:` no Compose do job) que herda as variáveis e os

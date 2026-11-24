@@ -318,3 +318,150 @@ impl JobRunner {
         }
     }
 }
+
+/// Fecha o `job_run` de um pré-deploy check se o deploy for **abortado** no meio.
+///
+/// O gate de pré-deploy (`DeployExecutor::step_pre_deploy_check`) abre o `job_run`
+/// e roda o job dentro da task do deploy. `DeployAbort` derruba essa task: sem este
+/// guarda, ninguém fechava o `job_run`, que ficava "em execução" até o próximo boot
+/// do daemon, e o `JobRunCancel` respondia que ele não existia. Criado armado logo
+/// depois do `job_run::create`; `disarm()` quando o job termina por conta própria.
+pub(crate) struct PreDeployRunGuard {
+    db: Arc<store::Db>,
+    bus: Arc<EventBus>,
+    job_id: String,
+    run_id: String,
+    armed: bool,
+}
+
+impl PreDeployRunGuard {
+    pub(crate) fn new(db: Arc<store::Db>, bus: Arc<EventBus>, job_id: &str, run_id: &str) -> Self {
+        Self {
+            db,
+            bus,
+            job_id: job_id.to_string(),
+            run_id: run_id.to_string(),
+            armed: true,
+        }
+    }
+
+    pub(crate) fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for PreDeployRunGuard {
+    fn drop(&mut self) {
+        if !self.armed {
+            return;
+        }
+        let Ok(handle) = tokio::runtime::Handle::try_current() else {
+            // Sem runtime (encerrando o processo): o `recover_interrupted` do próximo boot fecha.
+            return;
+        };
+        let (db, bus) = (self.db.clone(), self.bus.clone());
+        let (job_id, run_id) = (self.job_id.clone(), self.run_id.clone());
+        handle.spawn(async move { close_aborted_run(&db, &bus, &job_id, &run_id).await });
+    }
+}
+
+/// Fecha como cancelada (mesmo exit code do `JobRunCancel`) uma execução que ainda
+/// não terminou, com uma linha no log dizendo por quê. Não toca numa que já terminou.
+pub(crate) async fn close_aborted_run(db: &store::Db, bus: &EventBus, job_id: &str, run_id: &str) {
+    match store::job_run::get(db, run_id).await {
+        Ok(Some(run)) if run.finished_at.is_none() => {}
+        _ => return,
+    }
+    let _ = store::job_log::append(
+        db,
+        run_id,
+        &crate::protocol::LogStream::Stderr,
+        "==> Interrompida: o deploy que rodava este pré-deploy check foi abortado",
+        Utc::now(),
+    )
+    .await;
+    let _ = store::job_run::finish(db, run_id, engine::compose::CANCELLED_EXIT_CODE).await;
+    bus.publish(Event::JobRunStateChanged {
+        job_id: job_id.to_string(),
+        job_run_id: run_id.to_string(),
+        running: false,
+        success: Some(false),
+    });
+}
+
+#[cfg(test)]
+mod pre_deploy_guard_tests {
+    use super::*;
+
+    async fn mem_db() -> Arc<store::Db> {
+        let dir = std::env::temp_dir().join(format!("rustploy_test_{}", ulid::Ulid::new()));
+        Arc::new(store::connect(&dir).await.unwrap())
+    }
+
+    #[tokio::test]
+    async fn guarda_armado_fecha_a_execucao_como_cancelada_ao_ser_derrubado() {
+        let db = mem_db().await;
+        let bus = Arc::new(EventBus::new());
+        let run = store::job_run::create(&db, "job_pre").await.unwrap();
+
+        // A task do deploy é abortada: a future (e o guarda dentro dela) é derrubada.
+        let task = {
+            let (db, bus, id) = (db.clone(), bus.clone(), run.id.clone());
+            tokio::spawn(async move {
+                let _guard = PreDeployRunGuard::new(db, bus, "job_pre", &id);
+                std::future::pending::<()>().await;
+            })
+        };
+        tokio::task::yield_now().await;
+        task.abort();
+        let _ = task.await;
+
+        // O fechamento roda numa task própria; dá a vez a ela.
+        let mut fechada = None;
+        for _ in 0..50 {
+            let r = store::job_run::get(&db, &run.id).await.unwrap().unwrap();
+            if r.finished_at.is_some() {
+                fechada = Some(r);
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        let r = fechada.expect("o job_run deveria ter sido fechado");
+        assert_eq!(r.exit_code, Some(engine::compose::CANCELLED_EXIT_CODE));
+        assert_eq!(r.success, Some(false));
+        let log = store::job_log::get_for_run(&db, &run.id).await.unwrap();
+        assert!(log.iter().any(|l| l.line.contains("abortado")), "{log:?}");
+    }
+
+    #[tokio::test]
+    async fn guarda_desarmado_nao_mexe_na_execucao() {
+        let db = mem_db().await;
+        let bus = Arc::new(EventBus::new());
+        let run = store::job_run::create(&db, "job_pre").await.unwrap();
+        store::job_run::finish(&db, &run.id, 0).await.unwrap();
+        {
+            let mut guard = PreDeployRunGuard::new(db.clone(), bus.clone(), "job_pre", &run.id);
+            guard.disarm();
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let r = store::job_run::get(&db, &run.id).await.unwrap().unwrap();
+        assert_eq!(r.exit_code, Some(0), "terminou com sucesso e assim fica");
+        assert!(
+            store::job_log::get_for_run(&db, &run.id)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn fechamento_nao_sobrescreve_execucao_ja_terminada() {
+        let db = mem_db().await;
+        let bus = EventBus::new();
+        let run = store::job_run::create(&db, "job_pre").await.unwrap();
+        store::job_run::finish(&db, &run.id, 0).await.unwrap();
+        close_aborted_run(&db, &bus, "job_pre", &run.id).await;
+        let r = store::job_run::get(&db, &run.id).await.unwrap().unwrap();
+        assert_eq!(r.exit_code, Some(0));
+    }
+}

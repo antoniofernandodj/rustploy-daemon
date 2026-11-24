@@ -145,7 +145,10 @@ pub const TOOLS: &[ToolSpec] = &[
             json!({
                 "type": "object",
                 "properties": {
-                    "command": { "description": "o Command em JSON, ex. \"ProjectList\" ou {\"DeployHistory\":{\"service_id\":\"svc_…\",\"limit\":3}}" }
+                    "command": {
+                        "type": ["string", "object"],
+                        "description": "o Command: variante sem campos é a string com o nome (ProjectList); com campos, o objeto {\"DeployHistory\":{\"service_id\":\"svc_…\",\"limit\":3}}. Texto JSON também é aceito."
+                    }
                 },
                 "required": ["command"]
             })
@@ -247,8 +250,28 @@ fn proibido_ao_agente(cmd: &Command) -> Option<&'static str> {
     }
 }
 
+/// Aceita o `command` como valor JSON **ou** como texto JSON. Alguns clientes MCP
+/// entregam o argumento como texto: `"\"JobListAll\""` em vez de `"JobListAll"`, ou
+/// `"{\"ServiceGet\":…}"` em vez do objeto. Uma string que (sem espaços nas pontas)
+/// começa com `"` ou `{` é decodificada uma vez; o resto passa como veio (`"ProjectList"`).
+pub(crate) fn normalize_command(command: Value) -> Value {
+    if let Value::String(texto) = &command {
+        let t = texto.trim();
+        if (t.starts_with('"') || t.starts_with('{'))
+            && let Ok(decodificado) = serde_json::from_str::<Value>(t)
+        {
+            return decodificado;
+        }
+        if t.len() != texto.len() {
+            return Value::String(t.to_string());
+        }
+    }
+    command
+}
+
 /// Executa um `Command` (em JSON) e converte `Response::Err` em falha.
 pub async fn rpc(state: &AppState, command: Value) -> Result<Value, ToolError> {
+    let command = normalize_command(command);
     let mut cmd: Command = serde_json::from_value(command)
         .map_err(|e| ToolError::bad_request(format!("Command inválido: {e}")))?;
     // Atualizar derruba a API e troca o binário: é decisão de uma pessoa, na UI. O agente só
@@ -823,6 +846,31 @@ fn source_label(source: Option<&Value>) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rpc_aceita_command_como_valor_ou_como_texto_json() {
+        let como_valor: Command =
+            serde_json::from_value(normalize_command(json!("JobListAll"))).unwrap();
+        // O que um cliente MCP mandou de verdade: o nome com as aspas dentro do texto.
+        let como_texto: Command =
+            serde_json::from_value(normalize_command(json!("\"JobListAll\""))).unwrap();
+        assert!(matches!(como_valor, Command::JobListAll));
+        assert!(matches!(como_texto, Command::JobListAll));
+
+        let objeto_em_texto: Command = serde_json::from_value(normalize_command(json!(
+            "{\"ServiceGet\":{\"id\":\"svc_1\"}}"
+        )))
+        .unwrap();
+        assert!(matches!(objeto_em_texto, Command::ServiceGet { ref id } if id == "svc_1"));
+
+        let com_espacos: Command =
+            serde_json::from_value(normalize_command(json!("  ProjectList \n"))).unwrap();
+        assert!(matches!(com_espacos, Command::ProjectList));
+
+        // Objeto continua passando intacto.
+        let objeto = json!({"ServiceGet": {"id": "svc_2"}});
+        assert_eq!(normalize_command(objeto.clone()), objeto);
+    }
 
     #[test]
     fn comandos_que_devolvem_valor_de_segredo_sao_proibidos_ao_agente() {

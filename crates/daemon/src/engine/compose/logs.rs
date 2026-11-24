@@ -114,11 +114,13 @@ pub(super) async fn read_compose_output<R: tokio::io::AsyncRead + Unpin>(
     job_run_id: &str,
     mirror: Option<&(String, String)>,
     compose_tail: &Mutex<VecDeque<String>>,
+    main_lines: &std::sync::atomic::AtomicUsize,
 ) {
     let mut lines = BufReader::new(reader).lines();
     while let Ok(Some(raw_line)) = lines.next_line().await {
         if let Some(line) = filter_main_service_line(&raw_line, main_service) {
             if !line.trim().is_empty() {
+                main_lines.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 let line = line.to_string();
                 record_job_line(bus, db, job_id, job_run_id, mirror, stream.clone(), line).await;
             }

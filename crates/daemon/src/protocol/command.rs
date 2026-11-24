@@ -627,6 +627,9 @@ pub enum Command {
     // Jobs (tarefas one-shot via docker-compose, agendadas ou manuais)
     JobCreate {
         project_id: String,
+        /// `""` = sem serviço gatilho. `null` e chave ausente valem o mesmo (o job guarda
+        /// `None` de qualquer jeito, e o `JobList` devolve `null`: o agente reenviava o que leu).
+        #[serde(default, deserialize_with = "null_as_empty")]
         trigger_service_id: String,
         name: String,
         compose: String,
@@ -931,9 +934,41 @@ fn backup_stop_default() -> bool {
     true
 }
 
+/// `null` vira `""` num campo `String` cujo vazio já significa "nenhum".
+fn null_as_empty<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+    Ok(Option::<String>::deserialize(d)?.unwrap_or_default())
+}
+
 #[cfg(test)]
 mod tests {
     use super::Command;
+
+    #[test]
+    fn job_create_aceita_gatilho_null_ausente_ou_vazio() {
+        let base = r#""project_id":"prj_1","name":"migra","compose":"services: {}","main_service":"m","recurrence":null"#;
+        for gatilho in [
+            r#","trigger_service_id":null"#,
+            "",
+            r#","trigger_service_id":"""#,
+        ] {
+            let json = format!(r#"{{"JobCreate":{{{base}{gatilho}}}}}"#);
+            let cmd: Command =
+                serde_json::from_str(&json).unwrap_or_else(|e| panic!("{json}: {e}"));
+            match cmd {
+                Command::JobCreate {
+                    trigger_service_id, ..
+                } => assert_eq!(trigger_service_id, ""),
+                outro => panic!("{outro:?}"),
+            }
+        }
+        let com: Command = serde_json::from_str(&format!(
+            r#"{{"JobCreate":{{{base},"trigger_service_id":"svc_9"}}}}"#
+        ))
+        .unwrap();
+        assert!(
+            matches!(com, Command::JobCreate { ref trigger_service_id, .. } if trigger_service_id == "svc_9")
+        );
+    }
 
     #[test]
     fn job_warm_sem_force_vale_false() {
