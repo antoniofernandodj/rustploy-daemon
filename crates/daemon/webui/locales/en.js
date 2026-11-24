@@ -1265,4 +1265,5 @@ export default {
   "Apagar também os volumes emprestados?": "Also delete the borrowed volumes?",
   "Este serviço usa volumes que já existiam antes dele (external): {0}. Apagar = esses dados somem também. Manter = eles ficam no servidor.": "This service uses volumes that existed before it (external): {0}. Delete = that data goes too. Keep = they stay on the server.",
   "OK = apagar os emprestados. Cancelar = manter.": "OK = delete the borrowed ones. Cancel = keep them.",
+  "Volumes nascem nos serviços: na aba Dados (serviço Application, campo “nome novo”) ou no arquivo Compose. Aqui você vê, adota e apaga.": "Volumes are born in services: in the Data tab (Application service, “new name” field) or in the Compose file. Here you see, adopt and delete them.",
 };
