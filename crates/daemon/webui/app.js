@@ -18,6 +18,7 @@ import "./screens/deploy_engine.js";
 import "./screens/monitoring.js";
 import "./screens/ingress.js";
 import "./screens/docker.js";
+import "./screens/volumes.js";
 import "./screens/schedules.js";
 import "./screens/settings.js";
 import "./screens/projects.js";
@@ -940,7 +941,10 @@ document.addEventListener("alpine:init", () => {
         return;
       }
       const deleteVolumes = this.askDeleteVolumes();
-      const serviceDeleteResponse = await this.api.rpcChecked({ ServiceDelete: { id: serviceId, delete_volumes: deleteVolumes } });
+      const deleteBorrowed = await this.askDeleteBorrowed(serviceId);
+      const serviceDeleteResponse = await this.api.rpcChecked({
+        ServiceDelete: { id: serviceId, delete_volumes: deleteVolumes, delete_external_volumes: deleteBorrowed },
+      });
       if (serviceDeleteResponse.ok) {
         await this.refreshNow();
         this.nav("project");
@@ -952,6 +956,19 @@ document.addEventListener("alpine:init", () => {
 
     /** Segunda pergunta ao apagar um serviço: os volumes (os dados) vão junto? Cancelar = ficam no
      * servidor, como órfãos na lista de volumes (tela Docker). */
+    /** Terceira pergunta, só se a stack monta volumes emprestados (external): eles já existiam
+     * antes dela e só saem com uma escolha própria. */
+    async askDeleteBorrowed(serviceId) {
+      const volumeListResponse = await this.api.rpc("VolumeList");
+      const borrowed = ((volumeListResponse.ok && volumeListResponse.value?.Volumes) || [])
+        .filter((volume) => (volume.mounts || []).some((mount) => mount.service_id === serviceId && mount.borrowed))
+        .map((volume) => volume.name);
+      if (borrowed.length === 0) return false;
+      return confirm(t("Apagar também os volumes emprestados?") + "\n\n"
+        + t`Este serviço usa volumes que já existiam antes dele (external): ${borrowed.join(", ")}. Apagar = esses dados somem também. Manter = eles ficam no servidor.`
+        + "\n\n" + t("OK = apagar os emprestados. Cancelar = manter."));
+    },
+
     askDeleteVolumes() {
       return confirm(t("Apagar também os volumes deste serviço (os dados)?") + "\n\n"
         + t("OK = os dados são apagados, sem volta. Cancelar = os volumes ficam no servidor e aparecem como órfãos na tela Docker → Volumes."));
@@ -991,7 +1008,10 @@ document.addEventListener("alpine:init", () => {
         return;
       }
       const deleteVolumes = this.askDeleteVolumes();
-      const serviceDeleteResponse = await this.api.rpcChecked({ ServiceDelete: { id: serviceId, delete_volumes: deleteVolumes } });
+      const deleteBorrowed = await this.askDeleteBorrowed(serviceId);
+      const serviceDeleteResponse = await this.api.rpcChecked({
+        ServiceDelete: { id: serviceId, delete_volumes: deleteVolumes, delete_external_volumes: deleteBorrowed },
+      });
       if (serviceDeleteResponse.ok) this.toastOk(t("serviço parado e removido"));
       else this.toastError(t("erro ao remover: ") + serviceDeleteResponse.error);
       await this.refreshNow();

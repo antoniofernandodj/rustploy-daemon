@@ -14,6 +14,13 @@ pub enum Response {
     Services(Vec<Service>),
     Deployment(Box<Deployment>),
     Deployments(Vec<Deployment>),
+    /// Resposta de `VolumeList`.
+    Volumes(Vec<VolumeInfo>),
+    /// Resposta de `ComposeInsertExternalVolume`: o texto novo do Compose e a chave a montar.
+    ComposeWithVolume {
+        content: String,
+        key: String,
+    },
     /// Resposta de `RouteList`.
     Routes(Vec<Route>),
     /// Resposta de `RouteSave`.

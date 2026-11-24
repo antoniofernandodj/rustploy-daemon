@@ -63,10 +63,20 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
             state.docker_cache.df.invalidate().await;
             response
         }
-        Command::ServiceDelete { id, delete_volumes } => {
-            let response =
-                crate::features::services::delete::handle(state.services_ctx(), id, delete_volumes)
-                    .await;
+        Command::ServiceDelete {
+            id,
+            delete_volumes,
+            delete_external_volumes,
+        } => {
+            let response = crate::features::services::delete::handle(
+                state.services_ctx(),
+                id,
+                crate::features::services::delete::VolumeChoice {
+                    own: delete_volumes,
+                    borrowed: delete_external_volumes,
+                },
+            )
+            .await;
             // A lista de volumes (tela Docker) muda: o volume ficou órfão ou saiu.
             state.docker_cache.df.invalidate().await;
             response

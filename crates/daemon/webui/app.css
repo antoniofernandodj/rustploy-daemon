@@ -952,6 +952,8 @@ button:focus-visible, [tabindex]:focus-visible, select:focus-visible, summary:fo
 .environments__change { font-family: var(--font-mono); font-size: 12px; color: var(--muted); word-break: break-all; }
 .service-volumes__body { gap: 8px; }
 .service-volumes__body > * { flex-shrink: 0; }
+.volumes-list { gap: 8px; }
+.volumes-list > * { flex-shrink: 0; }
 .custom-routes { gap: 8px; flex-shrink: 0; margin-bottom: 12px; }
 .custom-routes > * { flex-shrink: 0; }
 .custom-routes__target { font-family: var(--font-mono); font-size: 12px; word-break: break-all; }

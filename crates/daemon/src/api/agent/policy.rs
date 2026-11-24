@@ -134,7 +134,9 @@ pub fn required_level(cmd: &Command) -> Level {
         | Command::ReleaseDiff { .. }
         | Command::EnvironmentList { .. }
         | Command::EnvironmentCompare { .. }
-        | Command::RouteList => Level::Observer,
+        | Command::RouteList
+        | Command::VolumeList
+        | Command::ComposeInsertExternalVolume { .. } => Level::Observer,
         Command::DeployStart { .. }
         | Command::DeployWithDependencies { .. }
         | Command::ProjectDeploy { .. }

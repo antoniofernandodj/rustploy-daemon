@@ -5,6 +5,7 @@
 //! - [`plan`] só olha (`Command::ServiceDataPlan`);
 //! - [`transfer::export`] e [`transfer::import`] movem os bytes (rotas HTTP binárias).
 
+pub mod compose_volumes;
 pub mod database;
 pub mod pack;
 pub mod parts;

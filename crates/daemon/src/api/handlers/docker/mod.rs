@@ -32,6 +32,17 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         Command::RemoveContainer { id } => docker_remove::remove_container(state, id).await,
         Command::RemoveImage { id } => docker_remove::remove_image(state, id).await,
         Command::RemoveVolume { name } => docker_remove::remove_volume(state, name).await,
+        Command::VolumeList => docker_inventory::list_volume_info(state).await,
+        Command::ComposeInsertExternalVolume {
+            content,
+            volume_name,
+        } => match crate::features::service_data::compose_volumes::insert_external_volume(
+            &content,
+            &volume_name,
+        ) {
+            Ok((content, key)) => RpResponse::ComposeWithVolume { content, key },
+            Err(cause) => RpResponse::err("InvalidInput", cause),
+        },
         Command::RemoveNetwork { id } => docker_remove::remove_network(state, id).await,
         Command::StopAllManaged => docker_inventory::stop_all_managed(state).await,
         _ => RpResponse::err("NotImplemented", "command not yet implemented"),

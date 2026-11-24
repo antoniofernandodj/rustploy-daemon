@@ -29,6 +29,10 @@ struct ServiceIndex {
     by_compose_project: HashMap<String, String>,
     /// Volume nomeado que o spec monta → service_id.
     by_named_volume: HashMap<String, String>,
+    /// Volume emprestado (`external: true` num Compose) → service_id de quem usa.
+    by_external_volume: HashMap<String, String>,
+    /// Quem monta cada volume e onde (Application pelo spec, Compose pelo arquivo).
+    mounts_by_volume: HashMap<String, Vec<crate::domain::VolumeMountUse>>,
     /// Serviços com backup automático ligado.
     with_backup: std::collections::HashSet<String>,
 }
@@ -105,13 +109,56 @@ impl ServiceIndex {
         let mut by_service_id = HashMap::new();
         let mut by_compose_project = HashMap::new();
         let mut by_named_volume = HashMap::new();
+        let mut by_external_volume = HashMap::new();
+        let mut mounts_by_volume: HashMap<String, Vec<crate::domain::VolumeMountUse>> =
+            HashMap::new();
         for s in &services {
-            if matches!(s.spec.source, ServiceSource::Compose(_)) {
+            let project_name = project_names
+                .get(&s.spec.project_id)
+                .cloned()
+                .unwrap_or_else(|| s.spec.project_id.clone());
+            if let ServiceSource::Compose(compose) = &s.spec.source {
                 by_compose_project.insert(s.compose_project_name(), s.id.clone());
+                for used in crate::features::service_data::compose_volumes::compose_volume_uses(
+                    &compose.content,
+                    &s.compose_project_name(),
+                ) {
+                    if used.external {
+                        by_external_volume.insert(used.volume_name.clone(), s.id.clone());
+                    }
+                    mounts_by_volume.entry(used.volume_name).or_default().push(
+                        crate::domain::VolumeMountUse {
+                            service_id: s.id.clone(),
+                            service: s.spec.name.clone(),
+                            project: project_name.clone(),
+                            container_path: used.container_path,
+                            borrowed: used.external,
+                        },
+                    );
+                }
+                // Externo declarado mas não montado ainda: também é de quem declara.
+                for name in crate::features::service_data::compose_volumes::external_volume_names(
+                    &compose.content,
+                    &s.compose_project_name(),
+                ) {
+                    by_external_volume
+                        .entry(name)
+                        .or_insert_with(|| s.id.clone());
+                }
             }
             for volume in &s.spec.volumes {
-                if !volume.host_path.is_empty() && !volume.host_path.starts_with('/') {
+                if crate::domain::is_named_volume(&volume.host_path) {
                     by_named_volume.insert(volume.host_path.clone(), s.id.clone());
+                    mounts_by_volume
+                        .entry(volume.host_path.clone())
+                        .or_default()
+                        .push(crate::domain::VolumeMountUse {
+                            service_id: s.id.clone(),
+                            service: s.spec.name.clone(),
+                            project: project_name.clone(),
+                            container_path: volume.container_path.clone(),
+                            borrowed: false,
+                        });
                 }
             }
             let project_name = project_names
@@ -146,6 +193,8 @@ impl ServiceIndex {
             by_service_id,
             by_compose_project,
             by_named_volume,
+            by_external_volume,
+            mounts_by_volume,
             with_backup,
         }
     }
@@ -164,6 +213,7 @@ impl ServiceIndex {
                     .cloned()
             })
             .or_else(|| self.by_named_volume.get(name).cloned())
+            .or_else(|| self.by_external_volume.get(name).cloned())
     }
 
     /// Resolves an image's owner from its tags: exact match for registry
@@ -477,6 +527,47 @@ pub async fn stop_all_managed(state: AppState) -> RpResponse {
         }
     }
     RpResponse::StopAllResult { count }
+}
+
+/// `Command::VolumeList`: a tela **Volumes**. O inventário do motor (do cache) com o dono, o órfão,
+/// o backup e **quem monta** cada volume (Application pelo spec, Compose pelo arquivo, marcando os
+/// emprestados). Ver `docs/plano-volumes-tela-e-emprestados.md`.
+pub async fn list_volume_info(state: AppState) -> RpResponse {
+    let volumes = match state
+        .docker_cache
+        .df
+        .get_or_refresh(|| compute_df_inventory(&state))
+        .await
+    {
+        Ok((_, volumes)) => volumes,
+        Err(e) => return RpResponse::err("RuntimeError", e),
+    };
+    let idx = ServiceIndex::build(&state).await;
+    let mut infos: Vec<crate::domain::VolumeInfo> = volumes
+        .into_iter()
+        .map(|volume| {
+            let anonymous =
+                volume.name.len() == 64 && volume.name.chars().all(|c| c.is_ascii_hexdigit());
+            crate::domain::VolumeInfo {
+                mounts: idx
+                    .mounts_by_volume
+                    .get(&volume.name)
+                    .cloned()
+                    .unwrap_or_default(),
+                anonymous,
+                name: volume.name,
+                size_bytes: volume.size_bytes,
+                in_use: volume.in_use,
+                service_id: volume.service_id,
+                service: volume.service,
+                project: volume.project,
+                orphan_of: volume.orphan_of,
+                has_backup_policy: volume.has_backup_policy,
+            }
+        })
+        .collect();
+    infos.sort_by(|left, right| left.name.cmp(&right.name));
+    RpResponse::Volumes(infos)
 }
 
 #[cfg(test)]

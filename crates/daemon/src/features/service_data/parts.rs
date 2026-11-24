@@ -147,10 +147,22 @@ pub async fn resolve(docker: &crate::engine::DockerClient, svc: &Service) -> Res
 /// Os **volumes nomeados** do serviço (os da stack Compose e os que o spec monta por nome), sem
 /// pastas do servidor. É o que fica para trás quando o serviço é apagado. Ver
 /// `docs/plano-releases-ambientes-rotas-volumes.md` §4.
+///
+/// **Sem** os volumes externos do Compose (`external: true`): esses são emprestados, a stack só os usa
+/// (ver [`borrowed_volumes`]). Antes eles entravam aqui pelo que os containers montam, e "apagar os
+/// dados" de um serviço apagava junto um volume que não era dele.
 pub async fn named_volumes(svc: &Service) -> Result<Vec<String>> {
     let mut names = Vec::new();
-    if matches!(svc.spec.source, ServiceSource::Compose(_)) {
-        names = list_project_volumes(&svc.compose_project_name(), &svc.id).await?;
+    if let ServiceSource::Compose(compose) = &svc.spec.source {
+        let borrowed = super::compose_volumes::external_volume_names(
+            &compose.content,
+            &svc.compose_project_name(),
+        );
+        names = list_project_volumes(&svc.compose_project_name(), &svc.id)
+            .await?
+            .into_iter()
+            .filter(|name| !borrowed.contains(name))
+            .collect();
     }
     for volume in &svc.spec.volumes {
         if !volume.host_path.is_empty()
@@ -162,6 +174,18 @@ pub async fn named_volumes(svc: &Service) -> Result<Vec<String>> {
     }
     names.sort();
     Ok(names)
+}
+
+/// Os volumes **emprestados** de uma stack Compose: os declarados com `external: true` (já existiam;
+/// a stack só os usa).
+pub fn borrowed_volumes(svc: &Service) -> Vec<String> {
+    match &svc.spec.source {
+        ServiceSource::Compose(compose) => super::compose_volumes::external_volume_names(
+            &compose.content,
+            &svc.compose_project_name(),
+        ),
+        _ => Vec::new(),
+    }
 }
 
 /// Etiqueta que o Rustploy põe nos volumes que ele mesmo cria: o **ID do serviço** dono do volume.

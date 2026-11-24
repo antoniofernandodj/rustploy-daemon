@@ -60,6 +60,42 @@ pub struct DockerVolumeInfo {
     pub has_backup_policy: bool,
 }
 
+/// Quem monta um volume e onde (tela Volumes).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct VolumeMountUse {
+    pub service_id: String,
+    pub service: String,
+    pub project: String,
+    pub container_path: String,
+    /// Montado como **emprestado**: `external: true` num Compose (o volume já existia).
+    #[serde(default)]
+    pub borrowed: bool,
+}
+
+/// Um volume na tela **Volumes**: o inventário com dono, órfão, backup e quem monta.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct VolumeInfo {
+    pub name: String,
+    /// `-1` = o motor não informou.
+    pub size_bytes: i64,
+    pub in_use: bool,
+    #[serde(default)]
+    pub service_id: Option<String>,
+    #[serde(default)]
+    pub service: Option<String>,
+    #[serde(default)]
+    pub project: Option<String>,
+    #[serde(default)]
+    pub orphan_of: Option<String>,
+    #[serde(default)]
+    pub has_backup_policy: bool,
+    /// Volume anônimo (nome de 64 hex, criado pelo motor para um `VOLUME` da imagem).
+    #[serde(default)]
+    pub anonymous: bool,
+    #[serde(default)]
+    pub mounts: Vec<VolumeMountUse>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DockerContainerInfo {
     /// Full container id (for removal).

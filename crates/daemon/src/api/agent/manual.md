@@ -161,7 +161,7 @@ Comandos, por área (campos entre chaves):
   `ProjectEnvSet{project_id, env_vars, env_comments}`
 - **Serviços**: `ServiceList{project_id}` · `ServiceGet{id}` ·
   `ServiceCreate(ServiceSpec)` · `ServiceUpdate{id, spec}` ·
-  `ServiceVolumeAttach{service_id, volume:{host_path, container_path, read_only}}` (Application: `host_path` = nome de volume — um órfão, para adotar os dados de um serviço apagado, ou um nome novo — ou pasta absoluta; recusa volume de outro serviço; vale no próximo deploy) · `ServiceVolumeDetach{service_id, container_path}` (os dados ficam) · `ServiceDelete{id, delete_volumes?}` (sem `delete_volumes: true` os volumes nomeados — os dados — ficam e aparecem como órfãos em `DockerVolumes`) · `ServiceStop{service_id}` · `ServiceReload{service_id}` ·
+  `ServiceVolumeAttach{service_id, volume:{host_path, container_path, read_only}}` (Application: `host_path` = nome de volume — um órfão, para adotar os dados de um serviço apagado, ou um nome novo — ou pasta absoluta; recusa volume de outro serviço; vale no próximo deploy) · `ServiceVolumeDetach{service_id, container_path}` (os dados ficam) · `ServiceDelete{id, delete_volumes?, delete_external_volumes?}` (sem `delete_volumes: true` os volumes nomeados — os dados — ficam e aparecem como órfãos; os **emprestados**, `external: true` de um Compose, só saem com `delete_external_volumes: true`) · `ServiceStop{service_id}` · `ServiceReload{service_id}` ·
   `ServiceConnectionInfo{service_id}` · `GetWebhookUrl{service_id}` ·
   `RegenerateWebhookToken{service_id}`
 - **Healthcheck** (campo `healthcheck` do `ServiceSpec`): `{kind, interval_secs, timeout_secs, retries,
@@ -313,7 +313,7 @@ Comandos, por área (campos entre chaves):
   http://rp_s3:9000`) — o `curl --aws-sigv4` aceita. Não use `minio/mc`: a imagem não é mais puxável.
 - **Docker**: `DockerContainers` · `DockerImages` · `DockerVolumes` (cada volume traz o dono — `service_id`, `service`, `project` —, `orphan_of` quando o serviço dono foi apagado e o volume ficou, e `has_backup_policy`) ·
   `DockerNetworks` · `StopContainer{id}` (só container **órfão**: o de um serviço se para pelo serviço) · `RemoveContainer{id}` · `RemoveImage{id}` ·
-  `RemoveVolume{name}` · `RemoveNetwork{id}` · `StopAllManaged` ·
+  `RemoveVolume{name}` · `VolumeList` (a tela Volumes: dono, órfão, backup e `mounts` — quem monta e onde, `borrowed` = externo num Compose) · `ComposeInsertExternalVolume{content, volume_name}` (devolve o texto do Compose com o bloco `external` do volume e a `key` a montar; não grava) · `RemoveNetwork{id}` · `StopAllManaged` ·
   `PruneContainers` · `PruneImages{all}` · `PruneVolumes{all}` ·
   `PruneBuildCache` · `PruneNetworks` · `DockerCleanupConfigGet` ·
   `DockerCleanupConfigSet{config}` · `DockerCleanupRunNow`

@@ -598,6 +598,35 @@ document.addEventListener("alpine:init", () => {
     // ~L192-566. `initGeneralForm()` sincroniza os campos locais com o spec
     // atual — chamado ao abrir a aba, mesmo padrão de initHealthcheckForm/initAdvancedForm.
     composeText: "",
+    composeVolume: { open: false, choice: "", options: [] }, // "Usar volume existente" do editor do Compose
+    async openComposeVolume() {
+      const volumeListResponse = await this.store.api.rpc("VolumeList");
+      const volumes = (volumeListResponse.ok && volumeListResponse.value?.Volumes) || [];
+      const options = volumes
+        .filter((volume) => !volume.anonymous && (volume.mounts || []).length === 0 && !volume.in_use)
+        .map((volume) => ({
+          name: volume.name,
+          label: volume.orphan_of ? volume.name + " — " + t`órfão: ${volume.orphan_of}` : volume.name,
+          orphan: !!volume.orphan_of,
+        }))
+        .sort((left, right) => (left.orphan === right.orphan ? left.name.localeCompare(right.name) : left.orphan ? -1 : 1));
+      this.composeVolume = { open: true, choice: "", options };
+      return null;
+    },
+    async insertComposeVolume() {
+      if (!this.composeVolume.choice) return;
+      const insertResponse = await this.store.api.rpcChecked({
+        ComposeInsertExternalVolume: { content: this.composeText, volume_name: this.composeVolume.choice },
+      });
+      if (insertResponse.ok && insertResponse.value?.ComposeWithVolume) {
+        this.composeText = insertResponse.value.ComposeWithVolume.content;
+        this.composeVolume.open = false;
+        this.store.toastOk(t`Volume declarado. Monte num serviço com \`- ${insertResponse.value.ComposeWithVolume.key}:/caminho\` e salve.`);
+      } else {
+        this.store.toastError("erro: " + insertResponse.error);
+      }
+      return insertResponse;
+    },
     composeOriginal: "",
     // Renomear (aba General). Porta de save_service_name em handlers/services.luau.
     editName: "",

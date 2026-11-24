@@ -89,7 +89,8 @@
             { v: 'monitoring',    label: 'Monitoring',    icon: '◔' },
             { v: 'schedules',     label: 'Schedules',     icon: '◫' },
             { v: 'ingress',       label: 'Ingress',       icon: '↦' },
-            { v: 'docker',        label: 'Runtime',       icon: '◉' } ] },
+            { v: 'docker',        label: 'Runtime',       icon: '◉' },
+            { v: 'volumes',       label: 'Volumes',       icon: '▤' } ] },
           { title: 'MANAGEMENT', items: [
             { v: 'projects', label: 'Projects', icon: '◧', also: ['project', 'service'] } ] } ],
         on(it) { const v = $store.app.view; return v === it.v || (it.also || []).includes(v); }
@@ -737,6 +738,64 @@
       </column>
 
       <!-- ── Docker ───────────────────────────────────────────────────── -->
+      <!-- Volumes: os dados (screens/volumes.js) -->
+      <column class="content" x-data="volumesScreen" x-show="$store.app.view === 'volumes'">
+        <row class="page-head">
+          <column class="page-head__titles">
+            <text class="page-head__title">Volumes</text>
+            <text class="page-head__subtitle" x-t>Os volumes que guardam dados: quem monta cada um, dono, órfãos e backup.</text>
+          </column>
+          <row class="page-head__stats">
+            <column class="stat-card"><text class="u-label-cap">VOLUMES</text><text class="stat-card__num" x-text="rows.length"></text></column>
+          </row>
+        </row>
+        <row class="env__head">
+          <label class="check-row"><input type="checkbox" x-model="onlyOrphans" /><text x-t>Só órfãos</text></label>
+          <label class="check-row"><input type="checkbox" x-model="showAnonymous" /><text x-t>Mostrar anônimos</text></label>
+          <column class="u-grow"></column>
+          <button class="btn btn--ghost btn--xs" type="button" @click="load()" x-t>Atualizar</button>
+        </row>
+        <template x-if="adopt">
+          <column class="panel route-editor">
+            <text class="u-label-cap" x-text="$t('Adotar ') + adopt.name"></text>
+            <row class="route-editor__rule">
+              <select class="field__input route-editor__service" x-model="adopt.serviceId">
+                <option value="" x-t>serviço (Application)</option>
+                <template x-for="service in applicationServices" :key="service.id">
+                  <option :value="service.id" x-text="service.label"></option>
+                </template>
+              </select>
+              <input class="field__input route-editor__service" type="text" x-model="adopt.target" placeholder="caminho no container (ex.: /data)" x-t:placeholder />
+            </row>
+            <row class="release-diff__actions">
+              <text class="u-muted u-grow" x-t>Vale no próximo deploy do serviço.</text>
+              <button class="btn btn--ghost btn--sm" type="button" @click="cancelAdopt()" x-t>Cancelar</button>
+              <button class="btn btn--primary btn--sm" type="button" @click="confirmAdopt()" x-t>Montar</button>
+            </row>
+          </column>
+        </template>
+        <column class="u-fill-all">
+          <column class="volumes-list">
+            <text class="u-muted" x-show="rows.length === 0" x-t>Nenhum volume.</text>
+            <template x-for="row in rows" :key="row.name">
+              <column class="environments__pair">
+                <row class="environments__pair-head">
+                  <text class="env__key" x-text="row.name"></text>
+                  <text class="u-muted" x-text="row.size"></text>
+                  <text :class="row.kind === 'warn' ? 'u-warn' : row.kind === 'ok' ? 'u-ok' : 'u-muted'" x-text="row.status"></text>
+                  <text class="environment-badge" x-show="row.backup" x-text="row.backup"></text>
+                </row>
+                <text class="environments__change" x-text="row.mounts"></text>
+                <row class="deployments__release-actions">
+                  <button class="btn btn--ghost btn--xs" type="button" x-show="row.canAdopt" @click="openAdopt(row.name)" x-t>Adotar num serviço</button>
+                  <button class="btn btn--danger btn--xs" type="button" x-show="row.canRemove" @click="remove(row.name)" x-t>Apagar</button>
+                </row>
+              </column>
+            </template>
+          </column>
+        </column>
+      </column>
+
       <column class="content" x-data="docker" x-show="$store.app.view === 'docker'">
         <row class="page-head">
           <column class="page-head__titles">
@@ -3553,7 +3612,23 @@
                 <column class="form-panel">
                   <text class="u-label-cap">DOCKER COMPOSE (YAML)</text>
                   <textarea class="env__editor" x-model="composeText"></textarea>
+                  <!-- "Usar volume existente": declara o bloco external de um volume que já existe;
+                       a montagem (- chave:/caminho) a pessoa escreve. -->
+                  <column class="route-editor" x-show="composeVolume.open">
+                    <text class="u-muted" x-t>Declara no arquivo um volume que já existe (external). Depois monte num serviço com `- chave:/caminho` e salve.</text>
+                    <row class="route-editor__rule">
+                      <select class="field__input route-editor__service" x-model="composeVolume.choice">
+                        <option value="" x-t>volume existente</option>
+                        <template x-for="option in composeVolume.options" :key="option.name">
+                          <option :value="option.name" x-text="option.label"></option>
+                        </template>
+                      </select>
+                      <button class="btn btn--ghost btn--sm" type="button" @click="composeVolume.open = false" x-t>Cancelar</button>
+                      <button class="btn btn--primary btn--sm" type="button" @click="insertComposeVolume()" x-t>Inserir</button>
+                    </row>
+                  </column>
                   <row class="env__add">
+                    <button class="btn btn--ghost" type="button" @click="openComposeVolume()" x-t>Usar volume existente</button>
                     <button class="btn btn--primary" type="button" @click="saveCompose()" x-t>Salvar compose</button>
                     <button class="btn btn--ghost" type="button" @click="cancelCompose()" x-t>Cancelar</button>
                     <text class="u-muted" x-text="store.serviceMessage"></text>

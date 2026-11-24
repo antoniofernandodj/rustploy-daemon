@@ -136,6 +136,10 @@ pub enum Command {
         id: String,
         #[serde(default)]
         delete_volumes: bool,
+        /// Apaga também os volumes **emprestados** (os `external: true` do Compose, que já existiam
+        /// antes da stack). Sem isso eles ficam, mesmo com `delete_volumes`.
+        #[serde(default)]
+        delete_external_volumes: bool,
     },
     /// Monta um volume num serviço Application: `host_path` é o nome de um volume (um órfão, para
     /// adotar os dados de um serviço apagado, ou um nome novo) ou uma pasta absoluta do servidor.
@@ -806,6 +810,16 @@ pub enum Command {
     },
     RemoveVolume {
         name: String,
+    },
+    /// A tela **Volumes**: cada volume com o dono, o órfão, o backup e **quem monta** (serviço e
+    /// caminho; `borrowed` = externo num Compose). Resposta: `Volumes`.
+    VolumeList,
+    /// Insere no texto de um Compose a declaração `external: true` de um volume que já existe, sem
+    /// reformatar o resto, e devolve a chave a usar na montagem (`- chave:/caminho`). Não grava nada:
+    /// quem chama põe o texto no editor. Resposta: `ComposeWithVolume`.
+    ComposeInsertExternalVolume {
+        content: String,
+        volume_name: String,
     },
     RemoveNetwork {
         id: String,

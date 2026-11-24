@@ -1,7 +1,8 @@
 //! `Command::ServiceDelete`: para e REMOVE os containers do serviço (ou a stack
 //! Compose), apaga o serviço, tira suas rotas do ingress e fecha a porta
 //! externa no firewall. Imagens ficam. Os volumes nomeados (os dados) ficam por padrão e são
-//! anotados como órfãos (`store::orphan_volumes`); com `delete_volumes`, saem junto.
+//! anotados como órfãos (`store::orphan_volumes`); com `delete_volumes`, saem junto. Os emprestados
+//! (externos do Compose) só saem com `delete_external_volumes`.
 
 use crate::domain::ServiceSource;
 use crate::engine::containers;
@@ -35,7 +36,15 @@ async fn remove_containers(state: &ServicesContext, id: &str) -> Result<(), RpRe
     Ok(())
 }
 
-pub async fn handle(state: ServicesContext, id: String, delete_volumes: bool) -> RpResponse {
+/// O que fazer com os volumes ao apagar: os **próprios** do serviço e os **emprestados** (externos
+/// do Compose). `false` = mantém (vira órfão, com a origem anotada).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct VolumeChoice {
+    pub own: bool,
+    pub borrowed: bool,
+}
+
+pub async fn handle(state: ServicesContext, id: String, choice: VolumeChoice) -> RpResponse {
     // Guarda: não apaga um serviço do qual outros dependem (o autostart os deixaria bloqueados).
     if let Ok(Some(svc)) = crate::store::services::get(&state.db, &id).await
         && let Ok(all) =
@@ -54,8 +63,10 @@ pub async fn handle(state: ServicesContext, id: String, delete_volumes: bool) ->
         }
     }
     // Os volumes do serviço, antes de ele sumir do estado (depois não há mais como achá-los).
-    let (volumes, service_name, project_name) = match crate::store::services::get(&state.db, &id)
-        .await
+    let (volumes, borrowed, service_name, project_name) = match crate::store::services::get(
+        &state.db, &id,
+    )
+    .await
     {
         Ok(Some(svc)) => {
             let project_name = crate::store::projects::get(&state.db, &svc.spec.project_id)
@@ -70,9 +81,10 @@ pub async fn handle(state: ServicesContext, id: String, delete_volumes: bool) ->
                         tracing::warn!(service_id = %id, error = %e, "service_delete: não listei os volumes");
                         Vec::new()
                     });
-            (volumes, svc.spec.name.clone(), project_name)
+            let borrowed = crate::features::service_data::parts::borrowed_volumes(&svc);
+            (volumes, borrowed, svc.spec.name.clone(), project_name)
         }
-        _ => (Vec::new(), String::new(), String::new()),
+        _ => (Vec::new(), Vec::new(), String::new(), String::new()),
     };
     // Primeiro os containers: se o motor falhar, nada mudou (rotas, registro) e dá para tentar de novo.
     if let Err(e) = remove_containers(&state, &id).await {
@@ -90,8 +102,13 @@ pub async fn handle(state: ServicesContext, id: String, delete_volumes: bool) ->
     match crate::store::services::delete(&state.db, &id).await {
         Ok(true) => {
             // Os dados: apagados a pedido, ou anotados como órfãos (de quem eram).
-            for volume in &volumes {
-                if delete_volumes {
+            // Emprestados (externos do Compose) só saem com a escolha própria deles.
+            let decisions = volumes
+                .iter()
+                .map(|volume| (volume, choice.own))
+                .chain(borrowed.iter().map(|volume| (volume, choice.borrowed)));
+            for (volume, delete_it) in decisions {
+                if delete_it {
                     match state
                         .docker
                         .inner

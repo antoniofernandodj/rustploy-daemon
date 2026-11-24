@@ -138,6 +138,8 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         Command::RemoveContainer { .. } => "RemoveContainer",
         Command::RemoveImage { .. } => "RemoveImage",
         Command::RemoveVolume { .. } => "RemoveVolume",
+        Command::VolumeList => "VolumeList",
+        Command::ComposeInsertExternalVolume { .. } => "ComposeInsertExternalVolume",
         Command::RemoveNetwork { .. } => "RemoveNetwork",
         Command::StopAllManaged => "StopAllManaged",
         Command::IngressRoutes => "IngressRoutes",
@@ -224,6 +226,8 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         | Command::StopContainer { .. }
         | Command::RemoveContainer { .. }
         | Command::RemoveImage { .. }
+        | Command::VolumeList
+        | Command::ComposeInsertExternalVolume { .. }
         | Command::RemoveVolume { .. }
         | Command::RemoveNetwork { .. }
         | Command::StopAllManaged => handlers::docker::dispatch(state, cmd).await,
