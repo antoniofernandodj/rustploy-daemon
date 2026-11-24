@@ -52,6 +52,8 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         Command::ServiceGet { .. } => "ServiceGet",
         Command::ServiceUpdate { .. } => "ServiceUpdate",
         Command::ServiceDelete { .. } => "ServiceDelete",
+        Command::ServiceVolumeAttach { .. } => "ServiceVolumeAttach",
+        Command::ServiceVolumeDetach { .. } => "ServiceVolumeDetach",
         Command::DeployStart { .. } => "DeployStart",
         Command::DeployWithDependencies { .. } => "DeployWithDependencies",
         Command::ProjectDeploy { .. } => "ProjectDeploy",
@@ -334,6 +336,8 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         | Command::ServiceGet { .. }
         | Command::ServiceUpdate { .. }
         | Command::ServiceDelete { .. }
+        | Command::ServiceVolumeAttach { .. }
+        | Command::ServiceVolumeDetach { .. }
         | Command::ServiceStop { .. }
         | Command::ServiceReload { .. }
         | Command::GetWebhookUrl { .. }

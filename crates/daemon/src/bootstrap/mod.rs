@@ -217,6 +217,29 @@ pub async fn run() -> Result<()> {
         registry_internal_token.clone(),
     );
 
+    // Um deploy que termina cria ou troca containers, imagens e volumes: o inventário do Docker
+    // (cache de 5 min) deixa de valer. Sem isto, um volume novo demorava minutos para aparecer.
+    {
+        let mut events = state.bus.subscribe();
+        let docker_cache = state.docker_cache.clone();
+        tokio::spawn(async move {
+            loop {
+                match events.recv().await {
+                    Ok(crate::protocol::Event::DeployStateChanged { state, .. })
+                        if state.is_terminal() =>
+                    {
+                        docker_cache.df.invalidate().await;
+                    }
+                    Ok(_) => {}
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                        docker_cache.df.invalidate().await;
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                }
+            }
+        });
+    }
+
     // Execuções de job que ficaram sem fim num restart (rodando, ou esperando a
     // vez numa fila que só existia em memória): viram "interrompidas". Antes do
     // agendador, que só dispara um job sem execução em andamento.

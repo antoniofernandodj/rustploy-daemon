@@ -180,6 +180,8 @@ pub fn required_level(cmd: &Command) -> Level {
         | Command::ProjectDelete { .. }
         | Command::ServiceCreate(_)
         | Command::ServiceDelete { .. }
+        | Command::ServiceVolumeAttach { .. }
+        | Command::ServiceVolumeDetach { .. }
         | Command::SharedAccessGrant { .. }
         | Command::SharedAccessRevoke { .. }
         | Command::ManagedDatabaseCreate(_)

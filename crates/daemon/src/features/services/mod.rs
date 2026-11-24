@@ -5,6 +5,7 @@ pub mod create;
 pub mod delete;
 pub mod links;
 pub mod update;
+pub mod volumes;
 
 pub use context::ServicesContext;
 

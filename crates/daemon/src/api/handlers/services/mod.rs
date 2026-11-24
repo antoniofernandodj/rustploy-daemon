@@ -31,6 +31,38 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
             }
             crate::features::services::update::handle(state.services_ctx(), id, spec).await
         }
+        Command::ServiceVolumeAttach { service_id, volume } => {
+            let response = match crate::features::services::volumes::attach(
+                &state.db,
+                &state.docker,
+                &service_id,
+                volume,
+            )
+            .await
+            {
+                Ok(service) => RpResponse::Service(Box::new(service)),
+                Err(e) => RpResponse::err("InvalidInput", e.to_string()),
+            };
+            state.docker_cache.df.invalidate().await;
+            response
+        }
+        Command::ServiceVolumeDetach {
+            service_id,
+            container_path,
+        } => {
+            let response = match crate::features::services::volumes::detach(
+                &state.db,
+                &service_id,
+                &container_path,
+            )
+            .await
+            {
+                Ok(service) => RpResponse::Service(Box::new(service)),
+                Err(e) => RpResponse::err("InvalidInput", e.to_string()),
+            };
+            state.docker_cache.df.invalidate().await;
+            response
+        }
         Command::ServiceDelete { id, delete_volumes } => {
             let response =
                 crate::features::services::delete::handle(state.services_ctx(), id, delete_volumes)

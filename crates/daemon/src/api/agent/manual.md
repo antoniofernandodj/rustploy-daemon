@@ -161,7 +161,7 @@ Comandos, por área (campos entre chaves):
   `ProjectEnvSet{project_id, env_vars, env_comments}`
 - **Serviços**: `ServiceList{project_id}` · `ServiceGet{id}` ·
   `ServiceCreate(ServiceSpec)` · `ServiceUpdate{id, spec}` ·
-  `ServiceDelete{id, delete_volumes?}` (sem `delete_volumes: true` os volumes nomeados — os dados — ficam e aparecem como órfãos em `DockerVolumes`) · `ServiceStop{service_id}` · `ServiceReload{service_id}` ·
+  `ServiceVolumeAttach{service_id, volume:{host_path, container_path, read_only}}` (Application: `host_path` = nome de volume — um órfão, para adotar os dados de um serviço apagado, ou um nome novo — ou pasta absoluta; recusa volume de outro serviço; vale no próximo deploy) · `ServiceVolumeDetach{service_id, container_path}` (os dados ficam) · `ServiceDelete{id, delete_volumes?}` (sem `delete_volumes: true` os volumes nomeados — os dados — ficam e aparecem como órfãos em `DockerVolumes`) · `ServiceStop{service_id}` · `ServiceReload{service_id}` ·
   `ServiceConnectionInfo{service_id}` · `GetWebhookUrl{service_id}` ·
   `RegenerateWebhookToken{service_id}`
 - **Healthcheck** (campo `healthcheck` do `ServiceSpec`): `{kind, interval_secs, timeout_secs, retries,

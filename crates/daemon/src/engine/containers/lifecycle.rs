@@ -154,12 +154,43 @@ pub async fn create_staging(
             Mount {
                 target: Some(v.container_path.clone()),
                 source: Some(v.host_path.clone()),
-                typ: Some(MountTypeEnum::BIND),
+                // Caminho absoluto = pasta do servidor (bind); nome = volume nomeado do motor. Era
+                // sempre bind, e um nome quebrava o deploy nos dois motores ("must be absolute" no
+                // Docker; pasta relativa ao serviço de API no Podman).
+                typ: Some(if crate::domain::is_named_volume(&v.host_path) {
+                    MountTypeEnum::VOLUME
+                } else {
+                    MountTypeEnum::BIND
+                }),
                 read_only: Some(v.read_only),
                 ..Default::default()
             }
         })
         .collect();
+
+    // Volume nomeado: criado antes, com a etiqueta do serviço dono (o motor criaria sozinho, mas sem
+    // etiqueta, e a lista de volumes não saberia de quem é). Já existir não é erro: fica como está.
+    for volume in spec
+        .volumes
+        .iter()
+        .filter(|v| crate::domain::is_named_volume(&v.host_path))
+    {
+        let mut volume_labels = HashMap::new();
+        volume_labels.insert(
+            crate::features::service_data::parts::SERVICE_LABEL.to_string(),
+            service_id.to_string(),
+        );
+        if let Err(e) = docker
+            .create_volume(bollard::volume::CreateVolumeOptions {
+                name: volume.host_path.clone(),
+                labels: volume_labels,
+                ..Default::default()
+            })
+            .await
+        {
+            warn!(volume = %volume.host_path, error = %e, "não criei o volume nomeado; o motor cria ao montar");
+        }
+    }
 
     let mut labels = HashMap::new();
     labels.insert("rustploy.managed".to_string(), "true".to_string());

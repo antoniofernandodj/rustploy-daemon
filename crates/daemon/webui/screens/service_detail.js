@@ -514,6 +514,57 @@ document.addEventListener("alpine:init", () => {
     get svc() {
       return this.store.serviceDetail;
     },
+
+    // ── Volumes montados (aba Dados) ──
+    volumeForm: { existing: "", name: "", target: "", readOnly: false },
+    get volumesSupported() {
+      return !!this.svc && !this.svc.spec.source.Compose;
+    },
+    get volumeMounts() {
+      return (this.svc && this.svc.spec.volumes) || [];
+    },
+    /** Os volumes sem dono (os órfãos primeiro) para o "volume existente". */
+    get volumeOptions() {
+      return ((this.store.snap && this.store.snap.docker_volumes) || [])
+        // Sem dono, e não anônimo (nome de 64 hex: o motor criou para um VOLUME da imagem).
+        .filter((volume) => !volume.service && !/^[0-9a-f]{64}$/.test(volume.name))
+        .map((volume) => ({
+          name: volume.name,
+          label: volume.orphan_of ? volume.name + " — " + t`órfão: ${volume.orphan_of}` : volume.name,
+          orphan: !!volume.orphan_of,
+        }))
+        .sort((left, right) => (left.orphan === right.orphan ? left.name.localeCompare(right.name) : left.orphan ? -1 : 1));
+    },
+    async attachVolume() {
+      const source = (this.volumeForm.name || this.volumeForm.existing || "").trim();
+      const target = (this.volumeForm.target || "").trim();
+      if (!source || !target) {
+        this.store.toastError(t("Escolha um volume (ou digite um nome) e o caminho no container."));
+        return;
+      }
+      const attachResponse = await this.store.api.rpcChecked({
+        ServiceVolumeAttach: {
+          service_id: this.store.selectedServiceId,
+          volume: { host_path: source, container_path: target, read_only: !!this.volumeForm.readOnly },
+        },
+      });
+      this.store.toastResult(attachResponse, t`${source} montado em ${target}: vale no próximo deploy`);
+      if (attachResponse.ok) {
+        this.volumeForm = { existing: "", name: "", target: "", readOnly: false };
+        await this.store.fetchServiceDetail(this.store.selectedServiceId);
+      }
+      return attachResponse;
+    },
+    async detachVolume(mount) {
+      if (!confirm(t`Desmontar ${mount.host_path} de ${mount.container_path}?` + "\n\n"
+        + t("O serviço deixa de ver esses dados no próximo deploy. Os dados ficam no servidor."))) return;
+      const detachResponse = await this.store.api.rpcChecked({
+        ServiceVolumeDetach: { service_id: this.store.selectedServiceId, container_path: mount.container_path },
+      });
+      this.store.toastResult(detachResponse, t("desmontado: vale no próximo deploy"));
+      if (detachResponse.ok) await this.store.fetchServiceDetail(this.store.selectedServiceId);
+      return detachResponse;
+    },
     get projectName() {
       const projectId = this.svc && this.svc.spec.project_id;
       const project = ((this.store.snap && this.store.snap.projects) || []).find((project) => project.id === projectId);

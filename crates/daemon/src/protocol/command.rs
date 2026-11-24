@@ -137,6 +137,19 @@ pub enum Command {
         #[serde(default)]
         delete_volumes: bool,
     },
+    /// Monta um volume num serviço Application: `host_path` é o nome de um volume (um órfão, para
+    /// adotar os dados de um serviço apagado, ou um nome novo) ou uma pasta absoluta do servidor.
+    /// Recusa volume que já é de outro serviço. Vale no próximo deploy. Resposta: `Service`.
+    ServiceVolumeAttach {
+        service_id: String,
+        volume: VolumeMount,
+    },
+    /// Tira a montagem em `container_path` (os dados ficam no servidor). Vale no próximo deploy.
+    /// Resposta: `Service`.
+    ServiceVolumeDetach {
+        service_id: String,
+        container_path: String,
+    },
     ServiceList {
         project_id: String,
     },

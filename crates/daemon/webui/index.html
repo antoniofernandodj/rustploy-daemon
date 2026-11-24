@@ -4016,6 +4016,41 @@
               </column>
             </column>
 
+            <!-- Volumes montados (Application): adotar um órfão ou montar um nome novo;
+                 desmontar não apaga os dados. Vale no próximo deploy. -->
+            <column class="form-panel form-panel--stack service-volumes" x-show="store.serviceTab === 'dados'">
+              <text class="u-label-cap">VOLUMES</text>
+              <text class="u-muted" x-show="!volumesSupported" x-t>Um serviço Compose declara os volumes no próprio arquivo.</text>
+              <template x-if="volumesSupported">
+                <column class="service-volumes__body">
+                  <text class="u-muted" x-show="volumeMounts.length === 0" x-t>Nenhum volume montado.</text>
+                  <template x-for="(mount, index) in volumeMounts" :key="mount.container_path">
+                    <row class="kv-list__row">
+                      <text class="env__key" x-text="mount.host_path"></text>
+                      <text class="custom-routes__target u-grow" x-text="'→ ' + mount.container_path"></text>
+                      <text class="u-muted" x-show="mount.read_only" x-t>só leitura</text>
+                      <button class="btn btn--danger btn--xs" type="button" @click="detachVolume(mount)" title="Desmontar (os dados ficam)" x-t:title>✕</button>
+                    </row>
+                  </template>
+                  <row class="route-editor__rule">
+                    <select class="field__input route-editor__service" x-model="volumeForm.existing">
+                      <option value="" x-t>volume existente (órfãos primeiro)</option>
+                      <template x-for="option in volumeOptions" :key="option.name">
+                        <option :value="option.name" x-text="option.label"></option>
+                      </template>
+                    </select>
+                    <input class="field__input route-editor__service" type="text" x-model="volumeForm.name" placeholder="ou um nome novo (ou uma pasta absoluta)" x-t:placeholder />
+                  </row>
+                  <row class="route-editor__rule">
+                    <input class="field__input route-editor__service" type="text" x-model="volumeForm.target" placeholder="caminho no container (ex.: /data)" x-t:placeholder />
+                    <label class="check-row"><input type="checkbox" x-model="volumeForm.readOnly" /><text x-t>só leitura</text></label>
+                    <button class="btn btn--primary btn--sm" type="button" @click="attachVolume()" x-t>Montar</button>
+                  </row>
+                  <text class="u-muted" x-t>Montar e desmontar valem no próximo deploy. Adotar um órfão traz de volta os dados de um serviço apagado.</text>
+                </column>
+              </template>
+            </column>
+
             <!-- Dados -->
             <column class="form-panel form-panel--stack" x-show="store.serviceTab === 'dados'">
               <text class="u-label-cap" x-t>DADOS DO SERVIÇO</text>

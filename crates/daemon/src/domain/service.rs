@@ -473,6 +473,68 @@ pub struct VolumeMount {
     pub read_only: bool,
 }
 
+/// `host_path` de um [`VolumeMount`] é o nome de um **volume nomeado** do motor (e não uma pasta do
+/// servidor)? Nome = começa com letra ou dígito e só tem letras, dígitos, `_`, `.` e `-`.
+pub fn is_named_volume(host_path: &str) -> bool {
+    let mut chars = host_path.chars();
+    chars
+        .next()
+        .is_some_and(|first| first.is_ascii_alphanumeric())
+        && host_path
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-'))
+}
+
+/// Valida uma montagem: o caminho no container é absoluto (e não `/`), e a origem é um volume
+/// nomeado ou uma pasta absoluta do servidor. Devolve a causa.
+pub fn validate_volume_mount(mount: &VolumeMount) -> Result<(), String> {
+    let target = mount.container_path.trim_end_matches('/');
+    if !mount.container_path.starts_with('/') || target.is_empty() {
+        return Err(format!(
+            "o caminho no container precisa ser absoluto e não pode ser /: {:?}",
+            mount.container_path
+        ));
+    }
+    if mount.container_path.split('/').any(|part| part == "..") {
+        return Err(format!("caminho inválido: {:?}", mount.container_path));
+    }
+    if !(is_named_volume(&mount.host_path) || mount.host_path.starts_with('/')) {
+        return Err(format!(
+            "a origem precisa ser o nome de um volume (letras, dígitos, _ . -) ou uma pasta absoluta: {:?}",
+            mount.host_path
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod volume_mount_tests {
+    use super::*;
+
+    fn mount(host: &str, target: &str) -> VolumeMount {
+        VolumeMount {
+            host_path: host.into(),
+            container_path: target.into(),
+            read_only: false,
+        }
+    }
+
+    #[test]
+    fn nome_de_volume_e_pasta() {
+        assert!(is_named_volume("pgdata"));
+        assert!(is_named_volume("rp_x_db.data-1"));
+        assert!(!is_named_volume("/srv/data"));
+        assert!(!is_named_volume("./data"));
+        assert!(!is_named_volume(""));
+        assert!(validate_volume_mount(&mount("pgdata", "/var/lib/postgresql/data")).is_ok());
+        assert!(validate_volume_mount(&mount("/srv/uploads", "/data")).is_ok());
+        assert!(validate_volume_mount(&mount("pgdata", "data")).is_err());
+        assert!(validate_volume_mount(&mount("pgdata", "/")).is_err());
+        assert!(validate_volume_mount(&mount("pgdata", "/a/../b")).is_err());
+        assert!(validate_volume_mount(&mount("../x", "/data")).is_err());
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Healthcheck {
     pub kind: HealthcheckKind,
