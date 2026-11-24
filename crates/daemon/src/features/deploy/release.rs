@@ -102,3 +102,16 @@ pub async fn diff(
         }
     }
 }
+
+/// A release do deploy que está Live agora no serviço (`None` = nada no ar, ou o deploy no ar é de
+/// antes das releases existirem).
+pub async fn current_release(db: &Db, service_id: &str) -> Result<Option<Release>> {
+    let live_deployment = crate::store::deployments::list_for_service(db, service_id, 50)
+        .await?
+        .into_iter()
+        .find(|deployment| deployment.state == DeployState::Live);
+    match live_deployment {
+        Some(deployment) => releases::get_by_deployment(db, &deployment.id).await,
+        None => Ok(None),
+    }
+}

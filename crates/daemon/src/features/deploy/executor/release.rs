@@ -37,13 +37,37 @@ impl DeployExecutor {
             Ok(Some(project)) => project.env_vars,
             _ => Vec::new(),
         };
-        let restored_from_number = match releases::deployment_source(&self.db, &dep.id).await {
-            Ok(Some(release_id)) => releases::get(&self.db, &release_id)
-                .await
-                .ok()
-                .flatten()
-                .map(|release| release.number),
+        // De onde veio a imagem: uma release deste serviço ("volta da vN") ou de um serviço irmão
+        // noutro ambiente ("promovida de loja (homologação) v7").
+        let source_release = match releases::deployment_source(&self.db, &dep.id).await {
+            Ok(Some(release_id)) => releases::get(&self.db, &release_id).await.ok().flatten(),
             _ => None,
+        };
+        let (restored_from_number, promoted_from) = match &source_release {
+            Some(release) if release.service_id == svc.id => (Some(release.number), None),
+            Some(release) => {
+                let project_name =
+                    match crate::store::services::get(&self.db, &release.service_id).await {
+                        Ok(Some(source_service)) => {
+                            crate::store::projects::get(&self.db, &source_service.spec.project_id)
+                                .await
+                                .ok()
+                                .flatten()
+                                .map(|project| project.name)
+                                .unwrap_or_default()
+                        }
+                        _ => String::new(),
+                    };
+                (
+                    None,
+                    Some(
+                        format!("{project_name} v{}", release.number)
+                            .trim()
+                            .to_string(),
+                    ),
+                )
+            }
+            None => (None, None),
         };
         let created = releases::create(
             &self.db,
@@ -55,19 +79,26 @@ impl DeployExecutor {
                 spec: &svc.spec,
                 project_env: &project_env,
                 restored_from_number,
+                promoted_from: promoted_from.as_deref(),
             },
         )
         .await;
         match created {
             Ok(release) => {
-                let line = match release.restored_from_number {
-                    Some(origin) => {
+                let line = match (&release.promoted_from, release.restored_from_number) {
+                    (Some(source), _) => {
+                        format!(
+                            "--> Release v{} registrada (promovida de {source})",
+                            release.number
+                        )
+                    }
+                    (None, Some(origin)) => {
                         format!(
                             "--> Release v{} registrada (volta da v{origin})",
                             release.number
                         )
                     }
-                    None => format!("--> Release v{} registrada", release.number),
+                    (None, None) => format!("--> Release v{} registrada", release.number),
                 };
                 self.log_step(&dep.id, &svc.id, &line).await;
             }

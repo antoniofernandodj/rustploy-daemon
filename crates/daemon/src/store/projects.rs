@@ -19,6 +19,7 @@ fn to_project(p: &ProjectInfra) -> Project {
         description: p.description.clone(),
         env_vars: p.env_vars.clone(),
         env_comments: p.env_comments.clone(),
+        environment: p.environment.clone(),
         created_at: p.created_at,
     }
 }
@@ -42,6 +43,8 @@ pub async fn create(db: &Db, name: String, description: Option<String>) -> Resul
         managed_databases: vec![],
         shared_access: vec![],
         service_order: vec![],
+        environment: None,
+        routes: vec![],
     };
     let out = to_project(&rec);
     // A validação do repositório recusa nome repetido (era o `UNIQUE(name)` do SQL).

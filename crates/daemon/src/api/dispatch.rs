@@ -19,6 +19,10 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         Command::DeployEngineStatus => "DeployEngineStatus",
         Command::ProjectCreate { .. } => "ProjectCreate",
         Command::ProjectList => "ProjectList",
+        Command::EnvironmentCreate { .. } => "EnvironmentCreate",
+        Command::EnvironmentList { .. } => "EnvironmentList",
+        Command::EnvironmentCompare { .. } => "EnvironmentCompare",
+        Command::EnvironmentPromote { .. } => "EnvironmentPromote",
         Command::ProjectDelete { .. } => "ProjectDelete",
         Command::ProjectUpdate { .. } => "ProjectUpdate",
         Command::ProjectServicesReorder { .. } => "ProjectServicesReorder",
@@ -135,6 +139,9 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         Command::RemoveNetwork { .. } => "RemoveNetwork",
         Command::StopAllManaged => "StopAllManaged",
         Command::IngressRoutes => "IngressRoutes",
+        Command::RouteList => "RouteList",
+        Command::RouteSave { .. } => "RouteSave",
+        Command::RouteDelete { .. } => "RouteDelete",
         Command::IngressReconcile { .. } => "IngressReconcile",
         Command::EnvBackupList => "EnvBackupList",
         Command::EnvBackupRestore { .. } => "EnvBackupRestore",
@@ -274,6 +281,9 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         | Command::ApplyAppUpdate
         | Command::IngressRoutes
         | Command::IngressReconcile { .. }
+        | Command::RouteList
+        | Command::RouteSave { .. }
+        | Command::RouteDelete { .. }
         | Command::LogsGet { .. }
         | Command::LogsHistory { .. }
         | Command::LogsExecutions { .. }
@@ -285,7 +295,11 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         | Command::ProjectDelete { .. }
         | Command::ProjectUpdate { .. }
         | Command::ProjectServicesReorder { .. }
-        | Command::ProjectEnvSet { .. } => handlers::projects::dispatch(state, cmd).await,
+        | Command::ProjectEnvSet { .. }
+        | Command::EnvironmentCreate { .. }
+        | Command::EnvironmentList { .. }
+        | Command::EnvironmentCompare { .. }
+        | Command::EnvironmentPromote { .. } => handlers::projects::dispatch(state, cmd).await,
         Command::RegistryStatus
         | Command::RegistryRepoList
         | Command::RegistryTagList { .. }

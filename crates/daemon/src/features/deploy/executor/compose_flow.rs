@@ -69,7 +69,9 @@ impl DeployExecutor {
         {
             self.wait_compose_healthcheck(&ip, svc, dep).await;
             let ips = vec![ip];
-            if !svc.spec.domain_routes().is_empty() {
+            // Sempre: além dos domínios do serviço, o proxy guarda os IPs dele para as
+            // rotas próprias (`domain::Route`) que apontam para ele.
+            {
                 info!(deployment_id = %dep.id, ?ips, "ComposingUp: registrando rotas de domínio");
                 self.ingress.register_domains(&svc.spec, &ips, &svc.id);
             }

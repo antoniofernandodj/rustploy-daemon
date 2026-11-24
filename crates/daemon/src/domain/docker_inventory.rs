@@ -44,6 +44,20 @@ pub struct DockerVolumeInfo {
     /// Disk usage in bytes, when available (`-1` otherwise — e.g. non-`local`
     /// drivers never report a size).
     pub size_bytes: i64,
+    /// De quem é o volume: o serviço dono (pela etiqueta `rustploy.service_id` ou pela stack
+    /// Compose), `None` = não é de nenhum serviço que exista.
+    #[serde(default)]
+    pub service_id: Option<String>,
+    #[serde(default)]
+    pub service: Option<String>,
+    #[serde(default)]
+    pub project: Option<String>,
+    /// O serviço dono foi apagado e o volume ficou: de quem era (`db (loja), apagado em 24/11`).
+    #[serde(default)]
+    pub orphan_of: Option<String>,
+    /// O serviço dono tem backup automático para o S3 ligado.
+    #[serde(default)]
+    pub has_backup_policy: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

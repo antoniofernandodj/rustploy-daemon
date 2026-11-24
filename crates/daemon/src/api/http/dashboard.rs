@@ -211,6 +211,7 @@ mod tests {
             description: None,
             env_vars: vec![],
             env_comments: vec![],
+            environment: None,
             created_at: Utc::now(),
         }
     }

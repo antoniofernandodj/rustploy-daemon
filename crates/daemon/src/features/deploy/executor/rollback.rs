@@ -84,7 +84,9 @@ impl DeployExecutor {
         let live_ips =
             containers::live_replica_ips(&self.docker.inner, &svc.id, &net, live_replicas).await;
         if !live_ips.is_empty() {
-            if !svc.spec.domain_routes().is_empty() {
+            // Sempre: além dos domínios do serviço, o proxy guarda os IPs dele para as
+            // rotas próprias (`domain::Route`) que apontam para ele.
+            {
                 info!(
                     deployment_id = %dep.id,
                     ips = ?live_ips,

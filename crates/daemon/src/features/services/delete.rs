@@ -1,6 +1,7 @@
 //! `Command::ServiceDelete`: para e REMOVE os containers do serviço (ou a stack
 //! Compose), apaga o serviço, tira suas rotas do ingress e fecha a porta
-//! externa no firewall. Volumes nomeados e imagens ficam (dados do usuário).
+//! externa no firewall. Imagens ficam. Os volumes nomeados (os dados) ficam por padrão e são
+//! anotados como órfãos (`store::orphan_volumes`); com `delete_volumes`, saem junto.
 
 use crate::domain::ServiceSource;
 use crate::engine::containers;
@@ -34,7 +35,7 @@ async fn remove_containers(state: &ServicesContext, id: &str) -> Result<(), RpRe
     Ok(())
 }
 
-pub async fn handle(state: ServicesContext, id: String) -> RpResponse {
+pub async fn handle(state: ServicesContext, id: String, delete_volumes: bool) -> RpResponse {
     // Guarda: não apaga um serviço do qual outros dependem (o autostart os deixaria bloqueados).
     if let Ok(Some(svc)) = crate::store::services::get(&state.db, &id).await
         && let Ok(all) =
@@ -52,6 +53,27 @@ pub async fn handle(state: ServicesContext, id: String) -> RpResponse {
             );
         }
     }
+    // Os volumes do serviço, antes de ele sumir do estado (depois não há mais como achá-los).
+    let (volumes, service_name, project_name) = match crate::store::services::get(&state.db, &id)
+        .await
+    {
+        Ok(Some(svc)) => {
+            let project_name = crate::store::projects::get(&state.db, &svc.spec.project_id)
+                .await
+                .ok()
+                .flatten()
+                .map(|project| project.name)
+                .unwrap_or_default();
+            let volumes = crate::features::service_data::parts::named_volumes(&svc)
+                    .await
+                    .unwrap_or_else(|e| {
+                        tracing::warn!(service_id = %id, error = %e, "service_delete: não listei os volumes");
+                        Vec::new()
+                    });
+            (volumes, svc.spec.name.clone(), project_name)
+        }
+        _ => (Vec::new(), String::new(), String::new()),
+    };
     // Primeiro os containers: se o motor falhar, nada mudou (rotas, registro) e dá para tentar de novo.
     if let Err(e) = remove_containers(&state, &id).await {
         return e;
@@ -59,6 +81,7 @@ pub async fn handle(state: ServicesContext, id: String) -> RpResponse {
     let mut host_ports = Vec::new();
     if let Ok(Some(svc)) = crate::store::services::get(&state.db, &id).await {
         state.ingress.remove_domains(&svc.spec);
+        state.ingress.forget_service(&id);
         host_ports = crate::features::ingress::external_ports::host_ports(&svc.spec);
         for port in &host_ports {
             state.ingress.remove_port_route(*port);
@@ -66,6 +89,43 @@ pub async fn handle(state: ServicesContext, id: String) -> RpResponse {
     }
     match crate::store::services::delete(&state.db, &id).await {
         Ok(true) => {
+            // Os dados: apagados a pedido, ou anotados como órfãos (de quem eram).
+            for volume in &volumes {
+                if delete_volumes {
+                    match state
+                        .docker
+                        .inner
+                        .remove_volume(
+                            volume,
+                            Some(bollard::volume::RemoveVolumeOptions { force: false }),
+                        )
+                        .await
+                    {
+                        Ok(()) => {
+                            tracing::info!(volume = %volume, "service_delete: volume apagado")
+                        }
+                        Err(e) => {
+                            tracing::warn!(volume = %volume, error = %e, "service_delete: volume não apagado; fica como órfão");
+                            let _ = crate::store::orphan_volumes::record(
+                                &state.db,
+                                volume,
+                                &service_name,
+                                &project_name,
+                            )
+                            .await;
+                        }
+                    }
+                } else if let Err(e) = crate::store::orphan_volumes::record(
+                    &state.db,
+                    volume,
+                    &service_name,
+                    &project_name,
+                )
+                .await
+                {
+                    tracing::warn!(volume = %volume, error = %e, "service_delete: não anotei o volume órfão");
+                }
+            }
             // As releases (o "voltar para a vN") não têm mais a que voltar.
             if let Err(e) = crate::store::releases::delete_for_service(&state.db, &id).await {
                 tracing::warn!(service_id = %id, error = %e, "service_delete: falha ao remover as releases");

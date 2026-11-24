@@ -6,7 +6,7 @@
 //! HTTP:  redireciona para HTTPS, exceto o path /.well-known/acme-challenge/* (ACME HTTP-01).
 
 use crate::features::ingress::{
-    router::{PortBackend, RouteHandle},
+    router::{CustomDecision, PortBackend, RouteHandle},
     tls::{ChallengeStore, TlsManager},
 };
 use bytes::Bytes;
@@ -120,7 +120,19 @@ async fn handle_http(
     }
 
     // ── Redirect HTTP → HTTPS ─────────────────────────────────────────────────
-    if redirect_https {
+    // Uma rota própria sem TLS é servida em HTTP mesmo (não tem certificado para onde ir).
+    let host = req
+        .headers()
+        .get("host")
+        .and_then(|v| v.to_str().ok())
+        .map(|h| h.split(':').next().unwrap_or(h).to_string())
+        .unwrap_or_default();
+    let plain_http_route = routes
+        .load()
+        .custom
+        .get(&host)
+        .is_some_and(|route| !route.tls);
+    if redirect_https && !plain_http_route {
         let host = req
             .headers()
             .get("host")
@@ -209,6 +221,62 @@ async fn handle(
         .and_then(|v| v.to_str().ok())
         .map(|h| h.split(':').next().unwrap_or(h).to_string())
         .unwrap_or_default();
+
+    // Rotas próprias (`domain::Route`) vêm antes das dos serviços.
+    let decision = {
+        let table = routes.load();
+        let path_and_query = req
+            .uri()
+            .path_and_query()
+            .map(|p| p.as_str())
+            .unwrap_or("/");
+        let authorization = req
+            .headers()
+            .get("authorization")
+            .and_then(|v| v.to_str().ok());
+        table.decide_custom(&host, path_and_query, authorization)
+    };
+    if let Some(decision) = decision {
+        return Ok(match decision {
+            CustomDecision::Unauthorized => Response::builder()
+                .status(StatusCode::UNAUTHORIZED)
+                .header(
+                    "www-authenticate",
+                    "Basic realm=\"rustploy\", charset=\"UTF-8\"",
+                )
+                .body(empty_body())
+                .unwrap(),
+            CustomDecision::Redirect {
+                location,
+                permanent,
+            } => Response::builder()
+                .status(if permanent {
+                    StatusCode::MOVED_PERMANENTLY
+                } else {
+                    StatusCode::FOUND
+                })
+                .header("location", location)
+                .body(empty_body())
+                .unwrap(),
+            CustomDecision::NotFound => status_response(StatusCode::NOT_FOUND),
+            CustomDecision::Forward { backend: None, .. } => {
+                warn!(host, "rota própria: o serviço do caminho não está no ar");
+                status_response(StatusCode::BAD_GATEWAY)
+            }
+            CustomDecision::Forward {
+                backend: Some(backend),
+                path_and_query,
+            } => {
+                let mut req = req;
+                if let Some(new_path) = path_and_query
+                    && let Ok(uri) = new_path.parse::<hyper::Uri>()
+                {
+                    *req.uri_mut() = uri;
+                }
+                return forward(req, &backend, is_tls).await;
+            }
+        });
+    }
 
     let backend = {
         let table = routes.load();

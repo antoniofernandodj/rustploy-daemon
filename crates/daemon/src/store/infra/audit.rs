@@ -288,6 +288,8 @@ mod tests {
             managed_databases: vec![],
             shared_access: vec![],
             service_order: vec![],
+            environment: None,
+            routes: vec![],
         }
     }
 

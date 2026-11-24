@@ -16,5 +16,9 @@ pub struct Project {
     /// construção do ambiente — só a lista/edição via UI olha pra isso.
     #[serde(default)]
     pub env_comments: Vec<EnvComment>,
+    /// Este projeto é um **ambiente** (homologação, preview…) de outro: ver [`EnvironmentOf`].
+    /// `None` = projeto comum (ou de origem).
+    #[serde(default)]
+    pub environment: Option<EnvironmentOf>,
     pub created_at: DateTime<Utc>,
 }

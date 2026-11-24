@@ -18,11 +18,12 @@ type ReleaseRow = (
     String,         // spec (JSON)
     String,         // project_env (JSON)
     Option<i64>,    // restored_from_number
+    Option<String>, // promoted_from
     DateTime<Utc>,  // created_at
 );
 
 const SELECT_COLS: &str = "id, service_id, deployment_id, number, image, image_ref, spec, \
-                           project_env, restored_from_number, created_at";
+                           project_env, restored_from_number, promoted_from, created_at";
 
 fn row_to_release(row: ReleaseRow) -> Result<Release> {
     let (
@@ -35,6 +36,7 @@ fn row_to_release(row: ReleaseRow) -> Result<Release> {
         spec_json,
         project_env_json,
         restored_from_number,
+        promoted_from,
         created_at,
     ) = row;
     let spec: ServiceSpec = serde_json::from_str(&spec_json)?;
@@ -49,6 +51,7 @@ fn row_to_release(row: ReleaseRow) -> Result<Release> {
         spec,
         project_env,
         restored_from_number: restored_from_number.map(|number| number as u32),
+        promoted_from,
         created_at,
         is_current: false,
         image_status: ReleaseImageStatus::NotApplicable,
@@ -64,6 +67,7 @@ pub struct NewRelease<'a> {
     pub spec: &'a ServiceSpec,
     pub project_env: &'a [EnvVar],
     pub restored_from_number: Option<u32>,
+    pub promoted_from: Option<&'a str>,
 }
 
 /// Grava a release com o próximo número do serviço. Idempotente por deploy: se o deploy já virou
@@ -83,8 +87,8 @@ pub async fn create(db: &Db, new: NewRelease<'_>) -> Result<Release> {
             .await?;
     sqlx::query(
         "INSERT INTO release (id, service_id, deployment_id, number, image, image_ref, spec,
-                              project_env, restored_from_number, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                              project_env, restored_from_number, promoted_from, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&id)
     .bind(new.service_id)
@@ -95,6 +99,7 @@ pub async fn create(db: &Db, new: NewRelease<'_>) -> Result<Release> {
     .bind(&spec_json)
     .bind(&project_env_json)
     .bind(new.restored_from_number.map(i64::from))
+    .bind(new.promoted_from)
     .bind(Utc::now())
     .execute(&mut *transaction)
     .await?;
@@ -204,6 +209,7 @@ mod tests {
                 spec: &spec(),
                 project_env: &[],
                 restored_from_number: None,
+                promoted_from: None,
             },
         )
         .await

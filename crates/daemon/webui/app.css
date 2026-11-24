@@ -199,6 +199,7 @@ hr, .rule   { width: 100%; height: 1px; border: none; background: var(--border);
 .login__status  { gap: 14px; align-items: center; }
 .u-error { color: var(--error); font-size: 13px; }
 .u-ok  { color: var(--ok); }
+.u-warn { color: var(--warn); }
 
 /* ── Shell (sidebar / topbar) ─────────────────────────────────────────── */
 .sidebar     { width: 264px; height: 100%; background: var(--surface); padding: 28px 20px; gap: 6px; flex-shrink: 0; }
@@ -943,6 +944,24 @@ button:focus-visible, [tabindex]:focus-visible, select:focus-visible, summary:fo
 .release-badge { gap: 6px; align-items: center; flex-shrink: 0; width: 104px; }
 .release-badge__number { font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 4px; background: var(--raised); border: 1px solid var(--border); }
 .release-badge__current { font-size: 11px; color: var(--ok); }
+.environment-badge { font-size: 11px; padding: 1px 6px; border-radius: 4px; color: var(--accent); border: 1px solid var(--border); flex-shrink: 0; }
+.environments { gap: 12px; }
+.environments__origin, .environments__compare { gap: 10px; flex-shrink: 0; }
+.environments__pair { gap: 4px; padding: 8px 10px; border-radius: 6px; background: var(--raised); flex-shrink: 0; }
+.environments__pair-head { gap: 12px; align-items: center; flex-wrap: wrap; }
+.environments__change { font-family: var(--font-mono); font-size: 12px; color: var(--muted); word-break: break-all; }
+.custom-routes { gap: 8px; flex-shrink: 0; margin-bottom: 12px; }
+.custom-routes > * { flex-shrink: 0; }
+.custom-routes__target { font-family: var(--font-mono); font-size: 12px; word-break: break-all; }
+.route-editor { gap: 12px; }
+.route-editor > * { flex-shrink: 0; }
+.route-editor__modes, .route-editor__auth { gap: 16px; align-items: center; }
+.route-editor__rules { gap: 8px; }
+.route-editor__rule { gap: 8px; align-items: center; }
+.route-editor__path { width: 140px; flex: 0 0 auto; }
+.route-editor__service { flex: 1 1 auto; }
+.route-editor__port { width: 90px; flex: 0 0 auto; }
+.route-editor__rule .check-row { white-space: nowrap; flex-shrink: 0; }
 .deployments__release-actions { gap: 8px; padding: 0 4px 8px; flex-shrink: 0; }
 .release-diff { gap: 14px; }
 .release-diff__group { gap: 6px; flex-shrink: 0; }

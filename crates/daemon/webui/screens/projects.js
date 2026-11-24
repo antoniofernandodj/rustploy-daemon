@@ -1,3 +1,4 @@
+import { t } from "../i18n.js";
 // screens/projects.js — tela "Projects": grid de cards + criar/editar/
 // remover. Porta de format.project_rows (crates/rustploy-gui/views/scripts/
 // format/dashboard.luau) e handlers/projects.luau (create/edit/delete), sem o
@@ -24,9 +25,21 @@ document.addEventListener("alpine:init", () => {
     get rows() {
       const store = this.store;
       const services = (store.snap && store.snap.services) || [];
-      return ((store.snap && store.snap.projects) || []).map((project) => {
+      const projects = (store.snap && store.snap.projects) || [];
+      // Um ambiente aparece logo depois do projeto de origem.
+      const origins = projects.filter((project) => !project.environment);
+      const ordered = [];
+      for (const origin of origins) {
+        ordered.push(origin);
+        for (const environment of projects) {
+          if (environment.environment && environment.environment.origin_project_id === origin.id) ordered.push(environment);
+        }
+      }
+      for (const project of projects) if (!ordered.includes(project)) ordered.push(project);
+      return ordered.map((project) => {
         const svcs = services.filter((service) => service.service.spec.project_id === project.id);
         return {
+          environmentLabel: project.environment ? t`ambiente: ${project.environment.name}` : "",
           id: project.id,
           name: project.name,
           description: project.description || "",

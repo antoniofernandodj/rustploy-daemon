@@ -850,6 +850,11 @@ export function dockerVolumeRows(list, term) {
       inUse: !!volume.in_use,
       inUseLabel: volume.in_use ? t("EM USO") : t("SEM USO"),
       inUseKind: volume.in_use ? "ok" : "muted",
+      // Dono (abstração Volume): o serviço, ou de quem era quando o serviço foi apagado.
+      isOrphan: !!volume.orphan_of,
+      ownerLabel: volume.service
+        ? volume.service + (volume.project ? " (" + volume.project + ")" : "") + (volume.has_backup_policy ? " · backup" : "")
+        : volume.orphan_of ? t`órfão: ${volume.orphan_of}` : "—",
     });
   }
   return rows;

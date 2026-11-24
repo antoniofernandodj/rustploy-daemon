@@ -41,7 +41,9 @@ impl DeployExecutor {
             ips.push(ip);
         }
 
-        if !svc.spec.domain_routes().is_empty() {
+        // Sempre: além dos domínios do serviço, o proxy guarda os IPs dele para as
+        // rotas próprias (`domain::Route`) que apontam para ele.
+        {
             info!(
                 deployment_id = %dep.id,
                 domains = ?svc.spec.domain_routes().iter().map(|r| &r.domain).collect::<Vec<_>>(),
@@ -172,7 +174,9 @@ impl DeployExecutor {
         // qualquer coisa que a tenha removido durante o drain (reconcile,
         // edição do serviço) deixaria o domínio em 404 com o deploy Live. A
         // chamada é idempotente.
-        if !svc.spec.domain_routes().is_empty() {
+        // Sempre: além dos domínios do serviço, o proxy guarda os IPs dele para as
+        // rotas próprias (`domain::Route`) que apontam para ele.
+        {
             let net = self.network_name(&svc.spec.project_id).await?;
             let ips =
                 containers::live_replica_ips(&self.docker.inner, &svc.id, &net, replicas).await;

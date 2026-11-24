@@ -144,6 +144,26 @@ pub async fn resolve(docker: &crate::engine::DockerClient, svc: &Service) -> Res
     Ok(parts)
 }
 
+/// Os **volumes nomeados** do serviço (os da stack Compose e os que o spec monta por nome), sem
+/// pastas do servidor. É o que fica para trás quando o serviço é apagado. Ver
+/// `docs/plano-releases-ambientes-rotas-volumes.md` §4.
+pub async fn named_volumes(svc: &Service) -> Result<Vec<String>> {
+    let mut names = Vec::new();
+    if matches!(svc.spec.source, ServiceSource::Compose(_)) {
+        names = list_project_volumes(&svc.compose_project_name(), &svc.id).await?;
+    }
+    for volume in &svc.spec.volumes {
+        if !volume.host_path.is_empty()
+            && !volume.host_path.starts_with('/')
+            && !names.contains(&volume.host_path)
+        {
+            names.push(volume.host_path.clone());
+        }
+    }
+    names.sort();
+    Ok(names)
+}
+
 /// Etiqueta que o Rustploy põe nos volumes que ele mesmo cria: o **ID do serviço** dono do volume.
 pub const SERVICE_LABEL: &str = "rustploy.service_id";
 

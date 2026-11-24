@@ -130,6 +130,8 @@ pub async fn read_sql(db: &Db) -> Result<(InfraState, Vec<String>)> {
                 managed_databases: vec![],
                 shared_access: vec![],
                 service_order: vec![],
+                environment: None,
+                routes: vec![],
             },
         );
     }

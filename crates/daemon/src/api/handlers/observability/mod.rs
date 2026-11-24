@@ -25,6 +25,9 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         Command::UpdateRollback => update_status::rollback(state).await,
         Command::ApplyAppUpdate => apply_update::handle_app(state).await,
         Command::IngressRoutes => ingress::routes(state).await,
+        Command::RouteList => RpResponse::Routes(crate::features::ingress::routes::list(&state.db)),
+        Command::RouteSave { route } => ingress::route_save(state, route),
+        Command::RouteDelete { route_id } => ingress::route_delete(state, route_id),
         Command::IngressReconcile { service_id } => ingress::reconcile(state, service_id).await,
         Command::LogsGet { service_id, tail } => logs_get::handle(state, service_id, tail).await,
         Command::LogsHistory {

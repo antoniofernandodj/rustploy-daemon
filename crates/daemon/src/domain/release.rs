@@ -36,6 +36,9 @@ pub struct Release {
     /// Esta release foi criada por um "voltar para a vN": o número da release de origem.
     #[serde(default)]
     pub restored_from_number: Option<u32>,
+    /// Esta release veio de **outro ambiente** (promovida): de onde, para a tela (`loja (homologação) v7`).
+    #[serde(default)]
+    pub promoted_from: Option<String>,
     pub created_at: DateTime<Utc>,
     /// Calculado na leitura: é a release do deploy que está Live agora.
     #[serde(default)]

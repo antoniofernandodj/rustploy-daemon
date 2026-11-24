@@ -15,6 +15,17 @@ pub async fn handle(state: ServicesContext, id: String, mut spec: ServiceSpec) -
     {
         return resp;
     }
+    if let Some(route) = spec.domain_routes().into_iter().find(|route| {
+        crate::features::ingress::routes::domain_taken_by_route(&state.db, &route.domain)
+    }) {
+        return RpResponse::err(
+            "InvalidInput",
+            format!(
+                "o domínio {} já é de uma rota (tela Ingress): tire-o de lá antes",
+                route.domain
+            ),
+        );
+    }
     let stored = match crate::store::services::get(&state.db, &id).await {
         Ok(Some(s)) => Some(s.spec),
         _ => None,

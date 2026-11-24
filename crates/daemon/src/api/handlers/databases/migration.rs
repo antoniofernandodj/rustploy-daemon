@@ -137,7 +137,7 @@ pub async fn discard(state: AppState, id: String) -> RpResponse {
     let sid = rec.m.source_service_id.clone();
     let _ = crate::features::deploy::stop::handle(state.deploy_ctx(), sid.clone()).await;
     if let RpResponse::Err { message, .. } =
-        crate::features::services::delete::handle(state.services_ctx(), sid).await
+        crate::features::services::delete::handle(state.services_ctx(), sid, false).await
     {
         return err("DeleteError", message);
     }

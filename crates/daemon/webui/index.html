@@ -603,6 +603,90 @@
             </column>
           </row>
         </row>
+        <!-- Rotas próprias: o domínio fora do serviço (caminhos para vários serviços,
+             redirect, senha). Valem na hora, sem redeploy. -->
+        <column class="panel custom-routes">
+          <row class="env__head">
+            <text class="u-label-cap u-grow" x-text="$t('ROTAS PRÓPRIAS (') + customRoutes.length + ')'"></text>
+            <button class="btn btn--sm-primary" type="button" @click="openRouteEditor(null)" x-t>+ Nova rota</button>
+          </row>
+          <text class="u-muted" x-show="customRoutes.length === 0" x-t>Nenhuma rota própria. Uma rota serve um domínio por vários serviços (por caminho), redireciona um domínio para outro ou pede senha.</text>
+          <template x-for="row in customRouteRows" :key="row.id">
+            <row class="kv-list__row">
+              <text class="env__key" x-text="row.domain"></text>
+              <text class="u-muted u-grow custom-routes__target" x-text="row.target"></text>
+              <text class="u-muted" x-text="'TLS ' + row.tls"></text>
+              <text class="environment-badge" x-show="row.auth" x-text="row.auth"></text>
+              <button class="btn btn--ghost btn--xs" type="button" @click="openRouteEditor(row.route)" x-t>Editar</button>
+              <button class="btn btn--danger btn--xs" type="button" @click="deleteRoute(row.id, row.domain)" title="Apagar rota" x-t:title>✕</button>
+            </row>
+          </template>
+        </column>
+
+        <!-- Editor de rota (janela) -->
+        <column class="modal__backdrop" x-show="routeEditor">
+          <column class="modal__box" x-win="'route_editor'" data-w="760" data-h="620">
+            <row class="modal__head">
+              <text class="u-label-cap" x-text="routeEditor && routeEditor.id ? $t('Editar rota') : $t('Nova rota')"></text>
+              <button class="btn btn--ghost" type="button" @click="closeRouteEditor()" x-t>Fechar</button>
+            </row>
+            <template x-if="routeEditor">
+              <column class="modal__body route-editor">
+                <label class="field"><text class="field__label" x-t>Projeto</text>
+                  <select class="field__input" x-model="routeEditor.project_id" :disabled="!!routeEditor.id">
+                    <template x-for="project in projects" :key="project.id">
+                      <option :value="project.id" x-text="project.name"></option>
+                    </template>
+                  </select>
+                </label>
+                <label class="field"><text class="field__label" x-t>Domínio</text>
+                  <input class="field__input" type="text" x-model="routeEditor.domain" placeholder="app.com" />
+                </label>
+                <label class="check-row"><input type="checkbox" x-model="routeEditor.tls" /><text x-t>TLS (Let's Encrypt)</text></label>
+                <row class="route-editor__modes">
+                  <label class="check-row"><input type="radio" value="forward" x-model="routeEditor.mode" /><text x-t>Encaminha para serviços</text></label>
+                  <label class="check-row"><input type="radio" value="redirect" x-model="routeEditor.mode" /><text x-t>Redireciona</text></label>
+                </row>
+                <column class="route-editor__rules" x-show="routeEditor.mode === 'forward'">
+                  <template x-for="(rule, index) in routeEditor.rules" :key="index">
+                    <row class="route-editor__rule">
+                      <input class="field__input route-editor__path" type="text" x-model="rule.path_prefix" placeholder="/api" />
+                      <select class="field__input route-editor__service" x-model="rule.service_id">
+                        <option value="" x-t>serviço…</option>
+                        <template x-for="service in servicesOfProject(routeEditor.project_id)" :key="service.id">
+                          <option :value="service.id" x-text="service.name"></option>
+                        </template>
+                      </select>
+                      <input class="field__input route-editor__port" type="number" min="1" max="65535" x-model="rule.port" placeholder="porta" x-t:placeholder />
+                      <label class="check-row"><input type="checkbox" x-model="rule.strip_prefix" /><text x-t>tirar prefixo</text></label>
+                      <button class="btn btn--ghost btn--xs" type="button" x-show="routeEditor.rules.length > 1" @click="removeRouteRule(index)">✕</button>
+                    </row>
+                  </template>
+                  <row><button class="btn btn--ghost btn--xs" type="button" @click="addRouteRule()" x-t>+ caminho</button></row>
+                  <text class="u-muted" x-t>Vence o caminho mais longo que casa. Porta vazia = a porta padrão do serviço.</text>
+                </column>
+                <column class="route-editor__redirect" x-show="routeEditor.mode === 'redirect'">
+                  <label class="field"><text class="field__label" x-t>Para onde (URL)</text>
+                    <input class="field__input" type="text" x-model="routeEditor.to" placeholder="https://app.com" />
+                  </label>
+                  <label class="check-row"><input type="checkbox" x-model="routeEditor.permanent" /><text x-t>Permanente (301); desmarcado = 302</text></label>
+                </column>
+                <label class="check-row"><input type="checkbox" x-model="routeEditor.auth_enabled" /><text x-t>Pedir usuário e senha</text></label>
+                <row class="route-editor__auth" x-show="routeEditor.auth_enabled">
+                  <input class="field__input" type="text" x-model="routeEditor.auth_user" placeholder="usuário" x-t:placeholder autocomplete="off" />
+                  <input class="field__input" type="password" x-model="routeEditor.auth_password" autocomplete="new-password"
+                         :placeholder="routeEditor.had_password ? $t('senha (vazio = manter)') : $t('senha')" />
+                </row>
+                <text class="u-error" x-show="routeError" x-text="routeError"></text>
+                <row class="release-diff__actions">
+                  <button class="btn btn--ghost" type="button" @click="closeRouteEditor()" x-t>Cancelar</button>
+                  <button class="btn btn--primary" type="button" @click="saveRoute()" x-t>Salvar</button>
+                </row>
+              </column>
+            </template>
+          </column>
+        </column>
+
         <column class="panel panel--fill">
           <row class="table__head">
             <text class="table__head-cell table__col-svc" x-t>DOMÍNIO</text>
@@ -787,13 +871,16 @@
               <input type="checkbox" x-model="store.onlyUsedVolumes" /><span x-t>Somente em uso</span>
             </label>
             <label class="check-row">
+              <input type="checkbox" x-model="store.onlyOrphanVolumes" /><span x-t>Só órfãos</span>
+            </label>
+            <label class="check-row">
               <input type="checkbox" x-model="store.pruneAllVolumes" /><span x-t>-a (limpar tudo, não só anônimos)</span>
             </label>
             <button class="btn btn--danger" type="button" @click="store.dockerPruneVolumes()" x-t>Limpar sem uso</button>
           </row>
           <row class="table__head">
             <text class="table__head-cell table__col-svc" x-t>NOME</text>
-            <text class="table__head-cell table__col-proj">DRIVER</text>
+            <text class="table__head-cell table__col-proj" x-t>DONO</text>
             <text class="table__head-cell table__col-dur" x-t>TAMANHO</text>
             <text class="table__head-cell table__col-state" x-t>USO</text>
             <text class="table__head-cell table__col-act" x-t>AÇÃO</text>
@@ -804,7 +891,7 @@
                 <column class="list-row">
                   <row class="table__row">
                     <text class="table__cell table__cell--key table__col-svc" x-text="volume.name"></text>
-                    <text class="table__cell table__col-proj" x-text="volume.driver"></text>
+                    <text class="table__cell table__col-proj" :class="volume.isOrphan ? 'u-warn' : ''" x-text="volume.ownerLabel" :title="volume.driver"></text>
                     <text class="u-muted table__col-dur" x-text="volume.size"></text>
                     <row class="state-cell table__col-state" :class="'state-cell--' + volume.inUseKind">
                       <text class="status-dot">●</text>
@@ -2414,6 +2501,7 @@
               <column class="card">
                 <row class="card__head">
                   <text class="card__name" x-text="row.name"></text>
+                  <text class="environment-badge" x-show="row.environmentLabel" x-text="row.environmentLabel"></text>
                 </row>
                 <text class="u-muted" x-text="row.serviceCount + $t(' serviço(s) · ') + row.runningCount + $t(' rodando')"></text>
                 <text class="u-muted" x-text="row.description || '—'"></text>
@@ -2470,6 +2558,8 @@
                   @click="projectTab = 'secrets'" x-text="'Secrets (' + secrets.length + ')'"></button>
           <button type="button" :class="projectTab === 'jobs' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'"
                   @click="projectTab = 'jobs'" x-text="'Jobs (' + jobs.length + ')'"></button>
+          <button type="button" :class="projectTab === 'environments' ? 'tabs__tab tabs__tab--active' : 'tabs__tab'"
+                  @click="openEnvironmentsTab()" x-t>Ambientes</button>
         </row>
         <hr class="rule" />
 
@@ -2694,6 +2784,68 @@
         <!-- Jobs do projeto (tarefas one-shot via docker-compose) — mesma
              lista/ações da tela global "Schedules", filtrada a este projeto.
              "+ Novo job" abre o mesmo wizard global (store.openNewJob). -->
+        <!-- Ambientes: num projeto de origem, a lista e o "Criar ambiente"; num ambiente, a
+             comparação com a origem e Promover / Trazer, serviço a serviço. -->
+        <column class="env environments" x-show="projectTab === 'environments'">
+          <template x-if="project && !project.environment">
+            <column class="environments__origin">
+              <text class="u-muted" x-t>Um ambiente é uma cópia deste projeto (homologação, preview…) com rede, variáveis e nomes de container próprios. Domínios, portas do host, backup e acesso aos bancos da origem não são copiados, e jobs agendados nascem desligados. Nada é implantado.</text>
+              <row class="env__add">
+                <input class="field__input" type="text" x-model="newEnvironmentName" placeholder="nome do ambiente (ex.: homologação)" x-t:placeholder
+                       @keydown.enter.prevent="createEnvironment()" />
+                <button class="btn btn--primary" type="button" :disabled="!newEnvironmentName.trim()" @click="createEnvironment()" x-t>Criar ambiente</button>
+              </row>
+              <text class="u-muted" x-show="environments.length === 0" x-t>Nenhum ambiente ainda.</text>
+              <column class="kv-list">
+                <template x-for="environment in environments" :key="environment.project_id">
+                  <row class="kv-list__row">
+                    <text class="env__key" x-text="environment.name"></text>
+                    <text class="u-muted u-grow" x-text="environment.project_name"></text>
+                    <button class="btn btn--ghost btn--xs" type="button" @click="store.openProject(environment.project_id)" x-t>Abrir</button>
+                  </row>
+                </template>
+              </column>
+            </column>
+          </template>
+          <template x-if="project && project.environment">
+            <column class="environments__compare">
+              <row class="env__head">
+                <text class="u-muted-grow" x-text="environmentCompareTitle"></text>
+                <button class="btn btn--ghost btn--xs" type="button" @click="store.openProject(project.environment.origin_project_id)" x-t>Abrir a origem</button>
+                <button class="btn btn--ghost btn--xs" type="button" @click="loadEnvironments()" x-t>Atualizar</button>
+              </row>
+              <text class="u-muted" x-show="!environmentComparison" x-t>Carregando…</text>
+              <template x-for="pair in environmentPairs" :key="pair.environment_service_id">
+                <column class="environments__pair">
+                  <row class="environments__pair-head">
+                    <text class="env__key" x-text="pair.service_name"></text>
+                    <text class="u-muted" x-text="pair.releasesLabel"></text>
+                    <text :class="pair.same_image ? 'u-ok' : 'u-warn'" x-text="pair.imageLabel"></text>
+                  </row>
+                  <template x-for="change in pair.changeRows" :key="change.key">
+                    <text class="environments__change" x-text="change.text"></text>
+                  </template>
+                  <row class="deployments__release-actions">
+                    <button class="btn btn--ghost btn--xs" type="button" x-show="pair.can_promote_to_origin"
+                            @click="promoteEnvironment(pair.environment_service_id, pair.origin_service_id, pair, 'origin')" x-t>Promover para a origem</button>
+                    <button class="btn btn--ghost btn--xs" type="button" x-show="pair.can_bring_from_origin"
+                            @click="promoteEnvironment(pair.origin_service_id, pair.environment_service_id, pair, 'environment')" x-t>Trazer da origem</button>
+                  </row>
+                </column>
+              </template>
+              <template x-if="environmentComparison && environmentComparison.project_env_changes.length">
+                <column class="environments__pair">
+                  <text class="u-label-cap" x-t>Variáveis do projeto que diferem</text>
+                  <template x-for="change in environmentProjectEnvRows" :key="change.key">
+                    <text class="environments__change" x-text="change.text"></text>
+                  </template>
+                </column>
+              </template>
+              <text class="u-muted" x-show="environmentOnlyLabel" x-text="environmentOnlyLabel"></text>
+            </column>
+          </template>
+        </column>
+
         <column class="env" x-show="projectTab === 'jobs'">
           <row class="env__head">
             <text class="u-muted-grow" x-text="jobs.length + ' job(s)'"></text>

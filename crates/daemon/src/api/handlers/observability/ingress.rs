@@ -30,3 +30,35 @@ pub async fn reconcile(state: AppState, service_id: Option<String>) -> RpRespons
     .await;
     RpResponse::IngressRoutes(state.ingress.snapshot())
 }
+
+/// `RouteSave`: grava e leva ao proxy na hora (sem redeploy).
+pub fn route_save(state: AppState, route: crate::domain::Route) -> RpResponse {
+    match crate::features::ingress::routes::save(&state.db, &state.secrets, route) {
+        Ok(saved) => {
+            crate::features::ingress::routes::sync(
+                &state.db,
+                &state.secrets,
+                &state.ingress,
+                &state.tls,
+            );
+            RpResponse::Route(Box::new(saved))
+        }
+        Err(e) => RpResponse::err("InvalidInput", e.to_string()),
+    }
+}
+
+/// `RouteDelete`.
+pub fn route_delete(state: AppState, route_id: String) -> RpResponse {
+    match crate::features::ingress::routes::delete(&state.db, &route_id) {
+        Ok(()) => {
+            crate::features::ingress::routes::sync(
+                &state.db,
+                &state.secrets,
+                &state.ingress,
+                &state.tls,
+            );
+            RpResponse::Ok
+        }
+        Err(e) => RpResponse::err("NotFound", e.to_string()),
+    }
+}

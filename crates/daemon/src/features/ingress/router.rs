@@ -31,12 +31,102 @@ impl RouteEntry {
 #[derive(Debug, Default, Clone)]
 pub struct RouteTable {
     pub routes: HashMap<String, RouteEntry>,
+    /// Rotas próprias (`domain::Route`), por domínio. Vêm antes das dos serviços.
+    pub custom: HashMap<String, CustomRoute>,
+    /// Os IPs no ar de cada serviço (e a porta padrão), atualizados a cada registro de rotas do
+    /// serviço: é daqui que as rotas próprias tiram o destino na hora da requisição.
+    pub services: HashMap<String, ServiceBackends>,
 }
 
 impl RouteTable {
     pub fn get(&self, domain: &str) -> Option<&RouteEntry> {
         self.routes.get(domain)
     }
+
+    /// O que fazer com uma requisição para um domínio de rota própria. `authorization` é o
+    /// cabeçalho recebido. `None` = o domínio não é de rota própria.
+    pub fn decide_custom(
+        &self,
+        host: &str,
+        path_and_query: &str,
+        authorization: Option<&str>,
+    ) -> Option<CustomDecision> {
+        let route = self.custom.get(host)?;
+        if let Some(expected) = &route.basic_auth
+            && authorization != Some(expected.as_str())
+        {
+            return Some(CustomDecision::Unauthorized);
+        }
+        Some(match &route.action {
+            CustomAction::Redirect { to, permanent } => CustomDecision::Redirect {
+                location: crate::domain::redirect_location(to, path_and_query),
+                permanent: *permanent,
+            },
+            CustomAction::Forward(rules) => {
+                let path = path_and_query.split('?').next().unwrap_or("/");
+                let Some(rule) = crate::domain::match_rule(rules, path) else {
+                    return Some(CustomDecision::NotFound);
+                };
+                let backend = self.services.get(&rule.service_id).and_then(|service| {
+                    if service.ips.is_empty() {
+                        return None;
+                    }
+                    let index = route.cursor.fetch_add(1, Ordering::Relaxed) % service.ips.len();
+                    let port = rule.port.unwrap_or(service.default_port);
+                    Some(format!("{}:{port}", service.ips[index]))
+                });
+                CustomDecision::Forward {
+                    backend,
+                    path_and_query: rule
+                        .strip_prefix
+                        .then(|| crate::domain::strip_path(&rule.path_prefix, path_and_query)),
+                }
+            }
+        })
+    }
+}
+
+/// Os IPs no ar de um serviço e a porta padrão dele.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ServiceBackends {
+    pub ips: Vec<String>,
+    pub default_port: u16,
+}
+
+#[derive(Debug, Clone)]
+pub enum CustomAction {
+    Forward(Vec<crate::domain::PathRule>),
+    Redirect { to: String, permanent: bool },
+}
+
+/// Uma rota própria compilada para o proxy.
+#[derive(Debug, Clone)]
+pub struct CustomRoute {
+    pub domain: String,
+    /// A rota tem certificado: HTTP vira HTTPS. Sem TLS, ela é servida em HTTP mesmo.
+    pub tls: bool,
+    pub action: CustomAction,
+    /// O cabeçalho `Authorization` esperado (`Basic <base64>`), se a rota pede senha.
+    pub basic_auth: Option<String>,
+    pub cursor: Arc<AtomicUsize>,
+}
+
+/// A decisão do proxy para uma requisição de rota própria.
+#[derive(Debug, PartialEq)]
+pub enum CustomDecision {
+    Unauthorized,
+    Redirect {
+        location: String,
+        permanent: bool,
+    },
+    /// Nenhum caminho da rota casa: 404.
+    NotFound,
+    /// `backend: None` = o serviço do caminho não está no ar (502). `path_and_query: Some` = o
+    /// caminho reescrito (prefixo tirado).
+    Forward {
+        backend: Option<String>,
+        path_and_query: Option<String>,
+    },
 }
 
 /// Entrada nova para `domain`, reaproveitando o cursor de round-robin da
@@ -152,7 +242,43 @@ impl IngressController {
             let entry = new_entry(&new_table, &route.domain, backends, service_id);
             new_table.routes.insert(route.domain, entry);
         }
+        new_table.services.insert(
+            service_id.to_string(),
+            ServiceBackends {
+                ips: ips.to_vec(),
+                default_port: spec.port,
+            },
+        );
 
+        self.table.store(Arc::new(new_table));
+    }
+
+    /// Esquece os IPs de um serviço (apagado ou sem container): as rotas próprias que apontam para
+    /// ele passam a responder 502, como um domínio de serviço parado.
+    pub fn forget_service(&self, service_id: &str) {
+        let old = self.table.load();
+        if !old.services.contains_key(service_id) {
+            return;
+        }
+        let mut new_table = (**old).clone();
+        new_table.services.remove(service_id);
+        self.table.store(Arc::new(new_table));
+    }
+
+    /// Troca o conjunto inteiro de rotas próprias (cada gravação e o boot), mantendo o cursor de
+    /// round-robin de quem continua.
+    pub fn set_custom_routes(&self, routes: Vec<CustomRoute>) {
+        let old = self.table.load();
+        let mut new_table = (**old).clone();
+        new_table.custom = routes
+            .into_iter()
+            .map(|mut route| {
+                if let Some(previous) = old.custom.get(&route.domain) {
+                    route.cursor = previous.cursor.clone();
+                }
+                (route.domain.clone(), route)
+            })
+            .collect();
         self.table.store(Arc::new(new_table));
     }
 
@@ -182,6 +308,44 @@ impl IngressController {
                 service_id: e.service_id.clone(),
             })
             .collect();
+        // Rotas próprias: uma linha por caminho (`app.com/api`) ou o destino do redirect.
+        for route in table.custom.values() {
+            match &route.action {
+                CustomAction::Forward(rules) => {
+                    for rule in rules {
+                        let backends = table
+                            .services
+                            .get(&rule.service_id)
+                            .map(|service| {
+                                let port = rule.port.unwrap_or(service.default_port);
+                                service
+                                    .ips
+                                    .iter()
+                                    .map(|ip| format!("{ip}:{port}"))
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+                        let suffix = if rule.path_prefix == "/" {
+                            String::new()
+                        } else {
+                            rule.path_prefix.clone()
+                        };
+                        domains.push(crate::domain::IngressDomainRoute {
+                            domain: format!("{}{suffix}", route.domain),
+                            backends,
+                            service_id: rule.service_id.clone(),
+                        });
+                    }
+                }
+                CustomAction::Redirect { to, .. } => {
+                    domains.push(crate::domain::IngressDomainRoute {
+                        domain: route.domain.clone(),
+                        backends: vec![format!("↪ {to}")],
+                        service_id: String::new(),
+                    });
+                }
+            }
+        }
         domains.sort_by(|a, b| a.domain.cmp(&b.domain));
 
         let mut ports: Vec<crate::domain::IngressPortRoute> = self
@@ -250,6 +414,108 @@ impl Default for IngressController {
 mod tests {
     use super::*;
     use crate::domain::{DomainRoute, Healthcheck, ServiceSource, ServiceSpec};
+
+    #[test]
+    fn rota_propria_encaminha_redireciona_e_pede_senha() {
+        let ing = IngressController::new();
+        ing.register_domains(&spec(&[]), &["10.0.0.2".into()], "svc_front");
+        let mut api = spec(&[]);
+        api.port = 8080;
+        ing.register_domains(&api, &["10.0.0.3".into()], "svc_api");
+        let rule = |prefix: &str, service: &str, strip: bool| crate::domain::PathRule {
+            path_prefix: prefix.into(),
+            service_id: service.into(),
+            port: None,
+            strip_prefix: strip,
+        };
+        ing.set_custom_routes(vec![
+            CustomRoute {
+                domain: "app.com".into(),
+                tls: false,
+                action: CustomAction::Forward(vec![
+                    rule("/", "svc_front", false),
+                    rule("/api", "svc_api", true),
+                    rule("/off", "svc_parado", false),
+                ]),
+                basic_auth: None,
+                cursor: Arc::new(AtomicUsize::new(0)),
+            },
+            CustomRoute {
+                domain: "www.app.com".into(),
+                tls: false,
+                action: CustomAction::Redirect {
+                    to: "https://app.com".into(),
+                    permanent: true,
+                },
+                basic_auth: None,
+                cursor: Arc::new(AtomicUsize::new(0)),
+            },
+            CustomRoute {
+                domain: "admin.app.com".into(),
+                tls: false,
+                action: CustomAction::Forward(vec![rule("/", "svc_front", false)]),
+                basic_auth: Some("Basic YTpi".into()),
+                cursor: Arc::new(AtomicUsize::new(0)),
+            },
+        ]);
+        let table = ing.table_handle().load_full();
+        assert_eq!(
+            table.decide_custom("app.com", "/api/users?x=1", None),
+            Some(CustomDecision::Forward {
+                backend: Some("10.0.0.3:8080".into()),
+                path_and_query: Some("/users?x=1".into()),
+            })
+        );
+        assert_eq!(
+            table.decide_custom("app.com", "/index.html", None),
+            Some(CustomDecision::Forward {
+                backend: Some("10.0.0.2:80".into()),
+                path_and_query: None,
+            })
+        );
+        assert_eq!(
+            table.decide_custom("app.com", "/off", None),
+            Some(CustomDecision::Forward {
+                backend: None,
+                path_and_query: None,
+            })
+        );
+        assert_eq!(
+            table.decide_custom("www.app.com", "/x", None),
+            Some(CustomDecision::Redirect {
+                location: "https://app.com/x".into(),
+                permanent: true,
+            })
+        );
+        assert_eq!(
+            table.decide_custom("admin.app.com", "/", None),
+            Some(CustomDecision::Unauthorized)
+        );
+        assert!(matches!(
+            table.decide_custom("admin.app.com", "/", Some("Basic YTpi")),
+            Some(CustomDecision::Forward { .. })
+        ));
+        assert_eq!(table.decide_custom("outro.com", "/", None), None);
+        // A foto do Ingress mostra os caminhos.
+        let snapshot = ing.snapshot();
+        assert!(
+            snapshot
+                .domains
+                .iter()
+                .any(|d| d.domain == "app.com/api"
+                    && d.backends == vec!["10.0.0.3:8080".to_string()])
+        );
+        ing.forget_service("svc_api");
+        assert_eq!(
+            ing.table_handle()
+                .load()
+                .decide_custom("app.com", "/api", None),
+            Some(CustomDecision::Forward {
+                backend: None,
+                path_and_query: Some("/".into()),
+            })
+        );
+    }
 
     fn spec(domains: &[&str]) -> ServiceSpec {
         ServiceSpec {

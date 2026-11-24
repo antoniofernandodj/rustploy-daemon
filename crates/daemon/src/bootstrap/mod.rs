@@ -173,6 +173,9 @@ pub async fn run() -> Result<()> {
         registry_internal_token.clone(),
     )
     .await;
+    // Rotas próprias (domínio → caminhos/redirect/senha) depois das dos serviços: o recover já
+    // registrou os IPs de quem está no ar.
+    crate::features::ingress::routes::sync(&db, &secrets, &ingress, &tls);
 
     // Log de runtime persistido (`[logs]`): antes dos laços que o alimentam. Pastas de serviços que
     // não existem mais (apagados com o daemon fora do ar) são limpas aqui.

@@ -4,6 +4,7 @@ pub mod backup;
 pub mod data_backup;
 pub mod databases;
 pub mod deploy;
+pub mod environments;
 pub mod git_providers;
 pub mod iac;
 pub mod ingress;

@@ -288,6 +288,7 @@ pub async fn reconcile(
                 )
                 .await;
                 ingress.remove_domains(&svc.spec);
+                ingress.forget_service(&svc.id);
                 for host_port in crate::features::ingress::external_ports::host_ports(&svc.spec) {
                     ingress.remove_port_route(host_port);
                 }
@@ -402,7 +403,9 @@ async fn restore_routes(
             continue;
         }
 
-        if !svc.spec.domain_routes().is_empty() {
+        // Sempre: além dos domínios do serviço, o proxy guarda os IPs dele para as
+        // rotas próprias (`domain::Route`) que apontam para ele.
+        {
             ingress.register_domains(&svc.spec, &ips, &svc.id);
             info!(service = svc.spec.name, ?ips, "routes restored");
 

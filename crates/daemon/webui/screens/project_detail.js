@@ -53,7 +53,10 @@ document.addEventListener("alpine:init", () => {
     editing: false,
     editName: "",
     editDescription: "",
-    projectTab: "services", // "services" | "env" | "secrets" | "jobs"
+    projectTab: "services", // "services" | "env" | "secrets" | "jobs" | "environments"
+    environments: [], // EnvironmentList de um projeto de origem
+    environmentComparison: null, // EnvironmentCompare de um ambiente
+    newEnvironmentName: "",
     // Valores de secret que o usuário pediu para ver (SecretReveal). Só em memória; some ao trocar de projeto.
     revealedSecrets: {},
     // Linha de variável editável no lugar, com OK + confirmação (env_rows.js). Uma variável do
@@ -74,6 +77,9 @@ document.addEventListener("alpine:init", () => {
         () => this.store.selectedProjectId,
         () => {
           this.revealedSecrets = {};
+          this.environments = [];
+          this.environmentComparison = null;
+          if (this.projectTab === "environments") this.loadEnvironments();
         }
       );
       // Nome/descrição do cabeçalho seguem o snapshot (exceto durante a edição).
@@ -85,6 +91,97 @@ document.addEventListener("alpine:init", () => {
         () => this.syncTitleFields()
       );
       this.syncTitleFields();
+    },
+
+    async openEnvironmentsTab() {
+      this.projectTab = "environments";
+      await this.loadEnvironments();
+    },
+
+    async loadEnvironments() {
+      const project = this.project;
+      if (!project) return;
+      if (project.environment) {
+        const environmentCompareResponse = await this.store.api.rpc({ EnvironmentCompare: { project_id: project.id } });
+        this.environmentComparison = (environmentCompareResponse.ok && environmentCompareResponse.value?.EnvironmentComparison) || null;
+        if (!environmentCompareResponse.ok) this.store.toastError("erro: " + environmentCompareResponse.error);
+      } else {
+        const environmentListResponse = await this.store.api.rpc({ EnvironmentList: { project_id: project.id } });
+        this.environments = (environmentListResponse.ok && environmentListResponse.value?.Environments) || [];
+      }
+      return null;
+    },
+
+    async createEnvironment() {
+      const name = this.newEnvironmentName.trim();
+      if (!name || !this.project) return;
+      const environmentCreateResponse = await this.store.api.rpcChecked({
+        EnvironmentCreate: { project_id: this.project.id, name },
+      });
+      this.store.toastResult(environmentCreateResponse, t`ambiente ${name} criado`);
+      if (environmentCreateResponse.ok) {
+        this.newEnvironmentName = "";
+        await this.store.refreshNow();
+        await this.loadEnvironments();
+      }
+      return environmentCreateResponse;
+    },
+
+    /** Promover / Trazer: o deploy da mesma imagem do outro lado, sem build e sem mudar a
+     * configuração do destino. Pede confirmação (troca o que está no ar). */
+    async promoteEnvironment(fromServiceId, toServiceId, pair, direction) {
+      const comparison = this.environmentComparison;
+      const fromNumber = direction === "origin" ? pair.environment_release_number : pair.origin_release_number;
+      const target = direction === "origin" ? comparison.origin_project_name : this.project.name;
+      const message = t`Levar a v${fromNumber} de ${pair.service_name} para ${target}?`
+        + "\n\n" + t("O destino faz o deploy da mesma imagem, sem build. A configuração dele (variáveis, réplicas, domínios) não muda.");
+      if (!confirm(message)) return;
+      const environmentPromoteResponse = await this.store.api.rpcChecked({
+        EnvironmentPromote: { from_service_id: fromServiceId, to_service_id: toServiceId },
+      });
+      this.store.toastResult(environmentPromoteResponse, t`deploy de ${pair.service_name} iniciado`);
+      if (environmentPromoteResponse.ok) await this.store.refreshNow();
+      return environmentPromoteResponse;
+    },
+
+    get environmentCompareTitle() {
+      const comparison = this.environmentComparison;
+      const project = this.project;
+      if (!project || !project.environment) return "";
+      return t`Ambiente ${project.environment.name}, comparado com ${comparison ? comparison.origin_project_name : "…"}`;
+    },
+
+    get environmentPairs() {
+      const comparison = this.environmentComparison;
+      if (!comparison) return [];
+      const releaseLabel = (number) => (number ? "v" + number : "—");
+      return comparison.services.map((pair) => ({
+        ...pair,
+        releasesLabel: t`origem ${releaseLabel(pair.origin_release_number)} · aqui ${releaseLabel(pair.environment_release_number)}`,
+        imageLabel: pair.same_image ? t("mesma imagem") : t("imagens diferentes"),
+        changeRows: pair.changes.map((change) => ({
+          key: change.scope + ":" + change.field,
+          text: change.field + ": " + (change.before ?? "—") + " → " + (change.after ?? "—"),
+        })),
+      }));
+    },
+
+    get environmentProjectEnvRows() {
+      const comparison = this.environmentComparison;
+      if (!comparison) return [];
+      return comparison.project_env_changes.map((change) => ({
+        key: change.field,
+        text: change.field + ": " + (change.before ?? "—") + " → " + (change.after ?? "—"),
+      }));
+    },
+
+    get environmentOnlyLabel() {
+      const comparison = this.environmentComparison;
+      if (!comparison) return "";
+      const parts = [];
+      if (comparison.only_in_origin.length) parts.push(t`só na origem: ${comparison.only_in_origin.join(", ")}`);
+      if (comparison.only_in_environment.length) parts.push(t`só aqui: ${comparison.only_in_environment.join(", ")}`);
+      return parts.join(" · ");
     },
 
     get project() {

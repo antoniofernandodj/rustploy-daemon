@@ -12,6 +12,7 @@ pub mod job_run;
 pub mod log_sink;
 pub mod managed_database;
 pub mod migration;
+pub mod orphan_volumes;
 pub mod projects;
 pub mod registry;
 pub mod registry_tokens;
@@ -70,6 +71,8 @@ impl Db {
                         managed_databases: vec![],
                         shared_access: vec![],
                         service_order: vec![],
+                        environment: None,
+                        routes: vec![],
                     });
                 }
                 Ok(())
@@ -466,6 +469,19 @@ async fn migrate(pool: &SqlitePool) -> Result<()> {
         "ALTER TABLE deployment ADD COLUMN from_release_id TEXT",
     )
     .await?;
+    // Volumes que ficaram para trás ao apagar um serviço: de quem eram (ver `store::orphan_volumes`).
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS orphan_volume (
+            name         TEXT PRIMARY KEY,
+            service_name TEXT NOT NULL,
+            project_name TEXT NOT NULL,
+            deleted_at   TEXT NOT NULL
+        )",
+    )
+    .execute(pool)
+    .await?;
+    // Ambientes: a release que veio de outro ambiente (promovida) diz de onde.
+    add_column_if_missing(pool, "ALTER TABLE release ADD COLUMN promoted_from TEXT").await?;
 
     // Fase 4d do plano `docs/plano-backup-estado-em-git.md`: a config do git provider vai para o
     // YAML; os tokens de login ficam aqui (nunca vão ao git). Preenche a partir da tabela antiga.

@@ -14,6 +14,14 @@ pub enum Response {
     Services(Vec<Service>),
     Deployment(Box<Deployment>),
     Deployments(Vec<Deployment>),
+    /// Resposta de `RouteList`.
+    Routes(Vec<Route>),
+    /// Resposta de `RouteSave`.
+    Route(Box<Route>),
+    /// Resposta de `EnvironmentList`.
+    Environments(Vec<EnvironmentSummary>),
+    /// Resposta de `EnvironmentCompare`.
+    EnvironmentComparison(Box<EnvironmentComparison>),
     /// Resposta de `ReleaseList`.
     Releases(Vec<Release>),
     /// Resposta de `ReleaseDiff`.

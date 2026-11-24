@@ -30,7 +30,8 @@ document.addEventListener("alpine:init", () => {
     },
     get volumes() {
       const rows = dockerVolumeRows(this.store.snap?.docker_volumes, this.store.search);
-      return this.store.onlyUsedVolumes ? rows.filter((row) => row.inUse) : rows;
+      const used = this.store.onlyUsedVolumes ? rows.filter((row) => row.inUse) : rows;
+      return this.store.onlyOrphanVolumes ? used.filter((row) => row.isOrphan) : used;
     },
     get networks() {
       const rows = dockerNetworkRows(this.store.snap?.docker_networks, this.store.search);

@@ -1,5 +1,6 @@
 //! Handlers de projects: o `dispatch` recebe os `Command` da seção e chama o handler certo.
 
+pub mod environments;
 pub mod project_create;
 pub mod project_delete;
 pub mod project_env_set;
@@ -31,6 +32,17 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
             env_vars,
             env_comments,
         } => project_env_set::handle(state, project_id, env_vars, env_comments).await,
+        Command::EnvironmentCreate { project_id, name } => {
+            environments::create(state, project_id, name).await
+        }
+        Command::EnvironmentList { project_id } => environments::list(state, project_id),
+        Command::EnvironmentCompare { project_id } => {
+            environments::compare(state, project_id).await
+        }
+        Command::EnvironmentPromote {
+            from_service_id,
+            to_service_id,
+        } => environments::promote(state, from_service_id, to_service_id).await,
         _ => RpResponse::err("NotImplemented", "command not yet implemented"),
     }
 }

@@ -156,6 +156,7 @@ pub async fn remove_volume(state: AppState, name: String) -> RpResponse {
     {
         Ok(()) => {
             state.docker_cache.df.invalidate().await;
+            let _ = crate::store::orphan_volumes::forget(&state.db, &name).await;
             RpResponse::Ok
         }
         Err(e) => RpResponse::err("RuntimeError", e.to_string()),

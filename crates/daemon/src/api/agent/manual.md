@@ -161,7 +161,7 @@ Comandos, por área (campos entre chaves):
   `ProjectEnvSet{project_id, env_vars, env_comments}`
 - **Serviços**: `ServiceList{project_id}` · `ServiceGet{id}` ·
   `ServiceCreate(ServiceSpec)` · `ServiceUpdate{id, spec}` ·
-  `ServiceDelete{id}` · `ServiceStop{service_id}` · `ServiceReload{service_id}` ·
+  `ServiceDelete{id, delete_volumes?}` (sem `delete_volumes: true` os volumes nomeados — os dados — ficam e aparecem como órfãos em `DockerVolumes`) · `ServiceStop{service_id}` · `ServiceReload{service_id}` ·
   `ServiceConnectionInfo{service_id}` · `GetWebhookUrl{service_id}` ·
   `RegenerateWebhookToken{service_id}`
 - **Healthcheck** (campo `healthcheck` do `ServiceSpec`): `{kind, interval_secs, timeout_secs, retries,
@@ -216,6 +216,23 @@ Comandos, por área (campos entre chaves):
   O rollback **não** volta as variáveis do projeto e usa o valor **atual** de cada secret. Confira o
   `ReleaseDiff` antes. As imagens das 3 releases mais novas de cada serviço são poupadas pela limpeza
   do Docker.
+- **Rotas próprias** (o domínio fora do serviço): `RouteList` (de todos os projetos; a senha nunca volta) ·
+  `RouteSave{route}` (cria com `id` vazio, atualiza com o id) · `RouteDelete{route_id}`. Uma rota tem `project_id`,
+  `domain`, `tls`, `basic_auth: {user, password}` (senha em claro na ida, `null` para manter a gravada) e `action`:
+  `{"Forward":{"rules":[{"path_prefix":"/api","service_id":"svc_…","port":null,"strip_prefix":true}]}}` (vence o
+  prefixo mais longo; serviços do mesmo projeto) ou `{"Redirect":{"to":"https://app.com","permanent":true}}` (o
+  caminho pedido vai junto). Vale na hora, sem redeploy, e aparece no `ingress_routes` (`app.com/api`). Um domínio
+  não pode estar numa rota e num serviço ao mesmo tempo (os dois lados recusam).
+- **Ambientes** (homologação, preview…: o mesmo projeto, outra instância): `EnvironmentCreate{project_id, name}`
+  cria o projeto `<projeto> (<name>)` com cópias dos serviços, jobs, variáveis e secrets (rede e nomes de container
+  próprios), **sem** domínios, portas do host, push-to-deploy, backup nem acesso aos bancos da origem; jobs agendados
+  nascem desligados; nada é implantado (resposta `Project`; o projeto traz `environment: {origin_project_id, name,
+  service_origins}`). `EnvironmentList{project_id}` lista os ambientes de uma origem. `EnvironmentCompare{project_id}`
+  (o id do **ambiente**) compara com a origem serviço a serviço: release no ar de cada lado, `same_image`, o que difere
+  na configuração (sem domínios/portas) e `can_promote_to_origin`/`can_bring_from_origin`.
+  `EnvironmentPromote{from_service_id, to_service_id}` (serviços irmãos, nos dois sentidos) faz o deploy da **mesma
+  imagem** da release no ar de `from` em `to`, sem build e **sem mudar a configuração** do destino; a release nova diz
+  `promoted_from`. Para apagar um ambiente, `ProjectDelete` no projeto dele.
 - **Logs de container**: `LogsGet{service_id, tail}` (ao vivo; para acompanhar,
   use o SSE `/api/services/<id>/logs`) · `LogsHistory{service_id, before?, limit,
   container_id?, container_ids?}` (o log **persistido**, que atravessa deploys e
@@ -294,7 +311,7 @@ Comandos, por área (campos entre chaves):
   (MinIO: `${MINIO_ROOT_USER}` / `${MINIO_ROOT_PASSWORD}`), `main_service` = `bucket`. `HTTP 200` = existe (repetir é
   seguro). **Não use `aws-cli`** com o nome interno: o botocore rejeita hostname com `_` (`Invalid endpoint:
   http://rp_s3:9000`) — o `curl --aws-sigv4` aceita. Não use `minio/mc`: a imagem não é mais puxável.
-- **Docker**: `DockerContainers` · `DockerImages` · `DockerVolumes` ·
+- **Docker**: `DockerContainers` · `DockerImages` · `DockerVolumes` (cada volume traz o dono — `service_id`, `service`, `project` —, `orphan_of` quando o serviço dono foi apagado e o volume ficou, e `has_backup_policy`) ·
   `DockerNetworks` · `StopContainer{id}` (só container **órfão**: o de um serviço se para pelo serviço) · `RemoveContainer{id}` · `RemoveImage{id}` ·
   `RemoveVolume{name}` · `RemoveNetwork{id}` · `StopAllManaged` ·
   `PruneContainers` · `PruneImages{all}` · `PruneVolumes{all}` ·

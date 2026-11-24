@@ -127,6 +127,7 @@ document.addEventListener("alpine:init", () => {
     dockerTab: "containers",
     onlyUsedImages: false,
     onlyUsedVolumes: false,
+    onlyOrphanVolumes: false,
     onlyUsedNetworks: false,
     pruneAllImages: false,
     pruneAllVolumes: false,
@@ -938,7 +939,8 @@ document.addEventListener("alpine:init", () => {
       if (!confirm(t("Remover este serviço? Para o container e apaga o histórico. Ação irreversível."))) {
         return;
       }
-      const serviceDeleteResponse = await this.api.rpcChecked({ ServiceDelete: { id: serviceId } });
+      const deleteVolumes = this.askDeleteVolumes();
+      const serviceDeleteResponse = await this.api.rpcChecked({ ServiceDelete: { id: serviceId, delete_volumes: deleteVolumes } });
       if (serviceDeleteResponse.ok) {
         await this.refreshNow();
         this.nav("project");
@@ -946,6 +948,13 @@ document.addEventListener("alpine:init", () => {
       } else {
         this.toastError(t("erro ao remover: ") + serviceDeleteResponse.error);
       }
+    },
+
+    /** Segunda pergunta ao apagar um serviço: os volumes (os dados) vão junto? Cancelar = ficam no
+     * servidor, como órfãos na lista de volumes (tela Docker). */
+    askDeleteVolumes() {
+      return confirm(t("Apagar também os volumes deste serviço (os dados)?") + "\n\n"
+        + t("OK = os dados são apagados, sem volta. Cancelar = os volumes ficam no servidor e aparecem como órfãos na tela Docker → Volumes."));
     },
 
     /** Botão "Parar" do card de serviço (grid do projeto) — porta de
@@ -981,7 +990,8 @@ document.addEventListener("alpine:init", () => {
         this.toastError(t("erro ao parar: ") + serviceStopResponse.error);
         return;
       }
-      const serviceDeleteResponse = await this.api.rpcChecked({ ServiceDelete: { id: serviceId } });
+      const deleteVolumes = this.askDeleteVolumes();
+      const serviceDeleteResponse = await this.api.rpcChecked({ ServiceDelete: { id: serviceId, delete_volumes: deleteVolumes } });
       if (serviceDeleteResponse.ok) this.toastOk(t("serviço parado e removido"));
       else this.toastError(t("erro ao remover: ") + serviceDeleteResponse.error);
       await this.refreshNow();

@@ -131,7 +131,10 @@ pub fn required_level(cmd: &Command) -> Level {
         | Command::ProjectDeployPlan { .. }
         | Command::ServiceBackupList { .. }
         | Command::ReleaseList { .. }
-        | Command::ReleaseDiff { .. } => Level::Observer,
+        | Command::ReleaseDiff { .. }
+        | Command::EnvironmentList { .. }
+        | Command::EnvironmentCompare { .. }
+        | Command::RouteList => Level::Observer,
         Command::DeployStart { .. }
         | Command::DeployWithDependencies { .. }
         | Command::ProjectDeploy { .. }
@@ -168,8 +171,12 @@ pub fn required_level(cmd: &Command) -> Level {
         | Command::StateGitResume
         | Command::StateGitDismissRemoval { .. }
         | Command::JobUpdate { .. }
-        | Command::ServiceBackupNow { .. } => Level::Operator,
+        | Command::ServiceBackupNow { .. }
+        | Command::EnvironmentPromote { .. } => Level::Operator,
         Command::ProjectCreate { .. }
+        | Command::EnvironmentCreate { .. }
+        | Command::RouteSave { .. }
+        | Command::RouteDelete { .. }
         | Command::ProjectDelete { .. }
         | Command::ServiceCreate(_)
         | Command::ServiceDelete { .. }

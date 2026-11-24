@@ -92,6 +92,31 @@ pub enum Command {
         project_id: String,
         service_ids: Vec<String>,
     },
+    /// Cria um **ambiente** (homologação, preview…) a partir do projeto `project_id`: um projeto
+    /// novo, `<projeto> (<name>)`, com cópias dos serviços, jobs, variáveis e secrets, sem
+    /// domínios, portas do host, push-to-deploy, backup nem acesso aos bancos da origem. Jobs
+    /// agendados nascem desligados. Nada é implantado. Resposta: `Project`.
+    EnvironmentCreate {
+        project_id: String,
+        name: String,
+    },
+    /// Os ambientes do projeto de origem `project_id`. Resposta: `Environments`.
+    EnvironmentList {
+        project_id: String,
+    },
+    /// Compara o ambiente `project_id` com a origem: serviço a serviço, a release no ar de cada
+    /// lado e o que difere na configuração (sem domínios nem portas). Resposta:
+    /// `EnvironmentComparison`.
+    EnvironmentCompare {
+        project_id: String,
+    },
+    /// **Promove** a release no ar de `from_service_id` para o serviço irmão `to_service_id`
+    /// (num ambiente e na origem, nos dois sentidos): deploy da mesma imagem, sem build. A
+    /// configuração do destino **não muda**. Resposta: `Deployment`.
+    EnvironmentPromote {
+        from_service_id: String,
+        to_service_id: String,
+    },
     ProjectEnvSet {
         project_id: String,
         env_vars: Vec<EnvVar>,
@@ -104,8 +129,13 @@ pub enum Command {
         id: String,
         spec: ServiceSpec,
     },
+    /// Apaga o serviço. `delete_volumes`: apaga também os volumes nomeados dele (os **dados**); sem
+    /// isso eles ficam no servidor e aparecem como **órfãos** na lista de volumes (`DockerVolumes`),
+    /// com o nome do serviço de onde vieram.
     ServiceDelete {
         id: String,
+        #[serde(default)]
+        delete_volumes: bool,
     },
     ServiceList {
         project_id: String,
@@ -780,6 +810,19 @@ pub enum Command {
     /// Lê a tabela de rotas do ingress (domínios + portas). Diagnóstico de
     /// 502: a rota existe? para qual `ip:porta` ela aponta?
     IngressRoutes,
+    /// As rotas próprias (domínio → caminhos de serviços, redirect, senha), de todos os projetos. A
+    /// senha nunca volta (`basic_auth.password` vem `None`). Resposta: `Routes`.
+    RouteList,
+    /// Cria (`id` vazio) ou atualiza uma rota. `basic_auth.password`: a senha em claro, ou `None`
+    /// para manter a gravada. Um domínio não pode estar numa rota e num serviço ao mesmo tempo.
+    /// Resposta: `Route`.
+    RouteSave {
+        route: Route,
+    },
+    /// Apaga uma rota (o domínio passa a responder 404). Resposta: `Ok`.
+    RouteDelete {
+        route_id: String,
+    },
     /// Recalcula as rotas a partir dos containers que realmente existem no
     /// Docker, sem redeployar. `service_id = None` varre todos os serviços.
     /// É o mesmo caminho do reconcile de boot, exposto sob demanda.

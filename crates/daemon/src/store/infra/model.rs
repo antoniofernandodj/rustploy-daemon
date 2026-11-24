@@ -105,6 +105,13 @@ pub struct ProjectInfra {
     /// de criação. Ids de serviços que não existem mais são podados em `normalize`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub service_order: Vec<String>,
+    /// Este projeto é um **ambiente** de outro (`docs/plano-releases-ambientes-rotas-volumes.md` §2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub environment: Option<crate::domain::EnvironmentOf>,
+    /// Rotas do proxy fora dos serviços (`docs/plano-releases-ambientes-rotas-volumes.md` §3). A senha
+    /// do basic auth fica cifrada (`ENC[age:…]`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub routes: Vec<crate::domain::Route>,
 }
 
 impl ProjectInfra {
@@ -502,6 +509,8 @@ mod tests {
             managed_databases: vec![],
             shared_access: vec![],
             service_order: vec![],
+            environment: None,
+            routes: vec![],
         }
     }
 
@@ -619,6 +628,8 @@ mod schema_v1_tests {
                 managed_databases: vec![],
                 shared_access: vec![],
                 service_order: vec![],
+                environment: None,
+                routes: vec![],
             }],
         };
         let mut f = st.to_files().unwrap();

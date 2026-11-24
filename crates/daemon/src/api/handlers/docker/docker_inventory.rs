@@ -25,6 +25,12 @@ struct ServiceIndex {
     /// service_id → (nome do projeto, nome do serviço), para atribuir um
     /// container pelo label `rustploy.service_id` (exato). Ver `list_containers`.
     by_service_id: HashMap<String, (String, String)>,
+    /// Nome da stack Compose → service_id (dono dos volumes etiquetados pelo Compose).
+    by_compose_project: HashMap<String, String>,
+    /// Volume nomeado que o spec monta → service_id.
+    by_named_volume: HashMap<String, String>,
+    /// Serviços com backup automático ligado.
+    with_backup: std::collections::HashSet<String>,
 }
 
 /// Serviços que **sumiram do estado por um commit externo** (marca `state_git_removed`), para
@@ -97,7 +103,17 @@ impl ServiceIndex {
         let mut by_safe_name = HashMap::new();
         let mut by_registry_image = HashMap::new();
         let mut by_service_id = HashMap::new();
+        let mut by_compose_project = HashMap::new();
+        let mut by_named_volume = HashMap::new();
         for s in &services {
+            if matches!(s.spec.source, ServiceSource::Compose(_)) {
+                by_compose_project.insert(s.compose_project_name(), s.id.clone());
+            }
+            for volume in &s.spec.volumes {
+                if !volume.host_path.is_empty() && !volume.host_path.starts_with('/') {
+                    by_named_volume.insert(volume.host_path.clone(), s.id.clone());
+                }
+            }
             let project_name = project_names
                 .get(&s.spec.project_id)
                 .cloned()
@@ -113,12 +129,41 @@ impl ServiceIndex {
                 ServiceSource::Compose(_) => {}
             }
         }
+        let with_backup = state
+            .db
+            .infra()
+            .snapshot()
+            .projects
+            .iter()
+            .flat_map(|project| project.services.iter())
+            .filter(|service| service.backup.is_some())
+            .map(|service| service.id.clone())
+            .collect();
         Self {
             by_safe_name,
             by_registry_image,
             by_network,
             by_service_id,
+            by_compose_project,
+            by_named_volume,
+            with_backup,
         }
+    }
+
+    /// O serviço dono de um volume: pela etiqueta `rustploy.service_id`, pela stack Compose ou pelo
+    /// nome que um spec monta. Só serviços que existem.
+    fn volume_owner(&self, name: &str, labels: &HashMap<String, String>) -> Option<String> {
+        labels
+            .get(crate::features::service_data::parts::SERVICE_LABEL)
+            .filter(|service_id| self.by_service_id.contains_key(*service_id))
+            .cloned()
+            .or_else(|| {
+                labels
+                    .get("com.docker.compose.project")
+                    .and_then(|project| self.by_compose_project.get(project))
+                    .cloned()
+            })
+            .or_else(|| self.by_named_volume.get(name).cloned())
     }
 
     /// Resolves an image's owner from its tags: exact match for registry
@@ -219,13 +264,59 @@ async fn compute_df_inventory(
             }
         })
         .collect();
+    let orphans = crate::store::orphan_volumes::all(&state.db)
+        .await
+        .unwrap_or_default();
+    // O `system df` do Podman não traz as etiquetas dos volumes (o do Docker traz): elas vêm da
+    // listagem de volumes, casadas pelo nome.
+    let labels_by_volume: HashMap<String, HashMap<String, String>> = state
+        .docker
+        .inner
+        .list_volumes(None::<bollard::volume::ListVolumesOptions<String>>)
+        .await
+        .ok()
+        .and_then(|listing| listing.volumes)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|volume| (volume.name, volume.labels))
+        .collect();
     let volumes: Vec<DockerVolumeInfo> = df
         .volumes
         .unwrap_or_default()
         .into_iter()
         .map(|v| {
             let ref_count = v.usage_data.as_ref().map(|u| u.ref_count).unwrap_or(-1);
+            let labels = if v.labels.is_empty() {
+                labels_by_volume.get(&v.name).cloned().unwrap_or_default()
+            } else {
+                v.labels.clone()
+            };
+            let owner = idx.volume_owner(&v.name, &labels);
+            let (project, service) = owner
+                .as_ref()
+                .and_then(|service_id| idx.by_service_id.get(service_id))
+                .map(|(project, service)| (Some(project.clone()), Some(service.clone())))
+                .unwrap_or((None, None));
+            let orphan_of = if owner.is_none() {
+                orphans.get(&v.name).map(|orphan| {
+                    format!(
+                        "{} ({}), {}",
+                        orphan.service_name,
+                        orphan.project_name,
+                        orphan.deleted_at.format("%d/%m/%Y")
+                    )
+                })
+            } else {
+                None
+            };
             DockerVolumeInfo {
+                has_backup_policy: owner
+                    .as_ref()
+                    .is_some_and(|service_id| idx.with_backup.contains(service_id)),
+                service_id: owner,
+                service,
+                project,
+                orphan_of,
                 name: v.name,
                 driver: v.driver,
                 mountpoint: v.mountpoint,

@@ -90,7 +90,7 @@ async fn filtered(db: &Db, keep: impl Fn(&Runtime) -> bool) -> Result<Vec<Servic
 /// Nome de stack para um serviço Compose novo: o curto
 /// (`rp_<últimos 8 do ID>_<nome>`); se já está em uso — chance de ~1 em 10¹² —,
 /// o ID inteiro.
-fn new_compose_project(st: &InfraState, id: &str, name: &str) -> String {
+pub(crate) fn new_compose_project(st: &InfraState, id: &str, name: &str) -> String {
     let short = crate::domain::new_compose_project_name(id, name);
     let taken = st
         .projects
