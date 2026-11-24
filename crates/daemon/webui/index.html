@@ -2676,6 +2676,8 @@
                 <button class="card__action card__action--open" type="button" style="width:100%"
                         @click="store.openService(service.id)" x-t>Abrir ›</button>
                 <row class="card__actions">
+                  <button class="card__action card__action--icon card__action--deploy" type="button" title="Deploy" aria-label="Deploy do serviço" x-t:aria-label
+                          @click="store.deployServiceFromList(service.id)">▶</button>
                   <button class="card__action card__action--icon" type="button" title="Parar" x-t:title aria-label="Parar serviço" x-t:aria-label
                           @click="store.stopService(service.id)">■</button>
                   <button class="card__action card__action--icon card__action--icon-danger" type="button" title="Remover" x-t:title aria-label="Remover serviço" x-t:aria-label
@@ -2847,6 +2849,20 @@
         <!-- Ambientes: num projeto de origem, a lista e o "Criar ambiente"; num ambiente, a
              comparação com a origem e Promover / Trazer, serviço a serviço. -->
         <column class="env environments" x-show="projectTab === 'environments'">
+          <template x-if="destroyEnvironment">
+            <column class="panel route-editor">
+              <text class="u-label-cap" x-text="$t('Destruir o ambiente ') + destroyEnvironment.name"></text>
+              <text class="u-muted" x-text="$t('Para e apaga todos os serviços, jobs e rotas deste ambiente, e o projeto. A origem não é tocada. Para confirmar, digite o nome do ambiente: ') + destroyEnvironment.name"></text>
+              <input class="field__input" type="text" x-model="destroyEnvironment.typed" :placeholder="destroyEnvironment.name"
+                     @keydown.enter.prevent="confirmDestroyEnvironment()" />
+              <label class="check-row"><input type="checkbox" x-model="destroyEnvironment.deleteVolumes" /><text x-t>Apagar também os dados (os volumes destes serviços). Desmarcado = ficam no servidor como órfãos.</text></label>
+              <row class="release-diff__actions">
+                <column class="u-grow"></column>
+                <button class="btn btn--ghost btn--sm" type="button" @click="destroyEnvironment = null" x-t>Cancelar</button>
+                <button class="btn btn--danger btn--sm" type="button" @click="confirmDestroyEnvironment()" x-t>Destruir ambiente</button>
+              </row>
+            </column>
+          </template>
           <template x-if="project && !project.environment">
             <column class="environments__origin">
               <text class="u-muted" x-t>Um ambiente é uma cópia deste projeto (homologação, preview…) com rede, variáveis e nomes de container próprios. Domínios, portas do host, backup e acesso aos bancos da origem não são copiados, e jobs agendados nascem desligados. Nada é implantado.</text>
@@ -2862,6 +2878,7 @@
                     <text class="env__key" x-text="environment.name"></text>
                     <text class="u-muted u-grow" x-text="environment.project_name"></text>
                     <button class="btn btn--ghost btn--xs" type="button" @click="store.openProject(environment.project_id)" x-t>Abrir</button>
+                    <button class="btn btn--danger btn--xs" type="button" @click="openDestroyEnvironment(environment.project_id, environment.name)" x-t>Destruir</button>
                   </row>
                 </template>
               </column>
@@ -2873,6 +2890,7 @@
                 <text class="u-muted-grow" x-text="environmentCompareTitle"></text>
                 <button class="btn btn--ghost btn--xs" type="button" @click="store.openProject(project.environment.origin_project_id)" x-t>Abrir a origem</button>
                 <button class="btn btn--ghost btn--xs" type="button" @click="loadEnvironments()" x-t>Atualizar</button>
+                <button class="btn btn--danger btn--xs" type="button" @click="openDestroyEnvironment(project.id, project.environment.name)" x-t>Destruir ambiente</button>
               </row>
               <text class="u-muted" x-show="!environmentComparison" x-t>Carregando…</text>
               <template x-for="pair in environmentPairs" :key="pair.environment_service_id">
@@ -2880,8 +2898,9 @@
                   <row class="environments__pair-head">
                     <text class="env__key" x-text="pair.service_name"></text>
                     <text class="u-muted" x-text="pair.releasesLabel"></text>
-                    <text :class="pair.same_image ? 'u-ok' : 'u-warn'" x-text="pair.imageLabel"></text>
+                    <text :class="pair.same_image ? 'u-ok' : 'u-warn'" x-show="pair.imageLabel" x-text="pair.imageLabel"></text>
                   </row>
+                  <text class="u-muted" x-show="pair.noteLabel" x-text="pair.noteLabel"></text>
                   <template x-for="change in pair.changeRows" :key="change.key">
                     <text class="environments__change" x-text="change.text"></text>
                   </template>

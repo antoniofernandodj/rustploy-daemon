@@ -117,6 +117,17 @@ pub enum Command {
         from_service_id: String,
         to_service_id: String,
     },
+    /// **Destrói** o ambiente `project_id` (só um projeto que é ambiente; a origem é recusada): para
+    /// e apaga todos os serviços, os jobs e as rotas dele, e o projeto. `confirm_name` tem de ser o
+    /// nome do ambiente (`staging`). `delete_volumes` (padrão `false`) apaga também os volumes
+    /// próprios dos serviços; sem ele os dados ficam no servidor como órfãos. Volumes emprestados
+    /// (`external`) nunca saem por aqui. Não toca na origem. Resposta: `Ok`.
+    EnvironmentDestroy {
+        project_id: String,
+        confirm_name: String,
+        #[serde(default)]
+        delete_volumes: bool,
+    },
     ProjectEnvSet {
         project_id: String,
         env_vars: Vec<EnvVar>,

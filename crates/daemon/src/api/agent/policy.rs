@@ -180,6 +180,7 @@ pub fn required_level(cmd: &Command) -> Level {
         | Command::RouteSave { .. }
         | Command::RouteDelete { .. }
         | Command::ProjectDelete { .. }
+        | Command::EnvironmentDestroy { .. }
         | Command::ServiceCreate(_)
         | Command::ServiceDelete { .. }
         | Command::ServiceVolumeAttach { .. }

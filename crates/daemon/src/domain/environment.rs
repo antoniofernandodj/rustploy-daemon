@@ -41,6 +41,13 @@ pub struct EnvironmentServicePair {
     /// Dá para promover (a fonte não é Compose e há release no ar com imagem fixada).
     pub can_promote_to_origin: bool,
     pub can_bring_from_origin: bool,
+    /// Por que não há botão (ou o que o botão vai fazer), para a tela explicar. Códigos:
+    /// `compose` (stack Compose: não há imagem única para levar), `no_release_anywhere` (nenhum
+    /// lado tem imagem: faça um deploy), `no_release_in_origin` / `no_release_here` (só um lado
+    /// tem), `running_without_release` (o lado de onde se leva está no ar desde antes das releases:
+    /// a imagem do container é registrada como release ao levar). `None` = nada a dizer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
     /// O que difere na configuração do serviço (origem → ambiente). Domínios e portas externas,
     /// que são diferentes por definição, ficam de fora.
     pub changes: Vec<ReleaseChange>,

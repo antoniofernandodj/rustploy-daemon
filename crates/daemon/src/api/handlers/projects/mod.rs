@@ -43,6 +43,11 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
             from_service_id,
             to_service_id,
         } => environments::promote(state, from_service_id, to_service_id).await,
+        Command::EnvironmentDestroy {
+            project_id,
+            confirm_name,
+            delete_volumes,
+        } => environments::destroy(state, project_id, confirm_name, delete_volumes).await,
         _ => RpResponse::err("NotImplemented", "command not yet implemented"),
     }
 }

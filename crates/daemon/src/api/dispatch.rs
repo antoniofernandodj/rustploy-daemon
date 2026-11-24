@@ -20,6 +20,7 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         Command::ProjectCreate { .. } => "ProjectCreate",
         Command::ProjectList => "ProjectList",
         Command::EnvironmentCreate { .. } => "EnvironmentCreate",
+        Command::EnvironmentDestroy { .. } => "EnvironmentDestroy",
         Command::EnvironmentList { .. } => "EnvironmentList",
         Command::EnvironmentCompare { .. } => "EnvironmentCompare",
         Command::EnvironmentPromote { .. } => "EnvironmentPromote",
@@ -305,7 +306,8 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         | Command::EnvironmentCreate { .. }
         | Command::EnvironmentList { .. }
         | Command::EnvironmentCompare { .. }
-        | Command::EnvironmentPromote { .. } => handlers::projects::dispatch(state, cmd).await,
+        | Command::EnvironmentPromote { .. }
+        | Command::EnvironmentDestroy { .. } => handlers::projects::dispatch(state, cmd).await,
         Command::RegistryStatus
         | Command::RegistryRepoList
         | Command::RegistryTagList { .. }

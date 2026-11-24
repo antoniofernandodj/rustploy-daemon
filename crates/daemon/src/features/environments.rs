@@ -293,29 +293,57 @@ pub async fn compare(db: &Db, environment_project_id: &str) -> Result<Environmen
             crate::features::deploy::release::current_release(db, &origin_service.id).await?;
         let environment_release =
             crate::features::deploy::release::current_release(db, &environment_service.id).await?;
-        let promotable = |release: &Option<crate::domain::Release>,
-                          target_source: &ServiceSource| {
-            release.as_ref().is_some_and(|release| {
-                release.image_ref.is_some()
-                    && !matches!(release.spec.source, ServiceSource::Compose(_))
-            }) && !matches!(target_source, ServiceSource::Compose(_))
-        };
-        let changes = environment_relevant(diff_releases(
-            &ReleaseSide {
-                image_ref: None,
-                spec: &origin_service.spec,
-                project_env: &[],
-            },
-            &ReleaseSide {
-                image_ref: None,
-                spec: &environment_service.spec,
-                project_env: &[],
-            },
-        ));
+        let is_compose = matches!(origin_service.spec.source, ServiceSource::Compose(_))
+            || matches!(environment_service.spec.source, ServiceSource::Compose(_));
         let origin_image = origin_release.as_ref().and_then(|r| r.image_ref.clone());
         let environment_image = environment_release
             .as_ref()
             .and_then(|r| r.image_ref.clone());
+        // No ar desde antes das releases (v0.1.91): sem release, mas com um deploy Live e o
+        // container rodando. Ao levar, a imagem do container vira a release (ver
+        // `ensure_baseline_release`).
+        let origin_running_without_release = !is_compose
+            && origin_image.is_none()
+            && running_without_release(db, &origin_service.id).await;
+        let environment_running_without_release = !is_compose
+            && environment_image.is_none()
+            && running_without_release(db, &environment_service.id).await;
+        let origin_has = origin_image.is_some() || origin_running_without_release;
+        let environment_has = environment_image.is_some() || environment_running_without_release;
+        let different = origin_image.is_none() || origin_image != environment_image;
+        let can_promote_to_origin = !is_compose && environment_has && different;
+        let can_bring_from_origin = !is_compose && origin_has && different;
+        let note = if is_compose {
+            Some("compose")
+        } else if !origin_has && !environment_has {
+            Some("no_release_anywhere")
+        } else if (can_bring_from_origin && origin_running_without_release)
+            || (can_promote_to_origin && environment_running_without_release)
+        {
+            Some("running_without_release")
+        } else if !origin_has {
+            Some("no_release_in_origin")
+        } else if !environment_has {
+            Some("no_release_here")
+        } else {
+            None
+        };
+        // Os ids de `depends_on`, vínculos e pré-deploy são outros na cópia (apontam para os
+        // serviços e jobs dela): compara pelos nomes, senão a cópia fiel aparece como diferente.
+        let origin_named = spec_with_names(&origin_service.spec, &state);
+        let environment_named = spec_with_names(&environment_service.spec, &state);
+        let changes = environment_relevant(diff_releases(
+            &ReleaseSide {
+                image_ref: None,
+                spec: &origin_named,
+                project_env: &[],
+            },
+            &ReleaseSide {
+                image_ref: None,
+                spec: &environment_named,
+                project_env: &[],
+            },
+        ));
         services.push(EnvironmentServicePair {
             service_name: environment_service.spec.name.clone(),
             origin_service_id: origin_service.id.clone(),
@@ -326,10 +354,9 @@ pub async fn compare(db: &Db, environment_project_id: &str) -> Result<Environmen
             environment_release_id: environment_release.as_ref().map(|r| r.id.clone()),
             same_image: origin_image.is_some() && origin_image == environment_image,
             // Com a mesma imagem dos dois lados não há o que levar.
-            can_promote_to_origin: origin_image != environment_image
-                && promotable(&environment_release, &origin_service.spec.source),
-            can_bring_from_origin: origin_image != environment_image
-                && promotable(&origin_release, &environment_service.spec.source),
+            can_promote_to_origin,
+            can_bring_from_origin,
+            note: note.map(str::to_string),
             changes,
         });
     }
@@ -369,6 +396,136 @@ pub async fn compare(db: &Db, environment_project_id: &str) -> Result<Environmen
         only_in_origin,
         only_in_environment,
     })
+}
+
+/// O spec com os ids de `depends_on`, vínculos e pré-deploy trocados pelos nomes (do serviço ou do
+/// job, procurados em todos os projetos). Só para comparar: a cópia de um ambiente aponta para os
+/// serviços dela, com ids próprios, e o que importa é "depende do db", não qual id.
+pub fn spec_with_names(
+    spec: &crate::domain::ServiceSpec,
+    state: &crate::store::infra::model::InfraState,
+) -> crate::domain::ServiceSpec {
+    let service_name = |id: &str| {
+        state
+            .projects
+            .iter()
+            .flat_map(|project| project.services.iter())
+            .find(|service| service.id == id)
+            .map(|service| service.spec.name.clone())
+            .unwrap_or_else(|| id.to_string())
+    };
+    let job_name = |id: &str| {
+        state
+            .projects
+            .iter()
+            .flat_map(|project| project.jobs.iter())
+            .find(|job| job.id == id)
+            .map(|job| job.name.clone())
+            .unwrap_or_else(|| id.to_string())
+    };
+    let mut named = spec.clone();
+    named.depends_on = spec.depends_on.iter().map(|id| service_name(id)).collect();
+    for link in &mut named.links {
+        link.service_id = service_name(&link.service_id);
+    }
+    named.pre_deploy_job_ids = spec
+        .pre_deploy_job_ids
+        .iter()
+        .map(|id| job_name(id))
+        .collect();
+    named.pre_deploy_job_id = spec.pre_deploy_job_id.as_deref().map(job_name);
+    named
+}
+
+/// O serviço está no ar sem release: há um deploy `Live` (de antes das releases existirem) e um
+/// container vivo.
+async fn running_without_release(db: &Db, service_id: &str) -> bool {
+    let Ok(Some(service)) = crate::store::services::get(db, service_id).await else {
+        return false;
+    };
+    if service.live_container_id.is_none() {
+        return false;
+    }
+    live_deployment_id(db, service_id).await.is_some()
+}
+
+async fn live_deployment_id(db: &Db, service_id: &str) -> Option<String> {
+    crate::store::deployments::list_for_service(db, service_id, 50)
+        .await
+        .ok()?
+        .into_iter()
+        .find(|deployment| deployment.state == crate::domain::DeployState::Live)
+        .map(|deployment| deployment.id)
+}
+
+/// A release no ar do serviço; se ele está no ar desde antes das releases (deploy Live sem
+/// release), registra a imagem do container que está rodando como a release daquele deploy e a
+/// devolve. Só para fonte que não é Compose. A configuração gravada é a de agora (a do deploy antigo
+/// não foi guardada). `None` = nada no ar.
+pub async fn ensure_baseline_release(
+    db: &Db,
+    docker: &crate::engine::DockerClient,
+    service_id: &str,
+) -> Result<Option<crate::domain::Release>> {
+    if let Some(release) = crate::features::deploy::release::current_release(db, service_id).await?
+    {
+        return Ok(Some(release));
+    }
+    let Some(service) = crate::store::services::get(db, service_id).await? else {
+        return Ok(None);
+    };
+    if matches!(service.spec.source, ServiceSource::Compose(_)) {
+        return Ok(None);
+    }
+    let (Some(container_id), Some(deployment_id)) = (
+        service.live_container_id.clone(),
+        live_deployment_id(db, service_id).await,
+    ) else {
+        return Ok(None);
+    };
+    let container = crate::engine::containers::inspect(&docker.inner, &container_id)
+        .await
+        .map_err(|e| anyhow!("não consegui inspecionar o container no ar: {e}"))?;
+    let image_id = container
+        .image
+        .clone()
+        .ok_or_else(|| anyhow!("o container no ar não diz de qual imagem veio"))?;
+    let image = container
+        .config
+        .as_ref()
+        .and_then(|config| config.image.clone())
+        .unwrap_or_else(|| image_id.clone());
+    let repo_digests = match docker.inner.inspect_image(&image_id).await {
+        Ok(inspected) => inspected.repo_digests.unwrap_or_default(),
+        Err(_) => Vec::new(),
+    };
+    let image_ref = crate::domain::pick_image_ref(
+        matches!(service.spec.source, ServiceSource::Registry { .. }),
+        &image,
+        Some(&image_id),
+        &repo_digests,
+    );
+    let project_env = match crate::store::projects::get(db, &service.spec.project_id).await? {
+        Some(project) => project.env_vars,
+        None => Vec::new(),
+    };
+    let release = crate::store::releases::create(
+        db,
+        crate::store::releases::NewRelease {
+            service_id,
+            deployment_id: &deployment_id,
+            image: &image,
+            image_ref: image_ref.as_deref(),
+            spec: &service.spec,
+            project_env: &project_env,
+            restored_from_number: None,
+            promoted_from: None,
+        },
+    )
+    .await?;
+    tracing::info!(service_id = %service_id, release = release.number, image = %image,
+        "release registrada a partir do container no ar");
+    Ok(Some(release))
 }
 
 /// Um spec qualquer, só para comparar as variáveis do projeto pelo mesmo `diff_releases` quando a
@@ -522,5 +679,42 @@ mod tests {
             vec![new_db.id.clone(), new_api.id.clone()]
         );
         assert_ne!(copy.network_name, origin.network_name);
+
+        // A cópia fiel não é "diferente" só porque os ids de depends_on, vínculos e pré-deploy
+        // são os dela: a comparação troca ids por nomes.
+        let state = crate::store::infra::model::InfraState {
+            projects: vec![origin.clone(), copy.clone()],
+            ..Default::default()
+        };
+        let origin_api = origin.services.iter().find(|s| s.id == "svc_api").unwrap();
+        let named_origin = spec_with_names(&origin_api.spec, &state);
+        let mut named_copy = spec_with_names(&new_api.spec, &state);
+        named_copy.project_id = named_origin.project_id.clone();
+        // O que a cópia tirou de propósito (o serviço de outro projeto) continua aparecendo.
+        assert_eq!(named_origin.depends_on, vec!["db", "svc_de_outro_projeto"]);
+        assert_eq!(named_copy.depends_on, vec!["db"]);
+        assert_eq!(named_copy.links[0].service_id, "db");
+        assert_eq!(named_copy.pre_deploy_job_ids, vec!["migra"]);
+        assert_eq!(
+            named_origin.pre_deploy_job_ids,
+            named_copy.pre_deploy_job_ids
+        );
+        let changes = environment_relevant(diff_releases(
+            &ReleaseSide {
+                image_ref: None,
+                spec: &named_origin,
+                project_env: &[],
+            },
+            &ReleaseSide {
+                image_ref: None,
+                spec: &named_copy,
+                project_env: &[],
+            },
+        ));
+        let fields: Vec<&str> = changes.iter().map(|c| c.field.as_str()).collect();
+        assert!(
+            !fields.iter().any(|f| f.starts_with("pre_deploy")),
+            "pré-deploy igual por nome: {fields:?}"
+        );
     }
 }

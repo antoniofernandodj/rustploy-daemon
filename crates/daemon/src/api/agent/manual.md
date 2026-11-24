@@ -229,10 +229,15 @@ Comandos, por área (campos entre chaves):
   nascem desligados; nada é implantado (resposta `Project`; o projeto traz `environment: {origin_project_id, name,
   service_origins}`). `EnvironmentList{project_id}` lista os ambientes de uma origem. `EnvironmentCompare{project_id}`
   (o id do **ambiente**) compara com a origem serviço a serviço: release no ar de cada lado, `same_image`, o que difere
-  na configuração (sem domínios/portas) e `can_promote_to_origin`/`can_bring_from_origin`.
+  na configuração (sem domínios/portas; dependências, vínculos e pré-deploy comparados pelo **nome**),
+  `can_promote_to_origin`/`can_bring_from_origin` e `note` (por que não há botão: `compose`, `no_release_anywhere`,
+  `no_release_in_origin`, `no_release_here`, ou `running_without_release`).
   `EnvironmentPromote{from_service_id, to_service_id}` (serviços irmãos, nos dois sentidos) faz o deploy da **mesma
   imagem** da release no ar de `from` em `to`, sem build e **sem mudar a configuração** do destino; a release nova diz
-  `promoted_from`. Para apagar um ambiente, `ProjectDelete` no projeto dele.
+  `promoted_from`. Se `from` está no ar desde antes das releases (sem release), a imagem do container dele é registrada
+  como release antes. `EnvironmentDestroy{project_id, confirm_name, delete_volumes?}` (Admin) destrói um ambiente:
+  `confirm_name` = o nome do ambiente; para e apaga os serviços (na ordem das dependências), jobs, rotas e o projeto;
+  `delete_volumes` (padrão `false`) leva os volumes próprios; a origem é recusada.
 - **Logs de container**: `LogsGet{service_id, tail}` (ao vivo; para acompanhar,
   use o SSE `/api/services/<id>/logs`) · `LogsHistory{service_id, before?, limit,
   container_id?, container_ids?}` (o log **persistido**, que atravessa deploys e

@@ -45,6 +45,18 @@ function primaryContainer(service) {
   };
 }
 
+/** O que a tela diz quando um par não tem botão (ou o que o botão vai fazer). */
+function environmentNoteLabel(note) {
+  switch (note) {
+    case "compose": return t("Stack Compose: não há uma imagem só para levar. Faça o deploy em cada ambiente.");
+    case "no_release_anywhere": return t("Nenhum dos dois lados tem uma release no ar. Faça um deploy em um deles.");
+    case "no_release_in_origin": return t("A origem não tem uma release no ar: só dá para promover daqui para lá.");
+    case "no_release_here": return t("Este ambiente ainda não tem deploy: traga a versão da origem ou faça um deploy.");
+    case "running_without_release": return t("No ar desde antes das releases: ao levar, a imagem que está rodando vira a release.");
+    default: return "";
+  }
+}
+
 document.addEventListener("alpine:init", () => {
   Alpine.data("projectDetail", () => ({
     get store() {
@@ -56,6 +68,7 @@ document.addEventListener("alpine:init", () => {
     projectTab: "services", // "services" | "env" | "secrets" | "jobs" | "environments"
     environments: [], // EnvironmentList de um projeto de origem
     environmentComparison: null, // EnvironmentCompare de um ambiente
+    destroyEnvironment: null, // painel "Destruir ambiente": { projectId, name, typed, deleteVolumes }
     newEnvironmentName: "",
     // Valores de secret que o usuário pediu para ver (SecretReveal). Só em memória; some ao trocar de projeto.
     revealedSecrets: {},
@@ -133,7 +146,9 @@ document.addEventListener("alpine:init", () => {
       const comparison = this.environmentComparison;
       const fromNumber = direction === "origin" ? pair.environment_release_number : pair.origin_release_number;
       const target = direction === "origin" ? comparison.origin_project_name : this.project.name;
-      const message = t`Levar a v${fromNumber} de ${pair.service_name} para ${target}?`
+      // Sem número: o lado de origem está no ar desde antes das releases.
+      const version = fromNumber ? "v" + fromNumber : t("versão no ar");
+      const message = t`Levar a ${version} de ${pair.service_name} para ${target}?`
         + "\n\n" + t("O destino faz o deploy da mesma imagem, sem build. A configuração dele (variáveis, réplicas, domínios) não muda.");
       if (!confirm(message)) return;
       const environmentPromoteResponse = await this.store.api.rpcChecked({
@@ -142,6 +157,32 @@ document.addEventListener("alpine:init", () => {
       this.store.toastResult(environmentPromoteResponse, t`deploy de ${pair.service_name} iniciado`);
       if (environmentPromoteResponse.ok) await this.store.refreshNow();
       return environmentPromoteResponse;
+    },
+
+    openDestroyEnvironment(projectId, name) {
+      this.destroyEnvironment = { projectId, name, typed: "", deleteVolumes: false };
+    },
+
+    /** Destruir ambiente: o nome digitado é a confirmação; o daemon confere de novo. */
+    async confirmDestroyEnvironment() {
+      const destroy = this.destroyEnvironment;
+      if (!destroy) return;
+      if (destroy.typed.trim() !== destroy.name) {
+        this.store.toastError(t`Digite o nome do ambiente (${destroy.name}) para confirmar.`);
+        return;
+      }
+      const destroyedHere = this.project && this.project.id === destroy.projectId;
+      const originId = destroyedHere && this.project.environment ? this.project.environment.origin_project_id : "";
+      const environmentDestroyResponse = await this.store.api.rpcChecked({
+        EnvironmentDestroy: { project_id: destroy.projectId, confirm_name: destroy.typed.trim(), delete_volumes: destroy.deleteVolumes },
+      });
+      this.store.toastResult(environmentDestroyResponse, t`ambiente ${destroy.name} destruído`);
+      if (!environmentDestroyResponse.ok) return environmentDestroyResponse;
+      this.destroyEnvironment = null;
+      await this.store.refreshNow();
+      if (originId) this.store.openProject(originId);
+      else await this.loadEnvironments();
+      return environmentDestroyResponse;
     },
 
     get environmentCompareTitle() {
@@ -158,7 +199,11 @@ document.addEventListener("alpine:init", () => {
       return comparison.services.map((pair) => ({
         ...pair,
         releasesLabel: t`origem ${releaseLabel(pair.origin_release_number)} · aqui ${releaseLabel(pair.environment_release_number)}`,
-        imageLabel: pair.same_image ? t("mesma imagem") : t("imagens diferentes"),
+        // "imagens diferentes" só quando os dois lados têm imagem.
+        imageLabel: pair.same_image ? t("mesma imagem")
+          : (pair.origin_release_number && pair.environment_release_number) ? t("imagens diferentes")
+          : "",
+        noteLabel: environmentNoteLabel(pair.note),
         changeRows: pair.changes.map((change) => ({
           key: change.scope + ":" + change.field,
           text: change.field + ": " + (change.before ?? "—") + " → " + (change.after ?? "—"),
