@@ -69,7 +69,8 @@ impl DeployExecutor {
                 self.bus.clone(),
                 &job.id,
                 &run.id,
-            );
+            )
+            .with_build_dir(&self.db_path);
             self.bus.publish(Event::JobRunStateChanged {
                 job_id: job.id.clone(),
                 job_run_id: run.id.clone(),

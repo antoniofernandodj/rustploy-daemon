@@ -495,6 +495,40 @@ async fn wait_for_stuck_compose(project_name: &str, main_service: &str) -> (Stri
     }
 }
 
+/// Remove (forçado) os containers de um projeto compose pelo rótulo, sem precisar do
+/// arquivo. Para o job cuja execução foi abandonada sem passar pelo `down` (deploy
+/// abortado no meio do pré-deploy: a future morre antes do `down` do `run_once`).
+pub async fn remove_project_containers(project_name: &str) {
+    let ps = crate::engine::cli()
+        .args([
+            "ps",
+            "-a",
+            "-q",
+            "--filter",
+            &format!("label=com.docker.compose.project={project_name}"),
+        ])
+        .kill_on_drop(true)
+        .output()
+        .await;
+    let Ok(ps) = ps else { return };
+    let ids: Vec<String> = String::from_utf8_lossy(&ps.stdout)
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(String::from)
+        .collect();
+    if ids.is_empty() {
+        return;
+    }
+    let mut args = vec!["rm".to_string(), "-f".to_string()];
+    args.extend(ids);
+    let _ = crate::engine::cli()
+        .args(&args)
+        .kill_on_drop(true)
+        .output()
+        .await;
+}
+
 /// Últimas linhas de saída de um container (stdout e stderr juntos), pelo CLI.
 async fn container_log_lines(container_id: &str, tail: usize) -> Vec<String> {
     let out = crate::engine::cli()
@@ -506,6 +540,49 @@ async fn container_log_lines(container_id: &str, tail: usize) -> Vec<String> {
     let mut text = String::from_utf8_lossy(&out.stdout).into_owned();
     text.push_str(&String::from_utf8_lossy(&out.stderr));
     text.lines().filter_map(clean_compose_line).collect()
+}
+
+/// Mata o grupo de processos inteiro do `docker compose up` de um job.
+///
+/// Com Podman o comando é `podman --remote compose …`, que roda o plugin
+/// `docker-compose` como **neto**: matar só o filho (o `start_kill`, o `kill_on_drop`)
+/// deixava o plugin órfão e vivo para sempre (visto no cancelamento, no vigia e no
+/// deploy abortado). O compose nasce num grupo próprio (`process_group(0)`), e este
+/// guarda manda SIGKILL ao grupo quando o compose é abandonado: vigia, cancelamento
+/// ou a future derrubada (deploy abortado). `disarm()` quando ele saiu sozinho.
+pub(super) struct ComposeGroupGuard {
+    pgid: Option<u32>,
+}
+
+impl ComposeGroupGuard {
+    pub(super) fn new(pgid: Option<u32>) -> Self {
+        Self { pgid }
+    }
+
+    pub(super) fn kill_now(&mut self) {
+        if let Some(pgid) = self.pgid.take() {
+            kill_process_group(pgid);
+        }
+    }
+
+    pub(super) fn disarm(&mut self) {
+        self.pgid = None;
+    }
+}
+
+impl Drop for ComposeGroupGuard {
+    fn drop(&mut self) {
+        self.kill_now();
+    }
+}
+
+/// `kill -KILL -- -<pgid>`. Grupo que já não existe não é erro.
+fn kill_process_group(pgid: u32) {
+    let _ = std::process::Command::new("kill")
+        .args(["-KILL", "--", &format!("-{pgid}")])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
 }
 
 /// Roda o `docker compose up` de um job até o `main_service` sair, transmitindo
@@ -525,7 +602,8 @@ pub(super) async fn run_once_up(
     mirror_deployment: Option<(String, String)>,
     cancel_rx: Option<tokio::sync::watch::Receiver<bool>>,
 ) -> Result<i32> {
-    let mut child = crate::engine::cli()
+    let mut command = crate::engine::cli();
+    command
         .args([
             "compose",
             "-p",
@@ -545,9 +623,14 @@ pub(super) async fn run_once_up(
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         // Deploy abortado (a future do gate de pré-deploy é derrubada): o compose morre junto.
-        .kill_on_drop(true)
+        .kill_on_drop(true);
+    // Grupo próprio, para o `ComposeGroupGuard` matar também o plugin neto do Podman.
+    #[cfg(unix)]
+    command.process_group(0);
+    let mut child = command
         .spawn()
         .map_err(|e| anyhow!("falha ao iniciar docker compose: {e}"))?;
+    let mut group = ComposeGroupGuard::new(child.id());
 
     let stdout = child.stdout.take().unwrap();
     let stderr = child.stderr.take().unwrap();
@@ -599,10 +682,12 @@ pub(super) async fn run_once_up(
         _ = async { tokio::join!(read_stdout, read_stderr) } => {}
         _ = cancel => {
             cancelado = true;
+            group.kill_now();
             let _ = child.start_kill();
         }
         parado = wait_for_stuck_compose(project_name, main_service) => {
             travado = Some(parado);
+            group.kill_now();
             let _ = child.start_kill();
         }
     }
@@ -611,6 +696,8 @@ pub(super) async fn run_once_up(
         .wait()
         .await
         .map_err(|e| anyhow!("falha ao aguardar: {e}"))?;
+    // Saiu sozinho: o grupo já se foi e o pgid não deve ser reutilizado depois.
+    group.disarm();
 
     if cancelado {
         return Ok(CANCELLED_EXIT_CODE);
@@ -696,6 +783,48 @@ pub(super) async fn run_once_up(
 #[cfg(test)]
 mod exit_watch_tests {
     use super::*;
+
+    /// O defeito real: `podman compose` roda o plugin como neto, e matar só o filho
+    /// deixava o neto vivo. Aqui um `sh` (filho) dispara um `sleep` (neto) no mesmo grupo.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn guarda_mata_tambem_o_neto_do_compose() {
+        // Duração única = marca do neto para o `pgrep` (o `sh` do sistema não tem `exec -a`).
+        let segundos = 300_000 + (std::process::id() % 100_000);
+        let marca = format!("^sleep {segundos}$");
+        let mut command = tokio::process::Command::new("sh");
+        command
+            .args(["-c", &format!("sleep {segundos} & wait")])
+            .kill_on_drop(true)
+            .process_group(0);
+        let mut child = command.spawn().unwrap();
+        let mut group = ComposeGroupGuard::new(child.id());
+        let vivo = || {
+            std::process::Command::new("pgrep")
+                .args(["-f", &marca])
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+        };
+        for _ in 0..50 {
+            if vivo() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert!(vivo(), "o neto deveria estar rodando");
+
+        group.kill_now();
+        let _ = child.start_kill();
+        let _ = child.wait().await;
+        for _ in 0..50 {
+            if !vivo() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert!(!vivo(), "o neto sobreviveu ao fim do compose");
+    }
 
     #[test]
     fn exited_e_dead_contam_como_saida() {

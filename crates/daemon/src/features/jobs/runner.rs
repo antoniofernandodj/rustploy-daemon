@@ -331,6 +331,8 @@ pub(crate) struct PreDeployRunGuard {
     bus: Arc<EventBus>,
     job_id: String,
     run_id: String,
+    /// `<db_path>/jobs/<run_id>`, removido junto quando o deploy é abortado.
+    build_dir: Option<PathBuf>,
     armed: bool,
 }
 
@@ -341,8 +343,15 @@ impl PreDeployRunGuard {
             bus,
             job_id: job_id.to_string(),
             run_id: run_id.to_string(),
+            build_dir: None,
             armed: true,
         }
+    }
+
+    /// Diretório de build do job (`<db_path>/jobs/<run_id>`), para limpar no abort.
+    pub(crate) fn with_build_dir(mut self, db_path: &std::path::Path) -> Self {
+        self.build_dir = Some(db_path.join("jobs").join(&self.run_id));
+        self
     }
 
     pub(crate) fn disarm(&mut self) {
@@ -361,7 +370,11 @@ impl Drop for PreDeployRunGuard {
         };
         let (db, bus) = (self.db.clone(), self.bus.clone());
         let (job_id, run_id) = (self.job_id.clone(), self.run_id.clone());
-        handle.spawn(async move { close_aborted_run(&db, &bus, &job_id, &run_id).await });
+        let build_dir = self.build_dir.take();
+        handle.spawn(async move {
+            close_aborted_run(&db, &bus, &job_id, &run_id).await;
+            clean_aborted_run(&run_id, build_dir).await;
+        });
     }
 }
 
@@ -387,6 +400,16 @@ pub(crate) async fn close_aborted_run(db: &store::Db, bus: &EventBus, job_id: &s
         running: false,
         success: Some(false),
     });
+}
+
+/// O resto do que o `run_once` faria no fim e a future abortada não fez: os containers
+/// do job (o projeto compose é o run_id em minúsculas, ver `run_inner_mirrored`) e o
+/// diretório de build.
+async fn clean_aborted_run(run_id: &str, build_dir: Option<PathBuf>) {
+    engine::compose::remove_project_containers(&run_id.to_lowercase()).await;
+    if let Some(dir) = build_dir {
+        let _ = tokio::fs::remove_dir_all(dir).await;
+    }
 }
 
 #[cfg(test)]
