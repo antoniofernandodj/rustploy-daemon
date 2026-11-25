@@ -1,7 +1,7 @@
 //! **Rota**: o que o proxy faz com um domínio, fora do serviço. Um domínio servido por vários
 //! serviços (por prefixo de caminho), um domínio que só redireciona e uma senha na frente.
 //! Os domínios de dentro do serviço (`ServiceSpec.domains`) continuam valendo; um domínio não pode
-//! estar nos dois lugares. Ver `docs/plano-releases-ambientes-rotas-volumes.md` §3.
+//! estar nos dois lugares. Ver `docs/arquivo/plano-releases-ambientes-rotas-volumes.md` §3.
 
 use serde::{Deserialize, Serialize};
 

@@ -1,6 +1,6 @@
 //! Tabela `release`: o que rodou em cada deploy que chegou a Live (imagem fixada + configuração
 //! congelada). Histórico de execução, como `deployment`: **não** vai ao YAML de infra nem ao git.
-//! Ver `docs/plano-releases-ambientes-rotas-volumes.md` §1.
+//! Ver `docs/arquivo/plano-releases-ambientes-rotas-volumes.md` §1.
 
 use super::Db;
 use crate::domain::{EnvVar, Release, ReleaseImageStatus, ServiceSpec};

@@ -68,7 +68,7 @@ document.addEventListener("alpine:init", () => {
     newDomain: "",
     newDomainPort: "",
     newDomainTls: false,
-    // Portas TCP do host (docs/plano-multiplas-portas-tcp.md). Host vazio = automática.
+    // Portas TCP do host (docs/arquivo/plano-multiplas-portas-tcp.md). Host vazio = automática.
     newTcpHost: "",
     newTcpContainer: "",
     newTcpLabel: "",
@@ -105,6 +105,7 @@ document.addEventListener("alpine:init", () => {
           if (sameObject && signature === detailSignature) return;
           detailSignature = signature;
           if (this.store.serviceTab === "general") this.initGeneralForm();
+          this.loadDescription();
           this.loadConnectionUrl();
           if (this.revealedFor !== this.svc?.id) {
             this.revealedFor = this.svc?.id ?? null;
@@ -174,12 +175,12 @@ document.addEventListener("alpine:init", () => {
       else this.store.toastError(planResponse.error || t("resposta inesperada do daemon"));
       this.loadBackups(true);
     },
-    // ── Backup no S3 (docs/plano-backup-de-dados-para-s3.md, Fase 2) ────────
+    // ── Backup no S3 (docs/arquivo/plano-backup-de-dados-para-s3.md, Fase 2) ────────
     // O destino é um só por servidor (Settings → Backups). O backup e a restauração rodam em segundo
     // plano no daemon; aqui só se dispara e se acompanha `ServiceBackupList(.last_run)` a cada 3 s.
     backups: null,
     backupTimer: null,
-    // Política do backup automático (docs/plano-backup-de-dados-para-s3.md, Fase 3). O formulário só é
+    // Política do backup automático (docs/arquivo/plano-backup-de-dados-para-s3.md, Fase 3). O formulário só é
     // preenchido ao abrir a aba e depois de salvar: o repoll de 3 s não pode apagar o que se digita.
     backupForm: { enabled: false, kind: "daily", hours: 6, time: "03:00", weekday: 0, keep: 7, stop: true },
     backupFormFromPolicy(policy) {
@@ -407,7 +408,7 @@ document.addEventListener("alpine:init", () => {
     // ── Servidor de banco compartilhado (aba Databases) ────────────────────
     // Porta de handlers/services.luau (load_shared_state, mdb_*, shared_*).
     // O daemon cria database + usuário, conecta o servidor à rede do projeto
-    // e grava a env var nele — ver docs/plano-banco-compartilhado.md.
+    // e grava a env var nele — ver docs/arquivo/plano-banco-compartilhado.md.
     mdbs: [],
     sharedDatabaseProjects: [],
     sharedDatabaseUrl: "",
@@ -590,6 +591,60 @@ document.addEventListener("alpine:init", () => {
     },
     get sourceText() {
       return this.svc ? sourceSummary(this.svc.spec.source) : "—";
+    },
+
+    // ── General → Descrição (para que o serviço existe; os agentes MCP leem) ──
+    // Porta de handlers/service_description.luau. Grava só a descrição
+    // (ServiceDescriptionSet). Ver docs/arquivo/plano-descricao-do-servico.md.
+    descriptionText: "",
+    descriptionOriginal: "",
+    descriptionServiceId: "",
+    descriptionMessage: "",
+    /** Não atropela um rascunho: só troca o texto se for outro serviço ou se não há edição pendente. */
+    loadDescription() {
+      const service = this.svc;
+      if (!service) return;
+      const text = service.spec.description || "";
+      const sameService = this.descriptionServiceId === service.id;
+      const hasDraft = this.descriptionText !== this.descriptionOriginal;
+      this.descriptionOriginal = text;
+      if (!sameService || !hasDraft) {
+        this.descriptionText = text;
+        this.descriptionMessage = "";
+      }
+      this.descriptionServiceId = service.id;
+    },
+    async saveDescription() {
+      const serviceId = this.store.selectedServiceId;
+      if (!serviceId) return null;
+      const text = this.descriptionText.trim();
+      if (text === this.descriptionOriginal.trim()) {
+        this.descriptionMessage = t("nada mudou");
+        return null;
+      }
+      if (text === "" && !confirm(t("Apagar a descrição? O texto some para todos (pessoas e agentes). Não dá para desfazer, a não ser pelo histórico do git."))) {
+        return null;
+      }
+      const setResponse = await this.store.api.rpcChecked({
+        ServiceDescriptionSet: { service_id: serviceId, description: text },
+      });
+      if (setResponse.ok && setResponse.value?.Service) {
+        const saved = setResponse.value.Service.spec.description || "";
+        this.descriptionText = saved;
+        this.descriptionOriginal = saved;
+        this.descriptionMessage = t("salvo");
+        this.store.toastOk(t("Descrição salva"));
+        await this.store.fetchServiceDetail(serviceId);
+        await this.store.refreshNow();
+      } else {
+        this.descriptionMessage = t("erro: ") + setResponse.error;
+        this.store.toastError(t("erro: ") + setResponse.error);
+      }
+      return setResponse;
+    },
+    cancelDescription() {
+      this.descriptionText = this.descriptionOriginal;
+      this.descriptionMessage = "";
     },
 
     // ── General → edição de origem (Compose / Git / Zip) ────────────────
@@ -1795,7 +1850,7 @@ document.addEventListener("alpine:init", () => {
 
     // ── Fila de pré-deploy check ────────────────────────────────────────
     // Efeito imediato (como Domains), não passa pelo Save acima — cada
-    // add/remove/reorder já salva na hora. Ver docs/plano-pre-deploy-gate.md.
+    // add/remove/reorder já salva na hora. Ver docs/arquivo/plano-pre-deploy-gate.md.
 
     // Fila efetiva de ids: `pre_deploy_job_ids` quando não vazia, senão cai
     // no `pre_deploy_job_id` legado (retrocompat) — mesmo idioma de

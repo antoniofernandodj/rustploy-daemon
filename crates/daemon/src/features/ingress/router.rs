@@ -519,6 +519,7 @@ mod tests {
 
     fn spec(domains: &[&str]) -> ServiceSpec {
         ServiceSpec {
+            description: None,
             name: "app".into(),
             project_id: "prj_1".into(),
             source: ServiceSource::Registry {

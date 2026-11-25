@@ -23,7 +23,7 @@ pub async fn catalog(search: String) -> RpResponse {
 /// serviço — reaproveitando o handler `service_create`.
 ///
 /// **Banco, broker e storage novos já nascem com as credenciais em secret de serviço** (decisão da R5 do
-/// plano `docs/plano-backup-estado-em-git.md`): depois de criado, cada env de senha vira
+/// plano `docs/arquivo/plano-backup-estado-em-git.md`): depois de criado, cada env de senha vira
 /// `Secret(<chave>)` e o valor passa a viver cifrado em `ServiceInfra.secrets`. Serviços que já
 /// existem não são tocados: só mudam por ação manual.
 pub async fn create(state: AppState, req: WizardCreateReq) -> RpResponse {

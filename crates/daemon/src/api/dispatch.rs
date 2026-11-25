@@ -52,6 +52,7 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         Command::ServiceList { .. } => "ServiceList",
         Command::ServiceGet { .. } => "ServiceGet",
         Command::ServiceUpdate { .. } => "ServiceUpdate",
+        Command::ServiceDescriptionSet { .. } => "ServiceDescriptionSet",
         Command::ServiceDelete { .. } => "ServiceDelete",
         Command::ServiceVolumeAttach { .. } => "ServiceVolumeAttach",
         Command::ServiceVolumeDetach { .. } => "ServiceVolumeDetach",
@@ -341,6 +342,7 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
         | Command::ServiceConnectionInfo { .. }
         | Command::ServiceGet { .. }
         | Command::ServiceUpdate { .. }
+        | Command::ServiceDescriptionSet { .. }
         | Command::ServiceDelete { .. }
         | Command::ServiceVolumeAttach { .. }
         | Command::ServiceVolumeDetach { .. }

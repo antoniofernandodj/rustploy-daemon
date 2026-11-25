@@ -42,7 +42,7 @@ pub enum JobBuildSource<'a> {
 /// — distinto do `-1` genérico (processo morto por sinal por outro motivo),
 /// pra a UI poder rotular "Cancelado" em vez de "Falhou". Não exige mudança
 /// de schema: `job_run.exit_code` já é um inteiro livre. Ver
-/// `docs/plano-cancelamento-de-jobs.md`.
+/// `docs/arquivo/plano-cancelamento-de-jobs.md`.
 pub const CANCELLED_EXIT_CODE: i32 = -2;
 
 /// Espera até o sinal de cancelamento virar `true` (ou o sender ser

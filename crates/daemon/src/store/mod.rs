@@ -32,7 +32,7 @@ use tracing::{info, warn};
 
 /// O armazenamento do daemon: o **SQLite** (runtime: deploys, logs, status…) e o **repositório de
 /// infra** em YAML (projetos, serviços, jobs…; `store::infra`). Plano de migração:
-/// `docs/plano-backup-estado-em-git.md` (Fase 4d). `Db` faz `Deref` para o pool, então
+/// `docs/arquivo/plano-backup-estado-em-git.md` (Fase 4d). `Db` faz `Deref` para o pool, então
 /// `db.begin()` & cia. seguem valendo; para passar como executor do `sqlx` use [`Db::pool`].
 #[derive(Clone)]
 pub struct Db {
@@ -375,7 +375,7 @@ async fn migrate(pool: &SqlitePool) -> Result<()> {
         );
 
         -- Projetos autorizados a alcançar um servidor de banco compartilhado
-        -- (ver docs/plano-banco-compartilhado.md §2.3).
+        -- (ver docs/arquivo/plano-banco-compartilhado.md §2.3).
         -- Databases/usuários criados dentro de um servidor compartilhado.
         CREATE TABLE IF NOT EXISTS managed_database (
             id                   TEXT PRIMARY KEY,
@@ -437,12 +437,12 @@ async fn migrate(pool: &SqlitePool) -> Result<()> {
     .await?;
 
     // Nome da rede Docker do projeto e da stack Compose do serviço: gravados,
-    // não derivados (ver `docs/plano-nome-gravado-rede-e-stack.md`).
+    // não derivados (ver `docs/arquivo/plano-nome-gravado-rede-e-stack.md`).
     add_column_if_missing(pool, "ALTER TABLE project ADD COLUMN network_name TEXT").await?;
     add_column_if_missing(pool, "ALTER TABLE service ADD COLUMN compose_project TEXT").await?;
 
     // Releases: o que rodou em cada deploy Live, e o deploy que é um "voltar para a vN" (ver
-    // `store::releases` e `docs/plano-releases-ambientes-rotas-volumes.md` §1). Aditivo: um daemon
+    // `store::releases` e `docs/arquivo/plano-releases-ambientes-rotas-volumes.md` §1). Aditivo: um daemon
     // anterior ignora a tabela e a coluna.
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS release (
@@ -483,7 +483,7 @@ async fn migrate(pool: &SqlitePool) -> Result<()> {
     // Ambientes: a release que veio de outro ambiente (promovida) diz de onde.
     add_column_if_missing(pool, "ALTER TABLE release ADD COLUMN promoted_from TEXT").await?;
 
-    // Fase 4d do plano `docs/plano-backup-estado-em-git.md`: a config do git provider vai para o
+    // Fase 4d do plano `docs/arquivo/plano-backup-estado-em-git.md`: a config do git provider vai para o
     // YAML; os tokens de login ficam aqui (nunca vão ao git). Preenche a partir da tabela antiga.
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS git_provider_token (
@@ -558,7 +558,7 @@ async fn migrate(pool: &SqlitePool) -> Result<()> {
     .execute(pool)
     .await?;
 
-    // Fase 2 do plano `docs/plano-backup-estado-em-git.md`: o runtime do serviço (status,
+    // Fase 2 do plano `docs/arquivo/plano-backup-estado-em-git.md`: o runtime do serviço (status,
     // container live, intenção) sai da linha declarada para `service_runtime`. As colunas legadas
     // de `service` continuam existindo e sendo escritas (rollback do binário), mas a fonte da
     // verdade passa a ser esta tabela.

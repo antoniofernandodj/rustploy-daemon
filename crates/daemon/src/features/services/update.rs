@@ -33,6 +33,10 @@ pub async fn handle(state: ServicesContext, id: String, mut spec: ServiceSpec) -
     if let Some(stored) = &stored {
         clear_stale_mirror(stored, &mut spec);
     }
+    match merge_description(stored.as_ref(), spec.description.as_deref()) {
+        Ok(description) => spec.description = description,
+        Err(reason) => return RpResponse::err("InvalidInput", reason),
+    }
     // Porta externa: sentinela 0 → aloca; manual duplicada → erro.
     if let Err(e) =
         crate::features::ingress::external_ports::resolve_host_port(&state.db, &mut spec, Some(&id))
@@ -86,6 +90,19 @@ pub async fn handle(state: ServicesContext, id: String, mut spec: ServiceSpec) -
         }
         Ok(None) => RpResponse::err("NotFound", "service not found"),
         Err(e) => RpResponse::err("DatabaseError", e.to_string()),
+    }
+}
+
+/// A descrição que fica gravada depois de um `ServiceUpdate`. Ausente (`None`) **mantém** a gravada: o
+/// app desktop de antes da descrição manda o spec sem o campo, e não pode apagá-la. `""` apaga; um texto
+/// troca. Ver `docs/arquivo/plano-descricao-do-servico.md`.
+pub(crate) fn merge_description(
+    stored: Option<&ServiceSpec>,
+    incoming: Option<&str>,
+) -> Result<Option<String>, String> {
+    match incoming {
+        None => Ok(stored.and_then(|spec| spec.description.clone())),
+        Some(text) => crate::domain::normalize_description(Some(text)),
     }
 }
 
@@ -160,6 +177,27 @@ mod tests {
             })
             .collect();
         s
+    }
+
+    /// App desktop antigo (sem o campo): mantém a descrição gravada. `""` apaga; texto troca; o
+    /// limite vale também aqui.
+    #[test]
+    fn update_sem_descricao_mantem_a_gravada() {
+        let mut gravado = spec(None, &[]);
+        gravado.description = Some("Recebe os webhooks do Stripe.".into());
+        assert_eq!(
+            merge_description(Some(&gravado), None).unwrap().as_deref(),
+            Some("Recebe os webhooks do Stripe.")
+        );
+        assert_eq!(merge_description(Some(&gravado), Some("  ")).unwrap(), None);
+        assert_eq!(
+            merge_description(Some(&gravado), Some(" Outro texto \n"))
+                .unwrap()
+                .as_deref(),
+            Some("Outro texto")
+        );
+        assert!(merge_description(Some(&gravado), Some(&"x".repeat(4001))).is_err());
+        assert_eq!(merge_description(None, None).unwrap(), None);
     }
 
     /// Adicionar a porta do painel muda as rotas; trocar só o rótulo, não.

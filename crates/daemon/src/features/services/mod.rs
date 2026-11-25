@@ -3,6 +3,7 @@
 mod context;
 pub mod create;
 pub mod delete;
+pub mod description;
 pub mod links;
 pub mod update;
 pub mod volumes;

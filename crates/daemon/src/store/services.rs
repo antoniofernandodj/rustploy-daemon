@@ -1,6 +1,6 @@
 //! Serviços: o `ServiceSpec` e o nome da stack Compose moram no **YAML de infra**
 //! (`store::infra`); o **runtime** (status, container live, intenção `desired_state`) mora no
-//! SQLite, na tabela `service_runtime`. Plano: `docs/plano-backup-estado-em-git.md`, Fases 2 e 4d.
+//! SQLite, na tabela `service_runtime`. Plano: `docs/arquivo/plano-backup-estado-em-git.md`, Fases 2 e 4d.
 //!
 //! A tabela antiga `service` não é mais lida nem escrita (fica como rollback).
 
@@ -452,6 +452,7 @@ pub async fn list_all(db: &Db) -> Result<Vec<Service>> {
 #[cfg(test)]
 fn test_compose_spec(name: String, project_id: String) -> ServiceSpec {
     ServiceSpec {
+        description: None,
         name,
         project_id,
         source: ServiceSource::Compose(crate::domain::ComposeSource {
@@ -491,6 +492,7 @@ mod tests {
 
     fn spec(name: &str, project: &str) -> ServiceSpec {
         ServiceSpec {
+            description: None,
             name: name.into(),
             project_id: project.into(),
             source: ServiceSource::Registry {

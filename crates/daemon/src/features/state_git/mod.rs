@@ -1,5 +1,5 @@
 //! Sincronização do estado de infra com um repositório git (Fase 6 do plano
-//! `docs/plano-backup-estado-em-git.md`, seção R6).
+//! `docs/arquivo/plano-backup-estado-em-git.md`, seção R6).
 //!
 //! Três modos, guardados no SQL (`daemon_settings`, runtime — nunca no YAML que vai ao git):
 //! - `off` (padrão): o YAML só existe no disco;

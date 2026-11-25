@@ -1,6 +1,6 @@
 //! `rustploy-cli`: ferramentas de linha de comando que **não precisam do daemon rodando**.
 //!
-//! Hoje serve ao fluxo de segredos do plano `docs/plano-backup-estado-em-git.md` (R5/R6): dá para
+//! Hoje serve ao fluxo de segredos do plano `docs/arquivo/plano-backup-estado-em-git.md` (R5/R6): dá para
 //! editar o YAML de infra à mão (ou pelo git) numa máquina que não tem a chave privada, cifrando o
 //! valor só com a chave **pública** do servidor.
 //!

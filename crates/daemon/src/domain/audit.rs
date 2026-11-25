@@ -1,4 +1,4 @@
-//! Auditoria de valores em claro no estado de infra (plano `docs/plano-backup-estado-em-git.md`, R6).
+//! Auditoria de valores em claro no estado de infra (plano `docs/arquivo/plano-backup-estado-em-git.md`, R6).
 
 use serde::{Deserialize, Serialize};
 

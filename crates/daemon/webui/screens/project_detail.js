@@ -21,6 +21,14 @@ import {
 import { t } from "../i18n.js";
 import { envRowEditor } from "../env_rows.js";
 
+/** Primeira linha não vazia da descrição do serviço, cortada para caber no card.
+ * Porta de format/dashboard.luau::description_first_line. */
+function descriptionFirstLine(description) {
+  const line = (description || "").split("\n").map((text) => text.trim()).find((text) => text !== "") || "";
+  const chars = Array.from(line);
+  return chars.length > 90 ? chars.slice(0, 90).join("") + "…" : line;
+}
+
 /** Container "primário" de um serviço pra exibir no card: o live, senão o
  * primeiro em execução, senão o primeiro da lista. `extra` é "+N" quando há
  * mais de um container. Porta de format/dashboard.luau::primary_container. */
@@ -256,6 +264,7 @@ document.addEventListener("alpine:init", () => {
             warmReason: warmReasonText(warm?.reason),
             id: service.id,
             name: service.spec.name,
+            description: descriptionFirstLine(service.spec.description),
             port: service.spec.port,
             statusLabel: label,
             statusKind: kind,

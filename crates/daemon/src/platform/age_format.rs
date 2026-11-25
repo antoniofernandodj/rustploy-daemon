@@ -1,7 +1,7 @@
 //! O formato `ENC[age:<base64>]` dos segredos, **sem nenhuma dependência do daemon** (nada de banco,
 //! config ou log): é compartilhado com o `rustploy-cli` (`src/bin/rustploy-cli.rs`, via `#[path]`),
 //! para que o que o CLI cifra seja exatamente o que o daemon decifra. Plano:
-//! `docs/plano-backup-estado-em-git.md`, R5/R6.
+//! `docs/arquivo/plano-backup-estado-em-git.md`, R5/R6.
 
 use age::{Decryptor, Recipient, x25519};
 use anyhow::{Context, Result, anyhow, bail};

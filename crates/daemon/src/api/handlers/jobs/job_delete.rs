@@ -11,7 +11,7 @@ pub async fn handle(state: AppState, id: String) -> RpResponse {
             // Cascade: qualquer serviço que referenciava este job como
             // pré-deploy check fica com uma referência órfã — sem isso o
             // próximo deploy falha em PreDeployCheck com "job não
-            // encontrado" (ver docs/plano-pre-deploy-gate.md).
+            // encontrado" (ver docs/arquivo/plano-pre-deploy-gate.md).
             if let Err(e) = crate::store::services::clear_pre_deploy_job(&state.db, &id).await {
                 warn!(job_id = %id, error = %e, "job_delete: falha ao limpar pre_deploy_job_id órfão em serviços");
             }

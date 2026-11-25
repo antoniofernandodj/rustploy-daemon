@@ -1,5 +1,5 @@
 //! Sincronização do estado de infra com um repositório git (plano
-//! `docs/plano-backup-estado-em-git.md`, R6).
+//! `docs/arquivo/plano-backup-estado-em-git.md`, R6).
 
 use serde::{Deserialize, Serialize};
 

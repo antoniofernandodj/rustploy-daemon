@@ -1,6 +1,6 @@
 //! Releases no executor: gravar a release quando o deploy chega a Live e, num deploy que é um
 //! "voltar para a vN", preparar a imagem daquela release no lugar do build.
-//! Ver `docs/plano-releases-ambientes-rotas-volumes.md` §1.
+//! Ver `docs/arquivo/plano-releases-ambientes-rotas-volumes.md` §1.
 
 use super::*;
 use crate::domain::{ServiceSource, image_ref_is_pullable, pick_image_ref, split_repository_tag};

@@ -1,7 +1,7 @@
 //! Montar e desmontar volumes de um serviço Application (`ServiceVolumeAttach`/`Detach`): o jeito de
 //! "adotar" um volume órfão (os dados de um serviço apagado) ou dar um volume nomeado novo a um
 //! serviço, sem mandar o spec inteiro. Vale no próximo deploy. Ver
-//! `docs/plano-releases-ambientes-rotas-volumes.md` §4.6.
+//! `docs/arquivo/plano-releases-ambientes-rotas-volumes.md` §4.6.
 
 use crate::domain::{Service, ServiceSource, VolumeMount, is_named_volume, validate_volume_mount};
 use crate::engine::DockerClient;

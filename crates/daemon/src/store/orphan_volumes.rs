@@ -1,7 +1,7 @@
 //! Tabela `orphan_volume`: os volumes que ficaram para trás quando um serviço foi apagado sem
 //! "apagar também os volumes", e de quem eram. É o que deixa a tela de volumes dizer "órfão do
 //! serviço `db` do projeto `loja`" em vez de um nome solto. Ver
-//! `docs/plano-releases-ambientes-rotas-volumes.md` §4.
+//! `docs/arquivo/plano-releases-ambientes-rotas-volumes.md` §4.
 
 use super::Db;
 use anyhow::Result;

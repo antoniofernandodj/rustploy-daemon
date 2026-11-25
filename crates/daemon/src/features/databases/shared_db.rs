@@ -5,7 +5,7 @@
 //! host). SQL/JS e senhas viajam por **stdin**, nunca na linha de comando do
 //! `docker` (que o `ps` do host mostraria). As credenciais de administrador
 //! vêm das env vars do próprio container (as mesmas que o wizard grava).
-//! Ver `docs/plano-banco-compartilhado.md` §4.2–4.3.
+//! Ver `docs/arquivo/plano-banco-compartilhado.md` §4.2–4.3.
 
 use anyhow::{Result, anyhow, bail};
 use std::process::Stdio;

@@ -3,7 +3,7 @@
 //! **Formato atual:** `ENC[age:<base64>]` — um arquivo `age` cifrado para a **identidade X25519**
 //! do servidor (`[secrets] age_identity` no `config.toml` ou o arquivo `age_key_path`) e, se houver, também para a
 //! `recovery_recipient` (chave pública guardada fora do servidor). Plano:
-//! `docs/plano-backup-estado-em-git.md`, R5.
+//! `docs/arquivo/plano-backup-estado-em-git.md`, R5.
 
 use age::{secrecy::ExposeSecret, x25519};
 use anyhow::{Context, Result, anyhow, bail};
@@ -203,7 +203,7 @@ impl SecretsManager {
         }
     }
 
-    // ── recuperação de um servidor (docs/plano-backup-de-dados-para-s3.md, Fase 4) ──
+    // ── recuperação de um servidor (docs/arquivo/plano-backup-de-dados-para-s3.md, Fase 4) ──
 
     /// Começa uma recuperação: guarda a identidade **privada** de recuperação só na memória (para abrir
     /// o que foi cifrado para o servidor antigo) e passa a cifrar também para a chave **pública** dela,
@@ -225,7 +225,7 @@ impl SecretsManager {
         Ok(public.to_string())
     }
 
-    /// **Gera** a chave de recuperação (`docs/plano-chave-de-recuperacao.md`): grava só a pública em
+    /// **Gera** a chave de recuperação (`docs/arquivo/plano-chave-de-recuperacao.md`): grava só a pública em
     /// `[secrets] recovery_recipient` e devolve `(pública, privada)`. A privada **não** é guardada
     /// (nem em disco, nem na memória): quem chama a entrega à pessoa na hora. Havendo chave, recusa,
     /// a não ser com `replace`. Sem `config.toml` não há onde gravar a pública — recusa também, senão
@@ -275,7 +275,7 @@ impl SecretsManager {
 
     // Os secrets (já cifrados) moram no YAML de infra: os de projeto em `ProjectInfra.secrets`, os de
     // serviço em `ServiceInfra.secrets`. A tabela antiga `secret` não é mais lida nem escrita.
-    // Plano: `docs/plano-backup-estado-em-git.md`, Fases 4d e 5.
+    // Plano: `docs/arquivo/plano-backup-estado-em-git.md`, Fases 4d e 5.
 
     /// Secret do **projeto**.
     pub async fn get_raw(&self, project_id: &str, name: &str) -> Result<String> {

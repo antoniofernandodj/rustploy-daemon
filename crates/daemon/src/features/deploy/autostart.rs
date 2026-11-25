@@ -6,7 +6,7 @@
 //!   continua parado;
 //! - **"Subir projeto/tudo"** (Fase 8): sobe os de `autostart = true` ignorando o `desired_state`.
 //!
-//! Regras (plano `docs/plano-backup-estado-em-git.md`, R8):
+//! Regras (plano `docs/arquivo/plano-backup-estado-em-git.md`, R8):
 //! - ondas: quem não depende de ninguém sobe primeiro, **em paralelo**; a onda seguinte só começa
 //!   quando a anterior terminou;
 //! - "pronto" = healthcheck do serviço passou (sem healthcheck: a porta responde por TCP; sem porta:
@@ -480,6 +480,7 @@ mod tests {
         Service {
             id: id.into(),
             spec: ServiceSpec {
+                description: None,
                 name: format!("nome-{id}"),
                 project_id: project.into(),
                 source: ServiceSource::Registry { image: "x".into() },

@@ -1,6 +1,6 @@
 //! Validação de `<name>`, `<reference>` (tag) e `<digest>` da OCI Distribution
 //! Spec — implementada como scanner manual (sem a crate `regex`) porque a
-//! gramática é regular e pequena. Ver `docs/plano-registry-embutido.md`.
+//! gramática é regular e pequena. Ver `docs/arquivo/plano-registry-embutido.md`.
 //!
 //! Gramática de `<name>` (distribution/reference/regexp.go):
 //!   alphanumeric := [a-z0-9]+

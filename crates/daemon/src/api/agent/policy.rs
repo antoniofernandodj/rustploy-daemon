@@ -1,4 +1,4 @@
-//! Níveis da chave de **visitante** (docs/plano-limites-do-agente-mcp.md, itens 0 e D).
+//! Níveis da chave de **visitante** (docs/arquivo/plano-limites-do-agente-mcp.md, itens 0 e D).
 //!
 //! Com uma chave **mestra** configurada (`[api].master_token`), a chave atual (`[api].token`) vira a de
 //! visitante: ela passa por estas regras em **qualquer rota** (`/mcp` e `/api/rpc`), e o `visitor_level`
@@ -169,6 +169,7 @@ pub fn required_level(cmd: &Command) -> Level {
         | Command::GetWebhookUrl { .. }
         | Command::IngressReconcile { .. }
         | Command::ServiceUpdate { .. }
+        | Command::ServiceDescriptionSet { .. }
         | Command::StateGitSyncNow
         | Command::StateGitResume
         | Command::StateGitDismissRemoval { .. }

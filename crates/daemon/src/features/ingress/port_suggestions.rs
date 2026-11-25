@@ -1,5 +1,5 @@
 //! Sugestões de porta do container para as portas TCP de um serviço (`Command::ServicePortSuggestions`).
-//! Plano: `docs/plano-multiplas-portas-tcp.md`, Fase 3.
+//! Plano: `docs/arquivo/plano-multiplas-portas-tcp.md`, Fase 3.
 //!
 //! Ler só o compose não basta (o do RustFS não declara `ports:`, só `RUSTFS_CONSOLE_ADDRESS`), então
 //! quatro fontes são juntadas:

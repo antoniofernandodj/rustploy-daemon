@@ -1,6 +1,6 @@
 //! `Command::EnvironmentCreate`, `EnvironmentList`, `EnvironmentCompare`, `EnvironmentPromote` e
 //! `EnvironmentDestroy`.
-//! Ver `docs/plano-releases-ambientes-rotas-volumes.md` §2.
+//! Ver `docs/arquivo/plano-releases-ambientes-rotas-volumes.md` §2.
 
 use crate::bootstrap::state::AppState;
 use crate::domain::{ServiceSource, ServiceStatus};

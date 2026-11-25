@@ -65,7 +65,7 @@ pub struct RustployConfig {
 }
 
 /// `[logs]`: persistência do log de runtime dos containers (`platform::log_store`). Plano:
-/// `docs/plano-log-de-runtime-persistido.md`. Todos os campos têm padrão.
+/// `docs/arquivo/plano-log-de-runtime-persistido.md`. Todos os campos têm padrão.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogsConfig {
     /// Liga a gravação. Desligada, o log segue só ao vivo (como antes).
@@ -125,7 +125,7 @@ impl Default for StateGitConfig {
 }
 
 /// Verificação de versão nova (`Command::CheckUpdate`). Só consulta; instalar é
-/// outra etapa (ver `docs/plano-updaters-daemon-e-gui.md`).
+/// outra etapa (ver `docs/arquivo/plano-updaters-daemon-e-gui.md`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateConfig {
     /// `false`: o daemon nem consulta o GitHub (VPS sem saída para a internet).
@@ -225,7 +225,7 @@ pub struct ApiConfig {
     /// Chave **mestra** (opcional). Enquanto ausente, `token` vale para tudo, como sempre. **Com ela**, o
     /// `token` vira a chave de **visitante** (a que se entrega a um agente) e passa por
     /// `visitor_level` em qualquer rota; só a mestra tem acesso total. Gerar e gravar:
-    /// `rustployd access-key --master`. Ver `docs/plano-limites-do-agente-mcp.md`.
+    /// `rustployd access-key --master`. Ver `docs/arquivo/plano-limites-do-agente-mcp.md`.
     #[serde(default)]
     pub master_token: Option<String>,
     /// Até onde vai a chave de visitante quando há uma mestra: `observer` (só lê), `operator` (opera o que
@@ -283,7 +283,7 @@ impl ApiConfig {
     /// URL pública desta API, sem barra final — a base das URLs de webhook
     /// (`{base}/webhook/{service_id}/{token}`) e do callback OAuth
     /// (`{base}/oauth/gitea/callback`), que são servidos pelo **mesmo** listener
-    /// da API desde a unificação (ver `docs/plano-unificacao-webhook-api.md`).
+    /// da API desde a unificação (ver `docs/arquivo/plano-unificacao-webhook-api.md`).
     ///
     /// Com `domain` definido o listener termina TLS na própria porta, então o
     /// esquema é `https` e a porta só aparece quando não é a 443. Sem domínio,

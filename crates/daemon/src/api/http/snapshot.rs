@@ -14,7 +14,7 @@
 //!   só as seções que mudaram (`kind:"snapshot_patch"`); sem o parâmetro (clientes antigos) segue
 //!   recebendo o snapshot inteiro a cada mudança, como sempre.
 //!
-//! Plano: `docs/estudo-consumo-de-ram.md`, R-1.
+//! Plano: `docs/arquivo/estudo-consumo-de-ram.md`, R-1.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};

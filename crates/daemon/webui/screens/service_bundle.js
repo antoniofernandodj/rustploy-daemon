@@ -1,6 +1,6 @@
 import { t } from "../i18n.js";
 // screens/service_bundle.js — copiar um serviço entre servidores
-// (docs/plano-copiar-servico-entre-servidores.md).
+// (docs/arquivo/plano-copiar-servico-entre-servidores.md).
 //
 //   • `serviceExport` — a janela "Exportar serviço" (aberta pelo botão da tela
 //     do serviço): checkboxes das variáveis do PROJETO que o app talvez use,

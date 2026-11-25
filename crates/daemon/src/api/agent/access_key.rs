@@ -11,7 +11,7 @@
 //!
 //! Isto **esconde** o endereço, não o criptografa: quem tem o token de conexão
 //! tem o token da API, que é o segredo de verdade. Ver
-//! docs/plano-chave-de-acesso-e-mcp.md.
+//! docs/arquivo/plano-chave-de-acesso-e-mcp.md.
 
 use base64::Engine;
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};

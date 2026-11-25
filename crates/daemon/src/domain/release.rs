@@ -1,7 +1,7 @@
 //! **Release**: o que rodou num deploy que chegou a Live — a imagem fixada e a configuração
 //! congelada daquele momento. É o que torna o rollback de verdade possível (voltar código e
 //! configuração juntos) e o que responde "o que mudou entre a v11 e a v12?".
-//! Ver `docs/plano-releases-ambientes-rotas-volumes.md` §1.
+//! Ver `docs/arquivo/plano-releases-ambientes-rotas-volumes.md` §1.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -131,9 +131,9 @@ fn flatten(prefix: &str, value: &serde_json::Value, out: &mut BTreeMap<String, S
     }
 }
 
-/// Campos do spec que não entram no diff: as variáveis (comparadas uma a uma, à parte) e os
-/// comentários do editor `.env` (não mudam o que roda).
-const SPEC_FIELDS_COMPARED_APART: [&str; 2] = ["env_vars", "env_comments"];
+/// Campos do spec que não entram no diff: as variáveis (comparadas uma a uma, à parte), os
+/// comentários do editor `.env` e a descrição do serviço (não mudam o que roda).
+const SPEC_FIELDS_COMPARED_APART: [&str; 3] = ["env_vars", "env_comments", "description"];
 
 fn spec_fields(spec: &ServiceSpec) -> BTreeMap<String, String> {
     let mut out = BTreeMap::new();
@@ -283,6 +283,7 @@ mod tests {
 
     fn spec_with(replicas: u32, env: Vec<EnvVar>) -> ServiceSpec {
         ServiceSpec {
+            description: None,
             name: "api".into(),
             project_id: "prj_1".into(),
             source: ServiceSource::Registry {
@@ -318,6 +319,20 @@ mod tests {
             key: key.to_string(),
             value: EnvVarValue::Plain(value.to_string()),
         }
+    }
+
+    /// A descrição não muda o que roda: fora do diff (e da comparação de ambientes, que usa o mesmo).
+    #[test]
+    fn diff_ignora_a_descricao() {
+        let old_spec = spec_with(1, vec![]);
+        let mut new_spec = spec_with(1, vec![]);
+        new_spec.description = Some("Agora com descrição.".into());
+        let side = |spec| ReleaseSide {
+            image_ref: None,
+            spec,
+            project_env: &[],
+        };
+        assert!(diff_releases(&side(&old_spec), &side(&new_spec)).is_empty());
     }
 
     #[test]

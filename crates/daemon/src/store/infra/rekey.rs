@@ -1,5 +1,5 @@
 //! Recifra **tudo** o que está cifrado (`ENC[age:…]`) na infra para a identidade deste servidor e a chave
-//! pública de recuperação. É o passo da recuperação de um servidor (`docs/plano-backup-de-dados-para-s3.md`,
+//! pública de recuperação. É o passo da recuperação de um servidor (`docs/arquivo/plano-backup-de-dados-para-s3.md`,
 //! Fase 4): o estado veio do git cifrado para o servidor antigo (+ a chave de recuperação); depois de
 //! recifrado, o servidor novo o abre sozinho e a chave privada de recuperação pode ser descartada.
 //!

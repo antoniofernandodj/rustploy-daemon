@@ -1,4 +1,4 @@
-//! **Recuperar este servidor** (`docs/plano-backup-de-dados-para-s3.md`, Fase 4): num servidor limpo, traz a
+//! **Recuperar este servidor** (`docs/arquivo/plano-backup-de-dados-para-s3.md`, Fase 4): num servidor limpo, traz a
 //! infra do git, recifra os segredos para este servidor e restaura os dados do S3, subindo cada serviço na
 //! ordem das dependências.
 //!

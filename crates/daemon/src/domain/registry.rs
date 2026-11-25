@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 /// Um repositório do registry embutido, para a lista da sub-aba Registry.
 /// `size_bytes` é a soma dos manifests do repo (aproximação — blobs podem ser
-/// compartilhados entre repos via dedupe, ver `docs/plano-registry-embutido.md`).
+/// compartilhados entre repos via dedupe, ver `docs/arquivo/plano-registry-embutido.md`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RegistryRepoInfo {
     pub name: String,

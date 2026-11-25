@@ -1,5 +1,5 @@
 //! A política de backup automático de cada serviço e a conta de "está na hora?"
-//! (`docs/plano-backup-de-dados-para-s3.md`, Fase 3). Mora no YAML do serviço (`ServiceInfra.backup`) e,
+//! (`docs/arquivo/plano-backup-de-dados-para-s3.md`, Fase 3). Mora no YAML do serviço (`ServiceInfra.backup`) e,
 //! portanto, vai para o git: depois de restaurar um servidor, os agendamentos continuam.
 
 use crate::domain::BackupPolicy;

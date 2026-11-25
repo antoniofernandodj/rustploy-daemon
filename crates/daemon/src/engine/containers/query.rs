@@ -377,7 +377,7 @@ pub async fn name_owner(docker: &Docker, name: &str) -> Result<Option<(String, O
 /// Achar "o live deste serviço" só pelo nome faz o deploy de um parar e
 /// remover o container do outro. Toda busca por `replica_live_name` /
 /// `replica_staging_name` passa por aqui. Ver
-/// `docs/plano-colisao-nome-container.md`.
+/// `docs/arquivo/plano-colisao-nome-container.md`.
 pub async fn find_owned_by_name(
     docker: &Docker,
     name: &str,

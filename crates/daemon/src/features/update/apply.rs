@@ -531,7 +531,7 @@ fn prepare_updates_dir(directory: &Path) -> std::io::Result<()> {
 /// Cópia consistente do banco **em uso** (`VACUUM INTO`), antes de a versão nova poder migrar o
 /// esquema: voltar o binário antigo só serve se houver um banco do tempo dele. Ao lado do `.db`
 /// vai uma pasta `.infra/` com o estado de infra em YAML (projetos, serviços, jobs…), que desde a
-/// Fase 4d do plano `docs/plano-backup-estado-em-git.md` **não está mais no SQLite**: restaurar só
+/// Fase 4d do plano `docs/arquivo/plano-backup-estado-em-git.md` **não está mais no SQLite**: restaurar só
 /// o `.db` perderia as edições de infra feitas depois. Mantém os mais recentes (o par conta como um).
 pub async fn snapshot_database(db: &Db, directory: &Path, tag: &str) -> Result<PathBuf, String> {
     std::fs::create_dir_all(directory).map_err(|error| error.to_string())?;

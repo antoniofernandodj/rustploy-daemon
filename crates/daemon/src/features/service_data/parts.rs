@@ -146,7 +146,7 @@ pub async fn resolve(docker: &crate::engine::DockerClient, svc: &Service) -> Res
 
 /// Os **volumes nomeados** do serviço (os da stack Compose e os que o spec monta por nome), sem
 /// pastas do servidor. É o que fica para trás quando o serviço é apagado. Ver
-/// `docs/plano-releases-ambientes-rotas-volumes.md` §4.
+/// `docs/arquivo/plano-releases-ambientes-rotas-volumes.md` §4.
 ///
 /// **Sem** os volumes externos do Compose (`external: true`): esses são emprestados, a stack só os usa
 /// (ver [`borrowed_volumes`]). Antes eles entravam aqui pelo que os containers montam, e "apagar os

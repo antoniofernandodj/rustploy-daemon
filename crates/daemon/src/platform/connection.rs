@@ -2,7 +2,7 @@
 //!
 //! Antes havia uma cópia em Luau (GUI) e outra em JS (webui), e nenhuma servia
 //! como `DATABASE_URL` (Postgres saía como JDBC, o host era um palpite). Ver
-//! `docs/plano-banco-compartilhado.md` §3.
+//! `docs/arquivo/plano-banco-compartilhado.md` §3.
 
 #![allow(dead_code)] // API de quando o módulo vivia no `shared`; parte dela só os testes usam.
 

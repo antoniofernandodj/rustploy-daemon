@@ -152,7 +152,7 @@ fn default_cleanup_retention_hours() -> u32 {
 
 /// Configuração de limpeza automática de recursos Docker não usados
 /// (containers parados, imagens, volumes, redes, cache de build) — ver
-/// `docs/plano-limpeza-automatica-docker.md`. É uma configuração singleton
+/// `docs/arquivo/plano-limpeza-automatica-docker.md`. É uma configuração singleton
 /// do daemon (não uma lista de itens), guardada como um único JSON em
 /// `daemon_settings` (`KEY_DOCKER_CLEANUP_CONFIG`) — sem tabela própria.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

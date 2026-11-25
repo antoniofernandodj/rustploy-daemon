@@ -1,6 +1,6 @@
 //! Releases fora do executor: a lista com o estado de cada uma (é a atual? a imagem ainda existe?)
 //! e o diff. O "voltar" mora em `api/handlers/deploys/releases.rs`, que junta a gravação do spec
-//! (serviços) com o deploy (este motor). Ver `docs/plano-releases-ambientes-rotas-volumes.md` §1.
+//! (serviços) com o deploy (este motor). Ver `docs/arquivo/plano-releases-ambientes-rotas-volumes.md` §1.
 
 use crate::domain::{
     DeployState, Release, ReleaseDiff, ReleaseImageStatus, ReleaseSide, ServiceSource,

@@ -19,4 +19,4 @@ pub use query::*;
 // container de um serviço — isso é por label (`find_live_replicas`, e
 // `find_owned_by_name` para staging). O legado só é montado para achar o
 // staging de um deploy que estava em andamento quando o daemon foi atualizado.
-// Ver `docs/plano-colisao-nome-container.md`.
+// Ver `docs/arquivo/plano-colisao-nome-container.md`.

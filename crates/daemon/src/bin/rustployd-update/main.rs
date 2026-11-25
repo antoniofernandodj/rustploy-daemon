@@ -12,7 +12,7 @@
 //! - nenhuma string do cliente chega a um shell (argv direto, sem `sh -c`).
 //!
 //! Atende **um** pedido por ativação e sai: o systemd o sobe de novo no próximo.
-//! Desenho e motivos: `docs/plano-updaters-daemon-e-gui.md`, seção 4.
+//! Desenho e motivos: `docs/arquivo/plano-updaters-daemon-e-gui.md`, seção 4.
 
 mod protocol;
 

@@ -1,7 +1,7 @@
 //! Basic auth do registry OCI embutido — checada em TODA rota (inclusive
 //! `GET /v2/`), sem bypass mesmo em loopback: o listener em 127.0.0.1 é
 //! alcançável por qualquer processo/usuário do host, então não há origem
-//! confiável por construção. Ver `docs/plano-registry-embutido.md`.
+//! confiável por construção. Ver `docs/arquivo/plano-registry-embutido.md`.
 
 use base64::Engine;
 use hyper::Request;

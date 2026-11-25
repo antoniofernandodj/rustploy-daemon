@@ -977,7 +977,7 @@ export default {
   "Gerar chave de recuperação": "Generate recovery key",
   "baixado pelo navegador: {0}": "downloaded by the browser: {0}",
   "Gere a chave na aba Chave de recuperação.": "Generate the key in the Recovery key tab.",
-  // Portas TCP do host (docs/plano-multiplas-portas-tcp.md)
+  // Portas TCP do host (docs/arquivo/plano-multiplas-portas-tcp.md)
   "PORTAS TCP DO HOST (": "HOST TCP PORTS (",
   "Cada porta do host leva a uma porta do container, sem HTTP (ex.: a API e o console de um storage).": "Each host port leads to a container port, without HTTP (e.g. a storage's API and its console).",
   "Nenhuma porta TCP configurada.": "No TCP port configured.",
@@ -1281,4 +1281,12 @@ export default {
   "Destruir ambiente": "Destroy environment",
   "Destruir": "Destroy",
   "Levar a {0} de {1} para {2}?": "Carry {0} of {1} to {2}?",
+  "DESCRIÇÃO": "DESCRIPTION",
+  "Para que este serviço existe, o que faz, do que depende. Os agentes de IA (MCP) leem este texto. Não ponha senhas: ele vai para o git.": "What this service is for, what it does, what it depends on. AI agents (MCP) read this text. No passwords: it goes to git.",
+  "ex.: Processa a fila de e-mails. Se cair, os e-mails esperam no broker; nada se perde.": "e.g. Processes the email queue. If it goes down, emails wait in the broker; nothing is lost.",
+  "Salvar descrição": "Save description",
+  "nada mudou": "nothing changed",
+  "Apagar a descrição? O texto some para todos (pessoas e agentes). Não dá para desfazer, a não ser pelo histórico do git.": "Delete the description? The text disappears for everyone (people and agents). It can't be undone, except through the git history.",
+  "Descrição salva": "Description saved",
+  "erro: ": "error: ",
 };

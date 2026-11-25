@@ -1,5 +1,5 @@
 //! `Command::ServiceImport`: cria UM serviço novo a partir de um
-//! [`crate::features::iac::service_bundle::ServiceBundle`] (ver `docs/plano-copiar-servico-entre-servidores.md`).
+//! [`crate::features::iac::service_bundle::ServiceBundle`] (ver `docs/arquivo/plano-copiar-servico-entre-servidores.md`).
 //!
 //! O destino é sempre um projeto que JÁ existe (aquele em que o usuário está
 //! com a tela aberta): importar é criar um serviço dentro dele, como qualquer
@@ -577,6 +577,7 @@ mod e2e {
 
     fn spec(project_id: &str) -> ServiceSpec {
         ServiceSpec {
+            description: None,
             name: "api".into(),
             project_id: project_id.into(),
             source: ServiceSource::Registry {

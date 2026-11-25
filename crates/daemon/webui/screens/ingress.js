@@ -2,7 +2,7 @@
 // domínio) e portas TCP de host expostas diretamente. Porta da seção
 // `equals="ingress"` de home.gv. Também as **rotas próprias** (domínio fora do
 // serviço: caminhos para vários serviços, redirect, senha) e o editor delas —
-// ver docs/plano-releases-ambientes-rotas-volumes.md §3.
+// ver docs/arquivo/plano-releases-ambientes-rotas-volumes.md §3.
 import { servicePairList, ingressRows, hostPortRows } from "../format.js";
 import { t } from "../i18n.js";
 

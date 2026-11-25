@@ -40,6 +40,7 @@ mod ingress_tests {
 
     fn spec_com(domains: Vec<DomainRoute>, port: u16, host_port: Option<u16>) -> ServiceSpec {
         ServiceSpec {
+            description: None,
             name: "svc".into(),
             project_id: "prj".into(),
             source: ServiceSource::Compose(ComposeSource {

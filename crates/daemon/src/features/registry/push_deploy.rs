@@ -1,7 +1,7 @@
 //! Push-to-deploy: cada tag publicada no registry embutido redeploya os serviços que apontam para
 //! ela e pediram isso (`ServiceSpec.registry_auto_deploy`). Fluxo de CI resultante:
 //! `docker login` (token push) → `docker build` → `docker push` → o rustploy redeploya sozinho,
-//! sem webhook HTTP nem Git no servidor. Ver `docs/plano-registry-embutido.md` (Fase 4).
+//! sem webhook HTTP nem Git no servidor. Ver `docs/arquivo/plano-registry-embutido.md` (Fase 4).
 
 use super::storage::PushedTag;
 use crate::bootstrap::state::AppState;

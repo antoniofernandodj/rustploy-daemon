@@ -5,7 +5,7 @@ use crate::bootstrap::state::AppState;
 use crate::protocol::Response as RpResponse;
 
 /// Sinaliza cancelamento pro `job_run` em `state.active_jobs` (ver
-/// `docs/plano-cancelamento-de-jobs.md`) — quem observa o sinal e mata o
+/// `docs/arquivo/plano-cancelamento-de-jobs.md`) — quem observa o sinal e mata o
 /// processo `docker compose up` de verdade é `docker::compose::run_once_up`.
 /// Não remove a entrada do mapa: quem faz isso é a própria task ao terminar
 /// (normalmente ou por cancelamento), como já acontece em `active_deploys`.

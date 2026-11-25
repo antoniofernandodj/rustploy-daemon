@@ -2,7 +2,7 @@
 //!
 //! Lógica pura (sem banco nem Docker), para ser testada à vontade. Quem usa:
 //! a validação em `features/services/{create,update,delete}.rs` e o orquestrador de subida
-//! (`autostart.rs`). Plano: `docs/plano-backup-estado-em-git.md`, R8.
+//! (`autostart.rs`). Plano: `docs/arquivo/plano-backup-estado-em-git.md`, R8.
 
 use std::collections::{BTreeMap, BTreeSet};
 

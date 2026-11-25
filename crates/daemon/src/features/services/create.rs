@@ -7,6 +7,10 @@ use crate::protocol::Response as RpResponse;
 use tracing::info;
 
 pub async fn handle(state: ServicesContext, mut spec: ServiceSpec) -> RpResponse {
+    match crate::domain::normalize_description(spec.description.as_deref()) {
+        Ok(description) => spec.description = description,
+        Err(reason) => return RpResponse::err("InvalidInput", reason),
+    }
     if let Some(reason) = crate::platform::env_validation::validate(&spec.env_vars) {
         return RpResponse::err("InvalidInput", reason);
     }

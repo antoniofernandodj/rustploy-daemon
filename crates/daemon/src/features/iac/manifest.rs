@@ -11,6 +11,9 @@ use std::collections::BTreeMap;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct ServiceManifest {
     pub name: String,
+    /// A descrição do serviço (ver `ServiceSpec::description`). Viaja no "Exportar serviço".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
     pub source: SourceManifest,
     #[serde(default)]
     pub port: u16,
@@ -141,6 +144,7 @@ impl ServiceManifest {
     ) -> ServiceSpec {
         ServiceSpec {
             name: self.name.clone(),
+            description: self.description.clone(),
             project_id: project_id.to_string(),
             source: self.source.to_source(provider_ids),
             port: self.port,
@@ -186,6 +190,7 @@ impl ServiceManifest {
         let spec = &svc.spec;
         ServiceManifest {
             name: spec.name.clone(),
+            description: spec.description.clone(),
             source: SourceManifest::from_source(&spec.source, providers),
             port: spec.port,
             host_port: spec.host_port,

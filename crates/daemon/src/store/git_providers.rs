@@ -51,7 +51,7 @@ impl StoredProvider {
 
 // A **configuração** do provider mora no YAML de infra (`providers.yml`); os **tokens de login**
 // (`access_token_enc`/`refresh_token_enc`) ficam só no SQL, na tabela `git_provider_token`, e nunca
-// vão ao git (plano `docs/plano-backup-estado-em-git.md`, R9.0 item 1). A tabela antiga
+// vão ao git (plano `docs/arquivo/plano-backup-estado-em-git.md`, R9.0 item 1). A tabela antiga
 // `git_provider` não é mais lida nem escrita (fica como rollback).
 
 use crate::store::infra::model::ProviderInfra;

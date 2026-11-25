@@ -1,6 +1,6 @@
 //! Redação de segredos nas respostas que vão para o **agente** (MCP/`rpc`).
 //!
-//! Regra do dono (docs/plano-credenciais-cifradas-e-storage.md, Fase A): o agente nunca recebe o
+//! Regra do dono (docs/arquivo/plano-credenciais-cifradas-e-storage.md, Fase A): o agente nunca recebe o
 //! valor de um secret nem a senha de um serviço. A GUI/webui não passam por aqui — só o que sai de
 //! `api::agent::tools`.
 //!

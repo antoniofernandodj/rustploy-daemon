@@ -1,7 +1,7 @@
 // screens/volumes.js — tela "Volumes": os volumes que guardam dados, com quem
 // monta cada um (serviço e caminho; emprestado = externo num Compose), dono,
 // órfão e backup; adotar num serviço Application e apagar. Porta de
-// handlers/volumes.luau. Ver docs/plano-volumes-tela-e-emprestados.md.
+// handlers/volumes.luau. Ver docs/arquivo/plano-volumes-tela-e-emprestados.md.
 import { formatBytes } from "../format.js";
 import { t } from "../i18n.js";
 

@@ -112,6 +112,7 @@ mod pre_deploy_check_tests {
 
     pub(super) fn spec(pre_deploy_job_ids: Vec<String>) -> ServiceSpec {
         ServiceSpec {
+            description: None,
             name: format!("svc-{}", Ulid::new()),
             project_id: "proj-1".into(),
             source: ServiceSource::Registry {
@@ -218,7 +219,7 @@ mod pre_deploy_check_tests {
 /// (a) virar linha(s) de `build_log` — o único canal que a tela de log lê — e
 /// (b) existir de verdade para o caso do Dockerfile ausente numa fonte `Git`,
 /// que antes só o ramo `Archive` checava. Ver
-/// `docs/plano-erro-de-deploy-invisivel.md`.
+/// `docs/arquivo/plano-erro-de-deploy-invisivel.md`.
 #[cfg(test)]
 mod failure_log_tests {
     use super::pre_deploy_check_tests::{spec, test_executor};

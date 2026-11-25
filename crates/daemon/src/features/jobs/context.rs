@@ -18,7 +18,7 @@ use std::{
 /// (e os containers que ele sobe) órfãos. O sinal aqui é observado dentro de
 /// `docker::compose::run_once_up`, que mata o processo de verdade
 /// (`Child::kill`) antes de retornar — o `down()` de sempre cuida de
-/// desmontar containers/rede depois. Ver `docs/plano-cancelamento-de-jobs.md`.
+/// desmontar containers/rede depois. Ver `docs/arquivo/plano-cancelamento-de-jobs.md`.
 pub type ActiveJobs = Arc<Mutex<HashMap<String, tokio::sync::watch::Sender<bool>>>>;
 
 #[derive(Clone)]

@@ -1,4 +1,4 @@
-//! O **estado de infra tipado** (Fase 4 do plano `docs/plano-backup-estado-em-git.md`, R2/R3) e
+//! O **estado de infra tipado** (Fase 4 do plano `docs/arquivo/plano-backup-estado-em-git.md`, R2/R3) e
 //! como ele vira arquivos YAML e volta.
 //!
 //! Layout no disco (um arquivo pequeno por assunto → diffs pequenos no git):
@@ -85,7 +85,7 @@ pub struct ProjectInfra {
     pub env_vars: Vec<EnvVar>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub env_comments: Vec<EnvComment>,
-    /// Nome da rede Docker, gravado na criação (`docs/plano-nome-gravado-rede-e-stack.md`).
+    /// Nome da rede Docker, gravado na criação (`docs/arquivo/plano-nome-gravado-rede-e-stack.md`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub network_name: Option<String>,
     pub created_at: DateTime<Utc>,
@@ -105,10 +105,10 @@ pub struct ProjectInfra {
     /// de criação. Ids de serviços que não existem mais são podados em `normalize`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub service_order: Vec<String>,
-    /// Este projeto é um **ambiente** de outro (`docs/plano-releases-ambientes-rotas-volumes.md` §2).
+    /// Este projeto é um **ambiente** de outro (`docs/arquivo/plano-releases-ambientes-rotas-volumes.md` §2).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub environment: Option<crate::domain::EnvironmentOf>,
-    /// Rotas do proxy fora dos serviços (`docs/plano-releases-ambientes-rotas-volumes.md` §3). A senha
+    /// Rotas do proxy fora dos serviços (`docs/arquivo/plano-releases-ambientes-rotas-volumes.md` §3). A senha
     /// do basic auth fica cifrada (`ENC[age:…]`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub routes: Vec<crate::domain::Route>,
@@ -148,7 +148,7 @@ pub struct ServiceInfra {
     /// Secrets **deste serviço** (escopo de serviço, R5). Valor sempre `ENC[age:…]`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub secrets: Vec<SecretInfra>,
-    /// Política de backup automático dos dados (Fase 3 de `docs/plano-backup-de-dados-para-s3.md`).
+    /// Política de backup automático dos dados (Fase 3 de `docs/arquivo/plano-backup-de-dados-para-s3.md`).
     /// Fora do `ServiceSpec` de propósito: é decisão do servidor, não viaja no "Exportar serviço".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backup: Option<BackupInfra>,

@@ -1,5 +1,5 @@
 //! `Command::ServiceConnectionInfo`: host e connection string internos de um
-//! serviço (ver `crate::platform::connection` e `docs/plano-banco-compartilhado.md` §3).
+//! serviço (ver `crate::platform::connection` e `docs/arquivo/plano-banco-compartilhado.md` §3).
 
 use crate::domain::ServiceSource;
 use crate::platform::connection::{self, ConnTarget};

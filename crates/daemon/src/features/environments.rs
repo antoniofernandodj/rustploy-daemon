@@ -1,6 +1,6 @@
 //! **Ambientes** (homologação, preview…): criar a partir de um projeto, comparar com a origem e
 //! promover a release no ar de um lado para o outro. Ver
-//! `docs/plano-releases-ambientes-rotas-volumes.md` §2.
+//! `docs/arquivo/plano-releases-ambientes-rotas-volumes.md` §2.
 //!
 //! Um ambiente é um projeto comum com `ProjectInfra.environment`: ganha rede, nomes de container e
 //! variáveis próprios sem mexer em nada do que já existe. A cópia é uma transação só no estado de

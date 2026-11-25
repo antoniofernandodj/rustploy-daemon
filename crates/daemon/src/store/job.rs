@@ -9,7 +9,7 @@ use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use ulid::Ulid;
 
-// Desde a Fase 4d do plano `docs/plano-backup-estado-em-git.md` a **definição** do job mora no
+// Desde a Fase 4d do plano `docs/arquivo/plano-backup-estado-em-git.md` a **definição** do job mora no
 // YAML de infra (`store::infra`, dentro do projeto); o que muda a cada execução (`last_run_at`,
 // `next_run_at`) é runtime e mora no SQLite, em `job_runtime`. O histórico (`job_run`, `job_log`)
 // segue no SQL. A tabela antiga `job` não é mais lida nem escrita.

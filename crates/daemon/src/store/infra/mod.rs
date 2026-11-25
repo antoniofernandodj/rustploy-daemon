@@ -1,5 +1,5 @@
 //! Camada de repositório da **infraestrutura** declarada (projetos, serviços, jobs…), que passa
-//! a morar em YAML no disco em vez de no SQLite. Plano: `docs/plano-backup-estado-em-git.md`
+//! a morar em YAML no disco em vez de no SQLite. Plano: `docs/arquivo/plano-backup-estado-em-git.md`
 //! (seções R2, R3 e R9 — Fase 1).
 //!
 //! Desde a Fase 4d os módulos de `store/` (projetos, serviços, jobs, secrets, providers…) leem e

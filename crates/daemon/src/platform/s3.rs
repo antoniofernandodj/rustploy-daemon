@@ -1,5 +1,5 @@
 //! Cliente S3 mínimo, em hyper cru (o daemon não usa `reqwest`), para o backup dos dados dos serviços
-//! (`docs/plano-backup-de-dados-para-s3.md`, Fase 0).
+//! (`docs/arquivo/plano-backup-de-dados-para-s3.md`, Fase 0).
 //!
 //! Fala com qualquer S3 (AWS, Backblaze, R2, MinIO/RustFS): assinatura SigV4, `http` ou `https`,
 //! endereço `path-style` (`host/bucket/chave`) ou `virtual-host` (`bucket.host/chave`).

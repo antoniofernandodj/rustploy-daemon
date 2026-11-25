@@ -7,7 +7,7 @@ use super::Db;
 
 /// As cinco chaves de **configuração** moram no YAML de infra (`settings.yml`); as demais
 /// (`*_last_run`, `job_warm:*`, `service_warm:*`…) são runtime e continuam no SQL.
-/// Plano: `docs/plano-backup-estado-em-git.md`, R2.1.
+/// Plano: `docs/arquivo/plano-backup-estado-em-git.md`, R2.1.
 fn is_infra_key(key: &str) -> bool {
     matches!(
         key,

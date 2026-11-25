@@ -1,5 +1,5 @@
 //! Handlers do backup de dados para S3: o `dispatch` recebe os `Command` da seção e chama o handler certo.
-//! Plano: `docs/plano-backup-de-dados-para-s3.md`.
+//! Plano: `docs/arquivo/plano-backup-de-dados-para-s3.md`.
 
 mod backup_destination_clear;
 mod backup_destination_get;

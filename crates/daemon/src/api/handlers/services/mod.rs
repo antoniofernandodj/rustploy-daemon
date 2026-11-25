@@ -31,6 +31,20 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
             }
             crate::features::services::update::handle(state.services_ctx(), id, spec).await
         }
+        Command::ServiceDescriptionSet {
+            service_id,
+            description,
+        } => {
+            match crate::features::services::description::set(&state.db, &service_id, &description)
+                .await
+            {
+                Ok(service) => RpResponse::Service(Box::new(service)),
+                Err(e) if e.to_string() == "service not found" => {
+                    RpResponse::err("NotFound", "service not found")
+                }
+                Err(e) => RpResponse::err("InvalidInput", e.to_string()),
+            }
+        }
         Command::ServiceVolumeAttach { service_id, volume } => {
             let response = match crate::features::services::volumes::attach(
                 &state.db,

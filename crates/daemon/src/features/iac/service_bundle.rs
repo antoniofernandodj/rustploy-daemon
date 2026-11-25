@@ -4,7 +4,7 @@
 //! Diferente do IaC (`manifest.rs`), que descreve o servidor inteiro e
 //! reconcilia, o pacote é aditivo e de escopo um-serviço: quem importa decide
 //! projeto, nome e o que fazer com cada conflito. Ver
-//! `docs/plano-copiar-servico-entre-servidores.md`.
+//! `docs/arquivo/plano-copiar-servico-entre-servidores.md`.
 //!
 //! Este módulo é o FORMATO, as conversões puras (spec ⇄ pacote) e os tipos de
 //! pedido/resposta dos comandos de export/import; a lógica deles vive no daemon.
@@ -212,6 +212,7 @@ mod tests {
 
     fn spec() -> ServiceSpec {
         ServiceSpec {
+            description: None,
             name: "api".into(),
             project_id: "prj_a".into(),
             source: ServiceSource::Git(GitSource {

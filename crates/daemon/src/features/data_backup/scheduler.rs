@@ -1,4 +1,4 @@
-//! O agendador dos backups automáticos (`docs/plano-backup-de-dados-para-s3.md`, Fase 3): a cada minuto
+//! O agendador dos backups automáticos (`docs/arquivo/plano-backup-de-dados-para-s3.md`, Fase 3): a cada minuto
 //! olha os serviços com política ligada e dispara o que venceu. Mesmo formato do ticker dos jobs.
 //!
 //! Cada backup pega a vaga da fila de deploy (`acquire_job_slot`, em `service_backup`), então não roda

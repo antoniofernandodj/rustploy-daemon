@@ -1,4 +1,4 @@
-//! Backup dos dados dos serviços para um S3. Ver `docs/plano-backup-de-dados-para-s3.md`.
+//! Backup dos dados dos serviços para um S3. Ver `docs/arquivo/plano-backup-de-dados-para-s3.md`.
 
 use crate::domain::Recurrence;
 use serde::{Deserialize, Serialize};

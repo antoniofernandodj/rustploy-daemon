@@ -1,5 +1,5 @@
 //! Dados de um serviço (volumes) que podem ser exportados e importados.
-//! Ver `docs/plano-exportar-importar-dados-de-servico.md`.
+//! Ver `docs/arquivo/plano-exportar-importar-dados-de-servico.md`.
 
 use serde::{Deserialize, Serialize};
 

@@ -1,5 +1,5 @@
 //! `Command::ReleaseList`, `ReleaseDiff` e `ReleaseRollback`. Ver
-//! `docs/plano-releases-ambientes-rotas-volumes.md` §1.
+//! `docs/arquivo/plano-releases-ambientes-rotas-volumes.md` §1.
 
 use crate::bootstrap::state::AppState;
 use crate::domain::{ReleaseImageStatus, ServiceStatus};
@@ -63,6 +63,8 @@ pub async fn rollback(state: AppState, release_id: String) -> RpResponse {
     let mut spec = target.spec.clone();
     spec.name = service.spec.name.clone();
     spec.project_id = service.spec.project_id.clone();
+    // A descrição também é a de agora: voltar o código não deve trazer de volta um texto antigo.
+    spec.description = service.spec.description.clone().or(Some(String::new()));
 
     info!(
         release_id = %target.id,

@@ -1,7 +1,7 @@
 //! O que um arquivo Compose diz sobre volumes: quais a stack monta, onde, e quais são **externos**
 //! (`external: true`: o volume já existia e a stack só o usa — "emprestado"). E a inserção do bloco
 //! `external` no texto, para o "usar volume existente" das telas. Ver
-//! `docs/plano-volumes-tela-e-emprestados.md`.
+//! `docs/arquivo/plano-volumes-tela-e-emprestados.md`.
 
 use std::collections::BTreeMap;
 

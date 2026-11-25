@@ -1,5 +1,5 @@
 //! O **repositório** do estado de infra: o `InfraState` em memória (as leituras vêm daqui) mais a
-//! pasta de arquivos YAML (a persistência). Plano: `docs/plano-backup-estado-em-git.md`, R3.
+//! pasta de arquivos YAML (a persistência). Plano: `docs/arquivo/plano-backup-estado-em-git.md`, R3.
 //!
 //! Toda escrita passa por [`Repo::update`]: copia o estado, aplica a mudança, **valida tudo** e só
 //! então grava numa transação (`txn`). Se qualquer passo falhar, nada muda — nem no disco nem na

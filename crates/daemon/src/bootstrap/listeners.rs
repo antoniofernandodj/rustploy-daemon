@@ -91,7 +91,7 @@ pub fn spawn(
     // clientes externos consomem. Bind loopback + HTTP puro por padrão (atrás do ingress); se
     // `api.domain` estiver setado, o próprio listener termina TLS na sua porta com cert
     // automático via ACME. Serve TAMBÉM as rotas públicas sem Bearer (`api::http::public_routes`): o
-    // webhook de CI/CD e o callback OAuth do Gitea (ver docs/plano-unificacao-webhook-api.md).
+    // webhook de CI/CD e o callback OAuth do Gitea (ver docs/arquivo/plano-unificacao-webhook-api.md).
     // Com a API desabilitada (`[api] enabled = false`), não há webhook.
     if config.api.enabled {
         let state2 = state.clone();
@@ -111,7 +111,7 @@ pub fn spawn(
         );
     }
 
-    // Registry OCI embutido (ver docs/plano-registry-embutido.md). Bind falho apenas loga e
+    // Registry OCI embutido (ver docs/arquivo/plano-registry-embutido.md). Bind falho apenas loga e
     // desabilita o listener, como os demais listeners opcionais acima.
     if let Some(storage) = registry_storage {
         // Push-to-deploy: cada tag publicada redeploya os serviços com `registry_auto_deploy`.

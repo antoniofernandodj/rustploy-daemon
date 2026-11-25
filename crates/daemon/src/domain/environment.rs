@@ -1,6 +1,6 @@
 //! **Ambiente**: o mesmo projeto, outra instância (homologação, preview…). Um ambiente é um projeto
 //! comum (rede, nomes de container e env próprios) com um vínculo para o projeto de origem e para
-//! cada serviço de origem. Ver `docs/plano-releases-ambientes-rotas-volumes.md` §2.
+//! cada serviço de origem. Ver `docs/arquivo/plano-releases-ambientes-rotas-volumes.md` §2.
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;

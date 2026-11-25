@@ -1,6 +1,6 @@
 //! `Command::RecoveryKeyGenerate`: gera a chave de recuperação; a privada sai só nesta resposta, dentro do
 //! arquivo de recuperação (`.rpkit`) com o repositório da infra, a branch e o token.
-//! Planos: `docs/plano-chave-de-recuperacao.md` e `docs/plano-arquivo-de-recuperacao.md`.
+//! Planos: `docs/arquivo/plano-chave-de-recuperacao.md` e `docs/arquivo/plano-arquivo-de-recuperacao.md`.
 
 use base64::Engine as _;
 

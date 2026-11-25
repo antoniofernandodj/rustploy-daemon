@@ -970,6 +970,130 @@ async fn rename_service_in_title() {
     );
 }
 
+/// Descrição do serviço (aba General): o painel aparece com o texto gravado, "Salvar descrição" manda
+/// só `ServiceDescriptionSet` (aparado), sem mudança não manda nada, apagar tudo pede confirmação (e
+/// cancelar a confirmação não grava), e a primeira linha aparece no card do projeto.
+#[tokio::test]
+async fn service_description_panel() {
+    let addr = spawn_static_server().await;
+    let (browser, _handler) = launch().await;
+    let page = open_page(&browser, addr).await;
+    seed_connected(&page).await;
+
+    page.evaluate(
+        r#"(() => {
+            const s = Alpine.store('app');
+            s.view = 'service';
+            s.selectedServiceId = 'svc_1';
+            s.serviceTab = 'general';
+            s.serviceLoading = false;
+            s.serviceDeployments = [];
+            s.serviceDetail = {
+                id: 'svc_1', status: 'Running', live_container_id: null,
+                spec: { name: 'worker', port: 80, replicas: 1, project_id: 'prj_1',
+                    description: 'Processa a fila de e-mails.\nSe cair, os e-mails esperam.',
+                    env_vars: [], domains: [], source: { Registry: { image: 'worker:1' } },
+                    healthcheck: { kind: 'None', interval_secs: 5, timeout_secs: 3, retries: 10, start_period_secs: 5 } },
+            };
+            window.__saved = [];
+            s.api.rpcChecked = async (cmd) => {
+                window.__saved.push(cmd);
+                const text = cmd.ServiceDescriptionSet.description;
+                return { ok: true, value: { Service: { id: 'svc_1', spec: { name: 'worker', description: text || null } } } };
+            };
+            s.fetchServiceDetail = async () => {};
+            s.refreshNow = async () => {};
+            window.__confirm = false;
+            window.confirm = () => window.__confirm;
+        })()"#,
+    )
+    .await
+    .expect("abre o serviço com descrição");
+
+    assert!(
+        visible(
+            &page,
+            "[x-data=\"serviceDetail\"] textarea.description__editor"
+        )
+        .await,
+        "a aba General deveria mostrar o editor da descrição"
+    );
+    let d = "Alpine.$data(document.querySelector('[x-data=\"serviceDetail\"]'))";
+    assert_eq!(
+        eval_str(&page, &format!("(() => {d}.descriptionText)()")).await,
+        "Processa a fila de e-mails.\nSe cair, os e-mails esperam.",
+        "o editor começa com o texto gravado"
+    );
+
+    // Sem mudança: nada é gravado.
+    let _ = eval_str(
+        &page,
+        &format!("(async () => {{ await {d}.saveDescription(); return ''; }})()"),
+    )
+    .await;
+    assert_eq!(
+        eval_str(&page, "(() => String(window.__saved.length))()").await,
+        "0"
+    );
+
+    // Texto novo: só ServiceDescriptionSet, aparado.
+    let saved = eval_str(
+        &page,
+        &format!("(async () => {{ const d = {d}; d.descriptionText = '  Fila de e-mails.  '; await d.saveDescription(); return JSON.stringify(window.__saved[0]); }})()"),
+    )
+    .await;
+    let v: serde_json::Value = serde_json::from_str(&saved).unwrap();
+    assert_eq!(v["ServiceDescriptionSet"]["service_id"], "svc_1");
+    assert_eq!(
+        v["ServiceDescriptionSet"]["description"],
+        "Fila de e-mails."
+    );
+
+    // Apagar tudo pede confirmação: recusada, não grava.
+    let _ = eval_str(
+        &page,
+        &format!("(async () => {{ const d = {d}; d.descriptionText = '   '; await d.saveDescription(); return ''; }})()"),
+    )
+    .await;
+    assert_eq!(
+        eval_str(&page, "(() => String(window.__saved.length))()").await,
+        "1",
+        "confirmação recusada não grava"
+    );
+    // Aceita: grava o vazio.
+    let cleared = eval_str(
+        &page,
+        &format!("(async () => {{ window.__confirm = true; await {d}.saveDescription(); return window.__saved.length + ':' + window.__saved[1].ServiceDescriptionSet.description; }})()"),
+    )
+    .await;
+    assert_eq!(cleared, "2:");
+
+    // O card do projeto mostra a primeira linha.
+    let card = eval_str(
+        &page,
+        r#"(() => {
+            const s = Alpine.store('app');
+            s.selectedProjectId = 'prj_1';
+            s.snap = Object.assign({}, s.snap || {}, { services: [{ project_name: 'Loja', service: {
+                id: 'svc_1', status: 'Running', containers: [],
+                spec: { name: 'worker', port: 80, project_id: 'prj_1', description: '\n  Processa a fila.  \nmais',
+                    source: { Registry: { image: 'w' } } } } }] });
+            const el = document.querySelector('[x-data="projectDetail"]');
+            if (!el) return 'sem projectDetail';
+            const list = Alpine.$data(el).services;
+            return list.length ? list[0].description : 'sem serviços';
+        })()"#,
+    )
+    .await;
+    assert_eq!(card, "Processa a fila.");
+
+    assert_eq!(
+        errors(&page).await,
+        Vec::<String>::new(),
+        "sem erros de JS no console"
+    );
+}
+
 /// Toasts (`$store.app.toast`): o feedback de ação da webui, que até
 /// então só existia na GUI desktop. Cobre o que a mudança promete —
 /// aparecer com a cor do kind, empilhar, sair no clique do "×" e expirar
@@ -1998,7 +2122,7 @@ async fn git_sync_screens_render_from_the_snapshot() {
     );
 }
 
-/// Settings → Backups (docs/plano-backup-de-dados-para-s3.md, Fase 1): abrir Settings lê o destino S3
+/// Settings → Backups (docs/arquivo/plano-backup-de-dados-para-s3.md, Fase 1): abrir Settings lê o destino S3
 /// gravado, o formulário o recebe **sem** chave secreta, e salvar manda a chave só quando digitada.
 #[tokio::test]
 async fn backups_tab_loads_and_saves_the_s3_destination() {
@@ -2050,7 +2174,7 @@ async fn backups_tab_loads_and_saves_the_s3_destination() {
     assert_eq!(v["depois"], "", "a chave digitada não fica no formulário");
 }
 
-/// Aba Dados → "Backup no S3" (docs/plano-backup-de-dados-para-s3.md, Fase 2): abrir a aba lista os
+/// Aba Dados → "Backup no S3" (docs/arquivo/plano-backup-de-dados-para-s3.md, Fase 2): abrir a aba lista os
 /// backups e a última operação; "Fazer backup agora" e "Restaurar" mandam o comando certo (restaurar com
 /// `confirm: true`); sem destino configurado a tela mostra o motivo e esconde o botão.
 #[tokio::test]
@@ -2202,7 +2326,7 @@ async fn data_tab_backup_policy_form_roundtrips() {
 
 /// Arquivo de recuperação (`.rpkit`): "Gerar" manda repositório, branch e conta junto, baixa o binário que
 /// veio em base64, e a aba Recuperar, ao carregar esse arquivo, preenche os quatro campos; um arquivo com
-/// um byte trocado é recusado com mensagem. Plano: docs/plano-arquivo-de-recuperacao.md.
+/// um byte trocado é recusado com mensagem. Plano: docs/arquivo/plano-arquivo-de-recuperacao.md.
 #[tokio::test]
 async fn recovery_kit_generate_sends_the_fields_and_recover_loads_the_file() {
     use base64::Engine as _;
@@ -2390,7 +2514,7 @@ async fn recover_tab_sends_the_fields_and_forgets_the_secrets() {
     );
 }
 
-/// Portas TCP do host na aba Domains (`docs/plano-multiplas-portas-tcp.md`): a lista nova, o legado
+/// Portas TCP do host na aba Domains (`docs/arquivo/plano-multiplas-portas-tcp.md`): a lista nova, o legado
 /// (`host_port` sozinho) virando a primeira linha, adicionar com a porta do container e o rótulo,
 /// apagar, e as sugestões preenchendo o formulário. A webui nunca tinha tido editor de porta TCP.
 #[tokio::test]

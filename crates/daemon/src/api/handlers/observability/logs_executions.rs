@@ -1,5 +1,5 @@
 //! `Command::LogsExecutions` e `Command::LogsExecutionDelete`: as execuções (um container = uma
-//! execução) com log guardado, e a exclusão delas. Plano: `docs/plano-log-de-runtime-persistido.md`.
+//! execução) com log guardado, e a exclusão delas. Plano: `docs/arquivo/plano-log-de-runtime-persistido.md`.
 
 use crate::bootstrap::state::AppState;
 use crate::domain::ServiceSource;

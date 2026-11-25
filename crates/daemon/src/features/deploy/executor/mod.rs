@@ -94,7 +94,7 @@ impl DeployExecutor {
     /// esta checagem o deploy iria até o fim e só falharia no rename, com o
     /// live antigo deste serviço já removido. Melhor recusar antes de subir o
     /// staging, dizendo de quem é o nome. Ver
-    /// `docs/plano-colisao-nome-container.md`.
+    /// `docs/arquivo/plano-colisao-nome-container.md`.
     pub(super) async fn ensure_live_names_free(&self, svc: &Service) -> Result<()> {
         for i in 0..svc.spec.replicas.max(1) {
             let live = containers::replica_live_name(&svc.id, &svc.spec.name, i);

@@ -140,6 +140,13 @@ pub enum Command {
         id: String,
         spec: ServiceSpec,
     },
+    /// Grava só a **descrição** do serviço (texto livre: para que serve, o que faz, do que depende),
+    /// sem reenviar o spec. `description` vazio apaga. Até 4000 caracteres. Não muda o que roda (nada de
+    /// redeploy). Os agentes leem a descrição no `list_services`. Resposta: `Service`.
+    ServiceDescriptionSet {
+        service_id: String,
+        description: String,
+    },
     /// Apaga o serviço. `delete_volumes`: apaga também os volumes nomeados dele (os **dados**); sem
     /// isso eles ficam no servidor e aparecem como **órfãos** na lista de volumes (`DockerVolumes`),
     /// com o nome do serviço de onde vieram.
@@ -551,7 +558,7 @@ pub enum Command {
     },
 
     // Pacote de serviço (copiar um serviço entre servidores) — ver
-    // `docs/plano-copiar-servico-entre-servidores.md`.
+    // `docs/arquivo/plano-copiar-servico-entre-servidores.md`.
     /// O que dá para levar do serviço: suas variáveis e as do projeto (com a
     /// sugestão de pré-marcação). Nunca devolve valores. Resposta:
     /// `ServiceExportPlan`.
@@ -656,7 +663,7 @@ pub enum Command {
     ServerRecoverCancel,
     /// A chave **pública** de recuperação deste servidor (`[secrets] recovery_recipient`), se houver.
     /// Nunca devolve a privada. Resposta: `RecoveryKey`.
-    /// Plano: `docs/plano-chave-de-recuperacao.md`.
+    /// Plano: `docs/arquivo/plano-chave-de-recuperacao.md`.
     RecoveryKeyStatus,
     /// **Gera** a chave de recuperação: grava só a pública no `config.toml` e devolve a privada **uma única
     /// vez** (o servidor não a guarda; quem chama deve baixá-la na hora). Já havendo chave, recusa — a não
@@ -667,7 +674,7 @@ pub enum Command {
     /// junto com o que a tela Recuperar pede: `infra_remote` (obrigatório), `infra_branch` (opcional) e o
     /// token da conta Git `provider_id` (obrigatório para `https://`; o token só entra se a URL for do
     /// host da conta). Tudo é conferido **antes** de gerar: um erro aqui não troca a chave.
-    /// Plano: `docs/plano-arquivo-de-recuperacao.md`.
+    /// Plano: `docs/arquivo/plano-arquivo-de-recuperacao.md`.
     RecoveryKeyGenerate {
         #[serde(default)]
         replace: bool,
@@ -794,7 +801,7 @@ pub enum Command {
     PruneNetworks,
 
     // Limpeza automática (agendada) dos recursos acima — ver
-    // docs/plano-limpeza-automatica-docker.md. `RunNow` dispara o mesmo
+    // docs/arquivo/plano-limpeza-automatica-docker.md. `RunNow` dispara o mesmo
     // caminho de código do scheduler, fora do horário agendado (botão
     // "Executar agora" da tela).
     DockerCleanupConfigGet,

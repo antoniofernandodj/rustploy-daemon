@@ -19,7 +19,7 @@ pub fn spawn_standalone(
     bus: &Arc<EventBus>,
     backup_dir: &std::path::Path,
 ) {
-    // Env var backup loop — DESLIGADO (docs/plano-backup-estado-em-git.md, R9.0 item 4): o estado
+    // Env var backup loop — DESLIGADO (docs/arquivo/plano-backup-estado-em-git.md, R9.0 item 4): o estado
     // de infra vai para YAML versionado em git. Código mantido no lugar (regra "comentar, não
     // remover"); a seção `[env_backup]` do config.toml continua sendo aceita no parse.
     // TODO: apagar `features/backup::backup_loop` quando o espelho em git (Fase 6) estiver no ar.
@@ -135,7 +135,7 @@ pub fn spawn_stateful(
         });
     }
 
-    // Agendador dos backups de dados para o S3 (docs/plano-backup-de-dados-para-s3.md, Fase 3): a cada
+    // Agendador dos backups de dados para o S3 (docs/arquivo/plano-backup-de-dados-para-s3.md, Fase 3): a cada
     // minuto dispara os serviços cuja política venceu.
     {
         let state2 = state.clone();
@@ -144,7 +144,7 @@ pub fn spawn_stateful(
         });
     }
 
-    // Scheduler da limpeza automática de Docker (ver docs/plano-limpeza-automatica-docker.md).
+    // Scheduler da limpeza automática de Docker (ver docs/arquivo/plano-limpeza-automatica-docker.md).
     {
         let state2 = state.clone();
         tokio::spawn(async move {

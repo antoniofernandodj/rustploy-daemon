@@ -74,7 +74,7 @@ pub async fn prune_images_core(
 ) -> Result<PruneStat, String> {
     // As imagens das releases mais novas de cada serviço não podem sair: são o "voltar para a vN".
     // O `image prune` do Docker não aceita exceção por imagem, então, havendo o que proteger, a
-    // limpeza escolhe e remove uma a uma (ver `docs/plano-releases-ambientes-rotas-volumes.md` §1.4).
+    // limpeza escolhe e remove uma a uma (ver `docs/arquivo/plano-releases-ambientes-rotas-volumes.md` §1.4).
     let protected = crate::store::releases::protected_image_refs(
         &state.db,
         crate::domain::PROTECTED_RELEASES_PER_SERVICE,

@@ -1,6 +1,6 @@
 //! Rotas HTTP **públicas** (sem Bearer): o webhook de deploy e o callback OAuth
 //! do Gitea. Não há listener próprio aqui — desde a unificação das portas
-//! (`docs/plano-unificacao-webhook-api.md`) as duas rotas são servidas pelo
+//! (`docs/arquivo/plano-unificacao-webhook-api.md`) as duas rotas são servidas pelo
 //! listener da API (`http/mod.rs`), que as roteia para cá **antes** do gate de
 //! token, porque cada uma tem autenticação própria: o webhook valida o token de
 //! 192 bits que vem na URL; o callback valida o `state` CSRF emitido no início

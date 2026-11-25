@@ -1922,7 +1922,7 @@
           </column>
         </column>
 
-        <!-- Sincronização do estado com o git (Fases 6 e 7 de docs/plano-backup-estado-em-git.md).
+        <!-- Sincronização do estado com o git (Fases 6 e 7 de docs/arquivo/plano-backup-estado-em-git.md).
              O status vem no snapshot (store.stateGitStatus); aqui só o formulário e as ações. -->
         <column class="u-fill-all" x-show="store.settingsTab === 'gitsync'">
           <column class="form-stack">
@@ -2105,7 +2105,7 @@
         </column>
 
         <!-- Manutenção: limpeza automática de recursos do runtime sem uso (ver
-             docs/plano-limpeza-automatica-docker.md) — mesmas funções dos
+             docs/arquivo/plano-limpeza-automatica-docker.md) — mesmas funções dos
              botões manuais da aba Runtime, disparadas por agendamento em vez
              de clique. -->
         <column class="u-fill-all" x-show="store.settingsTab === 'maintenance'">
@@ -2651,6 +2651,7 @@
                     </row>
                   </row>
                 </row>
+                <text class="card__description" x-show="service.description" x-text="service.description"></text>
                 <row class="card__container">
                   <button class="btn--copy-mini" type="button" title="Copiar nome" x-t:title x-show="service.containerNameFull"
                     @click="$store.app.copyText(service.containerNameFull, 'nome')">⧉</button>
@@ -3625,6 +3626,20 @@
               </row>
               -->
 
+              <!-- Descrição: para que o serviço existe (lida pelos agentes MCP). Grava só
+                   com o botão (ServiceDescriptionSet). -->
+              <column class="form-panel">
+                <text class="u-label-cap" x-t>DESCRIÇÃO</text>
+                <text class="u-muted" x-t>Para que este serviço existe, o que faz, do que depende. Os agentes de IA (MCP) leem este texto. Não ponha senhas: ele vai para o git.</text>
+                <textarea class="description__editor" x-model="descriptionText" maxlength="4000"
+                          placeholder="ex.: Processa a fila de e-mails. Se cair, os e-mails esperam no broker; nada se perde." x-t:placeholder></textarea>
+                <row class="env__add">
+                  <button class="btn btn--primary" type="button" @click="saveDescription()" x-t>Salvar descrição</button>
+                  <button class="btn btn--ghost" type="button" @click="cancelDescription()" x-t>Cancelar</button>
+                  <text class="u-muted" x-text="descriptionMessage"></text>
+                </row>
+              </column>
+
               <!-- Compose: editor de texto direto (mesma origem, sem provider).
                    flex-shrink:0 via .form-panel — ver comentário em app.css
                    sobre .healthcheck__grid colapsando dentro de .u-fill-all sem isso. -->
@@ -4074,7 +4089,7 @@
                 </row>
               </column>
 
-              <!-- Portas TCP do host (docs/plano-multiplas-portas-tcp.md) -->
+              <!-- Portas TCP do host (docs/arquivo/plano-multiplas-portas-tcp.md) -->
               <column class="form-panel">
                 <text class="u-label-cap" x-text="$t('PORTAS TCP DO HOST (') + tcpPorts.length + ')'"></text>
                 <text class="u-muted" x-t>Cada porta do host leva a uma porta do container, sem HTTP (ex.: a API e o console de um storage).</text>

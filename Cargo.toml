@@ -23,7 +23,7 @@ codegen-units = 1
 # perfil é só do daemon, e o motivo acima não vale mais aqui. Mesmo assim, fique em
 # `unwind`: hoje um `panic` numa task do tokio derruba só aquela task; com `abort`,
 # derrubaria o daemon inteiro (proxy, deploys, tudo). Um binário ~10% menor não paga
-# isso (docs/estudo-consumo-de-ram.md, seção 4).
+# isso (docs/arquivo/estudo-consumo-de-ram.md, seção 4).
 
 # Compile heavy dependencies at opt-level 2 even in debug builds so
 # that SurrealDB / bollard don't dominate incremental rebuilds.

@@ -1,6 +1,6 @@
 //! `Command::ServiceExportPlan` e `Command::ServiceExport`: o lado de cá de
 //! copiar um serviço para outro servidor (ver
-//! `docs/plano-copiar-servico-entre-servidores.md`). O arquivo gerado é um
+//! `docs/arquivo/plano-copiar-servico-entre-servidores.md`). O arquivo gerado é um
 //! [`crate::features::iac::service_bundle::ServiceBundle`]; quem o lê é `service_import`.
 
 use crate::domain::{EnvVarValue, PlanVar, Project, Service, ServiceExportPlan, ServiceSource};

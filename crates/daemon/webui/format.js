@@ -1078,7 +1078,7 @@ export function gitProviderRows(list) {
 }
 
 // ── Limpeza automática de Docker (Settings → Manutenção) ──────────────────
-// Porta de format/docker_cleanup.luau — ver docs/plano-limpeza-automatica-docker.md.
+// Porta de format/docker_cleanup.luau — ver docs/arquivo/plano-limpeza-automatica-docker.md.
 
 const DOCKER_CLEANUP_LABELS = {
   containers: "containers",

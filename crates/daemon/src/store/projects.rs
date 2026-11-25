@@ -1,6 +1,6 @@
 //! Tabela `project`: CRUD de projetos e suas env vars de nível de projeto.
 //!
-//! Desde a Fase 4d do plano `docs/plano-backup-estado-em-git.md` os projetos moram no **YAML de
+//! Desde a Fase 4d do plano `docs/arquivo/plano-backup-estado-em-git.md` os projetos moram no **YAML de
 //! infra** (`store::infra`), não mais no SQLite: leituras vêm do estado em memória e cada escrita
 //! é uma transação do repositório. Apagar um projeto leva junto tudo o que é dele no YAML
 //! (serviços, jobs, secrets, bancos e acessos).

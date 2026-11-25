@@ -1,5 +1,5 @@
 //! Rotas próprias (`domain::Route`): gravar no estado de infra, apagar, listar sem a senha e
-//! compilar para o proxy. Ver `docs/plano-releases-ambientes-rotas-volumes.md` §3.
+//! compilar para o proxy. Ver `docs/arquivo/plano-releases-ambientes-rotas-volumes.md` §3.
 
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;

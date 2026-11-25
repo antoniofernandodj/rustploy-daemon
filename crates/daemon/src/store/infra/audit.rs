@@ -1,4 +1,4 @@
-//! **Auditoria de valores em claro** no estado de infra (plano `docs/plano-backup-estado-em-git.md`,
+//! **Auditoria de valores em claro** no estado de infra (plano `docs/arquivo/plano-backup-estado-em-git.md`,
 //! R5/R6). A sincronização com git só pode ser ligada se esta lista vier vazia, e o que chega de
 //! fora (`pull`) passa pela mesma checagem — senão o histórico do git conteria um segredo, e apagar
 //! segredo de histórico git não funciona de verdade.

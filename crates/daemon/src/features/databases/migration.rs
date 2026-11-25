@@ -1,5 +1,5 @@
 //! Assistente de migração: banco antigo (serviço Compose do projeto) → database
-//! gerenciado de um servidor compartilhado. Ver `docs/plano-banco-compartilhado.md` §5.
+//! gerenciado de um servidor compartilhado. Ver `docs/arquivo/plano-banco-compartilhado.md` §5.
 //!
 //! O dump/restore é feito pelas ferramentas oficiais de cada motor, num
 //! container efêmero (`docker run --rm`) na rede do projeto, em pipe — os dados

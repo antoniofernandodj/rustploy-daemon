@@ -8,6 +8,13 @@ use crate::domain::*;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ServiceSpec {
     pub name: String,
+    /// **Descrição** em texto livre (aceita Markdown): para que o serviço existe, o que faz, do que
+    /// depende. Escrita por humanos e por agentes, lida pelos agentes no `list_services`. Não muda o que
+    /// roda (fica fora do diff de releases e da comparação de ambientes). No `ServiceUpdate`, `None`
+    /// mantém a gravada (clientes antigos não conhecem o campo); ver [`normalize_description`] e
+    /// `docs/arquivo/plano-descricao-do-servico.md`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
     pub project_id: String,
     pub source: ServiceSource,
     pub port: u16,
@@ -18,7 +25,7 @@ pub struct ServiceSpec {
     pub host_port: Option<u16>,
     /// Portas TCP do host ligadas a portas do container (passthrough no ingress, sem HTTP): cada uma pode ir
     /// para uma porta diferente do container (ex.: RustFS 9000 = API S3 e 9001 = console). Retrocompat: vazio
-    /// cai no `host_port` legado. Ver [`ServiceSpec::tcp_routes`] e `docs/plano-multiplas-portas-tcp.md`.
+    /// cai no `host_port` legado. Ver [`ServiceSpec::tcp_routes`] e `docs/arquivo/plano-multiplas-portas-tcp.md`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tcp_ports: Vec<TcpPortRoute>,
     pub domain: Option<String>,
@@ -65,7 +72,7 @@ pub struct ServiceSpec {
     /// segue direto. Cada item roda até completar (exit code do
     /// `main_service`); a primeira falha interrompe a fila **e** o deploy
     /// inteiro, sem rodar os checks seguintes. Ver `DeployState::
-    /// PreDeployCheck` e `docs/plano-pre-deploy-gate.md`. Retrocompat: quando
+    /// PreDeployCheck` e `docs/arquivo/plano-pre-deploy-gate.md`. Retrocompat: quando
     /// vazio, cai no `pre_deploy_job_id` legado — ver
     /// [`ServiceSpec::pre_deploy_checks`].
     #[serde(default)]
@@ -73,13 +80,13 @@ pub struct ServiceSpec {
     /// Se `Some`, este serviço de banco é um **servidor compartilhado**: o
     /// daemon o conecta às redes dos projetos autorizados (`shared_access`),
     /// sob o alias global [`shared_alias`](crate::domain::shared_alias). Só vale com
-    /// `product` de banco. Ver `docs/plano-banco-compartilhado.md` §2.3/§4.1.
+    /// `product` de banco. Ver `docs/arquivo/plano-banco-compartilhado.md` §2.3/§4.1.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shared: Option<SharedServerConfig>,
     /// IDs de serviços **do mesmo projeto** que precisam estar prontos antes deste subir (no boot
     /// do daemon e no "Subir projeto"). Sem ciclos — o daemon valida na criação/edição. Dependência
     /// de banco compartilhado **não** se declara aqui: é derivada de `shared_access`.
-    /// Ver `docs/plano-backup-estado-em-git.md` (R8).
+    /// Ver `docs/arquivo/plano-backup-estado-em-git.md` (R8).
     #[serde(default)]
     pub depends_on: Vec<String>,
     /// Participa do religamento automático (boot do daemon e "Subir projeto/tudo")? Padrão `true`.
@@ -89,7 +96,7 @@ pub struct ServiceSpec {
     pub autostart: bool,
     /// Push-to-deploy: com `source = Registry` apontando para o registry **embutido**, cada
     /// `docker push` da tag configurada redeploya o serviço sozinho (sem webhook nem Git no
-    /// servidor). Opt-in; padrão `false`. Ver `docs/plano-registry-embutido.md` (Fase 4).
+    /// servidor). Opt-in; padrão `false`. Ver `docs/arquivo/plano-registry-embutido.md` (Fase 4).
     #[serde(default)]
     pub registry_auto_deploy: bool,
     /// **Vínculos**: os serviços que este **usa** (o banco, o S3, a fila). Cada vínculo conta como
@@ -103,6 +110,39 @@ pub struct ServiceSpec {
 
 fn default_autostart() -> bool {
     true
+}
+
+/// Tamanho máximo da descrição de um serviço, em caracteres.
+pub const SERVICE_DESCRIPTION_MAX_CHARS: usize = 4000;
+
+/// A descrição como ela é gravada: sem espaços nas pontas, vazia = `None`. Erro se passa do limite.
+pub fn normalize_description(description: Option<&str>) -> Result<Option<String>, String> {
+    let Some(text) = description.map(str::trim).filter(|text| !text.is_empty()) else {
+        return Ok(None);
+    };
+    let length = text.chars().count();
+    if length > SERVICE_DESCRIPTION_MAX_CHARS {
+        return Err(format!(
+            "a descrição tem {length} caracteres; o máximo é {SERVICE_DESCRIPTION_MAX_CHARS}"
+        ));
+    }
+    Ok(Some(text.to_string()))
+}
+
+/// O resumo da descrição para listagens: a primeira linha não vazia, até `max_chars` (com `…` se
+/// cortou). O `bool` diz se há mais texto além do resumo.
+pub fn description_summary(description: &str, max_chars: usize) -> (String, bool) {
+    let mut lines = description
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty());
+    let first = lines.next().unwrap_or("");
+    let more_lines = lines.next().is_some();
+    if first.chars().count() > max_chars {
+        let cut: String = first.chars().take(max_chars).collect();
+        return (format!("{}…", cut.trim_end()), true);
+    }
+    (first.to_string(), more_lines)
 }
 
 /// "Este serviço usa aquele": ver [`ServiceSpec::links`].
@@ -120,7 +160,7 @@ pub struct ServiceLink {
     pub resource: Option<LinkResource>,
     /// O nome com que cada variável entra no container, pelo sufixo (`URL` → `S3_ENDPOINT`). Sufixo
     /// fora do mapa = o nome padrão (prefixo + sufixo); valor vazio = não entregar. Ver
-    /// `docs/plano-nomes-das-variaveis-do-vinculo.md`.
+    /// `docs/arquivo/plano-nomes-das-variaveis-do-vinculo.md`.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub env_names: BTreeMap<String, String>,
 }
@@ -604,6 +644,7 @@ mod dependencias_tests {
 
     fn spec() -> ServiceSpec {
         ServiceSpec {
+            description: None,
             name: "api".into(),
             project_id: "p".into(),
             source: ServiceSource::Registry { image: "x".into() },
@@ -723,5 +764,56 @@ mod tcp_ports_tests {
     fn lista_vazia_nao_aparece_no_json() {
         let v = serde_json::to_value(spec(9000, Some(20002))).unwrap();
         assert!(v.get("tcp_ports").is_none());
+    }
+}
+
+#[cfg(test)]
+mod description_tests {
+    use super::*;
+
+    #[test]
+    fn descricao_normalizada_e_limitada() {
+        assert_eq!(normalize_description(None).unwrap(), None);
+        assert_eq!(normalize_description(Some(" \n ")).unwrap(), None);
+        assert_eq!(
+            normalize_description(Some("  Fila de e-mails. \n"))
+                .unwrap()
+                .as_deref(),
+            Some("Fila de e-mails.")
+        );
+        let limite = "é".repeat(SERVICE_DESCRIPTION_MAX_CHARS);
+        assert!(
+            normalize_description(Some(&limite)).is_ok(),
+            "conta caracteres, não bytes"
+        );
+        assert!(normalize_description(Some(&format!("{limite}x"))).is_err());
+    }
+
+    #[test]
+    fn resumo_e_a_primeira_linha_cortada() {
+        assert_eq!(
+            description_summary("\n  Uma linha só  ", 200),
+            ("Uma linha só".into(), false)
+        );
+        assert_eq!(
+            description_summary("Primeira\nSegunda", 200),
+            ("Primeira".into(), true)
+        );
+        assert_eq!(description_summary("abcdef", 3), ("abc…".into(), true));
+    }
+
+    /// Spec gravado antes do campo entra; spec sem descrição grava o mesmo JSON/YAML de antes.
+    #[test]
+    fn spec_antigo_entra_e_sem_descricao_nao_grava_a_chave() {
+        let spec: ServiceSpec = serde_json::from_value(serde_json::json!({
+            "name": "api", "project_id": "p", "source": {"Registry": {"image": "x"}},
+            "port": 80, "domain": null, "env_vars": [], "volumes": [],
+            "healthcheck": Healthcheck::default(), "replicas": 1,
+            "resources": ResourceLimits::default(),
+        }))
+        .unwrap();
+        assert_eq!(spec.description, None);
+        let json = serde_json::to_string(&spec).unwrap();
+        assert!(!json.contains("description"), "{json}");
     }
 }

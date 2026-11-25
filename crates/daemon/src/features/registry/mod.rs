@@ -1,5 +1,5 @@
 //! Registry Docker OCI Distribution API v2 embutido — push/pull, GC e Basic
-//! auth por token. Ver `docs/plano-registry-embutido.md`.
+//! auth por token. Ver `docs/arquivo/plano-registry-embutido.md`.
 
 pub mod auth;
 pub mod error;

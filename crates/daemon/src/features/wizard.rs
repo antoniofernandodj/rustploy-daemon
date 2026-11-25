@@ -334,6 +334,7 @@ fn base_spec(
     product: Option<String>,
 ) -> ServiceSpec {
     ServiceSpec {
+        description: None,
         name,
         project_id,
         source,

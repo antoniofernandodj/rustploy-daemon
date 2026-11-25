@@ -6,7 +6,7 @@
 //! consumidores não passam a se enxergar. Toda recriação do container desfaz a
 //! conexão; por isso [`sync_server`] roda após cada `compose up` do servidor e
 //! a cada volta do reconcile (30 s, e no boot). Ver
-//! `docs/plano-banco-compartilhado.md` §2.3.
+//! `docs/arquivo/plano-banco-compartilhado.md` §2.3.
 
 use crate::domain::{Service, ServiceSource};
 use crate::{

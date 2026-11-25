@@ -269,7 +269,7 @@ pub async fn get_manifest(db: &Db, repo_id: &str, digest: &str) -> Result<Option
 
 /// Checagem GLOBAL no CAS (não por repo) — decisão deliberada: exigir refs
 /// presentes globalmente simplifica e é seguro num registry single-admin
-/// (ver `docs/plano-registry-embutido.md`, "Riscos e limitações").
+/// (ver `docs/arquivo/plano-registry-embutido.md`, "Riscos e limitações").
 pub async fn ref_blob_or_manifest_exists(db: &Db, digest: &str) -> Result<bool> {
     if blob_exists(db, digest).await? {
         return Ok(true);

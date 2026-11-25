@@ -240,7 +240,7 @@ async fn handle(
             ));
         }
         // Login por token de conexão — público por natureza (é ele que entrega o
-        // token). Ver `agent::login` e docs/plano-chave-de-acesso-e-mcp.md.
+        // token). Ver `agent::login` e docs/arquivo/plano-chave-de-acesso-e-mcp.md.
         (&Method::POST, "/api/login") => {
             // Com `[api].domain` o listener termina TLS (ver `ApiConfig::domain`).
             let scheme = if state
@@ -645,6 +645,9 @@ fn omitted_spec_fields(current: &serde_json::Value, payload: &serde_json::Value)
     };
     let mut out: Vec<String> = cur
         .iter()
+        // `description` ausente não apaga nada: o `ServiceUpdate` mantém a gravada (o app desktop de
+        // antes do campo não o conhece, e seria recusado em todo serviço descrito).
+        .filter(|(k, _)| k.as_str() != "description")
         .filter(|(k, v)| !new.contains_key(*k) && !vazio(v))
         .map(|(k, _)| k.clone())
         .collect();
@@ -1273,6 +1276,16 @@ pub(super) fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 
 #[cfg(test)]
 mod tests {
+    /// O app desktop de antes da descrição manda o spec sem o campo: não pode ser recusado.
+    #[test]
+    fn update_sem_descricao_nao_e_recusado() {
+        let atual = serde_json::json!({"name":"api","description":"Recebe webhooks.","replicas":1});
+        assert!(
+            super::omitted_spec_fields(&atual, &serde_json::json!({"name":"api","replicas":1}))
+                .is_empty()
+        );
+    }
+
     #[test]
     fn update_que_omite_campo_preenchido_e_recusado_mas_vazio_ou_explicito_passa() {
         let atual = serde_json::json!({
@@ -1359,7 +1372,7 @@ mod tests {
         )
     }
 
-    // ── Chave mestra e visitante (docs/plano-limites-do-agente-mcp.md, itens 0, B, C e D) ──────────
+    // ── Chave mestra e visitante (docs/arquivo/plano-limites-do-agente-mcp.md, itens 0, B, C e D) ──────────
 
     fn auth(token: Option<&str>, master: Option<&str>) -> Auth {
         Auth {

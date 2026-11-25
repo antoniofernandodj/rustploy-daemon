@@ -225,6 +225,7 @@ mod tests {
         Service {
             id: id.into(),
             spec: ServiceSpec {
+                description: None,
                 name: format!("svc-{id}"),
                 project_id: project_id.into(),
                 source,

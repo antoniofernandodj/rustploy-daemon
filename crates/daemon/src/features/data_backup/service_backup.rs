@@ -1,5 +1,5 @@
 //! Backup dos dados de **um serviço** para o S3 e a restauração a partir dele
-//! (`docs/plano-backup-de-dados-para-s3.md`, Fase 2).
+//! (`docs/arquivo/plano-backup-de-dados-para-s3.md`, Fase 2).
 //!
 //! O conteúdo é o pacote `.rpdata` de sempre (`service_data::transfer::export`), **sempre cifrado** com `age`
 //! para a identidade do servidor e a chave de recuperação: sem a chave de recuperação o backup não abriria

@@ -2,7 +2,7 @@
 //! router): `match`/`rsplit_once` sobre método + segmentos de path conhecidos.
 //! Loopback por padrão, com Basic auth obrigatória em toda rota (ver
 //! `registry::auth`) — opcionalmente exposto via ingress/ACME quando um
-//! domínio é configurado (`docs/plano-registry-embutido.md`).
+//! domínio é configurado (`docs/arquivo/plano-registry-embutido.md`).
 
 use std::convert::Infallible;
 use std::sync::Arc;
@@ -711,7 +711,7 @@ mod tests {
 
     /// Bind em porta efêmera + DB/storage temporários, servindo em background.
     /// Sem `reqwest` — cliente hyper cru, mesmo padrão de
-    /// `ingress/proxy.rs::forward` (ver `docs/plano-registry-embutido.md`). Já
+    /// `ingress/proxy.rs::forward` (ver `docs/arquivo/plano-registry-embutido.md`). Já
     /// cadastra um token de escopo `push` (satisfaz `pull` também) e devolve o
     /// header `Authorization` pronto pros testes que exercitam o fluxo normal;
     /// testes de auth em si criam seus próprios tokens/headers.

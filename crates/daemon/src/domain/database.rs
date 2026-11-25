@@ -56,7 +56,7 @@ pub struct MigrationStep {
 }
 
 /// Migração de um banco antigo (serviço Compose do projeto) para um database
-/// gerenciado de um servidor compartilhado. Ver `docs/plano-banco-compartilhado.md` §5.
+/// gerenciado de um servidor compartilhado. Ver `docs/arquivo/plano-banco-compartilhado.md` §5.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Migration {
     pub id: String,

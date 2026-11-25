@@ -1,6 +1,6 @@
 //! Arquivo de recuperação (`.rpkit`): a chave privada de recuperação junto com o que a tela Recuperar
 //! pede — repositório da infra, branch e token —, num formato binário que os clientes leem sozinhos.
-//! Plano: `docs/plano-arquivo-de-recuperacao.md`.
+//! Plano: `docs/arquivo/plano-arquivo-de-recuperacao.md`.
 //!
 //! # Formato (versão 1)
 //!

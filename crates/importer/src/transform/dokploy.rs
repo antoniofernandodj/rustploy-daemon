@@ -123,6 +123,7 @@ pub fn transform(data: DokployData, gitea_url: Option<&str>) -> (TransformedData
             compose_project: None,
             spec: ServiceSpec {
                 name: da.name,
+                description: None,
                 project_id: project_id.clone(),
                 source,
                 port,
@@ -190,6 +191,7 @@ pub fn transform(data: DokployData, gitea_url: Option<&str>) -> (TransformedData
             compose_project: None,
             spec: ServiceSpec {
                 name: dc.name,
+                description: None,
                 project_id: project_id.clone(),
                 source: ServiceSource::Compose(ComposeSource {
                     content: cleaned_compose,

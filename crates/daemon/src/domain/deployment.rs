@@ -105,6 +105,7 @@ mod pre_deploy_gate_tests {
         pre_deploy_job_ids: Vec<String>,
     ) -> ServiceSpec {
         ServiceSpec {
+            description: None,
             name: "svc".into(),
             project_id: "proj-1".into(),
             source: ServiceSource::Registry {

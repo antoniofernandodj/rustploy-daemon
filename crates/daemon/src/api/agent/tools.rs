@@ -65,7 +65,10 @@ pub const TOOLS: &[ToolSpec] = &[
     ToolSpec {
         name: "list_services",
         description: "Índice achatado projeto→serviço: service_id, nome, projeto, status, \
-                      origem da imagem e porta. Use para achar o service_id pelo nome.",
+                      origem da imagem, porta e a descrição (primeira linha; o texto inteiro \
+                      vem no ServiceGet). Leia a descrição antes de mexer num serviço; \
+                      quando aprender algo que o próximo precisaria saber, atualize-a com \
+                      rpc ServiceDescriptionSet.",
         input_schema: no_arguments,
     },
     ToolSpec {
@@ -772,6 +775,9 @@ fn failure_reason(dep: &Value) -> Value {
 }
 
 /// Achata o snapshot no índice de serviços que um agente precisa para agir.
+/// Tamanho do resumo da descrição no `list_services`.
+const DESCRIPTION_SUMMARY_CHARS: usize = 200;
+
 fn service_index(snapshot: &Value) -> Vec<Value> {
     let Some(lista) = snapshot.get("services").and_then(Value::as_array) else {
         return Vec::new();
@@ -783,7 +789,7 @@ fn service_index(snapshot: &Value) -> Vec<Value> {
             let svc = entrada.get("service")?;
             let spec = svc.get("spec")?;
 
-            Some(json!({
+            let mut item = json!({
                 "service_id": svc.get("id").cloned().unwrap_or(Value::Null),
                 "name": spec.get("name").cloned().unwrap_or(Value::Null),
                 "project": entrada.get("project_name").cloned().unwrap_or(Value::Null),
@@ -791,7 +797,18 @@ fn service_index(snapshot: &Value) -> Vec<Value> {
                 "status": status_label(svc.get("status")),
                 "source": source_label(spec.get("source")),
                 "port": spec.get("port").cloned().unwrap_or(Value::Null),
-            }))
+            });
+            // Só a primeira linha: com 30 serviços descritos a listagem continua leve. O texto inteiro
+            // vem no `ServiceGet`.
+            if let Some(description) = spec.get("description").and_then(Value::as_str) {
+                let (summary, truncated) =
+                    crate::domain::description_summary(description, DESCRIPTION_SUMMARY_CHARS);
+                item["description"] = json!(summary);
+                if truncated {
+                    item["description_truncated"] = json!(true);
+                }
+            }
+            Some(item)
         })
         .collect()
 }
@@ -846,6 +863,25 @@ fn source_label(source: Option<&Value>) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `list_services` traz a primeira linha da descrição e avisa quando há mais; sem descrição, sem
+    /// a chave.
+    #[test]
+    fn list_services_traz_o_resumo_da_descricao() {
+        let snapshot = json!({"services": [
+            {"project_name": "Loja", "service": {"id": "svc_1", "status": "Running", "spec": {
+                "name": "worker", "project_id": "prj_1", "port": 80,
+                "source": {"Registry": {"image": "w"}},
+                "description": "Processa a fila de e-mails.\n\nSe cair, os e-mails esperam."}}},
+            {"project_name": "Loja", "service": {"id": "svc_2", "status": "Running", "spec": {
+                "name": "api", "project_id": "prj_1", "port": 80,
+                "source": {"Registry": {"image": "a"}}}}}
+        ]});
+        let lista = service_index(&snapshot);
+        assert_eq!(lista[0]["description"], "Processa a fila de e-mails.");
+        assert_eq!(lista[0]["description_truncated"], true);
+        assert!(lista[1].get("description").is_none());
+    }
 
     #[test]
     fn rpc_aceita_command_como_valor_ou_como_texto_json() {

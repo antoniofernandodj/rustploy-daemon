@@ -1,4 +1,4 @@
-//! Armazenamento do **log de runtime** dos containers (plano: `docs/plano-log-de-runtime-persistido.md`).
+//! Armazenamento do **log de runtime** dos containers (plano: `docs/arquivo/plano-log-de-runtime-persistido.md`).
 //!
 //! Uma pasta **por execução** (= por container): `<dados>/logs/<service_id>/<container curto>/`, com
 //! *segmentos* `000001.jsonl`, `000002.jsonl`… e um `meta.json` (deploy, imagem, primeiro/último

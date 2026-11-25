@@ -11,7 +11,7 @@
 //! job espera a vez, e vice-versa — só uma coisa executa por vez no daemon. O
 //! gate de pré-deploy **não** pega a vaga: roda por dentro do deploy, que já a
 //! tem (pegá-la de novo travaria o deploy esperando a si mesmo). A pausa da fila
-//! segura os dois. Ver `docs/plano-jobs-na-fila-de-deploy.md`.
+//! segura os dois. Ver `docs/arquivo/plano-jobs-na-fila-de-deploy.md`.
 //!
 //! A ordem "verdadeira" da fila vive na `VecDeque` em memória (não no banco);
 //! num restart ela é reconstruída da ordem de criação dos `Pending`

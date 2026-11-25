@@ -161,10 +161,10 @@ impl JobRunner {
     /// `run()`, chamado pelo scheduler/`JobRunNow`). `mirror_deployment`,
     /// quando `Some((deployment_id, service_id))`, também espelha a saída
     /// como `Event::BuildLog` — usado pelo `DeployExecutor` no estado
-    /// `PreDeployCheck` (ver `docs/plano-pre-deploy-gate.md`) pra a saída do
+    /// `PreDeployCheck` (ver `docs/arquivo/plano-pre-deploy-gate.md`) pra a saída do
     /// check aparecer na tela de deploy; nesse caminho `cancel_rx` é sempre
     /// `None` (cancelamento de job só é suportado no caminho scheduler/
-    /// `JobRunNow`, via `spawn()` — ver `docs/plano-cancelamento-de-jobs.md`).
+    /// `JobRunNow`, via `spawn()` — ver `docs/arquivo/plano-cancelamento-de-jobs.md`).
     pub(crate) async fn run_inner_mirrored(
         &self,
         job: &Job,

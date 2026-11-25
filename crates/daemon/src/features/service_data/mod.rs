@@ -1,6 +1,6 @@
 //! Exportar e importar os **dados** de um serviço (volumes). Tudo parte de um `service_id`: o
 //! daemon descobre sozinho quais volumes o serviço tem (ver `parts`). Plano e decisões em
-//! `docs/plano-exportar-importar-dados-de-servico.md`.
+//! `docs/arquivo/plano-exportar-importar-dados-de-servico.md`.
 //!
 //! - [`plan`] só olha (`Command::ServiceDataPlan`);
 //! - [`transfer::export`] e [`transfer::import`] movem os bytes (rotas HTTP binárias).

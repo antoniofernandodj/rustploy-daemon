@@ -214,13 +214,13 @@ document.addEventListener("alpine:init", () => {
     // ── Settings (Web Server / Git / Infra as Code) ─────────────────────
     settingsTab: "web",
 
-    // ── Sincronização do estado com o git (docs/plano-backup-estado-em-git.md, Fases 6 e 7) ──
+    // ── Sincronização do estado com o git (docs/arquivo/plano-backup-estado-em-git.md, Fases 6 e 7) ──
     // O status vem no snapshot (`snap.state_git`); estes campos são só o formulário.
     stateGitMode: "off",
     stateGitRemote: "",
     stateGitBranch: "main",
     stateGitProviderId: "",
-    // ── Backups: destino S3 dos backups de dados (docs/plano-backup-de-dados-para-s3.md, Fase 1) ──
+    // ── Backups: destino S3 dos backups de dados (docs/arquivo/plano-backup-de-dados-para-s3.md, Fase 1) ──
     // Mesmos nomes de campo da GUI (handlers/data_backup.luau). A chave secreta nunca volta do daemon:
     // o campo fica vazio e, vazio, mantém a que já está gravada.
     backupDestEndpoint: "",
@@ -234,7 +234,7 @@ document.addEventListener("alpine:init", () => {
     backupDestSecretSet: false,
     backupDestRecoveryMissing: false,
     backupDestMessage: "",
-    // ── Recuperar este servidor (docs/plano-backup-de-dados-para-s3.md, Fase 4) ──
+    // ── Recuperar este servidor (docs/arquivo/plano-backup-de-dados-para-s3.md, Fase 4) ──
     // Mesmos nomes da GUI (handlers/recover.luau). A chave e o token só vivem no campo: somem ao enviar.
     recoverRemote: "",
     recoverToken: "",
@@ -247,7 +247,7 @@ document.addEventListener("alpine:init", () => {
     recoveryKeyConfirmReplace: false,
     recoveryKeyGenerated: null,
     // O que vai no arquivo de recuperação (.rpkit) junto com a chave — começa com o do Git Sync.
-    // docs/plano-arquivo-de-recuperacao.md; mesmos nomes da GUI (handlers/recovery_key.luau).
+    // docs/arquivo/plano-arquivo-de-recuperacao.md; mesmos nomes da GUI (handlers/recovery_key.luau).
     recoveryKeyInfraRemote: "",
     recoveryKeyInfraBranch: "",
     recoveryKeyProviderId: "",
@@ -282,7 +282,7 @@ document.addEventListener("alpine:init", () => {
     infraDownloadMessage: "",
 
     // Settings → Manutenção (limpeza automática de Docker) — ver
-    // docs/plano-limpeza-automatica-docker.md. Porta de handlers/settings.luau
+    // docs/arquivo/plano-limpeza-automatica-docker.md. Porta de handlers/settings.luau
     // (dc_*). `dockerCleanupLastRunAtRaw` é um campo "mudo" (não exibido, só round-trip):
     // preserva o `last_run_at` real entre saves pra um agendamento
     // IntervalHours não reiniciar a contagem toda vez que o usuário salva.
@@ -555,7 +555,7 @@ document.addEventListener("alpine:init", () => {
         // docker build, healthcheck que não passou…) — e nenhum dos dois
         // clientes o lia. Sem isto, a tela do serviço só via a linha do
         // deployment virar `Failed` no snapshot de 2s, sem hipótese nenhuma
-        // do porquê. Ver docs/plano-erro-de-deploy-invisivel.md.
+        // do porquê. Ver docs/arquivo/plano-erro-de-deploy-invisivel.md.
         //
         // Só o deployment EM VOO conta. Casar só pelo serviço não basta: ao
         // promover o novo deploy o daemon publica `Pruning` para o ANTERIOR
@@ -1419,7 +1419,7 @@ document.addEventListener("alpine:init", () => {
       }
     },
 
-    /** Cancela um job_run em execução (ver docs/plano-cancelamento-de-jobs.md):
+    /** Cancela um job_run em execução (ver docs/arquivo/plano-cancelamento-de-jobs.md):
      * mata o processo `docker compose up` de verdade no daemon, não só a UI.
      * `jobRunId` vem de `j.lastRunId` — enquanto `j.running` só reflete o
      * estado otimista de `jobsInflight` (antes do primeiro refresh confirmar
@@ -2087,7 +2087,7 @@ document.addEventListener("alpine:init", () => {
     },
 
     // ── Chave de recuperação ─────────────────────────────────────────────
-    // Plano: docs/plano-chave-de-recuperacao.md.
+    // Plano: docs/arquivo/plano-chave-de-recuperacao.md.
 
     /** Abre a aba (usada pelos avisos de "sem chave" em Backups e Sincronização). */
     recoveryKeyOpen() {
@@ -2618,7 +2618,7 @@ document.addEventListener("alpine:init", () => {
 
     // ── Settings → Manutenção (limpeza automática de Docker) ────────────
     // Porta de handlers/settings.luau (dc_*) — ver
-    // docs/plano-limpeza-automatica-docker.md. Config é um singleton do
+    // docs/arquivo/plano-limpeza-automatica-docker.md. Config é um singleton do
     // daemon, carregada/salva inteira a cada Get/Set.
 
     /** Recorrência (Option<Recurrence>, externally-tagged) → campos do

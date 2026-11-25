@@ -1,5 +1,5 @@
 //! `Command::LogsHistory`: o log de runtime **persistido** do serviço (sobrevive à troca de
-//! container no deploy e ao rollback). Plano: `docs/plano-log-de-runtime-persistido.md`.
+//! container no deploy e ao rollback). Plano: `docs/arquivo/plano-log-de-runtime-persistido.md`.
 
 use crate::bootstrap::state::AppState;
 use crate::protocol::Response as RpResponse;

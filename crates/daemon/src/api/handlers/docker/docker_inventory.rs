@@ -531,7 +531,7 @@ pub async fn stop_all_managed(state: AppState) -> RpResponse {
 
 /// `Command::VolumeList`: a tela **Volumes**. O inventário do motor (do cache) com o dono, o órfão,
 /// o backup e **quem monta** cada volume (Application pelo spec, Compose pelo arquivo, marcando os
-/// emprestados). Ver `docs/plano-volumes-tela-e-emprestados.md`.
+/// emprestados). Ver `docs/arquivo/plano-volumes-tela-e-emprestados.md`.
 pub async fn list_volume_info(state: AppState) -> RpResponse {
     let volumes = match state
         .docker_cache

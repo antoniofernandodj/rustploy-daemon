@@ -21,7 +21,7 @@ pub fn normalize_name(name: &str) -> String {
 /// 8 caracteres do ID (timestamp — não é único) + nome do serviço (muda no
 /// rename). Só a migração de preenchimento e o fallback de
 /// [`Service::compose_project_name`] o usam; serviço novo recebe o nome gravado
-/// por [`new_compose_project_name`]. Ver `docs/plano-nome-gravado-rede-e-stack.md`.
+/// por [`new_compose_project_name`]. Ver `docs/arquivo/plano-nome-gravado-rede-e-stack.md`.
 pub fn compose_project_name(svc_id: &str, svc_name: &str) -> String {
     let id_part = svc_id
         .strip_prefix("svc_")
@@ -104,7 +104,7 @@ pub fn app_network_alias(svc_name: &str) -> String {
 /// lugar de `_` (hostname válido em qualquer parser). Derivado do nome da stack
 /// gravado (`compose_project`), que não muda num rename — então a connection
 /// string de quem já usa o servidor também não muda.
-/// Ver `docs/plano-banco-compartilhado.md` §2.3.
+/// Ver `docs/arquivo/plano-banco-compartilhado.md` §2.3.
 pub fn shared_alias(compose_project: &str) -> String {
     let rest = compose_project
         .strip_prefix("rp_")

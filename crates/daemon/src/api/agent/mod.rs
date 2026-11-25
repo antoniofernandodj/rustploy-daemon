@@ -3,7 +3,7 @@
 //!
 //! Substituiu a ponte HTTP local que morava no app GUI
 //! (`rustploy-gui/src/agent/`), que só funcionava com a janela aberta na mesma
-//! máquina. Ver docs/plano-chave-de-acesso-e-mcp.md.
+//! máquina. Ver docs/arquivo/plano-chave-de-acesso-e-mcp.md.
 
 pub mod access_key;
 pub mod mcp;
