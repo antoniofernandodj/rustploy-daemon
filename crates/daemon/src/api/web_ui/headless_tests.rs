@@ -1172,7 +1172,7 @@ async fn service_description_autosaves_in_the_header() {
     // Passado o debounce: só ServiceDescriptionSet, aparado.
     let aguarda = eval_str(
         &page,
-        &format!("(async () => {{ await new Promise((r) => setTimeout(r, 700)); return JSON.stringify(window.__saved[0] || null); }})()"),
+        "(async () => { await new Promise((r) => setTimeout(r, 700)); return JSON.stringify(window.__saved[0] || null); })()",
     )
     .await;
     let v: serde_json::Value = serde_json::from_str(&aguarda).unwrap();
