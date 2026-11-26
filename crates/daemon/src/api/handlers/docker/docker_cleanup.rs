@@ -17,6 +17,12 @@ pub async fn get_config(state: AppState) -> RpResponse {
 }
 
 pub async fn set_config(state: AppState, mut config: DockerCleanupConfig) -> RpResponse {
+    // As escolhas de quem aquecer têm comando próprio (`WarmAfterCleanupChoiceSet`): aqui vale o
+    // gravado, para um cliente que não conhece o campo não apagá-las ao salvar a tela.
+    match maintenance::run::load_config(&state.maintenance_ctx()).await {
+        Ok(stored) => config.warm_after_cleanup_choices = stored.warm_after_cleanup_choices,
+        Err(e) => return RpResponse::err("DatabaseError", e.to_string()),
+    }
     // Recalculado no servidor (não confia no que o cliente mandou) — é o que
     // faz o scheduler saber quando é a próxima janela, sem recalcular a
     // partir de "agora" a cada tick (ver `DockerCleanupConfig::recompute_next_run`).
@@ -50,6 +56,28 @@ pub async fn run_now(state: AppState) -> RpResponse {
         maintenance::run::run_holding_slot(&state.maintenance_ctx(), config, permit).await;
     });
     RpResponse::Ok
+}
+
+/// `Command::WarmAfterCleanupTargets`: quem a limpeza aquece em seguida.
+pub async fn warm_targets(state: AppState) -> RpResponse {
+    match maintenance::warm_targets::load(&state.maintenance_ctx()).await {
+        Ok(targets) => RpResponse::WarmAfterCleanupTargets(targets),
+        Err(e) => RpResponse::err("DatabaseError", e.to_string()),
+    }
+}
+
+/// `Command::WarmAfterCleanupChoiceSet`: grava a escolha de um serviço ou job.
+pub async fn warm_choice_set(state: AppState, id: String, warm: bool) -> RpResponse {
+    match maintenance::warm_targets::set_choice(&state.maintenance_ctx(), &id, warm).await {
+        Ok(targets) => RpResponse::WarmAfterCleanupTargets(targets),
+        Err(maintenance::warm_targets::ChoiceError::NotFound) => RpResponse::err(
+            "NotFound",
+            "não há serviço com build nem job com esse id para aquecer",
+        ),
+        Err(maintenance::warm_targets::ChoiceError::Database(e)) => {
+            RpResponse::err("DatabaseError", e.to_string())
+        }
+    }
 }
 
 /// `Command::ServiceWarmStatusList`: o status de aquecimento de cada serviço com

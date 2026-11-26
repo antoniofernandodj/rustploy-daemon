@@ -12,7 +12,7 @@
 
 use super::MaintenanceContext;
 use super::prune::{self as docker_prune, BuildCachePrune};
-use crate::domain::{Service, ServiceSource, ServiceWarmStatus};
+use crate::domain::{Service, ServiceSource, ServiceWarmStatus, WarmTargetKind};
 use crate::engine::images;
 use crate::features::deploy::git;
 use crate::features::jobs::warm::cache_pruned_since;
@@ -248,19 +248,37 @@ pub async fn request(
     Ok(false)
 }
 
-/// Depois de uma limpeza: aquece, um de cada vez, os serviços que ficaram frios.
-/// Um de cada vez e cada um pegando a vaga só pelo tempo do próprio build — um
-/// deploy que chegue no meio espera no máximo um build, não a fila inteira.
+/// Depois de uma limpeza: aquece o que está marcado na lista "aquecer depois da
+/// limpeza" (`warm_targets`) e ficou frio. Os serviços vão um de cada vez, cada um
+/// pegando a vaga só pelo tempo do próprio build — um deploy que chegue no meio
+/// espera no máximo um build, não a fila inteira. Os jobs entram na fila de deploys
+/// como itens `Warm`, na ordem da lista.
 pub async fn warm_cold_services(state: &MaintenanceContext) {
-    let services = match store::services::list_all(&state.db).await {
-        Ok(services) => services,
+    let targets = match super::warm_targets::load(state).await {
+        Ok(targets) => targets.targets,
         Err(e) => {
-            warn!(error = %e, "service_warm: falha ao listar serviços");
+            warn!(error = %e, "service_warm: falha ao montar a lista do que aquecer");
             return;
         }
     };
+    let chosen = |kind: WarmTargetKind| -> Vec<String> {
+        targets
+            .iter()
+            .filter(|target| target.warm && target.kind == kind)
+            .map(|target| target.id.clone())
+            .collect()
+    };
+
     let mut cold = Vec::new();
-    for svc in services {
+    for service_id in chosen(WarmTargetKind::Service) {
+        let svc = match store::services::get(&state.db, &service_id).await {
+            Ok(Some(svc)) => svc,
+            Ok(None) => continue,
+            Err(e) => {
+                warn!(service_id, error = %e, "service_warm: falha ao ler o serviço");
+                continue;
+            }
+        };
         if let Some(status) = status(state, &svc).await
             && !status.warm
             && begin(state, &svc.id)
@@ -268,16 +286,31 @@ pub async fn warm_cold_services(state: &MaintenanceContext) {
             cold.push(svc);
         }
     }
-    if cold.is_empty() {
-        return;
+    if !cold.is_empty() {
+        info!(count = cold.len(), "service_warm: aquecendo após a limpeza");
+        let state = state.clone();
+        tokio::spawn(async move {
+            for svc in cold {
+                run_warm(&state, &svc, false).await;
+            }
+        });
     }
-    info!(count = cold.len(), "service_warm: aquecendo após a limpeza");
-    let state = state.clone();
-    tokio::spawn(async move {
-        for svc in cold {
-            run_warm(&state, &svc, false).await;
+
+    for job_id in chosen(WarmTargetKind::Job) {
+        let job = match store::job::get(&state.db, &job_id).await {
+            Ok(Some(job)) => job,
+            Ok(None) => continue,
+            Err(e) => {
+                warn!(job_id, error = %e, "service_warm: falha ao ler o job");
+                continue;
+            }
+        };
+        match crate::features::jobs::warm::request(&state.jobs, job, false).await {
+            Ok(true) => {}
+            Ok(false) => info!(job_id, "service_warm: job na fila de aquecimento"),
+            Err(message) => info!(job_id, message, "service_warm: job não foi aquecido"),
         }
-    });
+    }
 }
 
 /// Pega a vaga, constrói e avisa o fim. O serviço já foi marcado em `begin`.

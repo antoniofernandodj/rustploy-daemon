@@ -301,6 +301,11 @@ document.addEventListener("alpine:init", () => {
     dockerCleanupBuildCacheOlderThanHours: "168",
     dockerCleanupImagesOlderThanHours: "168",
     dockerCleanupWarmAfter: true,
+    // Lista "aquecer depois da limpeza" (Command::WarmAfterCleanupTargets): serviços com build e jobs,
+    // com a escolha de cada um. `null` até o primeiro load. `warmTargetsSaved` guarda o que o daemon
+    // devolveu (id -> warm), para o "Salvar" da manutenção mandar só o que mudou.
+    warmTargets: null,
+    warmTargetsSaved: {},
     dockerCleanupNextRunLabel: "—",
     dockerCleanupLastRunAtRaw: null,
     dockerCleanupLastRunText: t("ainda não rodou"),
@@ -2654,7 +2659,46 @@ document.addEventListener("alpine:init", () => {
       this.dockerCleanupLastRunAtRaw = config.last_run_at ?? null;
     },
 
+    /** A lista agrupada por projeto, na ordem do daemon (serviços antes de jobs). */
+    get warmTargetGroups() {
+      const groups = [];
+      for (const target of this.warmTargets?.targets || []) {
+        let group = groups[groups.length - 1];
+        if (!group || group.projectId !== target.project_id) {
+          group = { projectId: target.project_id, projectName: target.project_name, targets: [] };
+          groups.push(group);
+        }
+        group.targets.push(target);
+      }
+      return groups;
+    },
+
+    warmTargetsApply(targets) {
+      this.warmTargets = targets;
+      this.warmTargetsSaved = Object.fromEntries((targets?.targets || []).map((target) => [target.id, target.warm]));
+    },
+
+    async warmTargetsLoad() {
+      const warmTargetsResponse = await this.api.rpc("WarmAfterCleanupTargets");
+      if (warmTargetsResponse.ok && warmTargetsResponse.value?.WarmAfterCleanupTargets) {
+        this.warmTargetsApply(warmTargetsResponse.value.WarmAfterCleanupTargets);
+      }
+    },
+
+    /** Grava a escolha de um item na hora (o toggle da tela do serviço). */
+    async warmTargetChoiceSet(id, warm) {
+      const choiceSetResponse = await this.api.rpcChecked({ WarmAfterCleanupChoiceSet: { id, warm } });
+      if (choiceSetResponse.ok && choiceSetResponse.value?.WarmAfterCleanupTargets) {
+        this.warmTargetsApply(choiceSetResponse.value.WarmAfterCleanupTargets);
+        return true;
+      }
+      this.toastError("erro: " + choiceSetResponse.error);
+      await this.warmTargetsLoad();
+      return false;
+    },
+
     async dockerCleanupLoad() {
+      await this.warmTargetsLoad();
       const dockerCleanupConfigGetResponse = await this.api.rpc("DockerCleanupConfigGet");
       if (dockerCleanupConfigGetResponse.ok && dockerCleanupConfigGetResponse.value?.DockerCleanupConfig) {
         this.dockerCleanupApplyConfig(dockerCleanupConfigGetResponse.value.DockerCleanupConfig.config);
@@ -2706,6 +2750,13 @@ document.addEventListener("alpine:init", () => {
         },
       });
       if (dockerCleanupConfigSetResponse.ok && dockerCleanupConfigSetResponse.value?.DockerCleanupConfig) {
+        // As escolhas da lista têm comando próprio: manda só as que mudaram, uma por vez.
+        for (const target of this.warmTargets?.targets || []) {
+          if (this.warmTargetsSaved[target.id] !== target.warm) {
+            if (!(await this.warmTargetChoiceSet(target.id, target.warm))) break;
+          }
+        }
+        await this.warmTargetsLoad();
         this.dockerCleanupApplyConfig(dockerCleanupConfigSetResponse.value.DockerCleanupConfig.config);
         this.dockerCleanupLastRunText = dockerCleanupLastRunSummary(dockerCleanupConfigSetResponse.value.DockerCleanupConfig.last_run);
         this.dockerCleanupMessage = "";

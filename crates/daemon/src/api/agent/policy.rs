@@ -107,6 +107,7 @@ pub fn required_level(cmd: &Command) -> Level {
         | Command::GetJobLogs { .. }
         | Command::JobWarmStatus { .. }
         | Command::DockerCleanupConfigGet
+        | Command::WarmAfterCleanupTargets
         | Command::ServiceWarmStatusList
         | Command::DockerImages
         | Command::DockerVolumes
@@ -147,6 +148,7 @@ pub fn required_level(cmd: &Command) -> Level {
         | Command::ServiceStop { .. }
         | Command::ServiceReload { .. }
         | Command::ServiceWarm { .. }
+        | Command::WarmAfterCleanupChoiceSet { .. }
         | Command::JobWarm { .. }
         | Command::JobRunNow { .. }
         | Command::JobRunCancel { .. }

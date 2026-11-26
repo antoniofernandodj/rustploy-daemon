@@ -187,6 +187,12 @@ pub struct DockerCleanupConfig {
     /// usa a limpeza).
     #[serde(default = "default_warm_after_cleanup")]
     pub warm_after_cleanup: bool,
+    /// Quem aquecer depois da limpeza, quando alguém escolheu: id de serviço (`svc_…`) ou de job
+    /// (`job_…`) → aquecer? Sem escolha vale o padrão de [`WarmAfterCleanupTarget::default_warm`].
+    /// Só o `WarmAfterCleanupChoiceSet` grava aqui; o `DockerCleanupConfigSet` mantém o gravado (um
+    /// cliente que não conhece o campo não apaga as escolhas). Ver `maintenance::warm_targets`.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub warm_after_cleanup_choices: std::collections::BTreeMap<String, bool>,
     /// `#[serde(default)]`: os clientes (Luau/JS) mandam a chave inteira ao
     /// fazer round-trip do valor recebido, mas o formulário de criação (antes
     /// do primeiro `Get`) pode omiti-la de vez — mesma convenção de
@@ -218,10 +224,47 @@ impl Default for DockerCleanupConfig {
             build_cache_older_than_hours: DEFAULT_CLEANUP_RETENTION_HOURS,
             images_older_than_hours: DEFAULT_CLEANUP_RETENTION_HOURS,
             warm_after_cleanup: true,
+            warm_after_cleanup_choices: std::collections::BTreeMap::new(),
             last_run_at: None,
             next_run_at: None,
         }
     }
+}
+
+/// O que um item da lista "aquecer depois da limpeza" é.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+pub enum WarmTargetKind {
+    Service,
+    Job,
+}
+
+/// Um serviço (com build: Git ou zip) ou job que a limpeza pode aquecer em seguida.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct WarmAfterCleanupTarget {
+    pub id: String,
+    pub kind: WarmTargetKind,
+    pub project_id: String,
+    pub project_name: String,
+    pub name: String,
+    /// Aquece depois da limpeza: a escolha gravada ou, sem ela, `default_warm`.
+    pub warm: bool,
+    /// O padrão sem escolha: todo serviço com build aquece; um job, só se for pré-deploy de
+    /// algum serviço (é ele que segura o deploy enquanto constrói).
+    pub default_warm: bool,
+    /// O job é pré-deploy de algum serviço (sempre `false` para serviço).
+    pub pre_deploy: bool,
+}
+
+/// A lista "aquecer depois da limpeza" (`Command::WarmAfterCleanupTargets`), com o que as telas
+/// precisam para travar as escolhas: sem limpeza ativa ou sem aquecimento, nada é aquecido.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct WarmAfterCleanupTargets {
+    /// A limpeza agendada está ligada e tem algum recurso marcado.
+    pub cleanup_enabled: bool,
+    /// O interruptor geral "aquecer depois da limpeza".
+    pub warm_after_cleanup: bool,
+    /// Ordenada por projeto; no projeto, serviços antes de jobs, cada grupo por nome.
+    pub targets: Vec<WarmAfterCleanupTarget>,
 }
 
 impl DockerCleanupConfig {

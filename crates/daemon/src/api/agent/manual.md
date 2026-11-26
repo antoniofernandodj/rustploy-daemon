@@ -382,7 +382,12 @@ Comandos, por área (campos entre chaves):
   descarta um dos lados e é **proibido** ao agente: peça a uma pessoa na GUI/webui.
 - **Aquecimento**: `ServiceWarmStatusList` (status de todos os serviços Git/zip) ·
   `ServiceWarm{service_id, force?}` (constrói a imagem na vaga da fila para o próximo
-  deploy achar o cache quente; o fim vem em `Event::ServiceWarmChanged`)
+  deploy achar o cache quente; o fim vem em `Event::ServiceWarmChanged`) ·
+  `WarmAfterCleanupTargets` (o que a limpeza aquece em seguida: cada serviço com build e cada job, com
+  `project_name`, `kind` (`Service`/`Job`), `warm` e o `default_warm`; mais `cleanup_enabled` e
+  `warm_after_cleanup`, sem os quais nada é aquecido) · `WarmAfterCleanupChoiceSet{id, warm}` (escolhe um
+  item; responde a lista atualizada). Padrão sem escolha: serviço com build aquece; job, só se for
+  pré-deploy de algum serviço. O `DockerCleanupConfigSet` não mexe nas escolhas.
 
 Quando não souber a forma de um tipo (`ServiceSpec`, `JobCreate`…), leia um
 existente primeiro (`ServiceGet`, `JobListAll`) e use-o de molde.

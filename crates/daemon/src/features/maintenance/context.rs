@@ -2,6 +2,7 @@
 
 use crate::engine::{DockerClient, inventory_cache::DockerCache};
 use crate::features::deploy::queue::DeployQueue;
+use crate::features::jobs::JobsContext;
 use crate::platform::{event_bus::EventBus, secrets::SecretsManager};
 use crate::store::Db;
 use std::{
@@ -22,4 +23,7 @@ pub struct MaintenanceContext {
     /// Serviços com aquecimento em andamento (ou esperando a vaga da fila) — ver
     /// `service_warm`.
     pub warming_services: Arc<Mutex<HashSet<String>>>,
+    /// Para aquecer, depois da limpeza, os jobs de pré-deploy dos serviços — ver
+    /// `service_warm::warm_cold_services`.
+    pub jobs: JobsContext,
 }

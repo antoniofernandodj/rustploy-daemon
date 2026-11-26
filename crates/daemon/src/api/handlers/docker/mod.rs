@@ -20,6 +20,10 @@ pub async fn dispatch(state: AppState, cmd: Command) -> RpResponse {
             docker_cleanup::set_config(state, config).await
         }
         Command::DockerCleanupRunNow => docker_cleanup::run_now(state).await,
+        Command::WarmAfterCleanupTargets => docker_cleanup::warm_targets(state).await,
+        Command::WarmAfterCleanupChoiceSet { id, warm } => {
+            docker_cleanup::warm_choice_set(state, id, warm).await
+        }
         Command::ServiceWarmStatusList => docker_cleanup::service_warm_status_list(state).await,
         Command::ServiceWarm { service_id, force } => {
             docker_cleanup::service_warm(state, service_id, force).await

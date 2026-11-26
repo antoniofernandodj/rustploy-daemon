@@ -159,6 +159,7 @@ impl AppState {
             secrets: self.secrets.clone(),
             db_path: self.db_path.clone(),
             warming_services: self.warming_services.clone(),
+            jobs: self.jobs_ctx(),
         }
     }
 

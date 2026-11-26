@@ -809,6 +809,15 @@ pub enum Command {
         config: DockerCleanupConfig,
     },
     DockerCleanupRunNow,
+    /// Os serviços (com build) e jobs que a limpeza pode aquecer em seguida, com a escolha de cada
+    /// um. Resposta: `WarmAfterCleanupTargets`.
+    WarmAfterCleanupTargets,
+    /// Escolhe se `id` (serviço ou job) é aquecido depois da limpeza. Escolher o padrão apaga a
+    /// escolha. Resposta: `WarmAfterCleanupTargets`, já atualizada.
+    WarmAfterCleanupChoiceSet {
+        id: String,
+        warm: bool,
+    },
 
     // Docker inventory (every image/volume/network on the host, not just
     // rustploy-managed ones — see `crate::domain::DockerImageInfo` etc.)

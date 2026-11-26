@@ -9,5 +9,6 @@ pub mod prune;
 pub mod run;
 pub mod scheduler;
 pub mod service_warm;
+pub mod warm_targets;
 
 pub use context::MaintenanceContext;

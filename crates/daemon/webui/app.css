@@ -945,6 +945,11 @@ button:focus-visible, [tabindex]:focus-visible, select:focus-visible, summary:fo
 .toggle > input:checked + .toggle__track { background: var(--blue); }
 .toggle > input:checked + .toggle__track::after { transform: translateX(16px); background: #fff; }
 .toggle > input:focus-visible + .toggle__track { outline: 1px solid var(--accent); }
+.toggle--disabled { opacity: .5; cursor: default; }
+/* Lista "aquecer depois da limpeza" (Settings → Manutenção): um grupo por projeto. */
+.warm-targets { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; flex-shrink: 0; }
+.warm-targets--disabled { opacity: .5; }
+.warm-targets__group { display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; }
 /* Lista de deployments do serviço (service/deployments.component.gv). */
 .deployments__list { width: 100%; }
 .deployments__list .table__row { padding: 10px 4px; }

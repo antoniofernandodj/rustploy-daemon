@@ -589,6 +589,20 @@ document.addEventListener("alpine:init", () => {
     get warmReason() {
       return warmReasonText(this.warm?.reason);
     },
+    // Toggle "aquecer depois da limpeza": o item deste serviço na lista do daemon (só serviço com
+    // build tem um) e se dá para escolher agora (limpeza agendada e aquecimento ligados).
+    get warmTarget() {
+      return this.svc ? (this.store.warmTargets?.targets || []).find((target) => target.id === this.svc.id) : undefined;
+    },
+    get warmChoiceEditable() {
+      return !!(this.store.warmTargets?.cleanup_enabled && this.store.warmTargets?.warm_after_cleanup);
+    },
+    get warmChoiceLockedReason() {
+      if (!this.store.warmTargets?.cleanup_enabled) {
+        return t("A limpeza automática do Docker está desligada (Settings → Manutenção): não há o que aquecer depois dela.");
+      }
+      return t("O aquecimento depois da limpeza está desligado em Settings → Manutenção.");
+    },
     get sourceText() {
       return this.svc ? sourceSummary(this.svc.spec.source) : "—";
     },
@@ -1544,6 +1558,7 @@ document.addEventListener("alpine:init", () => {
       this.linkFormReset();
       this.advancedConsumerAddId = "";
       this.advancedPreDeployCheckAddJobId = "";
+      this.store.warmTargetsLoad();
     },
 
     get runArgsText() {

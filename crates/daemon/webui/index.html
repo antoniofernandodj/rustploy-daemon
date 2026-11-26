@@ -2211,9 +2211,27 @@
               </label>
               <column class="option-nested">
                 <text class="u-muted" x-t>
-                  Depois de limpar, reconstrói a imagem de cada serviço com repositório Git ou zip, um de cada vez, na
-                  fila de deploy. Sem isso, o primeiro deploy depois da limpeza paga o build inteiro.
+                  Depois de limpar, reconstrói a imagem do que estiver marcado abaixo, um de cada vez, na fila de
+                  deploy. Sem isso, o primeiro deploy depois da limpeza paga o build inteiro.
                 </text>
+                <text class="u-muted" x-t>
+                  Por padrão, todo serviço com repositório Git ou zip e todo job de pré-deploy. As escolhas valem ao salvar.
+                </text>
+                <column class="warm-targets" :class="{ 'warm-targets--disabled': !store.dockerCleanupWarmAfter }">
+                  <text class="u-muted" x-show="store.warmTargets && !store.warmTargetGroups.length" x-t>Nenhum serviço com build nem job para aquecer.</text>
+                  <template x-for="group in store.warmTargetGroups" :key="group.projectId">
+                    <column class="warm-targets__group">
+                      <text class="u-label-cap" x-text="group.projectName"></text>
+                      <template x-for="target in group.targets" :key="target.id">
+                        <label class="check-row">
+                          <input type="checkbox" x-model="target.warm" :disabled="!store.dockerCleanupWarmAfter" />
+                          <span x-text="target.kind === 'Job' ? $t('Job:') + ' ' + target.name : target.name"></span>
+                          <text class="u-muted" x-show="target.pre_deploy" x-t>(pré-deploy)</text>
+                        </label>
+                      </template>
+                    </column>
+                  </template>
+                </column>
               </column>
             </column>
           </column>
@@ -4515,6 +4533,18 @@
 
                 <label class="toggle"><input type="checkbox" x-model="advancedAutostart" /><span class="toggle__track"></span><span x-t>Religar quando o daemon subir</span></label>
                 <text class="u-muted" x-t>Ligado, o daemon traz este serviço de volta depois de um reinício (só se ele estava rodando). Serviço parado à mão continua parado.</text>
+
+                <template x-if="warmTarget">
+                  <column style="gap:10px">
+                    <label class="toggle" :class="{ 'toggle--disabled': !warmChoiceEditable }">
+                      <input type="checkbox" :checked="warmChoiceEditable && warmTarget.warm" :disabled="!warmChoiceEditable"
+                             @change="store.warmTargetChoiceSet(warmTarget.id, $event.target.checked)" />
+                      <span class="toggle__track"></span><span x-t>Aquecer depois da limpeza do Docker</span>
+                    </label>
+                    <text class="u-muted" x-show="warmChoiceEditable" x-t>Reconstrói a imagem deste serviço logo depois da limpeza agendada, para o próximo deploy achar o cache. Vale na hora, sem Salvar.</text>
+                    <text class="u-muted" x-show="!warmChoiceEditable" x-text="warmChoiceLockedReason"></text>
+                  </column>
+                </template>
 
                 <template x-if="svc?.spec?.source?.Registry">
                   <column style="gap:10px">

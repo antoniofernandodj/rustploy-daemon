@@ -186,6 +186,8 @@ pub enum Response {
     JobWarmRequested {
         already_warm: bool,
     },
+    /// Resposta de `WarmAfterCleanupTargets` e `WarmAfterCleanupChoiceSet`.
+    WarmAfterCleanupTargets(WarmAfterCleanupTargets),
     /// Resposta de `ServiceWarmStatusList`.
     ServiceWarmStatuses(Vec<ServiceWarmStatus>),
     /// Resposta de `ServiceWarm`: `already_warm` = nada foi disparado porque o
