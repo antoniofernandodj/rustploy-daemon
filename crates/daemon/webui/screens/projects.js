@@ -5,6 +5,19 @@ import { t } from "../i18n.js";
 // grid em N-colunas do client iced (aqui é CSS grid nativo, ver .grid em
 // app.css) nem a janela separada de criação (o browser não tem multi-janela
 // — o form fica inline, mesma tela).
+// Caracteres da descrição no card: as 2 linhas do card mais estreito (.grid é
+// minmax(340px, 1fr); .project-card__description em app.css corta em 2 linhas).
+// Na GUI o orçamento sai da largura real do card (description_budget em
+// format/dashboard.luau); aqui o clamp do CSS é o corte e este número só decide
+// quando o popover passa a valer.
+const PROJECT_CARD_DESCRIPTION_MAX = 90;
+
+// Porta de Util.ellipsis (format/util.luau): corta por caractere, não por byte.
+function ellipsis(text, max) {
+  const characters = Array.from(text);
+  return characters.length > max ? characters.slice(0, max).join("") + "…" : text;
+}
+
 document.addEventListener("alpine:init", () => {
   Alpine.data("projects", () => ({
     get store() {
@@ -17,6 +30,8 @@ document.addEventListener("alpine:init", () => {
     editingId: null,
     editName: "",
     editDescription: "",
+    // Id do card com o popover da descrição aberto (só um por vez).
+    descriptionOpenId: null,
 
     get servicesCount() {
       return ((this.store.snap && this.store.snap.services) || []).length;
@@ -43,6 +58,8 @@ document.addEventListener("alpine:init", () => {
           id: project.id,
           name: project.name,
           description: project.description || "",
+          descriptionShort: ellipsis(project.description || "", PROJECT_CARD_DESCRIPTION_MAX),
+          descriptionTruncated: Array.from(project.description || "").length > PROJECT_CARD_DESCRIPTION_MAX,
           serviceCount: svcs.length,
           runningCount: svcs.filter((svc) => svc.service.status === "Running").length,
           canDelete: svcs.length === 0,

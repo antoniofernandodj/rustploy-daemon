@@ -378,6 +378,141 @@ async fn project_detail_renders() {
     );
 }
 
+/// Descrição longa do projeto: no card vêm as duas linhas cortadas e clicar
+/// nelas abre um popover com o texto inteiro (fecha no clique fora); no projeto
+/// aberto ela é um textarea sem borda de 3 linhas, não um input de uma linha.
+#[tokio::test]
+async fn long_project_description_truncates_with_popover() {
+    let addr = spawn_static_server().await;
+    let (browser, _handler) = launch().await;
+    let page = open_page(&browser, addr).await;
+    seed_connected(&page).await;
+
+    page.evaluate(
+        r#"(() => {
+            const s = Alpine.store('app');
+            s.snap.projects[0].description = 'palavra '.repeat(40).trim();
+            s.view = 'projects';
+        })()"#,
+    )
+    .await
+    .expect("descrição longa no projeto");
+
+    let anchor = "[x-data=\"projects\"] .project-card__description--truncated";
+    assert!(
+        visible(&page, anchor).await,
+        "a descrição longa deveria vir cortada"
+    );
+    let shown = eval_str(
+        &page,
+        &format!("(() => document.querySelector({anchor:?}).textContent)()"),
+    )
+    .await;
+    assert_eq!(shown.chars().count(), 91, "90 caracteres + reticências");
+    assert!(shown.ends_with('…'));
+
+    // O corte é de duas linhas, e o texto fica dentro do card. A janela do teste
+    // é larga demais para duas linhas do card cheias, então o grid é estreitado
+    // para forçar o transbordo; as alturas saem do próprio renderizador (clamp
+    // 1 = uma linha), não de um número de pixel inventado.
+    let medida = eval_str(
+        &page,
+        r#"(() => {
+            const el = document.querySelector('[x-data="projects"] .project-card__description--truncated');
+            const grid = el.closest('.grid');
+            const altura = () => el.getBoundingClientRect().height;
+            grid.style.width = '300px';
+            el.style.webkitLineClamp = '1';
+            const uma = altura();
+            el.style.removeProperty('-webkit-line-clamp');
+            const atual = altura();
+            el.style.webkitLineClamp = 'none';
+            const inteira = altura();
+            el.style.removeProperty('-webkit-line-clamp');
+            const rect = el.getBoundingClientRect();
+            const card = el.closest('.card').getBoundingClientRect();
+            grid.style.removeProperty('width');
+            return JSON.stringify({
+                uma, atual, inteira, largura: rect.width,
+                card_largura: card.width, card_altura: card.height,
+            });
+        })()"#,
+    )
+    .await;
+    let m: serde_json::Value = serde_json::from_str(&medida).expect("medidas do card");
+    let (uma, atual, inteira) = (
+        m["uma"].as_f64().unwrap(),
+        m["atual"].as_f64().unwrap(),
+        m["inteira"].as_f64().unwrap(),
+    );
+    assert!(uma > 0.0, "uma linha do card tem altura {uma}");
+    assert!(
+        (atual - uma * 2.0).abs() < 1.0,
+        "a descrição do card mostra duas linhas: {atual} contra uma de {uma}"
+    );
+    assert!(
+        inteira > atual + 1.0,
+        "sem o clamp o texto passaria das duas linhas do card: {inteira} vs {atual}"
+    );
+    assert!(
+        m["largura"].as_f64().unwrap() <= m["card_largura"].as_f64().unwrap() + 0.5,
+        "a descrição não passa da largura do card"
+    );
+    assert!(
+        atual <= m["card_altura"].as_f64().unwrap(),
+        "a descrição não passa da altura do card"
+    );
+    assert!(
+        !visible(&page, "[x-data=\"projects\"] .description-popover").await,
+        "o popover nasce fechado"
+    );
+
+    page.evaluate(format!("document.querySelector({anchor:?}).click()"))
+        .await
+        .expect("clica na descrição");
+    assert!(
+        visible(&page, "[x-data=\"projects\"] .description-popover").await,
+        "clicar na descrição abre o popover"
+    );
+    assert_eq!(
+        eval_str(
+            &page,
+            "(() => document.querySelector('[x-data=\"projects\"] .description-popover__text').textContent)()"
+        )
+        .await,
+        "palavra ".repeat(40).trim(),
+        "o popover mostra a descrição inteira"
+    );
+
+    page.evaluate("document.querySelector('[x-data=\"projects\"] .page-head__title').click()")
+        .await
+        .expect("clica fora");
+    tokio::time::sleep(Duration::from_millis(150)).await;
+    assert!(
+        !visible(&page, "[x-data=\"projects\"] .description-popover").await,
+        "clicar fora fecha o popover"
+    );
+
+    page.evaluate(
+        "Alpine.store('app').view = 'project'; Alpine.store('app').selectedProjectId = 'prj_1'",
+    )
+    .await
+    .expect("abre o projeto");
+    assert!(
+        visible(
+            &page,
+            "[x-data=\"projectDetail\"] textarea.page-head__subtitle-textarea"
+        )
+        .await,
+        "a descrição do projeto aberto deveria ser um textarea"
+    );
+    assert_eq!(
+        errors(&page).await,
+        Vec::<String>::new(),
+        "sem erros de JS no console"
+    );
+}
+
 /// Projeto: nome e descrição se editam no próprio título (como na GUI,
 /// `project_title_change`), gravando por `ProjectUpdate` sem botão; e a
 /// variável nova do projeto vira referência de secret tanto pelo modo
@@ -970,11 +1105,12 @@ async fn rename_service_in_title() {
     );
 }
 
-/// Descrição do serviço (aba General): o painel aparece com o texto gravado, "Salvar descrição" manda
-/// só `ServiceDescriptionSet` (aparado), sem mudança não manda nada, apagar tudo pede confirmação (e
-/// cancelar a confirmação não grava), e a primeira linha aparece no card do projeto.
+/// Descrição do serviço: é o campo sem borda do cabeçalho, grava sozinha 0,5 s
+/// depois da última tecla (só `ServiceDescriptionSet`, aparado), sem mudança não
+/// manda nada, esvaziar grava direto (sem diálogo), e a primeira linha aparece
+/// no card do projeto.
 #[tokio::test]
-async fn service_description_panel() {
+async fn service_description_autosaves_in_the_header() {
     let addr = spawn_static_server().await;
     let (browser, _handler) = launch().await;
     let page = open_page(&browser, addr).await;
@@ -1003,8 +1139,6 @@ async fn service_description_panel() {
             };
             s.fetchServiceDetail = async () => {};
             s.refreshNow = async () => {};
-            window.__confirm = false;
-            window.confirm = () => window.__confirm;
         })()"#,
     )
     .await
@@ -1013,60 +1147,70 @@ async fn service_description_panel() {
     assert!(
         visible(
             &page,
-            "[x-data=\"serviceDetail\"] textarea.description__editor"
+            "[x-data=\"serviceDetail\"] textarea.page-head__subtitle-textarea"
         )
         .await,
-        "a aba General deveria mostrar o editor da descrição"
+        "o cabeçalho do serviço mostra o campo da descrição"
     );
     let d = "Alpine.$data(document.querySelector('[x-data=\"serviceDetail\"]'))";
     assert_eq!(
         eval_str(&page, &format!("(() => {d}.descriptionText)()")).await,
         "Processa a fila de e-mails.\nSe cair, os e-mails esperam.",
-        "o editor começa com o texto gravado"
+        "o campo começa com o texto gravado"
+    );
+
+    // A tecla não grava na hora: é o debounce (0,5 s) que dispara a escrita.
+    let digitado = eval_str(
+        &page,
+        &format!("(async () => {{ const d = {d}; d.descriptionText = '  Fila de e-mails.  '; d.descriptionInput(); await new Promise((r) => setTimeout(r, 60)); return JSON.stringify({{ enviados: window.__saved.length, pendente: d.descriptionPending }}); }})()"),
+    )
+    .await;
+    let j: serde_json::Value = serde_json::from_str(&digitado).unwrap();
+    assert_eq!(j["enviados"], 0, "a última tecla ainda não gravou");
+    assert_eq!(j["pendente"], true, "há rascunho pendente");
+
+    // Passado o debounce: só ServiceDescriptionSet, aparado.
+    let aguarda = eval_str(
+        &page,
+        &format!("(async () => {{ await new Promise((r) => setTimeout(r, 700)); return JSON.stringify(window.__saved[0] || null); }})()"),
+    )
+    .await;
+    let v: serde_json::Value = serde_json::from_str(&aguarda).unwrap();
+    assert_eq!(v["ServiceDescriptionSet"]["service_id"], "svc_1");
+    assert_eq!(
+        v["ServiceDescriptionSet"]["description"], "Fila de e-mails.",
+        "grava aparado, depois do debounce"
     );
 
     // Sem mudança: nada é gravado.
     let _ = eval_str(
         &page,
-        &format!("(async () => {{ await {d}.saveDescription(); return ''; }})()"),
-    )
-    .await;
-    assert_eq!(
-        eval_str(&page, "(() => String(window.__saved.length))()").await,
-        "0"
-    );
-
-    // Texto novo: só ServiceDescriptionSet, aparado.
-    let saved = eval_str(
-        &page,
-        &format!("(async () => {{ const d = {d}; d.descriptionText = '  Fila de e-mails.  '; await d.saveDescription(); return JSON.stringify(window.__saved[0]); }})()"),
-    )
-    .await;
-    let v: serde_json::Value = serde_json::from_str(&saved).unwrap();
-    assert_eq!(v["ServiceDescriptionSet"]["service_id"], "svc_1");
-    assert_eq!(
-        v["ServiceDescriptionSet"]["description"],
-        "Fila de e-mails."
-    );
-
-    // Apagar tudo pede confirmação: recusada, não grava.
-    let _ = eval_str(
-        &page,
-        &format!("(async () => {{ const d = {d}; d.descriptionText = '   '; await d.saveDescription(); return ''; }})()"),
+        &format!("(async () => {{ const d = {d}; d.descriptionText = 'Fila de e-mails.'; d.descriptionInput(); await new Promise((r) => setTimeout(r, 700)); return ''; }})()"),
     )
     .await;
     assert_eq!(
         eval_str(&page, "(() => String(window.__saved.length))()").await,
         "1",
-        "confirmação recusada não grava"
+        "texto igual ao gravado não manda nada"
     );
-    // Aceita: grava o vazio.
-    let cleared = eval_str(
+
+    // Esvaziar grava direto, sem diálogo de confirmação.
+    let limpo = eval_str(
         &page,
-        &format!("(async () => {{ window.__confirm = true; await {d}.saveDescription(); return window.__saved.length + ':' + window.__saved[1].ServiceDescriptionSet.description; }})()"),
+        &format!("(async () => {{ const d = {d}; d.descriptionText = '   '; d.descriptionInput(); await new Promise((r) => setTimeout(r, 700)); return window.__saved.length + ':' + JSON.stringify(window.__saved[1].ServiceDescriptionSet.description); }})()"),
     )
     .await;
-    assert_eq!(cleared, "2:");
+    assert_eq!(limpo, "2:\"\"", "esvaziar grava o vazio sem perguntar");
+
+    // O painel da aba General saiu com os botões.
+    assert_eq!(
+        eval_str(
+            &page,
+            "(() => document.body.innerText.includes('Salvar descrição') ? 'achou' : 'sumiu')()"
+        )
+        .await,
+        "sumiu"
+    );
 
     // O card do projeto mostra a primeira linha.
     let card = eval_str(
@@ -1086,6 +1230,82 @@ async fn service_description_panel() {
     )
     .await;
     assert_eq!(card, "Processa a fila.");
+
+    assert_eq!(
+        errors(&page).await,
+        Vec::<String>::new(),
+        "sem erros de JS no console"
+    );
+}
+
+/// Cartão de serviço: a primeira linha cortada da descrição abre um popover com
+/// o texto inteiro, como no cartão de projeto, e fecha no clique fora.
+#[tokio::test]
+async fn service_card_description_opens_popover() {
+    let addr = spawn_static_server().await;
+    let (browser, _handler) = launch().await;
+    let page = open_page(&browser, addr).await;
+    seed_connected(&page).await;
+
+    page.evaluate(
+        r#"(() => {
+            const s = Alpine.store('app');
+            s.snap = Object.assign({}, s.snap || {}, { services: [{ project_name: 'Loja', service: {
+                id: 'svc_1', status: 'Running', containers: [],
+                spec: { name: 'worker', port: 80, project_id: 'prj_1',
+                    description: 'Processa a fila de e-mails.\nSe cair, os e-mails esperam no broker.',
+                    env_vars: [], domains: [], source: { Registry: { image: 'worker:1' } } } } }] });
+            s.selectedProjectId = 'prj_1';
+            s.view = 'project';
+        })()"#,
+    )
+    .await
+    .expect("serviço com descrição de duas linhas");
+
+    let anchor = "[x-data=\"projectDetail\"] .card__description--truncated";
+    assert!(
+        visible(&page, anchor).await,
+        "a descrição cortada do cartão deveria aparecer"
+    );
+    assert_eq!(
+        eval_str(
+            &page,
+            &format!("(() => document.querySelector({anchor:?}).textContent)()")
+        )
+        .await,
+        "Processa a fila de e-mails.",
+        "o cartão mostra só a primeira linha"
+    );
+    assert!(
+        !visible(&page, "[x-data=\"projectDetail\"] .description-popover").await,
+        "o popover nasce fechado"
+    );
+
+    page.evaluate(format!("document.querySelector({anchor:?}).click()"))
+        .await
+        .expect("clica na descrição do cartão");
+    assert!(
+        visible(&page, "[x-data=\"projectDetail\"] .description-popover").await,
+        "clicar na linha cortada abre o popover"
+    );
+    assert_eq!(
+        eval_str(
+            &page,
+            "(() => document.querySelector('[x-data=\"projectDetail\"] .description-popover__text').textContent)()"
+        )
+        .await,
+        "Processa a fila de e-mails.\nSe cair, os e-mails esperam no broker.",
+        "o popover mostra a descrição inteira"
+    );
+
+    page.evaluate("document.body.click()")
+        .await
+        .expect("clica fora");
+    tokio::time::sleep(Duration::from_millis(150)).await;
+    assert!(
+        !visible(&page, "[x-data=\"projectDetail\"] .description-popover").await,
+        "clicar fora fecha o popover"
+    );
 
     assert_eq!(
         errors(&page).await,

@@ -440,14 +440,6 @@ hr, .rule   { width: 100%; height: 1px; border: none; background: var(--border);
     resize: vertical;
 }
 .env__editor:focus { outline: none; border-color: var(--accent); }
-/* Descrição do serviço (aba General): texto de gente, então a fonte da interface. */
-.description__editor {
-    width: 100%; height: 120px; padding: 10px 12px; background: var(--raised); border: 1px solid var(--border);
-    border-radius: 4px; color: var(--text); font-family: var(--font-ui); font-size: 13px;
-    resize: vertical;
-}
-.description__editor:focus { outline: none; border-color: var(--accent); }
-
 /* ── Janelas (ex-modais) ─────────────────────────────────────────────────
    `.modal__backdrop` virou só a CAMADA de empilhamento das janelas (wm.js):
    cobre a tela, não escurece nem captura clique — a página por baixo segue
@@ -876,20 +868,25 @@ button:focus-visible, [tabindex]:focus-visible, select:focus-visible, summary:fo
 .language-switch { display: flex; gap: 6px; align-items: center; }
 
 /* ── Título editável no lugar (projeto e serviço) ─────────────────────────
-   Porta de .page-head__title-input/.page-head__subtitle-input do app.gss:
-   input sem borda que parece texto; o fundo só aparece com o ponteiro em
+   Porta de .page-head__title-input/.page-head__subtitle-textarea do app.gss:
+   campo sem borda que parece texto; o fundo só aparece com o ponteiro em
    cima ou em foco. Grava sozinho (ver titleInput em project_detail.js e
    service_detail.js). */
-.page-head__title-input, .page-head__subtitle-input {
+.page-head__title-input, .page-head__subtitle-textarea {
     width: 100%; min-width: 0; padding: 0 6px; margin-left: -6px;
     background: var(--bg); border: 0; border-radius: 4px; outline: none;
     font-family: inherit; transition: background-color .12s;
 }
 .page-head__title-input    { font-size: 30px; font-weight: 700; color: var(--text); line-height: 1.25; }
-.page-head__subtitle-input { font-size: 13px; color: var(--muted); line-height: 1.6; }
+/* Descrição do projeto: ~3 linhas, rola quando passa (sem alça de redimensionar). */
+.page-head__subtitle-textarea {
+    font-size: 13px; color: var(--muted); line-height: 1.6;
+    height: calc(3 * 1.6em + 4px); padding: 2px 6px; resize: none; overflow-y: auto;
+}
 .page-head__title-input:hover, .page-head__title-input:focus,
-.page-head__subtitle-input:hover, .page-head__subtitle-input:focus { background: var(--surface); }
-.page-head__title-input::placeholder, .page-head__subtitle-input::placeholder { color: var(--faint); }
+.page-head__subtitle-textarea:hover, .page-head__subtitle-textarea:focus { background: var(--surface); }
+.page-head__title-input::placeholder,
+.page-head__subtitle-textarea::placeholder { color: var(--faint); }
 .service__title-row .page-head__title-input { flex: 1 1 auto; margin-left: 0; }
 @media (max-width: 900px) { .page-head__title-input { font-size: 24px; } }
 
@@ -1031,3 +1028,25 @@ button:focus-visible, [tabindex]:focus-visible, select:focus-visible, summary:fo
 .option-nested    { width: 100%; gap: 8px; padding-left: 28px; }
 .secrets__form    { width: 100%; gap: 8px; flex-shrink: 0; }
 .secrets__name    { width: 220px; flex: 0 0 auto; font-family: var(--font-mono); }
+
+/* Card de projeto: a descrição cortada abre um popover com o texto inteiro
+   (porta do popover de components/project_card.component.gv). O card aberto
+   sobe de camada para o painel não ficar por baixo do card da fileira de baixo. */
+.card--popover-open { position: relative; z-index: 5; }
+.description-popover__anchor { position: relative; }
+.project-card__description--truncated, .card__description--truncated { cursor: pointer; }
+.project-card__description--truncated:hover, .card__description--truncated:hover { color: var(--text-2); }
+/* Duas linhas no card. O corte por caractere (screens/projects.js) é o
+   orçamento; o clamp é a rede de segurança — uma palavra sem espaço (URL, token)
+   não passa da borda, e o excedente ganha "…" do próprio navegador. */
+.project-card__description {
+    display: -webkit-box; -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2; line-clamp: 2;
+    min-width: 0; overflow: hidden; overflow-wrap: anywhere;
+}
+.description-popover {
+    position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 20;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+    padding: 12px 14px; box-shadow: var(--shadow-md); max-height: 320px; overflow-y: auto;
+}
+.description-popover__text { font-size: 13px; color: var(--text-2); white-space: pre-wrap; overflow-wrap: anywhere; }

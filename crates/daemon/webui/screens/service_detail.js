@@ -94,11 +94,12 @@ document.addEventListener("alpine:init", () => {
       this.$watch(
         () => this.store.serviceDetail,
         () => {
-          // Mesmo objeto, mudado só no nome (titleSave): nada mais a recarregar —
-          // reiniciar o form da aba General perderia o que está sendo digitado lá.
+          // Mesmo objeto, mudado só o nome ou a descrição (titleSave/descriptionSave):
+          // nada mais a recarregar — reiniciar o form da aba General perderia o
+          // que está sendo digitado lá.
           // Objeto novo (fetch) sempre recarrega, como antes.
           const detail = this.store.serviceDetail;
-          const signature = detail ? JSON.stringify({ ...detail, spec: { ...detail.spec, name: null } }) : "";
+          const signature = detail ? JSON.stringify({ ...detail, spec: { ...detail.spec, name: null, description: null } }) : "";
           const rawDetail = detail ? Alpine.raw(detail) : null;
           const sameObject = rawDetail !== null && rawDetail === detailRef;
           detailRef = rawDetail;
@@ -607,58 +608,73 @@ document.addEventListener("alpine:init", () => {
       return this.svc ? sourceSummary(this.svc.spec.source) : "—";
     },
 
-    // ── General → Descrição (para que o serviço existe; os agentes MCP leem) ──
-    // Porta de handlers/service_description.luau. Grava só a descrição
-    // (ServiceDescriptionSet). Ver docs/arquivo/plano-descricao-do-servico.md.
+    // ── Descrição (campo sem borda do cabeçalho; os agentes MCP leem) ──────
+    // Porta de handlers/service_description.luau e do campo do projeto: grava só
+    // a descrição (ServiceDescriptionSet) sozinha, 0,5 s depois da última tecla,
+    // e o aviso sai só depois de 2 s sem nova gravação. Enquanto há texto não
+    // gravado ou o campo está em foco, o fetch não sobrescreve. Esvaziar grava
+    // direto, sem diálogo. Ver docs/arquivo/plano-descricao-do-servico.md.
     descriptionText: "",
     descriptionOriginal: "",
     descriptionServiceId: "",
     descriptionMessage: "",
-    /** Não atropela um rascunho: só troca o texto se for outro serviço ou se não há edição pendente. */
+    descriptionPending: false,
+    descriptionFocused: false,
+    descriptionSaveTimer: null,
+    descriptionToastTimer: null,
+    /** Não atropela um rascunho: só troca o texto se for outro serviço ou se não há edição em curso. */
     loadDescription() {
       const service = this.svc;
       if (!service) return;
       const text = service.spec.description || "";
       const sameService = this.descriptionServiceId === service.id;
-      const hasDraft = this.descriptionText !== this.descriptionOriginal;
       this.descriptionOriginal = text;
-      if (!sameService || !hasDraft) {
+      if (!sameService || (!this.descriptionPending && !this.descriptionFocused)) {
         this.descriptionText = text;
         this.descriptionMessage = "";
       }
       this.descriptionServiceId = service.id;
     },
-    async saveDescription() {
+    descriptionInput() {
+      this.descriptionPending = true;
+      clearTimeout(this.descriptionSaveTimer);
+      this.descriptionSaveTimer = setTimeout(() => this.descriptionSave(), 500);
+    },
+    descriptionBlur() {
+      this.descriptionFocused = false;
+      if (!this.descriptionPending) this.loadDescription();
+    },
+    async descriptionSave() {
       const serviceId = this.store.selectedServiceId;
-      if (!serviceId) return null;
       const text = this.descriptionText.trim();
-      if (text === this.descriptionOriginal.trim()) {
-        this.descriptionMessage = t("nada mudou");
-        return null;
-      }
-      if (text === "" && !confirm(t("Apagar a descrição? O texto some para todos (pessoas e agentes). Não dá para desfazer, a não ser pelo histórico do git."))) {
+      // Trocou de serviço no meio do debounce ou nada mudou: nada a gravar.
+      if (serviceId !== this.descriptionServiceId || text === this.descriptionOriginal.trim()) {
+        this.descriptionPending = false;
+        if (!this.descriptionFocused) this.loadDescription();
         return null;
       }
       const setResponse = await this.store.api.rpcChecked({
         ServiceDescriptionSet: { service_id: serviceId, description: text },
       });
+      this.descriptionPending = false;
       if (setResponse.ok && setResponse.value?.Service) {
         const saved = setResponse.value.Service.spec.description || "";
         this.descriptionText = saved;
         this.descriptionOriginal = saved;
         this.descriptionMessage = t("salvo");
-        this.store.toastOk(t("Descrição salva"));
-        await this.store.fetchServiceDetail(serviceId);
-        await this.store.refreshNow();
+        // Só a descrição muda no detalhe local: o watch de serviceDetail ignora
+        // mudança de nome e descrição, então o form da aba General não é reiniciado.
+        if (this.store.serviceDetail && this.store.serviceDetail.id === serviceId) {
+          this.store.serviceDetail.spec.description = text || null;
+        }
+        this.store.refreshNow();
+        clearTimeout(this.descriptionToastTimer);
+        this.descriptionToastTimer = setTimeout(() => this.store.toastOk(t("Descrição salva")), 2000);
       } else {
         this.descriptionMessage = t("erro: ") + setResponse.error;
         this.store.toastError(t("erro: ") + setResponse.error);
       }
       return setResponse;
-    },
-    cancelDescription() {
-      this.descriptionText = this.descriptionOriginal;
-      this.descriptionMessage = "";
     },
 
     // ── General → edição de origem (Compose / Git / Zip) ────────────────

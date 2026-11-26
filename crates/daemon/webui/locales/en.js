@@ -1292,9 +1292,6 @@ export default {
   "DESCRIÇÃO": "DESCRIPTION",
   "Para que este serviço existe, o que faz, do que depende. Os agentes de IA (MCP) leem este texto. Não ponha senhas: ele vai para o git.": "What this service is for, what it does, what it depends on. AI agents (MCP) read this text. No passwords: it goes to git.",
   "ex.: Processa a fila de e-mails. Se cair, os e-mails esperam no broker; nada se perde.": "e.g. Processes the email queue. If it goes down, emails wait in the broker; nothing is lost.",
-  "Salvar descrição": "Save description",
-  "nada mudou": "nothing changed",
-  "Apagar a descrição? O texto some para todos (pessoas e agentes). Não dá para desfazer, a não ser pelo histórico do git.": "Delete the description? The text disappears for everyone (people and agents). It can't be undone, except through the git history.",
   "Descrição salva": "Description saved",
   "erro: ": "error: ",
 };

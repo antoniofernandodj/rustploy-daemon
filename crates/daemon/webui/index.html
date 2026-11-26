@@ -2576,13 +2576,25 @@
         <column class="u-fill-all">
           <column class="grid">
             <template x-for="row in rows" :key="row.id">
-              <column class="card">
+              <column class="card" :class="descriptionOpenId === row.id && 'card--popover-open'">
                 <row class="card__head">
                   <text class="card__name" x-text="row.name"></text>
                   <text class="environment-badge" x-show="row.environmentLabel" x-text="row.environmentLabel"></text>
                 </row>
                 <text class="u-muted" x-text="row.serviceCount + $t(' serviço(s) · ') + row.runningCount + $t(' rodando')"></text>
-                <text class="u-muted" x-text="row.description || '—'"></text>
+                <!-- Descrição longa vem cortada (projects.js, como o
+                     format/dashboard.luau da GUI); clicar abre um popover com o
+                     texto inteiro. Fecha no clique fora e no Esc. -->
+                <text class="u-muted project-card__description" x-show="!row.descriptionTruncated" x-text="row.description || '—'"></text>
+                <column class="description-popover__anchor" x-show="row.descriptionTruncated"
+                        @click.outside="if (descriptionOpenId === row.id) descriptionOpenId = null"
+                        @keydown.escape.window="descriptionOpenId = null">
+                  <text class="u-muted project-card__description project-card__description--truncated" x-text="row.descriptionShort"
+                        @click="descriptionOpenId = descriptionOpenId === row.id ? null : row.id"></text>
+                  <column class="description-popover" x-show="descriptionOpenId === row.id" x-cloak>
+                    <text class="description-popover__text" x-text="row.description"></text>
+                  </column>
+                </column>
                 <hr class="rule" />
 
                 <button class="card__action card__action--open" type="button" @click="store.openProject(row.id)" x-t>Abrir ›</button>
@@ -2620,10 +2632,11 @@
                    placeholder="Nome do projeto" x-t:placeholder spellcheck="false"
                    @input="titleInput()" @focus="titleFocused = true" @blur="titleBlur()"
                    @keydown.enter.prevent="$el.blur()" />
-            <input class="page-head__subtitle-input" type="text" x-model="editDescription"
-                   placeholder="Descrição (opcional)" x-t:placeholder spellcheck="false"
-                   @input="titleInput()" @focus="titleFocused = true" @blur="titleBlur()"
-                   @keydown.enter.prevent="$el.blur()" />
+            <!-- textarea de ~3 linhas (rola se passar): a descrição longa não
+                 cabe numa linha só. Mesmo visual sem borda do título. -->
+            <textarea class="page-head__subtitle-textarea" rows="3" x-model="editDescription"
+                      placeholder="Descrição (opcional)" x-t:placeholder spellcheck="false"
+                      @input="titleInput()" @focus="titleFocused = true" @blur="titleBlur()"></textarea>
           </column>
         </row>
 
@@ -2645,7 +2658,7 @@
         <column class="u-fill-all" x-show="projectTab === 'services'">
           <column class="grid">
             <template x-for="service in services" :key="service.id">
-              <column class="card">
+              <column class="card" :class="descriptionOpenId === service.id && 'card--popover-open'">
                 <!-- Como components/service_card.component.gv: nome:porta à esquerda,
                      selos à direita (pendente, quente/frio, status). -->
                 <row class="card__head">
@@ -2669,7 +2682,18 @@
                     </row>
                   </row>
                 </row>
-                <text class="card__description" x-show="service.description" x-text="service.description"></text>
+                <!-- Descrição cortada: clicar abre um popover com o texto inteiro
+                     (mesmo mecanismo do cartão de projeto). Fecha no clique fora e no Esc. -->
+                <column class="description-popover__anchor" x-show="service.descriptionTruncated"
+                        @click.outside="if (descriptionOpenId === service.id) descriptionOpenId = null"
+                        @keydown.escape.window="descriptionOpenId = null">
+                  <text class="card__description card__description--truncated" x-text="service.description"
+                        @click="descriptionOpenId = descriptionOpenId === service.id ? null : service.id"></text>
+                  <column class="description-popover" x-show="descriptionOpenId === service.id" x-cloak>
+                    <text class="description-popover__text" x-text="service.descriptionWhole"></text>
+                  </column>
+                </column>
+                <text class="card__description" x-show="service.description && !service.descriptionTruncated" x-text="service.description"></text>
                 <row class="card__container">
                   <button class="btn--copy-mini" type="button" title="Copiar nome" x-t:title x-show="service.containerNameFull"
                     @click="$store.app.copyText(service.containerNameFull, 'nome')">⧉</button>
@@ -3554,6 +3578,15 @@
                 <text class="badge__label" :class="'state-cell--' + warmKind" x-text="warmLabel"></text>
               </row>
             </row>
+            <!-- Descrição: campo sem borda no cabeçalho (era um painel com botão
+                 na aba General), grava sozinha 0,5 s depois da última tecla —
+                 descriptionInput em service_detail.js, como o título. -->
+            <textarea class="page-head__subtitle-textarea" x-model="descriptionText" maxlength="4000"
+                      placeholder="ex.: Processa a fila de e-mails. Se cair, os e-mails esperam no broker; nada se perde." x-t:placeholder
+                      title="Para que este serviço existe, o que faz, do que depende. Os agentes de IA (MCP) leem este texto. Não ponha senhas: ele vai para o git." x-t:title
+                      spellcheck="false"
+                      @input="descriptionInput()" @focus="descriptionFocused = true" @blur="descriptionBlur()"></textarea>
+            <text class="u-muted" x-show="descriptionMessage" x-text="descriptionMessage"></text>
             <text class="u-muted" x-show="warm?.reason && !warm?.warming" x-text="$t('frio:') + ' ' + warmReason"></text>
             <text class="u-muted" x-show="store.serviceMessage" x-text="store.serviceMessage"></text>
             <template x-if="svc"><row class="service__actions service__actions--compact">
@@ -3644,19 +3677,8 @@
               </row>
               -->
 
-              <!-- Descrição: para que o serviço existe (lida pelos agentes MCP). Grava só
-                   com o botão (ServiceDescriptionSet). -->
-              <column class="form-panel">
-                <text class="u-label-cap" x-t>DESCRIÇÃO</text>
-                <text class="u-muted" x-t>Para que este serviço existe, o que faz, do que depende. Os agentes de IA (MCP) leem este texto. Não ponha senhas: ele vai para o git.</text>
-                <textarea class="description__editor" x-model="descriptionText" maxlength="4000"
-                          placeholder="ex.: Processa a fila de e-mails. Se cair, os e-mails esperam no broker; nada se perde." x-t:placeholder></textarea>
-                <row class="env__add">
-                  <button class="btn btn--primary" type="button" @click="saveDescription()" x-t>Salvar descrição</button>
-                  <button class="btn btn--ghost" type="button" @click="cancelDescription()" x-t>Cancelar</button>
-                  <text class="u-muted" x-text="descriptionMessage"></text>
-                </row>
-              </column>
+              <!-- A descrição do serviço saiu daqui: é o campo sem borda do
+                   cabeçalho, que grava sozinho (serviceDetail.descriptionInput). -->
 
               <!-- Compose: editor de texto direto (mesma origem, sem provider).
                    flex-shrink:0 via .form-panel — ver comentário em app.css

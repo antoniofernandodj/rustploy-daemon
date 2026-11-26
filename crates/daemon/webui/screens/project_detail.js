@@ -29,6 +29,11 @@ function descriptionFirstLine(description) {
   return chars.length > 90 ? chars.slice(0, 90).join("") + "…" : line;
 }
 
+/** Descrição inteira, aparada: o que o popover do card mostra. */
+function descriptionWhole(description) {
+  return (description || "").trim();
+}
+
 /** Container "primário" de um serviço pra exibir no card: o live, senão o
  * primeiro em execução, senão o primeiro da lista. `extra` é "+N" quando há
  * mais de um container. Porta de format/dashboard.luau::primary_container. */
@@ -74,6 +79,7 @@ document.addEventListener("alpine:init", () => {
     editName: "",
     editDescription: "",
     projectTab: "services", // "services" | "env" | "secrets" | "jobs" | "environments"
+    descriptionOpenId: null, // card de serviço com o popover da descrição aberto
     environments: [], // EnvironmentList de um projeto de origem
     environmentComparison: null, // EnvironmentCompare de um ambiente
     destroyEnvironment: null, // painel "Destruir ambiente": { projectId, name, typed, deleteVolumes }
@@ -265,6 +271,9 @@ document.addEventListener("alpine:init", () => {
             id: service.id,
             name: service.spec.name,
             description: descriptionFirstLine(service.spec.description),
+            // Clique na linha cortada abre um popover com o texto inteiro (como o card de projeto).
+            descriptionWhole: descriptionWhole(service.spec.description),
+            descriptionTruncated: descriptionFirstLine(service.spec.description) !== descriptionWhole(service.spec.description),
             port: service.spec.port,
             statusLabel: label,
             statusKind: kind,
